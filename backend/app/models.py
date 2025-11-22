@@ -1,0 +1,199 @@
+from __future__ import annotations
+
+from datetime import datetime
+from enum import Enum
+from typing import Dict, List, Optional
+
+from pydantic import BaseModel, Field
+
+
+class FlowRecord(BaseModel):
+    id: str
+    src_ip: str
+    src_port: int
+    dst_ip: str
+    dst_port: int
+    transport_proto: str
+    app_proto: str
+    start_time: datetime
+    end_time: datetime
+    duration_sec: float
+    bytes_from_src: int
+    bytes_from_dst: int
+    packets_from_src: int
+    packets_from_dst: int
+    tcp_flags_summary: Optional[str] = None
+    num_resets: Optional[int] = 0
+    state: Optional[str] = None
+    sensor_id: Optional[str] = None
+    tags: List[str] = Field(default_factory=list)
+    extra: Dict[str, str] = Field(default_factory=dict)
+
+
+class EventRecord(BaseModel):
+    id: str
+    event_type: str
+    timestamp: datetime
+    src_ip: str
+    dst_ip: str
+    src_port: int
+    dst_port: int
+    transport_proto: str
+    sensor_id: Optional[str] = None
+    flow_id: Optional[str] = None
+    details: Dict[str, object] = Field(default_factory=dict)
+
+
+class AlertRecord(BaseModel):
+    id: str
+    timestamp: datetime
+    src_ip: Optional[str] = None
+    src_port: Optional[int] = None
+    dst_ip: Optional[str] = None
+    dst_port: Optional[int] = None
+    sensor_id: Optional[str] = None
+    alert_source: str
+    signature_id: Optional[str] = None
+    signature_name: str
+    severity: str
+    category: Optional[str] = None
+    flow_id: Optional[str] = None
+    extra: Dict[str, object] = Field(default_factory=dict)
+
+
+class TimeWindow(BaseModel):
+    start: datetime
+    end: datetime
+
+
+class TopDstIP(BaseModel):
+    ip: str
+    flow_count: int
+    bytes: int
+
+
+class ProtocolUsage(BaseModel):
+    app_proto: str
+    flow_count: int
+    bytes: int
+
+
+class HostSummary(BaseModel):
+    host_ip: str
+    role: str
+    time_window: TimeWindow
+    total_flows: int
+    total_bytes_sent: int
+    total_bytes_received: int
+    top_dst_ips: List[TopDstIP] = Field(default_factory=list)
+    protocol_usage: List[ProtocolUsage] = Field(default_factory=list)
+    dns_queries_count: int
+    dns_unique_domains: int
+    http_requests_count: int
+    alerts_count: int
+    alerts_by_severity: Dict[str, int] = Field(default_factory=dict)
+    suspicious_heuristics: Dict[str, object] = Field(default_factory=dict)
+
+
+class HostPairAlertSummary(BaseModel):
+    timestamp: datetime
+    signature_name: str
+    severity: str
+
+
+class HostPairSummary(BaseModel):
+    src_ip: str
+    dst_ip: str
+    time_window: TimeWindow
+    flow_count: int
+    total_bytes: int
+    direction: str
+    top_app_protos: List[ProtocolUsage] = Field(default_factory=list)
+    first_seen: datetime
+    last_seen: datetime
+    alerts: List[HostPairAlertSummary] = Field(default_factory=list)
+    interesting_events: List[str] = Field(default_factory=list)
+
+
+class MetricChange(BaseModel):
+    metric: str
+    baseline_value: float
+    exploit_value: float
+    ratio: float
+
+
+class ChangeSummary(BaseModel):
+    entity_type: str
+    entity_id: str
+    metric_changes: List[MetricChange] = Field(default_factory=list)
+    new_protocols: List[str] = Field(default_factory=list)
+    new_alert_signatures: List[str] = Field(default_factory=list)
+
+
+class JobStatus(str, Enum):
+    QUEUED = "queued"
+    RUNNING = "running"
+    FAILED = "failed"
+    COMPLETED = "completed"
+
+
+class JobStepStatus(str, Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+
+
+class Job(BaseModel):
+    id: str
+    source: str
+    mode: str
+    exercise_id: Optional[str]
+    created_at: datetime
+    updated_at: datetime
+    status: JobStatus
+    metadata: Dict[str, object] = Field(default_factory=dict)
+
+
+class JobStep(BaseModel):
+    id: str
+    job_id: str
+    name: str
+    status: JobStepStatus
+    message: Optional[str] = None
+    started_at: Optional[datetime] = None
+    finished_at: Optional[datetime] = None
+
+
+class AnalysisSummary(BaseModel):
+    severity: str
+    key_findings: List[Dict[str, object]]
+    mitre_techniques: List[Dict[str, str]]
+
+
+class HostFinding(BaseModel):
+    ip: str
+    role: str
+    findings: List[str]
+
+
+class JobResult(BaseModel):
+    job_id: str
+    status: JobStatus
+    summary: AnalysisSummary
+    hosts: List[HostFinding]
+    raw: Dict[str, object]
+    report_urls: Dict[str, str]
+
+
+class LLMInputBundle(BaseModel):
+    exercise_id: str
+    mode: str
+    time_ranges: Dict[str, "TimeWindow"]  # keys: "baseline","exploit" or just "window"
+    host_summaries_baseline: List["HostSummary"]
+    host_summaries_exploit: List["HostSummary"]
+    hostpair_summaries_baseline: List["HostPairSummary"]
+    hostpair_summaries_exploit: List["HostPairSummary"]
+    change_summaries: List["ChangeSummary"]
+    alerts: List["AlertRecord"]
+

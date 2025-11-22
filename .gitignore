@@ -1,0 +1,35 @@
+# AIPAM .gitignore
+# Backend / Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Databases and large state
+*.db
+*.sqlite
+*.sqlite3
+backend/aipam.db
+
+# Logs and temp
+*.log
+*.tmp
+*.bak
+*.orig
+*~
+
+# Frontend / Node
+node_modules/
+frontend/node_modules/
+
+# OS / editor
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Test cache
+backend/.pytest_cache/
+
