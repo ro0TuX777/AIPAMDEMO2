@@ -33,3 +33,7 @@ frontend/node_modules/
 # Test cache
 backend/.pytest_cache/
 
+# Playwright reports
+frontend/playwright-report/
+frontend/test-results/
+

@@ -32,23 +32,26 @@ export const NewAnalysisPage: React.FC = () => {
   };
 
   return (
-    <div className="space-y-4 max-w-2xl">
+    <div className="space-y-4 max-w-2xl" data-testid="page-new-analysis">
       <h1 className="text-xl font-semibold">New Analysis</h1>
       <div className="border border-slate-800 rounded-lg p-4 space-y-4 text-sm">
         <div className="flex gap-4">
           <button
+            data-testid="tab-upload"
             className={mode === "upload" ? "font-semibold text-emerald-400" : "text-slate-400"}
             onClick={() => setMode("upload")}
           >
             Upload PCAP
           </button>
           <button
+            data-testid="tab-security-onion"
             className={mode === "security_onion" ? "font-semibold text-emerald-400" : "text-slate-400"}
             onClick={() => setMode("security_onion")}
           >
             Security Onion
           </button>
           <button
+            data-testid="tab-arkime"
             className={mode === "arkime" ? "font-semibold text-emerald-400" : "text-slate-400"}
             onClick={() => setMode("arkime")}
           >
@@ -57,12 +60,13 @@ export const NewAnalysisPage: React.FC = () => {
         </div>
 
         {mode === "upload" && (
-          <form className="space-y-4" onSubmit={handleSubmit}>
+          <form className="space-y-4" onSubmit={handleSubmit} data-testid="form-upload">
             <div>
               <label className="block mb-1 text-slate-300">PCAP Files</label>
               <input
                 type="file"
                 multiple
+                data-testid="input-pcap-files"
                 className="text-sm text-slate-300 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-slate-700 file:text-slate-200 hover:file:bg-slate-600"
                 onChange={(e) => setFiles(e.target.files)}
                 required
@@ -71,6 +75,7 @@ export const NewAnalysisPage: React.FC = () => {
             <div>
               <label className="block mb-1 text-slate-300">Mode</label>
               <select
+                data-testid="select-analysis-mode"
                 className="bg-slate-900 border border-slate-700 rounded px-2 py-1 w-full text-slate-200"
                 value={analysisMode}
                 onChange={(e) => setAnalysisMode(e.target.value)}
@@ -84,6 +89,7 @@ export const NewAnalysisPage: React.FC = () => {
 
             <button
               type="submit"
+              data-testid="btn-start-analysis"
               disabled={isSubmitting || !files}
               className="rounded bg-emerald-600 px-4 py-2 text-sm font-medium hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed"
             >
