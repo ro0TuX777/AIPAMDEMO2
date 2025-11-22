@@ -37,3 +37,6 @@ backend/.pytest_cache/
 frontend/playwright-report/
 frontend/test-results/
 
+# Frontend build output
+frontend/dist/
+

@@ -112,8 +112,17 @@ cd frontend
 npm run dev
 ```
 
-By default, Vite will start on `http://localhost:5173`. Configure the frontend
-to point at your backend API base URL as needed (see `frontend/src/api.ts`).
+By default, Vite will start on `http://localhost:5173`.
+
+The frontend talks to the backend at `VITE_API_BASE_URL` (default
+`http://localhost:8000/api/v1`). To point at a different backend, set this
+environment variable when running Vite, for example:
+
+```bash
+cd frontend
+VITE_API_BASE_URL="https://your-env.example.com/api/v1" npm run dev
+```
+
 
 ### Run end-to-end (Playwright) tests
 
