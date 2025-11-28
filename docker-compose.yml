@@ -1,0 +1,101 @@
+version: "3.9"
+
+services:
+  backend:
+    build: ./backend
+    container_name: aipam-backend
+    environment:
+      - DATABASE_URL=sqlite:////data/aipam.db
+      - FILE_STORAGE_PATH=/data/storage
+      - REDIS_URL=redis://redis:6379/0
+      - LLM_ENDPOINT=http://ollama:11434/v1/chat/completions
+      - LLM_MODEL_NAME=llama3.1:8b
+      - LLM_PROVIDER=ollama
+      # TrafficLLM integration (optional - only if trafficllm service is running)
+      - TRAFFICLLM_ENDPOINT=http://trafficllm:8001/v1/chat/completions
+      - USE_TRAFFICLLM_FOR_DETECTION=false
+    volumes:
+      - aipam_data:/data
+    depends_on:
+      - redis
+      - ollama
+    ports:
+      - "8000:8000"
+
+  worker:
+    build: ./backend
+    container_name: aipam-worker
+    command: ["celery", "-A", "app.tasks.celery_app", "worker", "-l", "info"]
+    environment:
+      - DATABASE_URL=sqlite:////data/aipam.db
+      - FILE_STORAGE_PATH=/data/storage
+      - REDIS_URL=redis://redis:6379/0
+      - LLM_ENDPOINT=http://ollama:11434/v1/chat/completions
+      - LLM_MODEL_NAME=llama3.1:8b
+      - LLM_PROVIDER=ollama
+      - C_FORCE_ROOT=true
+      # TrafficLLM integration (optional)
+      - TRAFFICLLM_ENDPOINT=http://trafficllm:8001/v1/chat/completions
+      - USE_TRAFFICLLM_FOR_DETECTION=false
+    volumes:
+      - aipam_data:/data
+    depends_on:
+      - redis
+      - ollama
+
+  frontend:
+    build: ./frontend
+    container_name: aipam-frontend
+    depends_on:
+      - backend
+    ports:
+      - "5173:80"
+
+  redis:
+    image: redis:7-alpine
+    container_name: aipam-redis
+    volumes:
+      - redis_data:/data
+
+  ollama:
+    image: ollama/ollama:latest
+    container_name: aipam-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama
+    restart: unless-stopped
+
+  # TrafficLLM Service (Optional - requires NVIDIA GPU)
+  # To enable: docker-compose --profile trafficllm up
+  # NOTE: This service requires an NVIDIA GPU. Skip if using Apple Silicon.
+  # For Apple Silicon, use the fine-tuning pipeline instead (see finetuning/README.md)
+  trafficllm:
+    build: ./trafficllm
+    container_name: aipam-trafficllm
+    profiles:
+      - trafficllm
+    ports:
+      - "8001:8001"
+    volumes:
+      - trafficllm_models:/app/models
+    environment:
+      - TRAFFICLLM_MODEL_PATH=/app/models/chatglm2-6b
+      - TRAFFICLLM_PEFT_PATH=/app/models/peft
+      - TRAFFICLLM_PORT=8001
+    # Uncomment below for NVIDIA GPU support
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    restart: unless-stopped
+
+volumes:
+  aipam_data:
+  redis_data:
+  ollama_data:
+  trafficllm_models:
+

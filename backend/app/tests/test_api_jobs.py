@@ -262,7 +262,17 @@ def test_get_job_result_requires_completed_status(monkeypatch, tmp_path):
                 "mitre_techniques": [],
             },
             "hosts": [],
-            "raw": {},
+            "raw": {
+                "alerts": [],
+                "llm_analysis_raw": {
+                    "chunks": [],
+                    "summary": {
+                        "severity": "low",
+                        "key_findings": [],
+                        "mitre_techniques": [],
+                    },
+                },
+            },
             "report_urls": {"html": "http://example/report.html", "markdown": ""},
         }
         row = JobResultDB(job_id=job_id, result=result)
@@ -276,6 +286,9 @@ def test_get_job_result_requires_completed_status(monkeypatch, tmp_path):
     assert body["job_id"] == job_id
     assert body["status"] == JobStatus.COMPLETED
     assert body["summary"]["severity"] == "low"
+    # The raw LLM summary should mirror the top-level AnalysisSummary returned.
+    assert body["raw"]["llm_analysis_raw"]["summary"]["severity"] == body["summary"]["severity"]
+    assert body["raw"]["llm_analysis_raw"]["summary"] == body["summary"]
 
 
 def test_create_arkime_job_triggers_pipeline(monkeypatch, tmp_path):

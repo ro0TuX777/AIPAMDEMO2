@@ -1,0 +1,54 @@
+{
+  "model_path": "/app/models/chatglm2-6b",
+  "peft_path": "/app/models/peft",
+  "peft_set": {
+    "NLP": "instruction/checkpoint-8000/",
+    "MTD": "ustc-tfc-2016-detection-packet/checkpoint-10000/",
+    "BND": "iscx-botnet-2014-detection-packet/checkpoint-5000/",
+    "WAD": "csic-2010-detection-packet/checkpoint-6000/",
+    "AAD": "dapt-2020-detection-packet/checkpoint-20000/",
+    "EVD": "iscx-vpn-2016-detection-packet/checkpoint-4000/",
+    "TBD": "iscx-tor-2016-detection-packet/checkpoint-10000/"
+  },
+  "tasks": {
+    "Malware Traffic Detection": "MTD",
+    "Botnet Detection": "BND",
+    "Web Attack Detection": "WAD",
+    "APT Attack Detection": "AAD",
+    "Encrypted VPN Detection": "EVD",
+    "Tor Behavior Detection": "TBD"
+  },
+  "supported_tasks": [
+    {
+      "id": "MTD",
+      "name": "Malware Traffic Detection",
+      "description": "Detect malicious malware-related network traffic"
+    },
+    {
+      "id": "BND",
+      "name": "Botnet Detection",
+      "description": "Identify botnet command and control traffic"
+    },
+    {
+      "id": "WAD",
+      "name": "Web Attack Detection",
+      "description": "Detect web application attacks like SQL injection, XSS"
+    },
+    {
+      "id": "AAD",
+      "name": "APT Attack Detection",
+      "description": "Identify Advanced Persistent Threat activities"
+    },
+    {
+      "id": "EVD",
+      "name": "Encrypted VPN Detection",
+      "description": "Detect and classify encrypted VPN traffic"
+    },
+    {
+      "id": "TBD",
+      "name": "Tor Behavior Detection",
+      "description": "Identify Tor network traffic patterns"
+    }
+  ]
+}
+

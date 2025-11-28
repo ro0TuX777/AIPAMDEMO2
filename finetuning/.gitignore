@@ -1,0 +1,27 @@
+# Large data files - download separately
+data/
+models/
+llama.cpp/
+
+# Training artifacts
+*.safetensors
+*.gguf
+*.bin
+*.pt
+*.pth
+
+# Compressed packages (can be regenerated)
+*.zip
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# MLX cache
+.mlx_cache/
+
+# Test results
+test_results.json
+

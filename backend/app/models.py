@@ -166,9 +166,15 @@ class JobStep(BaseModel):
 
 
 class AnalysisSummary(BaseModel):
+    """High-level analysis summary returned in JobResult.
+
+    Matches the AIPAM_Dev_Package spec where key_findings is a list of
+    short human-readable strings.
+    """
+
     severity: str
-    key_findings: List[Dict[str, object]]
-    mitre_techniques: List[Dict[str, str]]
+    key_findings: List[str]
+    mitre_techniques: List[Dict[str, str]]  # {"id": "T1190", "name": "..."}
 
 
 class HostFinding(BaseModel):
@@ -177,12 +183,54 @@ class HostFinding(BaseModel):
     findings: List[str]
 
 
+# -----------------------
+# LLM output data models
+# -----------------------
+
+
+class MitreTechnique(BaseModel):
+    id: str
+    name: str
+
+
+class AttackChainItem(BaseModel):
+    stage: str
+    description: str
+    evidence: List[str]
+    mitre_techniques: List[MitreTechnique]
+
+
+class HostFindingLLM(BaseModel):
+    ip: str
+    role_in_attack: str
+    summary: str
+    suspicious_behaviors: List[str]
+
+
+class Anomaly(BaseModel):
+    description: str
+    related_hosts: List[str]
+    confidence: float
+    reason: str
+
+
+class LLMOutput(BaseModel):
+    overall_severity: str
+    attack_chain: List[AttackChainItem]
+    host_findings: List[HostFindingLLM]
+    anomalies: List[Anomaly]
+    mitre_techniques_overall: List[MitreTechnique]
+
+
 class JobResult(BaseModel):
     job_id: str
     status: JobStatus
     summary: AnalysisSummary
     hosts: List[HostFinding]
+    # "raw" holds supporting data such as alerts and raw/aggregated LLM JSON.
+    # Shape follows the spec: {"alerts": [...], "llm_analysis_raw": {...}}.
     raw: Dict[str, object]
+    # "html" and "markdown" URLs, typically under /reports/.
     report_urls: Dict[str, str]
 
 

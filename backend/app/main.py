@@ -4,7 +4,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from . import database
-from .db_models import JobDB, JobResultDB, JobStepDB
+from .db_models import JobDB, JobResultDB, JobStepDB, SettingsDB
 from .models import JobStatus, JobStepStatus
 from .schemas import (
     ArkimeJobRequest,
@@ -12,9 +12,13 @@ from .schemas import (
     JobResultResponse,
     JobStatusResponse,
     SecurityOnionJobRequest,
+    Settings,
 )
+from .schemas_effective import EffectiveSettingsResponse
 from .database import get_session
-from .config import FILE_STORAGE_PATH, REPORTS_PATH
+from .llm_client import LLMClient, LLMConfig
+from .settings_runtime import get_effective_settings
+import os
 import shutil
 from pathlib import Path
 
@@ -28,18 +32,29 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Mount reports directory if it exists; tests may import the app before startup
-if Path(REPORTS_PATH).exists():
-    app.mount("/reports", StaticFiles(directory=REPORTS_PATH), name="reports")
+# Mount reports directory if it exists; this uses the same logic as the
+# worker so operators can rely on a single source of truth.
+try:
+    _effective_for_mount = get_effective_settings()
+    if _effective_for_mount.reports_path.exists():
+        app.mount("/reports", StaticFiles(directory=_effective_for_mount.reports_path), name="reports")
+except Exception:
+    # On first boot the DB or settings row may not exist yet; mounting is
+    # best-effort only and will be retried logically on the next process
+    # restart after settings are initialized.
+    pass
 
 
 @app.on_event("startup")
 async def on_startup() -> None:
-    # Ensure storage and reports directories exist
-    base_dir = Path(FILE_STORAGE_PATH)
-    base_dir.mkdir(parents=True, exist_ok=True)
-    Path(REPORTS_PATH).mkdir(parents=True, exist_ok=True)
+    # Ensure storage and reports directories exist, using the same
+    # resolution logic as the worker. Initialize the database first so
+    # the SettingsDB table exists before we attempt to read from it.
     database.init_db()
+    effective = get_effective_settings()
+    base_dir = effective.file_storage_path
+    base_dir.mkdir(parents=True, exist_ok=True)
+    effective.reports_path.mkdir(parents=True, exist_ok=True)
 
 
 @app.get("/healthz")
@@ -54,7 +69,7 @@ async def list_jobs() -> list[JobStatusResponse]:
     with get_session() as session:
         # Sort by created_at desc
         jobs = session.exec(select(JobDB).order_by(JobDB.created_at.desc())).all()
-        
+
         # For each job, fetch steps (this is N+1 but acceptable for low volume v1)
         responses = []
         for job in jobs:
@@ -77,7 +92,7 @@ async def list_jobs() -> list[JobStatusResponse]:
                     error_message=job.error_message,
                 )
             )
-            
+
     return responses
 
 
@@ -100,8 +115,9 @@ async def create_job_upload(
     job_id = str(uuid4())
     now = datetime.now(timezone.utc)
 
-    # Create storage directory for this job
-    job_dir = Path(FILE_STORAGE_PATH) / job_id
+    # Create storage directory for this job, honoring persisted settings when present.
+    effective = get_effective_settings()
+    job_dir = effective.file_storage_path / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
 
     saved_files = []
@@ -134,7 +150,7 @@ async def create_job_upload(
             error_message=None,
         )
         session.add(job)
-        
+
         # Initialize steps
         steps = ["ingest", "parse", "aggregate", "llm_analysis", "report"]
         for step_name in steps:
@@ -145,7 +161,7 @@ async def create_job_upload(
                 status=JobStepStatus.PENDING,
             )
             session.add(step)
-            
+
         session.commit()
 
     # Trigger pipeline (lazy import to avoid circular imports at startup)
@@ -246,6 +262,102 @@ async def create_job_from_arkime(body: ArkimeJobRequest) -> CreateJobResponse:
     run_pipeline.delay(job_id)
 
     return CreateJobResponse(job_id=job_id, status=JobStatus.QUEUED)
+
+
+@app.get("/api/v1/settings", response_model=Settings)
+async def get_settings() -> Settings:
+    with get_session() as session:
+        settings = session.get(SettingsDB, 1)
+        if not settings:
+            # Return empty/default settings – caller can fill and PUT later.
+            return Settings()
+        # Coerce stored dict into Settings schema (extra keys ignored by default)
+        return Settings(**settings.values)
+
+
+@app.put("/api/v1/settings", response_model=Settings)
+async def put_settings(body: Settings) -> Settings:
+    # Basic validation hook: restrict known enum-like fields
+    if body.security_onion_mode and body.security_onion_mode not in {"filesystem", "api"}:
+        raise HTTPException(status_code=400, detail="invalid security_onion_mode")
+
+    with get_session() as session:
+        settings = session.get(SettingsDB, 1)
+        if not settings:
+            settings = SettingsDB(id=1, values={})
+            session.add(settings)
+
+        # Persist only non-null fields; leave others as-is
+        current = dict(settings.values or {})
+        update_data = {k: v for k, v in body.model_dump().items() if v is not None}
+        current.update(update_data)
+        settings.values = current
+        session.add(settings)
+        session.commit()
+        session.refresh(settings)
+
+        return Settings(**settings.values)
+
+
+@app.post("/api/v1/settings/test_llm")
+async def test_llm_connection(body: Settings) -> dict:
+    """Lightweight LLM connectivity check.
+
+    Uses provided settings (if present) or falls back to the same effective
+    resolution logic used by the worker.
+    """
+
+    # Start from effective settings so we respect any persisted configuration.
+    effective = get_effective_settings()
+
+    endpoint = body.llm_endpoint or effective.llm_endpoint
+    model = body.llm_model_name or effective.llm_model_name
+    temperature = body.llm_temperature or effective.llm_temperature
+    max_tokens = body.llm_max_tokens or effective.llm_max_tokens
+
+    config = LLMConfig(
+        endpoint=endpoint,
+        model=model,
+        temperature=temperature,
+        max_tokens=max_tokens,
+    )
+
+    client = LLMClient(config=config)
+
+    try:
+        # Single empty bundle is enough to validate connectivity and auth.
+        await client.analyze_chunk({})
+        return {"ok": True}
+    except Exception as exc:  # pragma: no cover - extreme edge
+        return {"ok": False, "error": str(exc)}
+
+
+
+@app.get("/api/v1/admin/effective_settings", response_model=EffectiveSettingsResponse)
+async def get_effective_settings_admin() -> EffectiveSettingsResponse:
+    """Return the effective runtime settings the worker will use.
+
+    Paths are serialized as strings for easier consumption by operators.
+    """
+
+    eff = get_effective_settings()
+    return EffectiveSettingsResponse(
+        llm_endpoint=eff.llm_endpoint,
+        llm_model_name=eff.llm_model_name,
+        llm_max_tokens=eff.llm_max_tokens,
+        llm_temperature=eff.llm_temperature,
+        file_storage_path=str(eff.file_storage_path),
+        reports_path=str(eff.reports_path),
+        security_onion_mode=eff.security_onion_mode,
+        security_onion_base_pcap_path=str(eff.security_onion_base_pcap_path),
+        security_onion_zeek_log_path=str(eff.security_onion_zeek_log_path),
+        security_onion_suricata_log_path=str(eff.security_onion_suricata_log_path),
+        security_onion_api_url=eff.security_onion_api_url,
+        security_onion_api_token=eff.security_onion_api_token,
+        arkime_api_url=eff.arkime_api_url,
+        arkime_api_username=eff.arkime_api_username,
+        arkime_api_password=eff.arkime_api_password,
+    )
 
 
 @app.get("/api/v1/jobs/{job_id}", response_model=JobStatusResponse)

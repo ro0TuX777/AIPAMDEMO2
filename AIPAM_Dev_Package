@@ -838,6 +838,29 @@ Values saved via PUT /api/v1/settings.
 	•	SECURITY_ONION_BASE_PCAP_PATH
 	•	SECURITY_ONION_ZEEK_LOG_PATH
 	•	SECURITY_ONION_SURICATA_LOG_PATH
+
+8.2 Security Onion Integration Notes (Filesystem-first)
+
+For most deployments **without a Security Onion Pro license**, the recommended and supported pattern is:
+
+- Use Security Onion's local tools (e.g. `so-pcap-export`) on the sensor/manager node to export PCAPs for the time window and sensors of interest.
+- Write those PCAPs into a directory tree that AIPAM can access, and point `SECURITY_ONION_PCAP_PATH` at that root.
+- Run AIPAM in `filesystem` mode and let the SecurityOnionConnector select PCAPs based on time range and sensors.
+
+Example workflow:
+
+1. On Security Onion, export PCAPs:
+   - Use `so-pcap-export` (or similar) to dump PCAPs for e.g. `2025-05-01T10:00:00Z` to `2025-05-01T11:00:00Z`.
+   - Organize them under a shared location, e.g. `/mnt/so-pcap-exports/sensor1/`.
+2. On the AIPAM side, configure:
+   - `SECURITY_ONION_MODE=filesystem`
+   - `SECURITY_ONION_PCAP_PATH=/mnt/so-pcap-exports`
+3. From the AIPAM UI, create a Security Onion job with matching `time_range` and `sensors`.
+
+Notes:
+- The connector filters by **file modification time (mtime)** within the requested time window.
+- API mode (`SECURITY_ONION_MODE=api`) is reserved for future integration with the official Security Onion Connect API (Pro license required) and is optional.
+
 	•	SECURITY_ONION_API_URL
 	•	SECURITY_ONION_API_TOKEN
 	•	ARKIME_API_URL

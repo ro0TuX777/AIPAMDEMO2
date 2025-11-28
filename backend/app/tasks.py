@@ -5,15 +5,16 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List
 
 from celery import Celery
+
 from sqlmodel import Session, select
 
 from .aggregation import AggregatedData, aggregate_host_pairs, aggregate_hosts, diff_change_summaries
 from .connectors import ArkimeConnector, SecurityOnionConnector
-from .config import FILE_STORAGE_PATH, REPORTS_PATH
 from .database import engine
 from .db_models import JobDB, JobResultDB, JobStepDB
-from .llm_client import analyze_chunks
+from .llm_client import LLMClient, LLMConfig, analyze_chunks
 from .models import AnalysisSummary, HostFinding, JobResult, JobStatus, JobStepStatus
+from .settings_runtime import get_effective_settings
 from .reporting import jobresult_to_html, jobresult_to_markdown
 from .parsers import parse_zeek_conn, parse_zeek_events, parse_suricata_eve
 import json
@@ -93,7 +94,8 @@ def run_pipeline(job_id: str) -> None:
             _update_step(session, job_id, "ingest", JobStepStatus.RUNNING)
 
             pcap_paths: list[str] = []
-            file_storage_root = Path(os.getenv("FILE_STORAGE_PATH", "/tmp/aipam_storage"))
+            effective = get_effective_settings()
+            file_storage_root = effective.file_storage_path
             job_dir = file_storage_root / job_id
             job_dir.mkdir(parents=True, exist_ok=True)
 
@@ -104,7 +106,7 @@ def run_pipeline(job_id: str) -> None:
             # Security Onion connector jobs.
             elif job.source == "security_onion":
                 metadata: Dict[str, Any] = job.job_metadata or {}
-                so = SecurityOnionConnector()
+                so = SecurityOnionConnector(settings=effective)
                 time_range = metadata.get("time_range") or {}
                 sensors = metadata.get("sensors") or []
 
@@ -136,7 +138,7 @@ def run_pipeline(job_id: str) -> None:
                 flt = metadata.get("filter") or ""
                 time_range = metadata.get("time_range") or {}
 
-                ark = ArkimeConnector()
+                ark = ArkimeConnector(settings=effective)
 
                 import asyncio
 
@@ -162,7 +164,7 @@ def run_pipeline(job_id: str) -> None:
             alerts = []
 
             # Create a working directory for logs
-            work_dir = Path(os.getenv("FILE_STORAGE_PATH", "/tmp/aipam_storage")) / job_id / "logs"
+            work_dir = effective.file_storage_path / job_id / "logs"
             work_dir.mkdir(exist_ok=True)
 
             for pcap_path in pcap_paths:
@@ -374,7 +376,9 @@ def run_pipeline(job_id: str) -> None:
                 time_ranges = {"window": tw}
                 changes = []
 
-            bundle = LLMInputBundle(
+            from .llm_chunking import aggregate_llm_results, build_llm_chunks
+
+            bundles = build_llm_chunks(
                 exercise_id=job.exercise_id or job.id,
                 mode=job.mode,
                 time_ranges=time_ranges,
@@ -388,49 +392,68 @@ def run_pipeline(job_id: str) -> None:
 
             import asyncio
 
-            llm_results = asyncio.run(analyze_chunks([bundle.model_dump()]))
-            llm_out = llm_results[0] if llm_results else {}
+            # Build LLM client from effective settings so persisted config is honored.
+            llm_config = LLMConfig(
+                endpoint=effective.llm_endpoint,
+                model=effective.llm_model_name,
+                temperature=effective.llm_temperature,
+                max_tokens=effective.llm_max_tokens,
+                timeout_seconds=effective.llm_timeout_seconds,
+            )
+            client = LLMClient(config=llm_config)
+
+            llm_results = asyncio.run(
+                analyze_chunks([b.model_dump() for b in bundles], client=client)
+            )
+            summary, host_findings = aggregate_llm_results(llm_results)
+
             _update_step(session, job_id, "llm_analysis", JobStepStatus.COMPLETED)
 
             # REPORT
             _update_step(session, job_id, "report", JobStepStatus.RUNNING)
-            summary = AnalysisSummary(
-                severity=llm_out.get("overall_severity", "unknown"),
-                key_findings=list(llm_out.get("attack_chain", [])),
-                mitre_techniques=list(llm_out.get("mitre_techniques_overall", [])),
-            )
-            host_findings: List[HostFinding] = []
-            for hf in llm_out.get("host_findings", []):
-                # Map spec fields to our HostFinding model
-                role = hf.get("role_in_attack") or hf.get("role", "unknown")
-                suspicious = hf.get("suspicious_behaviors") or hf.get("findings") or []
-                findings = []
-                summary_text = hf.get("summary")
-                if summary_text:
-                    findings.append(summary_text)
-                findings.extend(list(suspicious))
 
-                host_findings.append(
-                    HostFinding(
-                        ip=hf.get("ip", "unknown"),
-                        role=role,
-                        findings=findings,
-                    )
-                )
+            # summary and host_findings now come from aggregated LLM outputs.
+            # They are already instances of AnalysisSummary / List[HostFinding].
+            # The rest of the report generation logic below continues to use
+            # these objects as before.
+
+            # Existing variables `summary` and `host_findings` are used later
+            # when constructing JobResult and writing reports.
+
+            # Build JobResult.raw following the spec:
+            # {
+            #   "alerts": [... AlertRecord ...],
+            #   "llm_analysis_raw": {
+            #       "chunks": [... per-chunk LLMOutput ...],
+            #       "summary": { ... aggregated high-level LLM view ... },
+            #   }
+            # }
+            # Build JobResult.raw following the spec, ensuring all values are JSON-serializable
+            # so they can be stored safely in a JSON column.
+            raw_payload = {
+                "alerts": [a.model_dump(mode="json") for a in alerts],
+                "llm_analysis_raw": {
+                    # Store plain dicts rather than Pydantic models
+                    "chunks": [r.model_dump(mode="json") for r in llm_results],
+                    "summary": summary.model_dump(mode="json"),
+                },
+            }
 
             job_result = JobResult(
                 job_id=job.id,
                 status=JobStatus.COMPLETED,
                 summary=summary,
                 hosts=host_findings,
-                raw={"llm_chunks": llm_results},
+                raw=raw_payload,
                 report_urls={},
             )
 
-            # Generate and persist reports to disk
+            # Generate and persist reports to disk. Use the same reports_path
+            # resolution as the rest of the worker so that mounting and writes
+            # stay aligned.
             md = jobresult_to_markdown(job_result)
             html = jobresult_to_html(job_result)
-            reports_dir = Path(REPORTS_PATH)
+            reports_dir = effective.reports_path
             reports_dir.mkdir(parents=True, exist_ok=True)
             md_path = reports_dir / f"job-{job.id}.md"
             html_path = reports_dir / f"job-{job.id}.html"
@@ -443,8 +466,12 @@ def run_pipeline(job_id: str) -> None:
             }
             _update_step(session, job_id, "report", JobStepStatus.COMPLETED)
 
-            # Persist JobResult
-            result_row = JobResultDB(job_id=job.id, result=job_result.model_dump())
+            # Persist JobResult. Use mode="json" so enums and datetimes become
+            # JSON-serializable primitives before hitting the JSON column.
+            result_row = JobResultDB(
+                job_id=job.id,
+                result=job_result.model_dump(mode="json"),
+            )
             session.add(result_row)
             _set_job_status(session, job, JobStatus.COMPLETED)
 

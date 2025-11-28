@@ -49,3 +49,14 @@ class JobResultDB(SQLModel, table=True):
         sa_column=Column(JSON, nullable=False),
     )
 
+
+
+class SettingsDB(SQLModel, table=True):
+    """Singleton-style table storing application settings as JSON."""
+
+    id: int = Field(primary_key=True, default=1)
+    values: Dict[str, Any] = Field(
+        default_factory=dict,
+        sa_column=Column(JSON, nullable=False),
+    )
+
