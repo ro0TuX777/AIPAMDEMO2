@@ -234,6 +234,16 @@ class JobResult(BaseModel):
     report_urls: Dict[str, str]
 
 
+class TrafficLLMResult(BaseModel):
+    """TrafficLLM classification results for integration with LLM analysis."""
+    malware_detections: int = 0
+    botnet_detections: int = 0
+    malware_types: List[str] = Field(default_factory=list)
+    botnet_types: List[str] = Field(default_factory=list)
+    # Skip classifications as it contains complex objects (FlowRecord)
+    # The summary (counts + types) is sufficient for the LLM prompt
+
+
 class LLMInputBundle(BaseModel):
     exercise_id: str
     mode: str
@@ -244,4 +254,5 @@ class LLMInputBundle(BaseModel):
     hostpair_summaries_exploit: List["HostPairSummary"]
     change_summaries: List["ChangeSummary"]
     alerts: List["AlertRecord"]
+    trafficllm_results: Optional[TrafficLLMResult] = None
 

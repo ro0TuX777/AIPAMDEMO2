@@ -12,7 +12,7 @@ from .aggregation import AggregatedData, aggregate_host_pairs, aggregate_hosts, 
 from .connectors import ArkimeConnector, SecurityOnionConnector
 from .database import engine
 from .db_models import JobDB, JobResultDB, JobStepDB
-from .llm_client import LLMClient, LLMConfig, analyze_chunks
+from .llm_client import LLMClient, LLMConfig, analyze_chunks, classify_traffic_with_trafficllm
 from .models import AnalysisSummary, HostFinding, JobResult, JobStatus, JobStepStatus
 from .settings_runtime import get_effective_settings
 from .reporting import jobresult_to_html, jobresult_to_markdown
@@ -21,6 +21,8 @@ import json
 import subprocess
 from pathlib import Path
 from .baseline_utils import _split_baseline_exploit
+import asyncio
+from typing import Optional
 
 import shutil
 
@@ -68,6 +70,173 @@ def _set_job_status(session: Session, job: JobDB, status: JobStatus, error: str 
     session.add(job)
     session.commit()
 
+
+async def _classify_flows_with_trafficllm(
+    flows: List[Any],
+    trafficllm_endpoint: str,
+    max_flows: int = 50,
+) -> Dict[str, Any]:
+    """Use TrafficLLM to classify network flows for malware/botnet/VPN/Tor detection.
+
+    Args:
+        flows: List of FlowRecord objects from parsed traffic.
+        trafficllm_endpoint: TrafficLLM API endpoint.
+        max_flows: Maximum number of flows to classify (to avoid overwhelming the API).
+
+    Returns:
+        Dict with classification results and statistics.
+    """
+    from .models import AlertRecord
+    import uuid
+
+    if not flows:
+        return {"classifications": [], "summary": {}, "alerts": []}
+
+    # Sample flows if there are too many
+    sample_flows = flows[:max_flows] if len(flows) > max_flows else flows
+
+    # Create pseudo packet hex from flow data for TrafficLLM
+    # TrafficLLM expects packet hex, so we create a representative string
+    tasks = []
+    for flow in sample_flows:
+        # Create a hex representation of flow metadata
+        flow_hex = _flow_to_hex(flow)
+
+        # Run multiple detection tasks on each flow
+        for task_type in ["MTD", "BND"]:  # Focus on malware and botnet detection
+            tasks.append({
+                "flow": flow,
+                "task": task_type,
+                "packet_hex": flow_hex,
+            })
+
+    # Classify all flows concurrently
+    async def classify_one(task_info: Dict) -> Dict:
+        result = await classify_traffic_with_trafficllm(
+            packet_hex=task_info["packet_hex"],
+            task=task_info["task"],
+            trafficllm_endpoint=trafficllm_endpoint,
+            timeout_seconds=30.0,
+        )
+        return {
+            "flow": task_info["flow"],
+            "task": task_info["task"],
+            "classification": result["classification"],
+            "success": result["success"],
+        }
+
+    results = await asyncio.gather(*[classify_one(t) for t in tasks], return_exceptions=True)
+
+    # Process results
+    classifications = []
+    malware_detected = []
+    botnet_detected = []
+    generated_alerts = []
+
+    for r in results:
+        if isinstance(r, Exception):
+            continue
+
+        classifications.append(r)
+
+        flow = r["flow"]
+        task = r["task"]
+        classification = r["classification"]
+
+        # Check for malware detection
+        if task == "MTD" and classification.lower() not in ["normal", "error", "unknown"]:
+            malware_detected.append({
+                "flow": flow,
+                "malware_type": classification,
+            })
+            # Generate alert using AlertRecord
+            generated_alerts.append(AlertRecord(
+                id=str(uuid.uuid4()),
+                timestamp=flow.start_time,
+                src_ip=flow.src_ip,
+                src_port=flow.src_port,
+                dst_ip=flow.dst_ip,
+                dst_port=flow.dst_port,
+                alert_source="TRAFFICLLM",
+                signature_id=f"TRAFFICLLM-MTD-{classification.upper()}",
+                signature_name=f"TrafficLLM detected potential {classification} malware traffic",
+                severity="high",
+                category="malware",
+            ))
+
+        # Check for botnet detection
+        if task == "BND" and classification.lower() not in ["normal", "error", "unknown"]:
+            botnet_detected.append({
+                "flow": flow,
+                "botnet_type": classification,
+            })
+            generated_alerts.append(AlertRecord(
+                id=str(uuid.uuid4()),
+                timestamp=flow.start_time,
+                src_ip=flow.src_ip,
+                src_port=flow.src_port,
+                dst_ip=flow.dst_ip,
+                dst_port=flow.dst_port,
+                alert_source="TRAFFICLLM",
+                signature_id=f"TRAFFICLLM-BND-{classification.upper()}",
+                signature_name=f"TrafficLLM detected potential {classification} botnet traffic",
+                severity="critical",
+                category="botnet",
+            ))
+
+    return {
+        "classifications": classifications,
+        "summary": {
+            "total_flows_analyzed": len(sample_flows),
+            "malware_detections": len(malware_detected),
+            "botnet_detections": len(botnet_detected),
+            "malware_types": list(set(m["malware_type"] for m in malware_detected)),
+            "botnet_types": list(set(b["botnet_type"] for b in botnet_detected)),
+        },
+        "alerts": generated_alerts,
+    }
+
+
+def _flow_to_hex(flow: Any) -> str:
+    """Convert flow record to a hex string for TrafficLLM classification.
+
+    This creates a pseudo-packet representation of the flow metadata.
+    """
+    # Build a representative hex string from flow metadata
+    parts = []
+
+    # Add IP header version and protocol
+    # FlowRecord uses transport_proto, not proto
+    proto = getattr(flow, 'transport_proto', getattr(flow, 'proto', 'unknown'))
+    if proto.lower() == "tcp":
+        parts.append("06")  # TCP protocol number
+    elif proto.lower() == "udp":
+        parts.append("11")  # UDP protocol number
+    else:
+        parts.append("00")
+
+    # Add port info as hex
+    if flow.src_port:
+        parts.append(f"{flow.src_port:04x}")
+    if flow.dst_port:
+        parts.append(f"{flow.dst_port:04x}")
+
+    # Add IP addresses as hex
+    for ip in [flow.src_ip, flow.dst_ip]:
+        try:
+            octets = ip.split(".")
+            for octet in octets:
+                parts.append(f"{int(octet):02x}")
+        except (ValueError, AttributeError):
+            parts.append("00000000")
+
+    # Add bytes transferred info
+    if hasattr(flow, 'bytes_sent') and flow.bytes_sent:
+        parts.append(f"{min(flow.bytes_sent, 0xFFFF):04x}")
+    if hasattr(flow, 'bytes_received') and flow.bytes_received:
+        parts.append(f"{min(flow.bytes_received, 0xFFFF):04x}")
+
+    return " ".join(parts)
 
 
 from .baseline_utils import _split_baseline_exploit
@@ -121,8 +290,6 @@ def run_pipeline(job_id: str) -> None:
                             continue
                 else:
                     # API mode: fetch PCAP bytes and write them to files.
-                    import asyncio
-
                     async def _fetch_so_pcaps() -> list[bytes]:
                         return await so.fetch_pcaps_via_api(time_range=time_range, sensors=sensors)
 
@@ -139,8 +306,6 @@ def run_pipeline(job_id: str) -> None:
                 time_range = metadata.get("time_range") or {}
 
                 ark = ArkimeConnector(settings=effective)
-
-                import asyncio
 
                 async def _export_arkime() -> bytes:
                     return await ark.export_pcap(flt=flt, time_range=time_range)
@@ -355,10 +520,42 @@ def run_pipeline(job_id: str) -> None:
 
             _update_step(session, job_id, "aggregate", JobStepStatus.COMPLETED)
 
+            # TRAFFICLLM CLASSIFICATION (optional, if enabled)
+            trafficllm_endpoint = os.getenv("TRAFFICLLM_ENDPOINT")
+            trafficllm_enabled = os.getenv("USE_TRAFFICLLM_FOR_DETECTION", "false").lower() == "true"
+            trafficllm_result = None  # Initialize to None
+
+            if trafficllm_endpoint and trafficllm_enabled and flows:
+                try:
+                    trafficllm_result = asyncio.run(
+                        _classify_flows_with_trafficllm(
+                            flows=flows,
+                            trafficllm_endpoint=trafficllm_endpoint,
+                            max_flows=100,  # Classify up to 100 flows
+                        )
+                    )
+                    # Add TrafficLLM-generated alerts to the alerts list
+                    trafficllm_alerts = trafficllm_result.get("alerts", [])
+                    alerts.extend(trafficllm_alerts)
+
+                    # Log classification summary with malware types
+                    tllm_summary = trafficllm_result.get("summary", {})
+                    malware_types_detected = tllm_summary.get("malware_types", [])
+                    botnet_types_detected = tllm_summary.get("botnet_types", [])
+                    if tllm_summary.get("malware_detections", 0) > 0 or tllm_summary.get("botnet_detections", 0) > 0:
+                        print(f"TrafficLLM detected: {tllm_summary.get('malware_detections', 0)} malware, "
+                              f"{tllm_summary.get('botnet_detections', 0)} botnet flows")
+                        print(f"Malware types: {malware_types_detected}")
+                        print(f"Botnet types: {botnet_types_detected}")
+                except Exception as e:
+                    # Log but don't fail the pipeline if TrafficLLM is unavailable
+                    print(f"TrafficLLM classification failed (continuing without): {e}")
+                    trafficllm_result = None
+
             # LLM ANALYSIS
             _update_step(session, job_id, "llm_analysis", JobStepStatus.RUNNING)
 
-            from .models import LLMInputBundle, TimeWindow
+            from .models import LLMInputBundle, TimeWindow, TrafficLLMResult
 
             # Materialize TimeWindow objects from ranges.
             time_ranges: Dict[str, TimeWindow] = {}
@@ -378,6 +575,17 @@ def run_pipeline(job_id: str) -> None:
 
             from .llm_chunking import aggregate_llm_results, build_llm_chunks
 
+            # Build TrafficLLMResult if we have results
+            trafficllm_data = None
+            if trafficllm_result:
+                tllm_summary = trafficllm_result.get("summary", {})
+                trafficllm_data = TrafficLLMResult(
+                    malware_detections=tllm_summary.get("malware_detections", 0),
+                    botnet_detections=tllm_summary.get("botnet_detections", 0),
+                    malware_types=tllm_summary.get("malware_types", []),
+                    botnet_types=tllm_summary.get("botnet_types", []),
+                )
+
             bundles = build_llm_chunks(
                 exercise_id=job.exercise_id or job.id,
                 mode=job.mode,
@@ -388,9 +596,8 @@ def run_pipeline(job_id: str) -> None:
                 hostpair_summaries_exploit=host_pair_summaries_exploit,
                 change_summaries=changes,
                 alerts=alerts,
+                trafficllm_results=trafficllm_data,
             )
-
-            import asyncio
 
             # Build LLM client from effective settings so persisted config is honored.
             llm_config = LLMConfig(
@@ -405,7 +612,12 @@ def run_pipeline(job_id: str) -> None:
             llm_results = asyncio.run(
                 analyze_chunks([b.model_dump() for b in bundles], client=client)
             )
-            summary, host_findings = aggregate_llm_results(llm_results)
+            # Pass trafficllm_data and alerts to inject malware findings if LLM missed them
+            summary, host_findings = aggregate_llm_results(
+                llm_results,
+                trafficllm_results=trafficllm_data,
+                alerts=alerts,
+            )
 
             _update_step(session, job_id, "llm_analysis", JobStepStatus.COMPLETED)
 

@@ -1,6 +1,6 @@
 {
-  "model_path": "/app/models/chatglm2-6b",
-  "peft_path": "/app/models/peft",
+  "model_path": "./models/chatglm2-6b",
+  "peft_path": "./models/peft",
   "peft_set": {
     "NLP": "instruction/checkpoint-8000/",
     "MTD": "ustc-tfc-2016-detection-packet/checkpoint-10000/",

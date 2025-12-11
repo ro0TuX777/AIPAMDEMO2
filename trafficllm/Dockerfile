@@ -1,7 +1,7 @@
 # TrafficLLM Service Dockerfile
 # Based on https://github.com/ZGC-LLM-Safety/TrafficLLM
 
-FROM nvidia/cuda:11.8-devel-ubuntu22.04
+FROM nvidia/cuda:12.1.0-devel-ubuntu22.04
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
@@ -24,7 +24,7 @@ RUN update-alternatives --install /usr/bin/python python /usr/bin/python3.10 1 &
 WORKDIR /app
 
 # Install PyTorch with CUDA support
-RUN pip install --no-cache-dir torch==2.0.1 torchvision==0.15.2 --index-url https://download.pytorch.org/whl/cu118
+RUN pip install --no-cache-dir torch==2.1.0 torchvision==0.16.0 --index-url https://download.pytorch.org/whl/cu121
 
 # Install TrafficLLM dependencies
 RUN pip install --no-cache-dir \
@@ -38,7 +38,9 @@ RUN pip install --no-cache-dir \
     fastapi \
     uvicorn \
     httpx \
-    pydantic
+    pydantic \
+    scipy \
+    numpy
 
 # Clone TrafficLLM repository
 RUN git clone https://github.com/ZGC-LLM-Safety/TrafficLLM.git /app/trafficllm

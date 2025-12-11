@@ -13,7 +13,9 @@ from .models import (
     LLMInputBundle,
     LLMOutput,
     TimeWindow,
+    TrafficLLMResult,
 )
+from typing import Optional
 
 
 # Weights used to turn ChangeSummary + alerts into a coarse anomaly score,
@@ -132,6 +134,7 @@ def _make_bundle(
     hostpair_summaries_exploit: List[HostPairSummary],
     change_summaries: List[ChangeSummary],
     alerts: List[AlertRecord],
+    trafficllm_results: Optional[TrafficLLMResult] = None,
 ) -> LLMInputBundle:
     return LLMInputBundle(
         exercise_id=exercise_id,
@@ -143,6 +146,7 @@ def _make_bundle(
         hostpair_summaries_exploit=hostpair_summaries_exploit,
         change_summaries=change_summaries,
         alerts=alerts,
+        trafficllm_results=trafficllm_results,
     )
 
 
@@ -157,6 +161,7 @@ def build_llm_chunks(
     hostpair_summaries_exploit: List[HostPairSummary],
     change_summaries: List[ChangeSummary],
     alerts: List[AlertRecord],
+    trafficllm_results: Optional[TrafficLLMResult] = None,
     max_hosts_per_chunk: int = 3,
 ) -> List[LLMInputBundle]:
     """Build one or more LLMInputBundle chunks based on anomaly scores.
@@ -179,6 +184,7 @@ def build_llm_chunks(
                 hostpair_summaries_exploit=hostpair_summaries_exploit,
                 change_summaries=change_summaries,
                 alerts=alerts,
+                trafficllm_results=trafficllm_results,
             )
         ]
 
@@ -195,6 +201,7 @@ def build_llm_chunks(
                 hostpair_summaries_exploit=hostpair_summaries_exploit,
                 change_summaries=change_summaries,
                 alerts=alerts,
+                trafficllm_results=trafficllm_results,
             )
         ]
 
@@ -246,6 +253,7 @@ def build_llm_chunks(
                 hostpair_summaries_exploit=hps_e,
                 change_summaries=chgs,
                 alerts=chunk_alerts,
+                trafficllm_results=trafficllm_results,
             )
         )
 
@@ -254,8 +262,13 @@ def build_llm_chunks(
 
 def aggregate_llm_results(
     llm_outputs: List[LLMOutput],
+    trafficllm_results: Optional[TrafficLLMResult] = None,
+    alerts: Optional[List[AlertRecord]] = None,
 ) -> tuple[AnalysisSummary, List[HostFinding]]:
-    """Aggregate multiple LLM chunk outputs into a single summary + host list."""
+    """Aggregate multiple LLM chunk outputs into a single summary + host list.
+
+    Also injects TrafficLLM malware/botnet findings if the LLM missed them.
+    """
 
     if not llm_outputs:
         return AnalysisSummary(severity="unknown", key_findings=[], mitre_techniques=[]), []
@@ -301,6 +314,46 @@ def aggregate_llm_results(
             if tid not in mitre_by_id:
                 mitre_by_id[tid] = {"id": tid, "name": tech.name}
 
+    # Inject TrafficLLM findings if the LLM missed the specific malware names
+    trafficllm_findings: List[str] = []
+    if trafficllm_results:
+        malware_types = trafficllm_results.malware_types or []
+        botnet_types = trafficllm_results.botnet_types or []
+        malware_count = trafficllm_results.malware_detections
+        botnet_count = trafficllm_results.botnet_detections
+
+        if malware_types:
+            malware_list = ', '.join(malware_types)
+            trafficllm_findings.append(
+                f"malware_detected: TrafficLLM detected {malware_count} flows containing "
+                f"malware traffic ({malware_list})."
+            )
+        if botnet_types:
+            botnet_list = ', '.join(botnet_types)
+            trafficllm_findings.append(
+                f"botnet_detected: TrafficLLM detected {botnet_count} flows containing "
+                f"botnet traffic ({botnet_list})."
+            )
+
+    # Check if any TrafficLLM malware names appear in existing findings
+    # If not, prepend the TrafficLLM findings
+    if trafficllm_findings:
+        existing_text = ' '.join(key_findings).lower()
+        has_malware_names = any(
+            mtype.lower() in existing_text
+            for mtype in (trafficllm_results.malware_types or []) + (trafficllm_results.botnet_types or [])
+        )
+        if not has_malware_names:
+            # Prepend TrafficLLM findings at the top
+            key_findings = trafficllm_findings + key_findings
+
+    # Add MITRE techniques for malware if not present
+    if trafficllm_results and trafficllm_results.malware_detections > 0:
+        if "T1204" not in mitre_by_id:
+            mitre_by_id["T1204"] = {"id": "T1204", "name": "User Execution: Malicious File"}
+        if "T1059" not in mitre_by_id:
+            mitre_by_id["T1059"] = {"id": "T1059", "name": "Command and Scripting Interpreter"}
+
     summary = AnalysisSummary(
         severity=best_sev,
         key_findings=key_findings,
@@ -332,6 +385,23 @@ def aggregate_llm_results(
             for s in suspicious:
                 if s not in entry["findings"]:
                     entry["findings"].append(s)
+
+    # Inject TrafficLLM malware findings into host findings if we have alerts
+    if alerts and trafficllm_results:
+        malware_types = trafficllm_results.malware_types or []
+        for alert in alerts:
+            if alert.alert_source == "TRAFFICLLM" and alert.category == "malware":
+                src_ip = alert.src_ip
+                if src_ip and src_ip in host_map:
+                    # Extract malware type from signature
+                    sig_name = alert.signature_name or ""
+                    finding = f"TrafficLLM: {sig_name}"
+                    if finding not in host_map[src_ip]["findings"]:
+                        host_map[src_ip]["findings"].insert(0, finding)
+                    # Mark as attacker if not already
+                    if host_map[src_ip]["role_rank"] < _ROLE_PRIORITY.get("attacker", 4):
+                        host_map[src_ip]["role"] = "attacker"
+                        host_map[src_ip]["role_rank"] = _ROLE_PRIORITY.get("attacker", 4)
 
     host_findings_models = [
         HostFinding(ip=ip, role=data["role"], findings=data["findings"])

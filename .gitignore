@@ -40,3 +40,38 @@ frontend/test-results/
 # Frontend build output
 frontend/dist/
 
+# Large model files and weights
+trafficllm/models/
+trafficllm/venv/
+*.bin
+*.safetensors
+*.gguf
+*.pt
+*.pth
+*.ckpt
+
+# Training data and checkpoints (too large for git)
+finetuning/aipam_gpu_training/venv/
+finetuning/aipam_gpu_training/checkpoints/
+finetuning/aipam_gpu_training/data/
+finetuning/aipam_gpu_training/logs/
+finetuning/aipam_gpu_training/aipam-llama-lora/
+finetuning/aipam_gpu_training/aipam-llama-merged/
+finetuning/aipam_gpu_training/malware-traffic-indicators/
+finetuning/trafficllm_datasets/
+finetuning/trafficllm_training/pcaps/
+finetuning/trafficllm_training/cache/
+finetuning/trafficllm_training/*.gif
+
+# Duplicate/cloned TrafficLLM repos (external dependencies)
+TrafficLLM/
+TrafficLLM_full/
+TrafficLLM_repo/
+
+# PCAP files (can be re-downloaded)
+*.pcap
+*.pcapng
+
+# Zip files
+*.zip
+

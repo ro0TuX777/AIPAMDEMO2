@@ -69,6 +69,26 @@ export interface EffectiveSettingsResponse {
     arkime_api_password?: string | null;
 }
 
+// Chat API types
+export interface ChatCitation {
+    type: string;
+    id?: string;
+    snippet: string;
+}
+
+export interface ChatRequest {
+    message: string;
+    conversation_id?: string;
+    context_hint?: string;
+}
+
+export interface ChatResponse {
+    response: string;
+    citations: ChatCitation[];
+    conversation_id: string;
+    confidence?: number;
+}
+
 
 const API_BASE = (import.meta as any).env.VITE_API_BASE_URL?.replace(/\/$/, "") || "http://localhost:8000/api/v1";
 
@@ -173,6 +193,16 @@ export const api = {
     async getEffectiveSettings(): Promise<EffectiveSettingsResponse> {
         const res = await fetch(`${API_BASE}/admin/effective_settings`);
         if (!res.ok) throw new Error("Failed to fetch effective settings");
+        return res.json();
+    },
+
+    async chatWithJob(jobId: string, request: ChatRequest): Promise<ChatResponse> {
+        const res = await fetch(`${API_BASE}/jobs/${jobId}/chat`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(request),
+        });
+        if (!res.ok) throw new Error("Failed to send chat message");
         return res.json();
     },
 };

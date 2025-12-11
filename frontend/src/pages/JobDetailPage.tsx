@@ -1,8 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { api, JobStatusResponse, JobResultResponse } from "../api";
+import { ChatPanel } from "../components/ChatPanel";
 
-type JobDetailTabId = "overview" | "hosts" | "raw" | "report";
+type JobDetailTabId = "overview" | "hosts" | "raw" | "report" | "chat";
 
 
 export const JobDetailPage: React.FC = () => {
@@ -11,6 +12,13 @@ export const JobDetailPage: React.FC = () => {
   const [result, setResult] = useState<JobResultResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<JobDetailTabId>("overview");
+  const [chatContext, setChatContext] = useState<string | undefined>();
+
+  // Helper to open chat with a specific context
+  const askAbout = (context: string) => {
+    setChatContext(context);
+    setActiveTab("chat");
+  };
 
   useEffect(() => {
     if (!jobId) return;
@@ -144,6 +152,18 @@ export const JobDetailPage: React.FC = () => {
             >
               Report
             </button>
+            <button
+              type="button"
+              data-testid="tab-chat"
+              onClick={() => { setChatContext(undefined); setActiveTab("chat"); }}
+              className={
+                activeTab === "chat"
+                  ? "border-b-2 border-emerald-400 text-emerald-400 pb-2"
+                  : "border-b-2 border-transparent text-slate-400 hover:text-slate-200 pb-2"
+              }
+            >
+              💬 Ask Questions
+            </button>
           </div>
 
           {/* Tab Panels */}
@@ -170,9 +190,19 @@ export const JobDetailPage: React.FC = () => {
                   </div>
                   <div className="col-span-2 space-y-2">
                     <div className="text-sm text-slate-400">Key Findings</div>
-                    <ul className="list-disc list-inside text-sm text-slate-300 space-y-1">
+                    <ul className="text-sm text-slate-300 space-y-2">
                       {result.summary.key_findings.map((finding: any, i: number) => (
-                        <li key={i}>{String(finding)}</li>
+                        <li key={i} className="flex items-start gap-2 group">
+                          <span className="text-slate-500">•</span>
+                          <span className="flex-1">{String(finding)}</span>
+                          <button
+                            onClick={() => askAbout(`Tell me more about: ${String(finding)}`)}
+                            className="opacity-0 group-hover:opacity-100 text-xs text-blue-400 hover:text-blue-300 transition-opacity"
+                            title="Ask about this finding"
+                          >
+                            Ask →
+                          </button>
+                        </li>
                       ))}
                       {result.summary.key_findings.length === 0 && (
                         <li>No key findings reported.</li>
@@ -217,11 +247,12 @@ export const JobDetailPage: React.FC = () => {
                         <th className="py-2 pr-4">IP</th>
                         <th className="py-2 pr-4">Role</th>
                         <th className="py-2 pr-4">Findings</th>
+                        <th className="py-2 pr-4"></th>
                       </tr>
                     </thead>
                     <tbody>
                       {result.hosts.map((host: any, idx: number) => (
-                        <tr key={idx} className="border-b border-slate-800/60 align-top">
+                        <tr key={idx} className="border-b border-slate-800/60 align-top group">
                           <td className="py-2 pr-4 font-mono text-slate-200">{host.ip}</td>
                           <td className="py-2 pr-4 text-slate-300">{host.role}</td>
                           <td className="py-2 pr-4 text-slate-300">
@@ -230,6 +261,15 @@ export const JobDetailPage: React.FC = () => {
                                 <li key={i}>{f}</li>
                               ))}
                             </ul>
+                          </td>
+                          <td className="py-2 pr-4">
+                            <button
+                              onClick={() => askAbout(`What can you tell me about host ${host.ip}? Role: ${host.role}`)}
+                              className="opacity-0 group-hover:opacity-100 text-xs text-blue-400 hover:text-blue-300 transition-opacity whitespace-nowrap"
+                              title="Ask about this host"
+                            >
+                              Ask about host →
+                            </button>
                           </td>
                         </tr>
                       ))}
@@ -293,6 +333,16 @@ export const JobDetailPage: React.FC = () => {
                   )}
                 </div>
               )}
+            </div>
+          )}
+
+          {activeTab === "chat" && jobId && (
+            <div data-testid="tab-panel-chat" className="h-[600px]">
+              <ChatPanel
+                jobId={jobId}
+                initialContext={chatContext}
+                onClose={() => setActiveTab("overview")}
+              />
             </div>
           )}
         </div>

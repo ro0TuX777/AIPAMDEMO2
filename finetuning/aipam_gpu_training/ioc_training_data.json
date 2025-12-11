@@ -1,0 +1,366 @@
+[
+  {
+    "instruction": "What is Vidar malware and what MITRE ATT&CK techniques does it use?",
+    "output": "Vidar - Vidar is an information stealer that collects browser data, cryptocurrency wallets, and system information.\n\nMITRE ATT&CK Techniques: T1055, T1082, T1083, T1005\nPrimary Tactic: Collection\n\nDetection: Monitor for suspicious process behavior, network connections to known C2 infrastructure, and credential access attempts.\n\nMitigation: Implement application whitelisting, enable credential protection, and block known malicious domains."
+  },
+  {
+    "instruction": "What are the file indicators (hashes) associated with Vidar?",
+    "output": "Known SHA256 hashes for Vidar samples:\n\n- 1c8860b24267cf5ed4bb21db453bc3288c4e9339eeb5d85500847fe2e4dffd73\n- aeb961f463c0c6a71ca565eedd5586689bbfc4c701d51bb283b6637455df118a\n- cd002e23393562cdca1c768938a5b83a21c81759a90616821001815a55dc90c0\n\nThese hashes can be used for threat hunting and blocking. Add them to your EDR/AV blocklists and search historical logs for matches."
+  },
+  {
+    "instruction": "What network indicators should I look for to detect Vidar activity?",
+    "output": "Network indicators for Vidar:\n\n- hxxps[:]//check.djtvx[.]online/gkcxv.google?u=2e631b21-27da-4534-82b2-bc424dd0abc7\n- hxxps[:]//check.djtvx[.]online/gkcxv.google?u=2e631b21-27da-4534-82b2-bc424dd0abc7\n- hxxps[:]//u1.galvanizegestationludicrous[.]shop/sh.mp4\n- hxxps[:]//bitlunch.smogturfprance[.]shop/e7f2-4033-awjxs.captcha\n- hxxps[:]//www.mediafire[.]com/file_premium/pzse74za05xo46l/nrjjpi.mp4/file\n\nDetection recommendations:\n- Add these to DNS sinkhole/blocklist\n- Create Suricata/Snort rules for these domains\n- Monitor for beaconing patterns to these IPs\n- Check proxy logs for connections to these URLs"
+  },
+  {
+    "instruction": "How does Vidar infect systems? What is the infection chain?",
+    "output": "Infection chain for Vidar:\n\naeb961f463c0c6a71ca565eedd5586689bbfc4c701d51bb283b6637455df118a\n- File size: 4,268,345 bytes\n- File type: ASCII text, with very long lines, with CRLF line terminators\n- File location: hxxps[:]//bitlunch.smogturfprance[.]shop/e7f2-4033-awjxs.captcha\n- File description: File retrieved by PowerShell command\n\nMITRE ATT&CK Mapping:\n- Initial Access: T1566 (Phishing)\n- Execution: T1204 (User Execution)\n\nPrevention:\n- User awareness training on phishing\n- Block macro execution in Office documents\n- Implement email attachment filtering"
+  },
+  {
+    "instruction": "What is Clickfix malware and what MITRE ATT&CK techniques does it use?",
+    "output": "Clickfix - ClickFix uses fake CAPTCHA pages to trick users into running malicious PowerShell commands.\n\nMITRE ATT&CK Techniques: T1204.002, T1059.001, T1027\nPrimary Tactic: Execution\n\nDetection: Monitor for suspicious process behavior, network connections to known C2 infrastructure, and credential access attempts.\n\nMitigation: Implement application whitelisting, enable credential protection, and block known malicious domains."
+  },
+  {
+    "instruction": "What are the file indicators (hashes) associated with Clickfix?",
+    "output": "Known SHA256 hashes for Clickfix samples:\n\n- 1c8860b24267cf5ed4bb21db453bc3288c4e9339eeb5d85500847fe2e4dffd73\n- aeb961f463c0c6a71ca565eedd5586689bbfc4c701d51bb283b6637455df118a\n- cd002e23393562cdca1c768938a5b83a21c81759a90616821001815a55dc90c0\n\nThese hashes can be used for threat hunting and blocking. Add them to your EDR/AV blocklists and search historical logs for matches."
+  },
+  {
+    "instruction": "What network indicators should I look for to detect Clickfix activity?",
+    "output": "Network indicators for Clickfix:\n\n- hxxps[:]//check.djtvx[.]online/gkcxv.google?u=2e631b21-27da-4534-82b2-bc424dd0abc7\n- hxxps[:]//check.djtvx[.]online/gkcxv.google?u=2e631b21-27da-4534-82b2-bc424dd0abc7\n- hxxps[:]//u1.galvanizegestationludicrous[.]shop/sh.mp4\n- hxxps[:]//bitlunch.smogturfprance[.]shop/e7f2-4033-awjxs.captcha\n- hxxps[:]//www.mediafire[.]com/file_premium/pzse74za05xo46l/nrjjpi.mp4/file\n\nDetection recommendations:\n- Add these to DNS sinkhole/blocklist\n- Create Suricata/Snort rules for these domains\n- Monitor for beaconing patterns to these IPs\n- Check proxy logs for connections to these URLs"
+  },
+  {
+    "instruction": "How does Clickfix infect systems? What is the infection chain?",
+    "output": "Infection chain for Clickfix:\n\naeb961f463c0c6a71ca565eedd5586689bbfc4c701d51bb283b6637455df118a\n- File size: 4,268,345 bytes\n- File type: ASCII text, with very long lines, with CRLF line terminators\n- File location: hxxps[:]//bitlunch.smogturfprance[.]shop/e7f2-4033-awjxs.captcha\n- File description: File retrieved by PowerShell command\n\nMITRE ATT&CK Mapping:\n- Initial Access: T1566 (Phishing)\n- Execution: T1204 (User Execution)\n\nPrevention:\n- User awareness training on phishing\n- Block macro execution in Office documents\n- Implement email attachment filtering"
+  },
+  {
+    "instruction": "What is Clearfake malware and what MITRE ATT&CK techniques does it use?",
+    "output": "Clearfake - ClearFake injects fake browser update prompts into compromised websites.\n\nMITRE ATT&CK Techniques: T1189, T1204.002, T1059.001\nPrimary Tactic: Initial Access\n\nDetection: Monitor for suspicious process behavior, network connections to known C2 infrastructure, and credential access attempts.\n\nMitigation: Implement application whitelisting, enable credential protection, and block known malicious domains."
+  },
+  {
+    "instruction": "What are the file indicators (hashes) associated with Clearfake?",
+    "output": "Known SHA256 hashes for Clearfake samples:\n\n- 1c8860b24267cf5ed4bb21db453bc3288c4e9339eeb5d85500847fe2e4dffd73\n- aeb961f463c0c6a71ca565eedd5586689bbfc4c701d51bb283b6637455df118a\n- cd002e23393562cdca1c768938a5b83a21c81759a90616821001815a55dc90c0\n\nThese hashes can be used for threat hunting and blocking. Add them to your EDR/AV blocklists and search historical logs for matches."
+  },
+  {
+    "instruction": "What network indicators should I look for to detect Clearfake activity?",
+    "output": "Network indicators for Clearfake:\n\n- hxxps[:]//check.djtvx[.]online/gkcxv.google?u=2e631b21-27da-4534-82b2-bc424dd0abc7\n- hxxps[:]//check.djtvx[.]online/gkcxv.google?u=2e631b21-27da-4534-82b2-bc424dd0abc7\n- hxxps[:]//u1.galvanizegestationludicrous[.]shop/sh.mp4\n- hxxps[:]//bitlunch.smogturfprance[.]shop/e7f2-4033-awjxs.captcha\n- hxxps[:]//www.mediafire[.]com/file_premium/pzse74za05xo46l/nrjjpi.mp4/file\n\nDetection recommendations:\n- Add these to DNS sinkhole/blocklist\n- Create Suricata/Snort rules for these domains\n- Monitor for beaconing patterns to these IPs\n- Check proxy logs for connections to these URLs"
+  },
+  {
+    "instruction": "How does Clearfake infect systems? What is the infection chain?",
+    "output": "Infection chain for Clearfake:\n\naeb961f463c0c6a71ca565eedd5586689bbfc4c701d51bb283b6637455df118a\n- File size: 4,268,345 bytes\n- File type: ASCII text, with very long lines, with CRLF line terminators\n- File location: hxxps[:]//bitlunch.smogturfprance[.]shop/e7f2-4033-awjxs.captcha\n- File description: File retrieved by PowerShell command\n\nMITRE ATT&CK Mapping:\n- Initial Access: T1566 (Phishing)\n- Execution: T1204 (User Execution)\n\nPrevention:\n- User awareness training on phishing\n- Block macro execution in Office documents\n- Implement email attachment filtering"
+  },
+  {
+    "instruction": "What is Lumma Stealer malware and what MITRE ATT&CK techniques does it use?",
+    "output": "Lumma Stealer - Lumma Stealer targets browser data, crypto wallets, and 2FA extensions, often via fake software.\n\nMITRE ATT&CK Techniques: T1555, T1539, T1005, T1082\nPrimary Tactic: Credential Access\n\nDetection: Monitor for suspicious process behavior, network connections to known C2 infrastructure, and credential access attempts.\n\nMitigation: Implement application whitelisting, enable credential protection, and block known malicious domains."
+  },
+  {
+    "instruction": "What are the file indicators (hashes) associated with Lumma Stealer?",
+    "output": "Known SHA256 hashes for Lumma Stealer samples:\n\n- 1c8860b24267cf5ed4bb21db453bc3288c4e9339eeb5d85500847fe2e4dffd73\n- aeb961f463c0c6a71ca565eedd5586689bbfc4c701d51bb283b6637455df118a\n- cd002e23393562cdca1c768938a5b83a21c81759a90616821001815a55dc90c0\n\nThese hashes can be used for threat hunting and blocking. Add them to your EDR/AV blocklists and search historical logs for matches."
+  },
+  {
+    "instruction": "What network indicators should I look for to detect Lumma Stealer activity?",
+    "output": "Network indicators for Lumma Stealer:\n\n- hxxps[:]//check.djtvx[.]online/gkcxv.google?u=2e631b21-27da-4534-82b2-bc424dd0abc7\n- hxxps[:]//check.djtvx[.]online/gkcxv.google?u=2e631b21-27da-4534-82b2-bc424dd0abc7\n- hxxps[:]//u1.galvanizegestationludicrous[.]shop/sh.mp4\n- hxxps[:]//bitlunch.smogturfprance[.]shop/e7f2-4033-awjxs.captcha\n- hxxps[:]//www.mediafire[.]com/file_premium/pzse74za05xo46l/nrjjpi.mp4/file\n\nDetection recommendations:\n- Add these to DNS sinkhole/blocklist\n- Create Suricata/Snort rules for these domains\n- Monitor for beaconing patterns to these IPs\n- Check proxy logs for connections to these URLs"
+  },
+  {
+    "instruction": "How does Lumma Stealer infect systems? What is the infection chain?",
+    "output": "Infection chain for Lumma Stealer:\n\naeb961f463c0c6a71ca565eedd5586689bbfc4c701d51bb283b6637455df118a\n- File size: 4,268,345 bytes\n- File type: ASCII text, with very long lines, with CRLF line terminators\n- File location: hxxps[:]//bitlunch.smogturfprance[.]shop/e7f2-4033-awjxs.captcha\n- File description: File retrieved by PowerShell command\n\nMITRE ATT&CK Mapping:\n- Initial Access: T1566 (Phishing)\n- Execution: T1204 (User Execution)\n\nPrevention:\n- User awareness training on phishing\n- Block macro execution in Office documents\n- Implement email attachment filtering"
+  },
+  {
+    "instruction": "What is Venom Rat malware and what MITRE ATT&CK techniques does it use?",
+    "output": "Venom Rat - Venom RAT is a remote access trojan providing persistent backdoor access with keylogging and screen capture.\n\nMITRE ATT&CK Techniques: T1219, T1071, T1105\nPrimary Tactic: Command and Control\n\nDetection: Monitor for suspicious process behavior, network connections to known C2 infrastructure, and credential access attempts.\n\nMitigation: Implement application whitelisting, enable credential protection, and block known malicious domains."
+  },
+  {
+    "instruction": "What are the file indicators (hashes) associated with Venom Rat?",
+    "output": "Known SHA256 hashes for Venom Rat samples:\n\n- 4576ade63d6ef9e10947afe22b67fc5736e5e2105348506bc319d6dd2a111657\n- 4ba8c6423baebb9f4b7477ad18b7620e57c7e6c48467e91a31273cb2c119676d\n- 63c3aae8844fd125a8c5251bd7b03b9e7554fb06ee06fa7c46c7ec766233ac0b\n\nThese hashes can be used for threat hunting and blocking. Add them to your EDR/AV blocklists and search historical logs for matches."
+  },
+  {
+    "instruction": "What network indicators should I look for to detect Venom Rat activity?",
+    "output": "Network indicators for Venom Rat:\n\n- hxxps[:]//pastebin[.]com/raw/93hjERwM\n- - C2 traffic, HTTPS TLSv1.0 \n\nDetection recommendations:\n- Add these to DNS sinkhole/blocklist\n- Create Suricata/Snort rules for these domains\n- Monitor for beaconing patterns to these IPs\n- Check proxy logs for connections to these URLs"
+  },
+  {
+    "instruction": "What is Astaroth malware and what MITRE ATT&CK techniques does it use?",
+    "output": "Astaroth - Astaroth/Guildma is a Latin American banking trojan using LOLBins and process injection.\n\nMITRE ATT&CK Techniques: T1059.001, T1218.005, T1055\nPrimary Tactic: Execution\n\nDetection: Monitor for suspicious process behavior, network connections to known C2 infrastructure, and credential access attempts.\n\nMitigation: Implement application whitelisting, enable credential protection, and block known malicious domains."
+  },
+  {
+    "instruction": "What are the file indicators (hashes) associated with Astaroth?",
+    "output": "Known SHA256 hashes for Astaroth samples:\n\n- 7c52398c1dc9a80d62e8adf6f5d0b44473aa65ccec0d0c33b3c0590f88bb4d7d\n- fcbbd85e7570d4332f031bb6e4d33f520bdc83abe51e5d81bc6cd3a066a56dbc\n\nThese hashes can be used for threat hunting and blocking. Add them to your EDR/AV blocklists and search historical logs for matches."
+  },
+  {
+    "instruction": "What network indicators should I look for to detect Astaroth activity?",
+    "output": "Network indicators for Astaroth:\n\n- hxxps[:]//222.20.205[.]92.host.secureserver[.]net/contrato/Autenticar_PDF_462259\n- hxxps[:]//fragoncal707.trovaodoceara[.]mom/?1/\n\nDetection recommendations:\n- Add these to DNS sinkhole/blocklist\n- Create Suricata/Snort rules for these domains\n- Monitor for beaconing patterns to these IPs\n- Check proxy logs for connections to these URLs"
+  },
+  {
+    "instruction": "What is Guildma malware and what MITRE ATT&CK techniques does it use?",
+    "output": "Guildma - Guildma is a Brazilian banking trojan targeting financial institutions via phishing.\n\nMITRE ATT&CK Techniques: T1059.001, T1218.005, T1055\nPrimary Tactic: Execution\n\nDetection: Monitor for suspicious process behavior, network connections to known C2 infrastructure, and credential access attempts.\n\nMitigation: Implement application whitelisting, enable credential protection, and block known malicious domains."
+  },
+  {
+    "instruction": "What are the file indicators (hashes) associated with Guildma?",
+    "output": "Known SHA256 hashes for Guildma samples:\n\n- 7c52398c1dc9a80d62e8adf6f5d0b44473aa65ccec0d0c33b3c0590f88bb4d7d\n- fcbbd85e7570d4332f031bb6e4d33f520bdc83abe51e5d81bc6cd3a066a56dbc\n\nThese hashes can be used for threat hunting and blocking. Add them to your EDR/AV blocklists and search historical logs for matches."
+  },
+  {
+    "instruction": "What network indicators should I look for to detect Guildma activity?",
+    "output": "Network indicators for Guildma:\n\n- hxxps[:]//222.20.205[.]92.host.secureserver[.]net/contrato/Autenticar_PDF_462259\n- hxxps[:]//fragoncal707.trovaodoceara[.]mom/?1/\n\nDetection recommendations:\n- Add these to DNS sinkhole/blocklist\n- Create Suricata/Snort rules for these domains\n- Monitor for beaconing patterns to these IPs\n- Check proxy logs for connections to these URLs"
+  },
+  {
+    "instruction": "What is Remcos Rat malware and what MITRE ATT&CK techniques does it use?",
+    "output": "Remcos Rat - Remcos RAT is a commercial remote access tool abused for keylogging, screenshots, and remote control.\n\nMITRE ATT&CK Techniques: T1219, T1056.001, T1113\nPrimary Tactic: Command and Control\n\nDetection: Monitor for suspicious process behavior, network connections to known C2 infrastructure, and credential access attempts.\n\nMitigation: Implement application whitelisting, enable credential protection, and block known malicious domains."
+  },
+  {
+    "instruction": "What are the file indicators (hashes) associated with Remcos Rat?",
+    "output": "Known SHA256 hashes for Remcos Rat samples:\n\n- 90a25013623e2abe0d2bc45ac51395c7ef5b7f26a407bbbd53d2bf9dd07ab454\n- 6b360c2069f357d8d3c9be08c691e45d97154a6f3ae378353a75ab90dd9a464f\n- a33e8025271934b9a5d27e8afb1aff2769c4114de27214a5feb386b03724c5fe\n\nThese hashes can be used for threat hunting and blocking. Add them to your EDR/AV blocklists and search historical logs for matches."
+  },
+  {
+    "instruction": "What network indicators should I look for to detect Remcos Rat activity?",
+    "output": "Network indicators for Remcos Rat:\n\n- hxxps[:]//drive.google[.]com/uc?export=download&id=19ZrktsMMZnUS9W7UxksdyE4skK75VYd2\n- hxxps[:]//drive.google[.]com/uc?export=download&id=19ZrktsMMZnUS9W7UxksdyE4skK75VYd2\n- hxxp[:]//geoplugin[.]/net/json.gp\n- Received: from eth2.wheatusa.com (eth2.wheatusa[.]com [198.46.211[.]183])\n- From: \"=?UTF-8?B?QW5kaSDFnkFIxLBO?=\" <update@wheatusa[.]com>\n- Subject: Quotation Request | PO-3242520\n\nDetection recommendations:\n- Add these to DNS sinkhole/blocklist\n- Create Suricata/Snort rules for these domains\n- Monitor for beaconing patterns to these IPs\n- Check proxy logs for connections to these URLs"
+  },
+  {
+    "instruction": "What is Guloader malware and what MITRE ATT&CK techniques does it use?",
+    "output": "Guloader - GuLoader is a shellcode-based downloader using cloud services to retrieve encrypted payloads.\n\nMITRE ATT&CK Techniques: T1027, T1140, T1055\nPrimary Tactic: Defense Evasion\n\nDetection: Monitor for suspicious process behavior, network connections to known C2 infrastructure, and credential access attempts.\n\nMitigation: Implement application whitelisting, enable credential protection, and block known malicious domains."
+  },
+  {
+    "instruction": "What are the file indicators (hashes) associated with Guloader?",
+    "output": "Known SHA256 hashes for Guloader samples:\n\n- 90a25013623e2abe0d2bc45ac51395c7ef5b7f26a407bbbd53d2bf9dd07ab454\n- 6b360c2069f357d8d3c9be08c691e45d97154a6f3ae378353a75ab90dd9a464f\n- a33e8025271934b9a5d27e8afb1aff2769c4114de27214a5feb386b03724c5fe\n\nThese hashes can be used for threat hunting and blocking. Add them to your EDR/AV blocklists and search historical logs for matches."
+  },
+  {
+    "instruction": "What network indicators should I look for to detect Guloader activity?",
+    "output": "Network indicators for Guloader:\n\n- hxxps[:]//drive.google[.]com/uc?export=download&id=19ZrktsMMZnUS9W7UxksdyE4skK75VYd2\n- hxxps[:]//drive.google[.]com/uc?export=download&id=19ZrktsMMZnUS9W7UxksdyE4skK75VYd2\n- hxxp[:]//geoplugin[.]/net/json.gp\n- Received: from eth2.wheatusa.com (eth2.wheatusa[.]com [198.46.211[.]183])\n- From: \"=?UTF-8?B?QW5kaSDFnkFIxLBO?=\" <update@wheatusa[.]com>\n- Subject: Quotation Request | PO-3242520\n\nDetection recommendations:\n- Add these to DNS sinkhole/blocklist\n- Create Suricata/Snort rules for these domains\n- Monitor for beaconing patterns to these IPs\n- Check proxy logs for connections to these URLs"
+  },
+  {
+    "instruction": "What is Masslogger malware and what MITRE ATT&CK techniques does it use?",
+    "output": "Masslogger - MassLogger is a credential stealer targeting browsers, email clients, and FTP applications.\n\nMITRE ATT&CK Techniques: T1056.001, T1555, T1552.001\nPrimary Tactic: Credential Access\n\nDetection: Monitor for suspicious process behavior, network connections to known C2 infrastructure, and credential access attempts.\n\nMitigation: Implement application whitelisting, enable credential protection, and block known malicious domains."
+  },
+  {
+    "instruction": "What are the file indicators (hashes) associated with Masslogger?",
+    "output": "Known SHA256 hashes for Masslogger samples:\n\n- 2989df89b41abf5ecaafeb45715b6d0536513f0f6b7a5c8decee4dca4d416bd8\n- 72e2c85f16c8dfd68b73adb136310e1b0159c7503213b232835c71b5e4a913e4\n\nThese hashes can be used for threat hunting and blocking. Add them to your EDR/AV blocklists and search historical logs for matches."
+  },
+  {
+    "instruction": "What is Stealc malware and what MITRE ATT&CK techniques does it use?",
+    "output": "Stealc - StealC is an information stealer targeting browser credentials, crypto wallets, and sensitive files.\n\nMITRE ATT&CK Techniques: T1555, T1539, T1005\nPrimary Tactic: Credential Access\n\nDetection: Monitor for suspicious process behavior, network connections to known C2 infrastructure, and credential access attempts.\n\nMitigation: Implement application whitelisting, enable credential protection, and block known malicious domains."
+  },
+  {
+    "instruction": "What are the file indicators (hashes) associated with Stealc?",
+    "output": "Known SHA256 hashes for Stealc samples:\n\n- fb0b30abd9002e4d4f7e434ec005bd29abd4554de69aafb43604385815117cdc\n- eaa5c6d8380c018b2bb9d90536b62e4920094509b1916d2bbe42d4528629ee03\n- 9efb3b655d41be4ed8b3fba0b7f34f90cc7861da036cd3e3eff59f4fba0ff805\n\nThese hashes can be used for threat hunting and blocking. Add them to your EDR/AV blocklists and search historical logs for matches."
+  },
+  {
+    "instruction": "What network indicators should I look for to detect Stealc activity?",
+    "output": "Network indicators for Stealc:\n\n- hxxps[:]//www.renatatacca.com[.]br/\n- hxxps[:]//bsc-dataseed.binance[.]org/\n- hxxps[:]//gthfjdk.pages[.]dev/win\n- hxxps[:]//ar.easingaffix[.]site/7456f63a46cc318334a70159aa3c4291\n- hxxps[:]//roadmap.kropentine[.]sbs/84irujfg543.bin\n- SHA256 hash: fb0b30abd9002e4d4f7e434ec005bd29abd4554de69aafb43604385815117cdc\n- File size: 138,414 bytes\n- File type: ASCII text, with very long lines, with no line terminators\n\nDetection recommendations:\n- Add these to DNS sinkhole/blocklist\n- Create Suricata/Snort rules for these domains\n- Monitor for beaconing patterns to these IPs\n- Check proxy logs for connections to these URLs"
+  },
+  {
+    "instruction": "What is Clickfix malware and what MITRE ATT&CK techniques does it use?",
+    "output": "Clickfix - ClickFix uses fake CAPTCHA pages to trick users into running malicious PowerShell commands.\n\nMITRE ATT&CK Techniques: T1204.002, T1059.001, T1027\nPrimary Tactic: Execution\n\nDetection: Monitor for suspicious process behavior, network connections to known C2 infrastructure, and credential access attempts.\n\nMitigation: Implement application whitelisting, enable credential protection, and block known malicious domains."
+  },
+  {
+    "instruction": "What are the file indicators (hashes) associated with Clickfix?",
+    "output": "Known SHA256 hashes for Clickfix samples:\n\n- fb0b30abd9002e4d4f7e434ec005bd29abd4554de69aafb43604385815117cdc\n- eaa5c6d8380c018b2bb9d90536b62e4920094509b1916d2bbe42d4528629ee03\n- 9efb3b655d41be4ed8b3fba0b7f34f90cc7861da036cd3e3eff59f4fba0ff805\n\nThese hashes can be used for threat hunting and blocking. Add them to your EDR/AV blocklists and search historical logs for matches."
+  },
+  {
+    "instruction": "What network indicators should I look for to detect Clickfix activity?",
+    "output": "Network indicators for Clickfix:\n\n- hxxps[:]//www.renatatacca.com[.]br/\n- hxxps[:]//bsc-dataseed.binance[.]org/\n- hxxps[:]//gthfjdk.pages[.]dev/win\n- hxxps[:]//ar.easingaffix[.]site/7456f63a46cc318334a70159aa3c4291\n- hxxps[:]//roadmap.kropentine[.]sbs/84irujfg543.bin\n- SHA256 hash: fb0b30abd9002e4d4f7e434ec005bd29abd4554de69aafb43604385815117cdc\n- File size: 138,414 bytes\n- File type: ASCII text, with very long lines, with no line terminators\n\nDetection recommendations:\n- Add these to DNS sinkhole/blocklist\n- Create Suricata/Snort rules for these domains\n- Monitor for beaconing patterns to these IPs\n- Check proxy logs for connections to these URLs"
+  },
+  {
+    "instruction": "What is Netsupport Rat malware and what MITRE ATT&CK techniques does it use?",
+    "output": "Netsupport Rat - NetSupport RAT is legitimate remote admin software abused for unauthorized access.\n\nMITRE ATT&CK Techniques: T1219, T1105, T1071\nPrimary Tactic: Command and Control\n\nDetection: Monitor for suspicious process behavior, network connections to known C2 infrastructure, and credential access attempts.\n\nMitigation: Implement application whitelisting, enable credential protection, and block known malicious domains."
+  },
+  {
+    "instruction": "What network indicators should I look for to detect Netsupport Rat activity?",
+    "output": "Network indicators for Netsupport Rat:\n\n- hxxps[:]//palcomp3[.]top/sss/buf.js\n- hxxps[:]//palcomp3[.]top/sss/index.php?GQX1KqUM\n- hxxps[:]//palcomp3[.]top/sss/bof.js?19ec2a189848bc0bfa\n- hxxps[:]//camplively';$p2='.com/all.php';\n- hxxps[:]//camplively[.]com/all.php\n- NoP \n- ExecutionPolicy Bypass -w 1 -c \n- WebRequest -UseBasicParsing $af).Content; \n\nDetection recommendations:\n- Add these to DNS sinkhole/blocklist\n- Create Suricata/Snort rules for these domains\n- Monitor for beaconing patterns to these IPs\n- Check proxy logs for connections to these URLs"
+  },
+  {
+    "instruction": "What is Smartapesg malware and what MITRE ATT&CK techniques does it use?",
+    "output": "Smartapesg - SmartApeSG injects malicious scripts into compromised sites to deliver fake browser updates.\n\nMITRE ATT&CK Techniques: T1189, T1204.002, T1059.007\nPrimary Tactic: Initial Access\n\nDetection: Monitor for suspicious process behavior, network connections to known C2 infrastructure, and credential access attempts.\n\nMitigation: Implement application whitelisting, enable credential protection, and block known malicious domains."
+  },
+  {
+    "instruction": "What network indicators should I look for to detect Smartapesg activity?",
+    "output": "Network indicators for Smartapesg:\n\n- hxxps[:]//palcomp3[.]top/sss/buf.js\n- hxxps[:]//palcomp3[.]top/sss/index.php?GQX1KqUM\n- hxxps[:]//palcomp3[.]top/sss/bof.js?19ec2a189848bc0bfa\n- hxxps[:]//camplively';$p2='.com/all.php';\n- hxxps[:]//camplively[.]com/all.php\n- NoP \n- ExecutionPolicy Bypass -w 1 -c \n- WebRequest -UseBasicParsing $af).Content; \n\nDetection recommendations:\n- Add these to DNS sinkhole/blocklist\n- Create Suricata/Snort rules for these domains\n- Monitor for beaconing patterns to these IPs\n- Check proxy logs for connections to these URLs"
+  },
+  {
+    "instruction": "What is Clickfix malware and what MITRE ATT&CK techniques does it use?",
+    "output": "Clickfix - ClickFix uses fake CAPTCHA pages to trick users into running malicious PowerShell commands.\n\nMITRE ATT&CK Techniques: T1204.002, T1059.001, T1027\nPrimary Tactic: Execution\n\nDetection: Monitor for suspicious process behavior, network connections to known C2 infrastructure, and credential access attempts.\n\nMitigation: Implement application whitelisting, enable credential protection, and block known malicious domains."
+  },
+  {
+    "instruction": "What network indicators should I look for to detect Clickfix activity?",
+    "output": "Network indicators for Clickfix:\n\n- hxxps[:]//palcomp3[.]top/sss/buf.js\n- hxxps[:]//palcomp3[.]top/sss/index.php?GQX1KqUM\n- hxxps[:]//palcomp3[.]top/sss/bof.js?19ec2a189848bc0bfa\n- hxxps[:]//camplively';$p2='.com/all.php';\n- hxxps[:]//camplively[.]com/all.php\n- NoP \n- ExecutionPolicy Bypass -w 1 -c \n- WebRequest -UseBasicParsing $af).Content; \n\nDetection recommendations:\n- Add these to DNS sinkhole/blocklist\n- Create Suricata/Snort rules for these domains\n- Monitor for beaconing patterns to these IPs\n- Check proxy logs for connections to these URLs"
+  },
+  {
+    "instruction": "What is Netsupport Rat malware and what MITRE ATT&CK techniques does it use?",
+    "output": "Netsupport Rat - NetSupport RAT is legitimate remote admin software abused for unauthorized access.\n\nMITRE ATT&CK Techniques: T1219, T1105, T1071\nPrimary Tactic: Command and Control\n\nDetection: Monitor for suspicious process behavior, network connections to known C2 infrastructure, and credential access attempts.\n\nMitigation: Implement application whitelisting, enable credential protection, and block known malicious domains."
+  },
+  {
+    "instruction": "What are the file indicators (hashes) associated with Netsupport Rat?",
+    "output": "Known SHA256 hashes for Netsupport Rat samples:\n\n- 6083f9a13c8d26fd26afe3e2befe3f41338441ef6d58efe35682afc5900e4cef\n\nThese hashes can be used for threat hunting and blocking. Add them to your EDR/AV blocklists and search historical logs for matches."
+  },
+  {
+    "instruction": "What network indicators should I look for to detect Netsupport Rat activity?",
+    "output": "Network indicators for Netsupport Rat:\n\n- hxxps[:]//as5yo[.]top/xxx/include.js\n- hxxps[:]//as5yo[.]top/xxx/index.php?FGUEgYoL\n- hxxps[:]//as5yo[.]t[op/xxx/buffer.js?31d1935e76\n- hxxp[:]//lpdesigns[.]uk/lal.ps1\n- hxxps[:]//lpdesigns[.]uk/lal.ps1\n- 185.163.45[.]97:443\n-  \n\nDetection recommendations:\n- Add these to DNS sinkhole/blocklist\n- Create Suricata/Snort rules for these domains\n- Monitor for beaconing patterns to these IPs\n- Check proxy logs for connections to these URLs"
+  },
+  {
+    "instruction": "What is Smartapesg malware and what MITRE ATT&CK techniques does it use?",
+    "output": "Smartapesg - SmartApeSG injects malicious scripts into compromised sites to deliver fake browser updates.\n\nMITRE ATT&CK Techniques: T1189, T1204.002, T1059.007\nPrimary Tactic: Initial Access\n\nDetection: Monitor for suspicious process behavior, network connections to known C2 infrastructure, and credential access attempts.\n\nMitigation: Implement application whitelisting, enable credential protection, and block known malicious domains."
+  },
+  {
+    "instruction": "What are the file indicators (hashes) associated with Smartapesg?",
+    "output": "Known SHA256 hashes for Smartapesg samples:\n\n- 6083f9a13c8d26fd26afe3e2befe3f41338441ef6d58efe35682afc5900e4cef\n\nThese hashes can be used for threat hunting and blocking. Add them to your EDR/AV blocklists and search historical logs for matches."
+  },
+  {
+    "instruction": "What network indicators should I look for to detect Smartapesg activity?",
+    "output": "Network indicators for Smartapesg:\n\n- hxxps[:]//as5yo[.]top/xxx/include.js\n- hxxps[:]//as5yo[.]top/xxx/index.php?FGUEgYoL\n- hxxps[:]//as5yo[.]t[op/xxx/buffer.js?31d1935e76\n- hxxp[:]//lpdesigns[.]uk/lal.ps1\n- hxxps[:]//lpdesigns[.]uk/lal.ps1\n- 185.163.45[.]97:443\n-  \n\nDetection recommendations:\n- Add these to DNS sinkhole/blocklist\n- Create Suricata/Snort rules for these domains\n- Monitor for beaconing patterns to these IPs\n- Check proxy logs for connections to these URLs"
+  },
+  {
+    "instruction": "What is Smartapesg malware and what MITRE ATT&CK techniques does it use?",
+    "output": "Smartapesg - SmartApeSG injects malicious scripts into compromised sites to deliver fake browser updates.\n\nMITRE ATT&CK Techniques: T1189, T1204.002, T1059.007\nPrimary Tactic: Initial Access\n\nDetection: Monitor for suspicious process behavior, network connections to known C2 infrastructure, and credential access attempts.\n\nMitigation: Implement application whitelisting, enable credential protection, and block known malicious domains."
+  },
+  {
+    "instruction": "What network indicators should I look for to detect Smartapesg activity?",
+    "output": "Network indicators for Smartapesg:\n\n- hxxps[:]//headtechnologies[.]xyz/sourcetag/enroll.js\n- hxxps[:]//headtechnologies[.]xyz/sourcetag/index.php?OQBEsNAg\n- hxxps[:]//headtechnologies[.]xyz/sourcetag/buffer.js?c34e4a6845\n- hxxps[:]//impactodediostv[.]com/lal1.php\n- hxxp[:]//www.austinroofs[.]net/wrbe.zip?l=2680\n\nDetection recommendations:\n- Add these to DNS sinkhole/blocklist\n- Create Suricata/Snort rules for these domains\n- Monitor for beaconing patterns to these IPs\n- Check proxy logs for connections to these URLs"
+  },
+  {
+    "instruction": "What is Netsupport Rat malware and what MITRE ATT&CK techniques does it use?",
+    "output": "Netsupport Rat - NetSupport RAT is legitimate remote admin software abused for unauthorized access.\n\nMITRE ATT&CK Techniques: T1219, T1105, T1071\nPrimary Tactic: Command and Control\n\nDetection: Monitor for suspicious process behavior, network connections to known C2 infrastructure, and credential access attempts.\n\nMitigation: Implement application whitelisting, enable credential protection, and block known malicious domains."
+  },
+  {
+    "instruction": "What network indicators should I look for to detect Netsupport Rat activity?",
+    "output": "Network indicators for Netsupport Rat:\n\n- hxxps[:]//headtechnologies[.]xyz/sourcetag/enroll.js\n- hxxps[:]//headtechnologies[.]xyz/sourcetag/index.php?OQBEsNAg\n- hxxps[:]//headtechnologies[.]xyz/sourcetag/buffer.js?c34e4a6845\n- hxxps[:]//impactodediostv[.]com/lal1.php\n- hxxp[:]//www.austinroofs[.]net/wrbe.zip?l=2680\n\nDetection recommendations:\n- Add these to DNS sinkhole/blocklist\n- Create Suricata/Snort rules for these domains\n- Monitor for beaconing patterns to these IPs\n- Check proxy logs for connections to these URLs"
+  },
+  {
+    "instruction": "What is Clickfix malware and what MITRE ATT&CK techniques does it use?",
+    "output": "Clickfix - ClickFix uses fake CAPTCHA pages to trick users into running malicious PowerShell commands.\n\nMITRE ATT&CK Techniques: T1204.002, T1059.001, T1027\nPrimary Tactic: Execution\n\nDetection: Monitor for suspicious process behavior, network connections to known C2 infrastructure, and credential access attempts.\n\nMitigation: Implement application whitelisting, enable credential protection, and block known malicious domains."
+  },
+  {
+    "instruction": "What network indicators should I look for to detect Clickfix activity?",
+    "output": "Network indicators for Clickfix:\n\n- hxxps[:]//headtechnologies[.]xyz/sourcetag/enroll.js\n- hxxps[:]//headtechnologies[.]xyz/sourcetag/index.php?OQBEsNAg\n- hxxps[:]//headtechnologies[.]xyz/sourcetag/buffer.js?c34e4a6845\n- hxxps[:]//impactodediostv[.]com/lal1.php\n- hxxp[:]//www.austinroofs[.]net/wrbe.zip?l=2680\n\nDetection recommendations:\n- Add these to DNS sinkhole/blocklist\n- Create Suricata/Snort rules for these domains\n- Monitor for beaconing patterns to these IPs\n- Check proxy logs for connections to these URLs"
+  },
+  {
+    "instruction": "What is Lumma Stealer malware and what MITRE ATT&CK techniques does it use?",
+    "output": "Lumma Stealer - Lumma Stealer targets browser data, crypto wallets, and 2FA extensions, often via fake software.\n\nMITRE ATT&CK Techniques: T1555, T1539, T1005, T1082\nPrimary Tactic: Credential Access\n\nDetection: Monitor for suspicious process behavior, network connections to known C2 infrastructure, and credential access attempts.\n\nMitigation: Implement application whitelisting, enable credential protection, and block known malicious domains."
+  },
+  {
+    "instruction": "What are the file indicators (hashes) associated with Lumma Stealer?",
+    "output": "Known SHA256 hashes for Lumma Stealer samples:\n\n- cd5493ed26881583ade59c526ec39478cbd131eb72b65df2ddaa4b4c88e79ecb\n- 0c2b69a75cdc374071e9b91d358c96a537694a256b6fae49f30bf0fcaa1165ac\n- 22be5a360e9870d0a77d990d5f92d8fb43eb7fdb75853d6bc1c60c467050ba77\n- 3ec9740bedc683021cc3e94e4a33b3a9d3d6f9b9e96b1f04cc6534f551dd58c1\n- 444b803b1a8e1ca836191d87736f9af73171f5e5b5370e9e07587acb05ee8064\n\nThese hashes can be used for threat hunting and blocking. Add them to your EDR/AV blocklists and search historical logs for matches."
+  },
+  {
+    "instruction": "What network indicators should I look for to detect Lumma Stealer activity?",
+    "output": "Network indicators for Lumma Stealer:\n\n- hxxps[:]//www.facebook[.]com/media/set/?set=a.10160850213333950\n- hxxps[:]//t[.]co/kMHRg3Bo2L\n- hxxps[:]//vittuv[.]com/2wDtEn\n- hxxps[:]//media.file3host435[.]xyz/amcap+9.20+full+version+free+download.zip\n- hxxps[:]//egomdbj[.]asia/zkjr/api\n- File name: amcap 9.20 full version free download.exe\n- File type: PE32 executable (GUI) Intel 80386, for MS Windows\n- File description: inflated EXE to install Lumma Stealer (padded with null-bytes)\n\nDetection recommendations:\n- Add these to DNS sinkhole/blocklist\n- Create Suricata/Snort rules for these domains\n- Monitor for beaconing patterns to these IPs\n- Check proxy logs for connections to these URLs"
+  },
+  {
+    "instruction": "What is Kongtuke malware and what MITRE ATT&CK techniques does it use?",
+    "output": "Kongtuke - KongTuke is a traffic distribution system using compromised websites to deliver malware.\n\nMITRE ATT&CK Techniques: T1189, T1059.007, T1027\nPrimary Tactic: Initial Access\n\nDetection: Monitor for suspicious process behavior, network connections to known C2 infrastructure, and credential access attempts.\n\nMitigation: Implement application whitelisting, enable credential protection, and block known malicious domains."
+  },
+  {
+    "instruction": "What network indicators should I look for to detect Kongtuke activity?",
+    "output": "Network indicators for Kongtuke:\n\n- hxxps[:]//netaworldjournal[.]org/\n- hxxps[:]//bradtae[.]com/5tr4r.js\n- hxxps[:]//bradtae[.]com/js.php?device=windows&ip=[base64\n- hxxp[:]//212.22.86[.]82:2020/home\n- hxxps[:]//comparisons-builder-loves-ratios.trycloudflare[.]com/second.html\n\nDetection recommendations:\n- Add these to DNS sinkhole/blocklist\n- Create Suricata/Snort rules for these domains\n- Monitor for beaconing patterns to these IPs\n- Check proxy logs for connections to these URLs"
+  },
+  {
+    "instruction": "What is Clickfix malware and what MITRE ATT&CK techniques does it use?",
+    "output": "Clickfix - ClickFix uses fake CAPTCHA pages to trick users into running malicious PowerShell commands.\n\nMITRE ATT&CK Techniques: T1204.002, T1059.001, T1027\nPrimary Tactic: Execution\n\nDetection: Monitor for suspicious process behavior, network connections to known C2 infrastructure, and credential access attempts.\n\nMitigation: Implement application whitelisting, enable credential protection, and block known malicious domains."
+  },
+  {
+    "instruction": "What network indicators should I look for to detect Clickfix activity?",
+    "output": "Network indicators for Clickfix:\n\n- hxxps[:]//netaworldjournal[.]org/\n- hxxps[:]//bradtae[.]com/5tr4r.js\n- hxxps[:]//bradtae[.]com/js.php?device=windows&ip=[base64\n- hxxp[:]//212.22.86[.]82:2020/home\n- hxxps[:]//comparisons-builder-loves-ratios.trycloudflare[.]com/second.html\n\nDetection recommendations:\n- Add these to DNS sinkhole/blocklist\n- Create Suricata/Snort rules for these domains\n- Monitor for beaconing patterns to these IPs\n- Check proxy logs for connections to these URLs"
+  },
+  {
+    "instruction": "What is Smartapesg malware and what MITRE ATT&CK techniques does it use?",
+    "output": "Smartapesg - SmartApeSG injects malicious scripts into compromised sites to deliver fake browser updates.\n\nMITRE ATT&CK Techniques: T1189, T1204.002, T1059.007\nPrimary Tactic: Initial Access\n\nDetection: Monitor for suspicious process behavior, network connections to known C2 infrastructure, and credential access attempts.\n\nMitigation: Implement application whitelisting, enable credential protection, and block known malicious domains."
+  },
+  {
+    "instruction": "What are the file indicators (hashes) associated with Smartapesg?",
+    "output": "Known SHA256 hashes for Smartapesg samples:\n\n- 22a24ba1ab35914f9d6b70b3480c77e3f2c3fe32f3c84887dcbfe5faf054fc7a\n\nThese hashes can be used for threat hunting and blocking. Add them to your EDR/AV blocklists and search historical logs for matches."
+  },
+  {
+    "instruction": "What network indicators should I look for to detect Smartapesg activity?",
+    "output": "Network indicators for Smartapesg:\n\n- hxxps[:]//mexicobusiness[.]news/\n- hxxps[:]//clouwave[.]net/ajax/pixi.min.js\n- hxxps[:]//myvocabulary[.]com/\n- hxxps[:]//myevmanual[.]com/d.js\n- hxxps[:]//clouwave[.]net/ajax/pixi.min.js\n- hxxps[:]//wwwjsnode[.]net/res/denynapkin  <-- returned MSI file\n- hxxps[:]//wwwjsnode[.]net/vapor.o\n- hxxps[:]//wwwjsnode[.]net/assets/img/9952e53658b97e85.txt\n\nDetection recommendations:\n- Add these to DNS sinkhole/blocklist\n- Create Suricata/Snort rules for these domains\n- Monitor for beaconing patterns to these IPs\n- Check proxy logs for connections to these URLs"
+  },
+  {
+    "instruction": "What is Netsupport Rat malware and what MITRE ATT&CK techniques does it use?",
+    "output": "Netsupport Rat - NetSupport RAT is legitimate remote admin software abused for unauthorized access.\n\nMITRE ATT&CK Techniques: T1219, T1105, T1071\nPrimary Tactic: Command and Control\n\nDetection: Monitor for suspicious process behavior, network connections to known C2 infrastructure, and credential access attempts.\n\nMitigation: Implement application whitelisting, enable credential protection, and block known malicious domains."
+  },
+  {
+    "instruction": "What are the file indicators (hashes) associated with Netsupport Rat?",
+    "output": "Known SHA256 hashes for Netsupport Rat samples:\n\n- 22a24ba1ab35914f9d6b70b3480c77e3f2c3fe32f3c84887dcbfe5faf054fc7a\n\nThese hashes can be used for threat hunting and blocking. Add them to your EDR/AV blocklists and search historical logs for matches."
+  },
+  {
+    "instruction": "What network indicators should I look for to detect Netsupport Rat activity?",
+    "output": "Network indicators for Netsupport Rat:\n\n- hxxps[:]//mexicobusiness[.]news/\n- hxxps[:]//clouwave[.]net/ajax/pixi.min.js\n- hxxps[:]//myvocabulary[.]com/\n- hxxps[:]//myevmanual[.]com/d.js\n- hxxps[:]//clouwave[.]net/ajax/pixi.min.js\n- hxxps[:]//wwwjsnode[.]net/res/denynapkin  <-- returned MSI file\n- hxxps[:]//wwwjsnode[.]net/vapor.o\n- hxxps[:]//wwwjsnode[.]net/assets/img/9952e53658b97e85.txt\n\nDetection recommendations:\n- Add these to DNS sinkhole/blocklist\n- Create Suricata/Snort rules for these domains\n- Monitor for beaconing patterns to these IPs\n- Check proxy logs for connections to these URLs"
+  },
+  {
+    "instruction": "What is Clickfix malware and what MITRE ATT&CK techniques does it use?",
+    "output": "Clickfix - ClickFix uses fake CAPTCHA pages to trick users into running malicious PowerShell commands.\n\nMITRE ATT&CK Techniques: T1204.002, T1059.001, T1027\nPrimary Tactic: Execution\n\nDetection: Monitor for suspicious process behavior, network connections to known C2 infrastructure, and credential access attempts.\n\nMitigation: Implement application whitelisting, enable credential protection, and block known malicious domains."
+  },
+  {
+    "instruction": "What are the file indicators (hashes) associated with Clickfix?",
+    "output": "Known SHA256 hashes for Clickfix samples:\n\n- 22a24ba1ab35914f9d6b70b3480c77e3f2c3fe32f3c84887dcbfe5faf054fc7a\n\nThese hashes can be used for threat hunting and blocking. Add them to your EDR/AV blocklists and search historical logs for matches."
+  },
+  {
+    "instruction": "What network indicators should I look for to detect Clickfix activity?",
+    "output": "Network indicators for Clickfix:\n\n- hxxps[:]//mexicobusiness[.]news/\n- hxxps[:]//clouwave[.]net/ajax/pixi.min.js\n- hxxps[:]//myvocabulary[.]com/\n- hxxps[:]//myevmanual[.]com/d.js\n- hxxps[:]//clouwave[.]net/ajax/pixi.min.js\n- hxxps[:]//wwwjsnode[.]net/res/denynapkin  <-- returned MSI file\n- hxxps[:]//wwwjsnode[.]net/vapor.o\n- hxxps[:]//wwwjsnode[.]net/assets/img/9952e53658b97e85.txt\n\nDetection recommendations:\n- Add these to DNS sinkhole/blocklist\n- Create Suricata/Snort rules for these domains\n- Monitor for beaconing patterns to these IPs\n- Check proxy logs for connections to these URLs"
+  },
+  {
+    "instruction": "What is Netsupport Rat malware and what MITRE ATT&CK techniques does it use?",
+    "output": "Netsupport Rat - NetSupport RAT is legitimate remote admin software abused for unauthorized access.\n\nMITRE ATT&CK Techniques: T1219, T1105, T1071\nPrimary Tactic: Command and Control\n\nDetection: Monitor for suspicious process behavior, network connections to known C2 infrastructure, and credential access attempts.\n\nMitigation: Implement application whitelisting, enable credential protection, and block known malicious domains."
+  },
+  {
+    "instruction": "What are the file indicators (hashes) associated with Netsupport Rat?",
+    "output": "Known SHA256 hashes for Netsupport Rat samples:\n\n- b32a45a5f619bf615d44e5d620c18cf452154482f0453fa79461060ac502eede\n\nThese hashes can be used for threat hunting and blocking. Add them to your EDR/AV blocklists and search historical logs for matches."
+  },
+  {
+    "instruction": "What network indicators should I look for to detect Netsupport Rat activity?",
+    "output": "Network indicators for Netsupport Rat:\n\n- hxxps[:]//spotlightonpoverty[.]org/\n- hxxps[:]//cansupeker[.]com/d.js\n- hxxps[:]//shark-watewer[.]com/ajax/pixi.min.js\n- hxxps[:]//stradomi[.]com/res/expectmatter\n- hxxps[:]//stradomi[.]com/res/expectmatter\n- 194.37.97[.]139:443\n\nDetection recommendations:\n- Add these to DNS sinkhole/blocklist\n- Create Suricata/Snort rules for these domains\n- Monitor for beaconing patterns to these IPs\n- Check proxy logs for connections to these URLs"
+  },
+  {
+    "instruction": "What is Smartapesg malware and what MITRE ATT&CK techniques does it use?",
+    "output": "Smartapesg - SmartApeSG injects malicious scripts into compromised sites to deliver fake browser updates.\n\nMITRE ATT&CK Techniques: T1189, T1204.002, T1059.007\nPrimary Tactic: Initial Access\n\nDetection: Monitor for suspicious process behavior, network connections to known C2 infrastructure, and credential access attempts.\n\nMitigation: Implement application whitelisting, enable credential protection, and block known malicious domains."
+  },
+  {
+    "instruction": "What are the file indicators (hashes) associated with Smartapesg?",
+    "output": "Known SHA256 hashes for Smartapesg samples:\n\n- b32a45a5f619bf615d44e5d620c18cf452154482f0453fa79461060ac502eede\n\nThese hashes can be used for threat hunting and blocking. Add them to your EDR/AV blocklists and search historical logs for matches."
+  },
+  {
+    "instruction": "What network indicators should I look for to detect Smartapesg activity?",
+    "output": "Network indicators for Smartapesg:\n\n- hxxps[:]//spotlightonpoverty[.]org/\n- hxxps[:]//cansupeker[.]com/d.js\n- hxxps[:]//shark-watewer[.]com/ajax/pixi.min.js\n- hxxps[:]//stradomi[.]com/res/expectmatter\n- hxxps[:]//stradomi[.]com/res/expectmatter\n- 194.37.97[.]139:443\n\nDetection recommendations:\n- Add these to DNS sinkhole/blocklist\n- Create Suricata/Snort rules for these domains\n- Monitor for beaconing patterns to these IPs\n- Check proxy logs for connections to these URLs"
+  },
+  {
+    "instruction": "What is Clickfix malware and what MITRE ATT&CK techniques does it use?",
+    "output": "Clickfix - ClickFix uses fake CAPTCHA pages to trick users into running malicious PowerShell commands.\n\nMITRE ATT&CK Techniques: T1204.002, T1059.001, T1027\nPrimary Tactic: Execution\n\nDetection: Monitor for suspicious process behavior, network connections to known C2 infrastructure, and credential access attempts.\n\nMitigation: Implement application whitelisting, enable credential protection, and block known malicious domains."
+  },
+  {
+    "instruction": "What are the file indicators (hashes) associated with Clickfix?",
+    "output": "Known SHA256 hashes for Clickfix samples:\n\n- b32a45a5f619bf615d44e5d620c18cf452154482f0453fa79461060ac502eede\n\nThese hashes can be used for threat hunting and blocking. Add them to your EDR/AV blocklists and search historical logs for matches."
+  },
+  {
+    "instruction": "What network indicators should I look for to detect Clickfix activity?",
+    "output": "Network indicators for Clickfix:\n\n- hxxps[:]//spotlightonpoverty[.]org/\n- hxxps[:]//cansupeker[.]com/d.js\n- hxxps[:]//shark-watewer[.]com/ajax/pixi.min.js\n- hxxps[:]//stradomi[.]com/res/expectmatter\n- hxxps[:]//stradomi[.]com/res/expectmatter\n- 194.37.97[.]139:443\n\nDetection recommendations:\n- Add these to DNS sinkhole/blocklist\n- Create Suricata/Snort rules for these domains\n- Monitor for beaconing patterns to these IPs\n- Check proxy logs for connections to these URLs"
+  },
+  {
+    "instruction": "What is Kongtuke malware and what MITRE ATT&CK techniques does it use?",
+    "output": "Kongtuke - KongTuke is a traffic distribution system using compromised websites to deliver malware.\n\nMITRE ATT&CK Techniques: T1189, T1059.007, T1027\nPrimary Tactic: Initial Access\n\nDetection: Monitor for suspicious process behavior, network connections to known C2 infrastructure, and credential access attempts.\n\nMitigation: Implement application whitelisting, enable credential protection, and block known malicious domains."
+  },
+  {
+    "instruction": "What network indicators should I look for to detect Kongtuke activity?",
+    "output": "Network indicators for Kongtuke:\n\n- hxxps[:]//apraadhi[.]com/6h9k.js\n- hxxps[:]//apraadhi[.]com/js.php?device=windows&ip=[base64\n- hxxp[:]//69.67.172[.]194:6655/ab\n- hxxp[:]//69.67.172[.]194:6655/se\n\nDetection recommendations:\n- Add these to DNS sinkhole/blocklist\n- Create Suricata/Snort rules for these domains\n- Monitor for beaconing patterns to these IPs\n- Check proxy logs for connections to these URLs"
+  },
+  {
+    "instruction": "What is Clickfix malware and what MITRE ATT&CK techniques does it use?",
+    "output": "Clickfix - ClickFix uses fake CAPTCHA pages to trick users into running malicious PowerShell commands.\n\nMITRE ATT&CK Techniques: T1204.002, T1059.001, T1027\nPrimary Tactic: Execution\n\nDetection: Monitor for suspicious process behavior, network connections to known C2 infrastructure, and credential access attempts.\n\nMitigation: Implement application whitelisting, enable credential protection, and block known malicious domains."
+  },
+  {
+    "instruction": "What network indicators should I look for to detect Clickfix activity?",
+    "output": "Network indicators for Clickfix:\n\n- hxxps[:]//apraadhi[.]com/6h9k.js\n- hxxps[:]//apraadhi[.]com/js.php?device=windows&ip=[base64\n- hxxp[:]//69.67.172[.]194:6655/ab\n- hxxp[:]//69.67.172[.]194:6655/se\n\nDetection recommendations:\n- Add these to DNS sinkhole/blocklist\n- Create Suricata/Snort rules for these domains\n- Monitor for beaconing patterns to these IPs\n- Check proxy logs for connections to these URLs"
+  },
+  {
+    "instruction": "What is a drive-by compromise attack?",
+    "output": "Drive-by Compromise (MITRE T1189) is an initial access technique where attackers compromise websites to deliver malware to visitors.\n\nExamples: SmartApeSG, KongTuke, ClearFake inject malicious JavaScript into compromised sites.\n\nDetection:\n- Monitor for unexpected JavaScript execution\n- Block known malicious domains\n- Use browser isolation\n\nMitigation: Keep browsers updated, use ad blockers, implement web filtering."
+  },
+  {
+    "instruction": "What is ClickFix and how does it work?",
+    "output": "ClickFix is a social engineering technique using fake CAPTCHA or verification pages to trick users into running malicious commands.\n\nMITRE ATT&CK: T1204.002 (User Execution: Malicious File), T1059.001 (PowerShell)\n\nInfection chain:\n1. User visits compromised/malicious site\n2. Fake CAPTCHA appears requiring 'verification'\n3. User is instructed to press Win+R and paste a command\n4. PowerShell downloads and executes malware (often Lumma Stealer, StealC)\n\nDetection: Monitor for PowerShell execution from user prompts, suspicious clipboard activity."
+  },
+  {
+    "instruction": "How do attackers use VHD files to bypass security?",
+    "output": "VHD (Virtual Hard Disk) files are used to bypass Mark-of-the-Web (MOTW) security.\n\nMITRE ATT&CK: T1553.005 (Mark-of-the-Web Bypass)\n\nTechnique:\n1. Malicious file packaged inside VHD/ISO container\n2. When mounted, files inside don't have MOTW flag\n3. Windows doesn't show security warnings for these files\n4. User executes payload without SmartScreen warning\n\nExamples: Venom RAT, Remcos RAT delivered via email with VHD attachments.\n\nMitigation: Block VHD/ISO files at email gateway, monitor for mounted virtual disks."
+  },
+  {
+    "instruction": "What are common indicators of RAT (Remote Access Trojan) activity?",
+    "output": "Common RAT indicators:\n\nNetwork:\n- Persistent outbound connections to unusual ports\n- TLS traffic to non-standard ports (e.g., 4444, 5555, 9090)\n- Beaconing patterns (regular interval connections)\n- DNS queries to DGA domains\n\nHost:\n- Unexpected processes with network connections\n- Registry persistence mechanisms\n- Scheduled tasks for persistence\n- Keylogger artifacts (keyboard hooks)\n\nExamples: Remcos RAT (port 9090), Venom RAT (port 55016), NetSupport RAT\n\nMITRE: T1219 (Remote Access Software), T1071 (Application Layer Protocol)"
+  },
+  {
+    "instruction": "How do information stealers exfiltrate data?",
+    "output": "Information stealers exfiltrate data using several methods:\n\nMITRE ATT&CK:\n- T1041 (Exfiltration Over C2 Channel)\n- T1567 (Exfiltration Over Web Service)\n- T1048 (Exfiltration Over Alternative Protocol)\n\nCommon techniques:\n1. HTTP POST to C2 server (Lumma, StealC, Vidar)\n2. Telegram bot API for exfil\n3. Discord webhooks\n4. Email (SMTP) exfiltration\n\nData targeted:\n- Browser credentials and cookies\n- Cryptocurrency wallets\n- 2FA authenticator data\n- System information\n\nDetection: Monitor for large outbound data transfers, connections to known stealer C2 infrastructure."
+  }
+]

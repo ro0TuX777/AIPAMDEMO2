@@ -1,19 +1,20 @@
-version: "3.9"
-
 services:
   backend:
     build: ./backend
     container_name: aipam-backend
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       - DATABASE_URL=sqlite:////data/aipam.db
       - FILE_STORAGE_PATH=/data/storage
       - REDIS_URL=redis://redis:6379/0
       - LLM_ENDPOINT=http://ollama:11434/v1/chat/completions
-      - LLM_MODEL_NAME=llama3.1:8b
+      - LLM_MODEL_NAME=aipam-cybersec-llm
       - LLM_PROVIDER=ollama
-      # TrafficLLM integration (optional - only if trafficllm service is running)
-      - TRAFFICLLM_ENDPOINT=http://trafficllm:8001/v1/chat/completions
-      - USE_TRAFFICLLM_FOR_DETECTION=false
+      - LLM_MAX_TOKENS=8000
+      # TrafficLLM integration (connects to host-running TrafficLLM)
+      - TRAFFICLLM_ENDPOINT=http://host.docker.internal:8001/v1/chat/completions
+      - USE_TRAFFICLLM_FOR_DETECTION=true
     volumes:
       - aipam_data:/data
     depends_on:
@@ -25,18 +26,21 @@ services:
   worker:
     build: ./backend
     container_name: aipam-worker
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     command: ["celery", "-A", "app.tasks.celery_app", "worker", "-l", "info"]
     environment:
       - DATABASE_URL=sqlite:////data/aipam.db
       - FILE_STORAGE_PATH=/data/storage
       - REDIS_URL=redis://redis:6379/0
       - LLM_ENDPOINT=http://ollama:11434/v1/chat/completions
-      - LLM_MODEL_NAME=llama3.1:8b
+      - LLM_MODEL_NAME=aipam-cybersec-llm
       - LLM_PROVIDER=ollama
+      - LLM_MAX_TOKENS=8000
       - C_FORCE_ROOT=true
-      # TrafficLLM integration (optional)
-      - TRAFFICLLM_ENDPOINT=http://trafficllm:8001/v1/chat/completions
-      - USE_TRAFFICLLM_FOR_DETECTION=false
+      # TrafficLLM integration (connects to host-running TrafficLLM)
+      - TRAFFICLLM_ENDPOINT=http://host.docker.internal:8001/v1/chat/completions
+      - USE_TRAFFICLLM_FOR_DETECTION=true
     volumes:
       - aipam_data:/data
     depends_on:
@@ -78,19 +82,20 @@ services:
     ports:
       - "8001:8001"
     volumes:
-      - trafficllm_models:/app/models
+      # Mount local models directory with pre-downloaded models
+      - ./trafficllm/models:/app/models
     environment:
       - TRAFFICLLM_MODEL_PATH=/app/models/chatglm2-6b
       - TRAFFICLLM_PEFT_PATH=/app/models/peft
       - TRAFFICLLM_PORT=8001
-    # Uncomment below for NVIDIA GPU support
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: 1
-    #           capabilities: [gpu]
+    # NVIDIA GPU support enabled
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     restart: unless-stopped
 
 volumes:

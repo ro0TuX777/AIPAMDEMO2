@@ -130,6 +130,45 @@ class LLMClient:
         # Get the appropriate config (Ollama or TrafficLLM) based on task
         active_config = self._get_config_for_task(task_hint)
 
+        # Extract TrafficLLM results if present
+        trafficllm_results = bundle.get("trafficllm_results")
+        trafficllm_context = ""
+        print(f"[DEBUG] TrafficLLM results in bundle: {trafficllm_results}")
+        if trafficllm_results:
+            malware_count = trafficllm_results.get("malware_detections", 0)
+            botnet_count = trafficllm_results.get("botnet_detections", 0)
+            malware_types = trafficllm_results.get("malware_types", [])
+            botnet_types = trafficllm_results.get("botnet_types", [])
+            print(f"[DEBUG] Malware count={malware_count}, types={malware_types}")
+
+            if malware_count > 0 or botnet_count > 0:
+                malware_list = ', '.join(malware_types) if malware_types else 'unidentified malware'
+                botnet_list = ', '.join(botnet_types) if botnet_types else 'unidentified botnet'
+
+                # Build example evidence strings with actual malware names
+                example_evidence = []
+                for mtype in malware_types[:3]:  # Use first 3 malware types as examples
+                    example_evidence.append(f"TrafficLLM detected {mtype} malware traffic from host X to host Y")
+                example_evidence_str = ', '.join([f'"{e}"' for e in example_evidence]) if example_evidence else '"TrafficLLM detected malware traffic"'
+
+                trafficllm_context = f"""
+## CONFIRMED MALWARE DETECTION (from TrafficLLM AI analysis):
+
+**DETECTED MALWARE FAMILIES: {malware_list}**
+**TOTAL MALICIOUS FLOWS: {malware_count}**
+
+The following specific malware types were detected in the network traffic:
+{chr(10).join([f'- {mtype} malware' for mtype in malware_types])}
+
+When writing your analysis, you MUST use these exact malware names. For example:
+- In attack_chain evidence: [{example_evidence_str}]
+- In host_findings summary: "Host infected with {malware_types[0] if malware_types else 'malware'} malware"
+- In key findings: "execution: {malware_types[0] if malware_types else 'Malware'} malware executed on host X.X.X.X"
+
+DO NOT write "unknown" - use the malware names listed above ({malware_list}).
+
+"""
+
         llm_chunk_json = json.dumps(bundle, default=str)
 
         user_prompt = f"""Context:
@@ -138,7 +177,7 @@ class LLMClient:
 - Time ranges:
   - Baseline: {{baseline_start}} to {{baseline_end}}
   - Exploit: {{exploit_start}} to {{exploit_end}}
-
+{trafficllm_context}
 You are given the following JSON object representing aggregated and normalized network behavior:
 
 ```json
@@ -152,6 +191,7 @@ This JSON includes:
 - hostpair_summaries_exploit
 - change_summaries
 - alerts
+- trafficllm_results (if available - AI-based malware/botnet detection)
 
 Task:
 1. Compare baseline vs exploit behavior for the hosts and host pairs in this JSON. Identify:
@@ -268,6 +308,41 @@ Respond ONLY with this JSON. Do not include any extra text or explanation.
             print(f"Warning: Failed to parse/validate LLM JSON output ({e}); using empty output.")
             return _empty_output()
 
+    async def chat_completion(
+        self, messages: List[Dict[str, str]], temperature: Optional[float] = None
+    ) -> str:
+        """Send a chat completion request and return the text response.
+
+        This is a simpler interface than analyze_chunk, used for conversational
+        chat where we don't need JSON parsing.
+
+        Args:
+            messages: List of message dicts with 'role' and 'content' keys.
+            temperature: Optional temperature override.
+
+        Returns:
+            The assistant's response text.
+        """
+        payload = {
+            "model": self.config.model,
+            "temperature": temperature if temperature is not None else self.config.temperature,
+            "max_tokens": self.config.max_tokens,
+            "messages": messages,
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=self.config.timeout_seconds) as client:
+                resp = await client.post(self.config.endpoint, json=payload)
+                resp.raise_for_status()
+                data = resp.json()
+
+            content = data["choices"][0]["message"]["content"]
+            return content.strip()
+        except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPStatusError) as e:
+            raise RuntimeError(f"LLM request failed: {e}")
+        except (KeyError, IndexError) as e:
+            raise RuntimeError(f"Unexpected LLM response format: {e}")
+
 
 async def analyze_chunks(
     bundles: List[Dict[str, Any]],
@@ -294,6 +369,74 @@ async def analyze_chunks(
     for b in bundles:
         results.append(await client.analyze_chunk(b, task_hint=task_hint))
     return results
+
+
+async def classify_traffic_with_trafficllm(
+    packet_hex: str,
+    task: str = "MTD",
+    trafficllm_endpoint: str = "http://localhost:8001/v1/chat/completions",
+    timeout_seconds: float = 60.0,
+) -> Dict[str, Any]:
+    """Classify network traffic using TrafficLLM.
+
+    TrafficLLM is a specialized LLM for network traffic analysis that can detect:
+    - MTD: Malware Traffic Detection (Zeus, Cridex, Geodo, etc.)
+    - EVD: Encrypted VPN Detection (skype, netflix, youtube, etc.)
+    - TBD: Tor Behavior Detection (browsing, chat, file, etc.)
+    - BND: Botnet Detection (IRC, Neris, RBot, Virut, normal)
+    - WAD: Web Attack Detection (malicious/benign)
+    - AAD: APT Attack Detection (abnormal/normal)
+
+    Args:
+        packet_hex: Hex-encoded packet data (e.g., "45 00 00 3c 1c 46...")
+        task: Detection task type (MTD, EVD, TBD, BND, WAD, AAD)
+        trafficllm_endpoint: TrafficLLM API endpoint
+        timeout_seconds: Request timeout
+
+    Returns:
+        Dict with classification result and confidence
+    """
+    # Build task-specific prompt
+    task_keywords = {
+        "MTD": "malware",
+        "EVD": "vpn",
+        "TBD": "tor",
+        "BND": "botnet",
+        "WAD": "web attack",
+        "AAD": "apt",
+    }
+
+    keyword = task_keywords.get(task, "malware")
+    prompt = f"Detect {keyword} in this traffic: <packet>: {packet_hex}"
+
+    payload = {
+        "model": "trafficllm",
+        "messages": [{"role": "user", "content": prompt}],
+        "temperature": 0.1,
+        "max_tokens": 50,
+    }
+
+    try:
+        async with httpx.AsyncClient(timeout=timeout_seconds) as client:
+            resp = await client.post(trafficllm_endpoint, json=payload)
+            resp.raise_for_status()
+            data = resp.json()
+
+        classification = data.get("choices", [{}])[0].get("message", {}).get("content", "unknown")
+
+        return {
+            "task": task,
+            "classification": classification.strip(),
+            "success": True,
+            "raw_response": data,
+        }
+    except Exception as e:
+        return {
+            "task": task,
+            "classification": "error",
+            "success": False,
+            "error": str(e),
+        }
 
 
 def create_dual_llm_client(

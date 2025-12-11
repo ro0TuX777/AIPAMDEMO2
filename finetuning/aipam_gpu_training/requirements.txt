@@ -1,0 +1,16 @@
+# AIPAM Traffic LLM - GPU Training Requirements
+# Install with: pip install -r requirements.txt
+
+torch>=2.1.0
+transformers>=4.36.0
+datasets>=2.14.0
+peft>=0.7.0
+trl>=0.7.0
+accelerate>=0.25.0
+bitsandbytes>=0.41.0
+scipy
+sentencepiece
+protobuf
+gguf
+huggingface_hub
+
