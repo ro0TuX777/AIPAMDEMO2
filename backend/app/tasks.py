@@ -586,8 +586,15 @@ def run_pipeline(job_id: str) -> None:
                     botnet_types=tllm_summary.get("botnet_types", []),
                 )
 
+            # Use PCAP filename as exercise_id for better malware family identification
+            # This helps the refinement logic when the model defaults to generic families
+            pcap_filename = ""
+            if pcap_paths:
+                pcap_filename = Path(pcap_paths[0]).stem  # Get filename without extension
+            exercise_id = job.exercise_id or pcap_filename or job.id
+
             bundles = build_llm_chunks(
-                exercise_id=job.exercise_id or job.id,
+                exercise_id=exercise_id,
                 mode=job.mode,
                 time_ranges=time_ranges,
                 host_summaries_baseline=host_summaries_baseline,
@@ -685,6 +692,17 @@ def run_pipeline(job_id: str) -> None:
                 result=job_result.model_dump(mode="json"),
             )
             session.add(result_row)
+
+            # Index for RAG chat (Phase 1)
+            try:
+                from .rag_index import index_job_result
+                job_result_dict = job_result.model_dump(mode="json")
+                doc_count = index_job_result(job.id, job_result_dict)
+                logger.info(f"Indexed {doc_count} documents for RAG chat (job {job.id})")
+            except Exception as rag_exc:
+                # RAG indexing failure should not fail the job
+                logger.warning(f"RAG indexing failed for job {job.id}: {rag_exc}")
+
             _set_job_status(session, job, JobStatus.COMPLETED)
 
         except Exception as exc:  # pragma: no cover - coarse error path

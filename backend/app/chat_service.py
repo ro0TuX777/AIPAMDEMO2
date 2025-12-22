@@ -1,17 +1,28 @@
 """
 Chat service for interactive Q&A about PCAP analysis findings.
 
-This module provides context retrieval and LLM-powered chat functionality
-for asking follow-up questions about analysis results.
+This module provides RAG-based context retrieval and LLM-powered chat functionality
+for asking follow-up questions about analysis results. Supports conversation
+persistence and anomaly-aware retrieval ranking.
 """
 
+from __future__ import annotations
+
+import logging
+from datetime import datetime, timezone
 from typing import List, Optional, Dict, Any
 from uuid import uuid4
+
+from sqlmodel import Session, select
 
 from .models import AnalysisSummary, HostFinding, JobResult
 from .schemas import ChatCitation, ChatResponse
 from .llm_client import LLMClient, LLMConfig
 from .settings_runtime import get_effective_settings
+from .database import engine
+from .db_models import ConversationDB, ChatMessageDB
+
+logger = logging.getLogger(__name__)
 
 
 def build_context_from_job_result(
@@ -108,6 +119,130 @@ def build_context_from_job_result(
     return "\n".join(context_parts), citations
 
 
+def build_context_from_rag(
+    job_id: str,
+    query: str,
+    top_k: int = 8,
+) -> tuple[str, List[ChatCitation]]:
+    """
+    Build context using RAG retrieval from the vector index.
+
+    Returns a tuple of (context_string, citations).
+    Falls back to empty if no index exists.
+    """
+    try:
+        from .rag_index import search_job_index, job_has_index
+
+        if not job_has_index(job_id):
+            logger.info(f"No RAG index for job {job_id}, using fallback context")
+            return "", []
+
+        results = search_job_index(job_id, query, top_k=top_k, rerank_by_anomaly=True)
+
+        if not results:
+            return "", []
+
+        citations: List[ChatCitation] = []
+        context_parts: List[str] = []
+
+        context_parts.append("## Retrieved Analysis Data (ranked by relevance)")
+
+        for result in results:
+            doc = result.document
+            context_parts.append(f"\n### [{doc.doc_type.upper()}] (relevance: {result.score:.2f})")
+            context_parts.append(doc.content)
+
+            citations.append(ChatCitation(
+                type=doc.doc_type,
+                id=doc.id,
+                snippet=doc.content[:200],
+            ))
+
+        return "\n".join(context_parts), citations
+
+    except ImportError:
+        logger.warning("RAG index module not available")
+        return "", []
+    except Exception as e:
+        logger.error(f"RAG retrieval failed: {e}")
+        return "", []
+
+
+# Conversation persistence functions
+
+def get_or_create_conversation(
+    job_id: str,
+    conversation_id: Optional[str] = None,
+) -> str:
+    """Get existing conversation or create a new one."""
+    with Session(engine) as session:
+        if conversation_id:
+            conv = session.get(ConversationDB, conversation_id)
+            if conv and conv.job_id == job_id:
+                return conversation_id
+
+        # Create new conversation
+        new_id = str(uuid4())
+        now = datetime.now(timezone.utc)
+        conv = ConversationDB(
+            id=new_id,
+            job_id=job_id,
+            created_at=now,
+            updated_at=now,
+        )
+        session.add(conv)
+        session.commit()
+        return new_id
+
+
+def save_chat_message(
+    conversation_id: str,
+    role: str,
+    content: str,
+    citations: Optional[List[ChatCitation]] = None,
+) -> str:
+    """Save a chat message to the database."""
+    with Session(engine) as session:
+        msg_id = str(uuid4())
+        msg = ChatMessageDB(
+            id=msg_id,
+            conversation_id=conversation_id,
+            role=role,
+            content=content,
+            citations={"items": [c.model_dump() for c in (citations or [])]},
+            created_at=datetime.now(timezone.utc),
+        )
+        session.add(msg)
+
+        # Update conversation timestamp
+        conv = session.get(ConversationDB, conversation_id)
+        if conv:
+            conv.updated_at = datetime.now(timezone.utc)
+            session.add(conv)
+
+        session.commit()
+        return msg_id
+
+
+def get_conversation_history(
+    conversation_id: str,
+    limit: int = 10,
+) -> List[Dict[str, str]]:
+    """Get conversation history as a list of messages for the LLM."""
+    with Session(engine) as session:
+        messages = session.exec(
+            select(ChatMessageDB)
+            .where(ChatMessageDB.conversation_id == conversation_id)
+            .order_by(ChatMessageDB.created_at.desc())
+            .limit(limit)
+        ).all()
+
+        # Reverse to get chronological order
+        messages = list(reversed(messages))
+
+        return [{"role": msg.role, "content": msg.content} for msg in messages]
+
+
 CHAT_SYSTEM_PROMPT = """You are a cybersecurity expert helping analyze PCAP findings. You have deep knowledge of MITRE ATT&CK, malware, and incident response.
 
 IMPORTANT: Blend your expert knowledge with the SPECIFIC analysis data. Reference actual IPs, malware names, and findings.
@@ -129,25 +264,57 @@ Be thorough but conversational. Reference the actual hosts, malware types, and f
 
 
 async def generate_chat_response(
+    job_id: str,
     job_result: Dict[str, Any],
     user_message: str,
     context_hint: Optional[str] = None,
-    conversation_history: Optional[List[Dict[str, str]]] = None,
+    conversation_id: Optional[str] = None,
+    use_rag: bool = True,
 ) -> ChatResponse:
     """
     Generate a chat response about the analysis findings.
 
+    Uses RAG retrieval when available, with fallback to direct context injection.
+    Supports conversation persistence for follow-up questions.
+
     Args:
+        job_id: The job ID for RAG lookup and conversation persistence
         job_result: The complete job result data
         user_message: The user's question
         context_hint: Optional hint about what the question relates to
-        conversation_history: Previous messages in this conversation
+        conversation_id: Optional conversation ID for follow-up questions
+        use_rag: Whether to use RAG retrieval (falls back to direct context if no index)
 
     Returns:
         ChatResponse with the AI response and citations
     """
-    # Build context from job result
-    context, citations = build_context_from_job_result(job_result, context_hint)
+    # Get or create conversation for persistence
+    conv_id = get_or_create_conversation(job_id, conversation_id)
+
+    # Save user message
+    save_chat_message(conv_id, "user", user_message)
+
+    # Get conversation history for context
+    history = get_conversation_history(conv_id, limit=10)
+    # Remove the message we just added (it will be added as current message)
+    if history and history[-1]["content"] == user_message:
+        history = history[:-1]
+
+    # Try RAG retrieval first if enabled
+    rag_context = ""
+    rag_citations: List[ChatCitation] = []
+
+    if use_rag:
+        rag_context, rag_citations = build_context_from_rag(job_id, user_message, top_k=8)
+
+    # Fallback to direct context if RAG didn't return results
+    if not rag_context:
+        fallback_context, fallback_citations = build_context_from_job_result(job_result, context_hint)
+        context = fallback_context
+        citations = fallback_citations
+    else:
+        context = rag_context
+        citations = rag_citations
 
     # Build the conversation messages
     messages = [
@@ -166,9 +333,9 @@ async def generate_chat_response(
 When answering, you MUST reference specific items from the analysis data above (IPs, malware types, findings, alerts). If the user asks about something not in the data, explain what IS in the data that's related."""
     })
 
-    # Add conversation history if provided
-    if conversation_history:
-        for msg in conversation_history[-10:]:  # Limit history to last 10 messages
+    # Add conversation history if available
+    if history:
+        for msg in history[-10:]:  # Limit history to last 10 messages
             messages.append(msg)
 
     # Add the current user message
@@ -189,17 +356,33 @@ When answering, you MUST reference specific items from the analysis data above (
         # Call LLM (not using JSON mode for chat)
         response_text = await client.chat_completion(messages)
 
-        return ChatResponse(
+        # Calculate confidence based on RAG results
+        confidence = 0.85
+        if rag_citations:
+            # Higher confidence if we have RAG results with good scores
+            avg_relevance = sum(c.snippet is not None for c in rag_citations) / max(len(rag_citations), 1)
+            confidence = min(0.95, 0.7 + (avg_relevance * 0.25))
+
+        response = ChatResponse(
             response=response_text,
             citations=citations,
-            conversation_id=str(uuid4()),
-            confidence=0.85,  # TODO: Calculate actual confidence
+            conversation_id=conv_id,
+            confidence=confidence,
         )
+
+        # Save assistant response
+        save_chat_message(conv_id, "assistant", response_text, citations)
+
+        return response
+
     except Exception as e:
-        return ChatResponse(
+        logger.error(f"Chat response generation failed: {e}")
+        error_response = ChatResponse(
             response=f"I encountered an error while processing your question: {str(e)}",
             citations=[],
-            conversation_id=str(uuid4()),
+            conversation_id=conv_id,
             confidence=0.0,
         )
+        save_chat_message(conv_id, "assistant", error_response.response)
+        return error_response
 

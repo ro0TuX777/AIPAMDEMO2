@@ -9,7 +9,7 @@ services:
       - FILE_STORAGE_PATH=/data/storage
       - REDIS_URL=redis://redis:6379/0
       - LLM_ENDPOINT=http://ollama:11434/v1/chat/completions
-      - LLM_MODEL_NAME=aipam-cybersec-llm
+      - LLM_MODEL_NAME=aipam-traffic-llm
       - LLM_PROVIDER=ollama
       - LLM_MAX_TOKENS=8000
       # TrafficLLM integration (connects to host-running TrafficLLM)
@@ -34,7 +34,7 @@ services:
       - FILE_STORAGE_PATH=/data/storage
       - REDIS_URL=redis://redis:6379/0
       - LLM_ENDPOINT=http://ollama:11434/v1/chat/completions
-      - LLM_MODEL_NAME=aipam-cybersec-llm
+      - LLM_MODEL_NAME=aipam-traffic-llm
       - LLM_PROVIDER=ollama
       - LLM_MAX_TOKENS=8000
       - C_FORCE_ROOT=true

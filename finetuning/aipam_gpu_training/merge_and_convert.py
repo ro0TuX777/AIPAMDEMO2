@@ -28,32 +28,45 @@ def merge_lora():
     print("=" * 60)
     print("Step 1: Merging LoRA adapter with base model")
     print("=" * 60)
-    
+
     import torch
+    import gc
     from transformers import AutoModelForCausalLM, AutoTokenizer
     from peft import PeftModel
-    
+
+    # Clear GPU memory first
+    torch.cuda.empty_cache()
+    gc.collect()
+
     print(f"Loading base model: {MODEL_NAME}")
+    # Load model to CPU first to avoid GPU memory issues
     base_model = AutoModelForCausalLM.from_pretrained(
         MODEL_NAME,
         torch_dtype=torch.float16,
-        device_map="auto",
+        device_map="cpu",  # Load to CPU first
         trust_remote_code=True,
+        low_cpu_mem_usage=True,
     )
-    
+
     print(f"Loading LoRA adapter from: {LORA_DIR}")
-    model = PeftModel.from_pretrained(base_model, LORA_DIR)
-    
+    model = PeftModel.from_pretrained(base_model, LORA_DIR, device_map="cpu")
+
     print("Merging weights...")
     model = model.merge_and_unload()
-    
+
     print(f"Saving merged model to: {MERGED_DIR}")
     model.save_pretrained(MERGED_DIR, safe_serialization=True)
-    
+
     # Save tokenizer too
     tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
     tokenizer.save_pretrained(MERGED_DIR)
-    
+
+    # Free memory
+    del model
+    del base_model
+    torch.cuda.empty_cache()
+    gc.collect()
+
     print("Merge complete!")
     return True
 

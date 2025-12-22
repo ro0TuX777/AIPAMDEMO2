@@ -1,4 +1,9 @@
 # AIPAM .gitignore
+
+# Environment files (contain secrets)
+.env
+backend/.env
+
 # Backend / Python
 __pycache__/
 *.pyc
@@ -56,6 +61,7 @@ finetuning/aipam_gpu_training/checkpoints/
 finetuning/aipam_gpu_training/data/
 finetuning/aipam_gpu_training/logs/
 finetuning/aipam_gpu_training/aipam-llama-lora/
+finetuning/aipam_gpu_training/aipam-llama-lora-v2/
 finetuning/aipam_gpu_training/aipam-llama-merged/
 finetuning/aipam_gpu_training/malware-traffic-indicators/
 finetuning/trafficllm_datasets/

@@ -1,0 +1,36 @@
+# AIPAM Unified Traffic Analysis Model
+# Fine-tuned Llama 3.1 8B for cybersecurity and traffic analysis
+
+FROM /models/aipam-traffic-llm.gguf
+
+# Model parameters optimized for analysis tasks
+PARAMETER temperature 0.7
+PARAMETER top_p 0.9
+PARAMETER top_k 40
+PARAMETER num_ctx 4096
+PARAMETER repeat_penalty 1.1
+
+# System prompt for traffic analysis
+SYSTEM """You are an expert cybersecurity analyst specializing in network traffic analysis. 
+You analyze packet data to detect malware, identify attack patterns, and provide security insights.
+When given traffic data, classify it and explain your reasoning with MITRE ATT&CK mappings.
+
+Your capabilities include:
+- Malware traffic detection and classification
+- Network protocol analysis
+- Threat intelligence correlation
+- MITRE ATT&CK technique identification
+- Indicators of Compromise (IOC) extraction
+- Security recommendations
+
+Always provide clear, actionable analysis with confidence levels and supporting evidence."""
+
+# License
+LICENSE """
+AIPAM Traffic Analysis Model
+Copyright (c) 2024 Blue Cloak
+
+This model is fine-tuned for cybersecurity traffic analysis.
+Base model: Meta Llama 3.1 8B (subject to Meta's license terms)
+"""
+

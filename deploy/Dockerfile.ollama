@@ -1,0 +1,57 @@
+# AIPAM Ollama Container with Fine-tuned Model
+# This container includes Ollama + the pre-trained AIPAM model
+# Build: docker build -t aipam-ollama:latest -f deploy/Dockerfile.ollama .
+
+FROM ollama/ollama:latest
+
+# Create model directory
+RUN mkdir -p /root/.ollama/models
+
+# Copy the GGUF model file (must be built first via merge_and_convert.py)
+# The model file should be placed in deploy/models/ before building
+COPY deploy/models/aipam-traffic-llm.gguf /models/aipam-traffic-llm.gguf
+
+# Copy the Modelfile
+COPY deploy/Modelfile /models/Modelfile
+
+# Create startup script that imports the model on first run
+RUN cat > /start.sh << 'EOF'
+#!/bin/bash
+set -e
+
+# Start Ollama server in background
+ollama serve &
+OLLAMA_PID=$!
+
+# Wait for Ollama to be ready
+echo "Waiting for Ollama to start..."
+until curl -s http://localhost:11434/api/tags > /dev/null 2>&1; do
+    sleep 1
+done
+echo "Ollama is ready!"
+
+# Check if model already exists
+if ! ollama list | grep -q "aipam-unified"; then
+    echo "Importing AIPAM model..."
+    cd /models && ollama create aipam-unified -f Modelfile
+    echo "Model imported successfully!"
+else
+    echo "AIPAM model already exists."
+fi
+
+# Keep Ollama running
+wait $OLLAMA_PID
+EOF
+
+RUN chmod +x /start.sh
+
+# Expose Ollama port
+EXPOSE 11434
+
+# Health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:11434/api/tags || exit 1
+
+# Use custom startup script
+CMD ["/start.sh"]
+

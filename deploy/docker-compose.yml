@@ -1,0 +1,86 @@
+# AIPAM Production Docker Compose
+# Deploy the complete AIPAM stack with a single command
+#
+# Usage:
+#   docker-compose -f deploy/docker-compose.yml up -d
+#
+# Prerequisites:
+#   - Build images first with: ./deploy/build.sh
+#   - Or pull pre-built images from registry
+
+version: '3.8'
+
+services:
+  # ============================================
+  # AIPAM Application (Frontend + Backend)
+  # ============================================
+  app:
+    image: aipam-app:latest
+    container_name: aipam-app
+    ports:
+      - "80:80"
+    environment:
+      - OLLAMA_HOST=http://ollama:11434
+      - DATABASE_URL=sqlite:///data/aipam.db
+    volumes:
+      - aipam-data:/app/data
+      - aipam-uploads:/app/uploads
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - aipam-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
+
+  # ============================================
+  # Ollama with AIPAM Fine-tuned Model
+  # ============================================
+  ollama:
+    image: aipam-ollama:latest
+    container_name: aipam-ollama
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama-models:/root/.ollama
+    restart: unless-stopped
+    networks:
+      - aipam-network
+    # GPU support (uncomment for NVIDIA GPU)
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: 1
+    #           capabilities: [gpu]
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+# ============================================
+# Volumes for persistent data
+# ============================================
+volumes:
+  aipam-data:
+    driver: local
+  aipam-uploads:
+    driver: local
+  ollama-models:
+    driver: local
+
+# ============================================
+# Network
+# ============================================
+networks:
+  aipam-network:
+    driver: bridge
+

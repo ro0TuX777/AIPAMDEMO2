@@ -80,19 +80,78 @@ export function ChatPanel({ jobId, initialContext, onClose }: ChatPanelProps) {
         }
     };
 
+    const exportToMarkdown = () => {
+        if (messages.length === 0) return;
+
+        const lines: string[] = [
+            `# Chat Export - Job ${jobId}`,
+            ``,
+            `**Exported:** ${new Date().toISOString()}`,
+            `**Conversation ID:** ${conversationId || "N/A"}`,
+            ``,
+            `---`,
+            ``,
+        ];
+
+        for (const msg of messages) {
+            const timestamp = msg.timestamp.toLocaleString();
+            if (msg.role === "user") {
+                lines.push(`## 🧑 User (${timestamp})`);
+                lines.push(``);
+                lines.push(msg.content);
+            } else {
+                lines.push(`## 🤖 Assistant (${timestamp})`);
+                lines.push(``);
+                lines.push(msg.content);
+                if (msg.citations && msg.citations.length > 0) {
+                    lines.push(``);
+                    lines.push(`**Sources:**`);
+                    for (const c of msg.citations) {
+                        lines.push(`- [${c.type}] ${c.snippet}`);
+                    }
+                }
+            }
+            lines.push(``);
+            lines.push(`---`);
+            lines.push(``);
+        }
+
+        const markdown = lines.join("\n");
+        const blob = new Blob([markdown], { type: "text/markdown" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `chat-export-${jobId}-${Date.now()}.md`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    };
+
     return (
         <div className="flex flex-col h-full bg-gray-900 rounded-lg border border-gray-700">
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
                 <h3 className="text-lg font-semibold text-white">Ask about findings</h3>
-                {onClose && (
-                    <button
-                        onClick={onClose}
-                        className="text-gray-400 hover:text-white transition-colors"
-                    >
-                        ✕
-                    </button>
-                )}
+                <div className="flex items-center gap-2">
+                    {messages.length > 0 && (
+                        <button
+                            onClick={exportToMarkdown}
+                            className="text-gray-400 hover:text-white transition-colors text-sm px-2 py-1 rounded hover:bg-gray-700"
+                            title="Export chat to Markdown"
+                        >
+                            📥 Export
+                        </button>
+                    )}
+                    {onClose && (
+                        <button
+                            onClick={onClose}
+                            className="text-gray-400 hover:text-white transition-colors"
+                        >
+                            ✕
+                        </button>
+                    )}
+                </div>
             </div>
 
             {/* Messages */}

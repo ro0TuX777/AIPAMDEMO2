@@ -98,10 +98,19 @@ def main():
     })
     print(f"Training samples: {len(dataset['train'])}")
     print(f"Validation samples: {len(dataset['validation'])}")
-    
-    # Define formatting function for the dataset
-    def formatting_func(example):
-        return example["text"]
+
+    # Preprocess dataset to add text column from messages
+    def preprocess_messages(example):
+        """Convert messages format to text for training."""
+        messages = example.get("messages", [])
+        if messages:
+            text = tokenizer.apply_chat_template(messages, tokenize=False, add_generation_prompt=False)
+        else:
+            text = ""
+        return {"text": text}
+
+    print("Preprocessing training data...")
+    dataset = dataset.map(preprocess_messages, num_proc=4, desc="Formatting")
 
     # SFT Config (combines TrainingArguments + SFT-specific settings)
     sft_config = SFTConfig(
@@ -122,7 +131,8 @@ def main():
         bf16=True,
         gradient_checkpointing=True,
         report_to="none",
-        max_length=MAX_SEQ_LENGTH,
+        max_seq_length=MAX_SEQ_LENGTH,
+        dataset_text_field="text",
     )
 
     # Initialize trainer
@@ -130,16 +140,20 @@ def main():
         model=model,
         train_dataset=dataset["train"],
         eval_dataset=dataset["validation"],
-        processing_class=tokenizer,
+        tokenizer=tokenizer,
         args=sft_config,
-        formatting_func=formatting_func,
     )
     
-    # Train
+    # Train (resume from checkpoint if available)
     print("\n" + "=" * 60)
-    print("Starting training...")
+    resume_checkpoint = os.path.join(OUTPUT_DIR, "checkpoint-18000")
+    if os.path.exists(resume_checkpoint):
+        print(f"Resuming training from {resume_checkpoint}...")
+    else:
+        print("Starting training from scratch...")
+        resume_checkpoint = None
     print("=" * 60)
-    trainer.train()
+    trainer.train(resume_from_checkpoint=resume_checkpoint)
     
     # Save LoRA adapter
     print(f"\nSaving LoRA adapter to {OUTPUT_DIR}...")

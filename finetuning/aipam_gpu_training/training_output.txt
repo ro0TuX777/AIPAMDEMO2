@@ -1,0 +1,59 @@
+============================================================
+AIPAM Traffic Analysis Model - CUDA Training
+============================================================
+CUDA Device: NVIDIA GeForce RTX 4070
+VRAM: 12.4 GB
+
+Loading tokenizer from meta-llama/Llama-3.1-8B-Instruct...
+Loading model meta-llama/Llama-3.1-8B-Instruct...
+Loading checkpoint shards:   0%|          | 0/4 [00:00<?, ?it/s]Loading checkpoint shards:  25%|██▌       | 1/4 [00:00<00:01,  1.68it/s]Loading checkpoint shards:  50%|█████     | 2/4 [00:01<00:01,  1.64it/s]Loading checkpoint shards:  75%|███████▌  | 3/4 [00:01<00:00,  1.63it/s]Loading checkpoint shards: 100%|██████████| 4/4 [00:02<00:00,  2.16it/s]Loading checkpoint shards: 100%|██████████| 4/4 [00:02<00:00,  1.94it/s]
+trainable params: 41,943,040 || all params: 8,072,204,288 || trainable%: 0.5196
+
+Loading training data...
+Training samples: 498061
+Validation samples: 26214
+/home/bc/Documents/AIPAM/finetuning/aipam_gpu_training/train_cuda.py:129: FutureWarning: `tokenizer` is deprecated and removed starting from version 0.16.0 for `SFTTrainer.__init__`. Use `processing_class` instead.
+  trainer = SFTTrainer(
+Map:   0%|          | 0/498061 [00:00<?, ? examples/s]Map:   0%|          | 0/498061 [00:00<?, ? examples/s]
+Traceback (most recent call last):
+  File "/home/bc/Documents/AIPAM/finetuning/aipam_gpu_training/train_cuda.py", line 163, in <module>
+    main()
+  File "/home/bc/Documents/AIPAM/finetuning/aipam_gpu_training/train_cuda.py", line 129, in main
+    trainer = SFTTrainer(
+              ^^^^^^^^^^^
+  File "/home/bc/Documents/AIPAM/finetuning/aipam_gpu_training/venv/lib/python3.12/site-packages/transformers/utils/deprecation.py", line 165, in wrapped_func
+    return func(*args, **kwargs)
+           ^^^^^^^^^^^^^^^^^^^^^
+  File "/home/bc/Documents/AIPAM/finetuning/aipam_gpu_training/venv/lib/python3.12/site-packages/trl/trainer/sft_trainer.py", line 265, in __init__
+    train_dataset = self._prepare_dataset(
+                    ^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/bc/Documents/AIPAM/finetuning/aipam_gpu_training/venv/lib/python3.12/site-packages/trl/trainer/sft_trainer.py", line 380, in _prepare_dataset
+    return self._prepare_non_packed_dataloader(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/bc/Documents/AIPAM/finetuning/aipam_gpu_training/venv/lib/python3.12/site-packages/trl/trainer/sft_trainer.py", line 455, in _prepare_non_packed_dataloader
+    tokenized_dataset = dataset.map(tokenize, **map_kwargs)
+                        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/bc/Documents/AIPAM/finetuning/aipam_gpu_training/venv/lib/python3.12/site-packages/datasets/arrow_dataset.py", line 562, in wrapper
+    out: Union["Dataset", "DatasetDict"] = func(self, *args, **kwargs)
+                                           ^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/bc/Documents/AIPAM/finetuning/aipam_gpu_training/venv/lib/python3.12/site-packages/datasets/arrow_dataset.py", line 3341, in map
+    for rank, done, content in Dataset._map_single(**unprocessed_kwargs):
+                               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/bc/Documents/AIPAM/finetuning/aipam_gpu_training/venv/lib/python3.12/site-packages/datasets/arrow_dataset.py", line 3697, in _map_single
+    for i, batch in iter_outputs(shard_iterable):
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/bc/Documents/AIPAM/finetuning/aipam_gpu_training/venv/lib/python3.12/site-packages/datasets/arrow_dataset.py", line 3647, in iter_outputs
+    yield i, apply_function(example, i, offset=offset)
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/bc/Documents/AIPAM/finetuning/aipam_gpu_training/venv/lib/python3.12/site-packages/datasets/arrow_dataset.py", line 3570, in apply_function
+    processed_inputs = function(*fn_args, *additional_args, **fn_kwargs)
+                       ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/bc/Documents/AIPAM/finetuning/aipam_gpu_training/venv/lib/python3.12/site-packages/trl/trainer/sft_trainer.py", line 415, in tokenize
+    outputs = processing_class(
+              ^^^^^^^^^^^^^^^^^
+  File "/home/bc/Documents/AIPAM/finetuning/aipam_gpu_training/venv/lib/python3.12/site-packages/transformers/tokenization_utils_base.py", line 2868, in __call__
+    encodings = self._call_one(text=text, text_pair=text_pair, **all_kwargs)
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/home/bc/Documents/AIPAM/finetuning/aipam_gpu_training/venv/lib/python3.12/site-packages/transformers/tokenization_utils_base.py", line 2928, in _call_one
+    raise ValueError(
+ValueError: text input must be of type `str` (single example), `List[str]` (batch or single pretokenized example) or `List[List[str]]` (batch of pretokenized examples).

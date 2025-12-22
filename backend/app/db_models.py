@@ -60,3 +60,27 @@ class SettingsDB(SQLModel, table=True):
         sa_column=Column(JSON, nullable=False),
     )
 
+
+class ConversationDB(SQLModel, table=True):
+    """Database model for chat conversations about job analysis."""
+
+    id: str = Field(primary_key=True, index=True)
+    job_id: str = Field(foreign_key="jobdb.id", index=True)
+    created_at: datetime
+    updated_at: datetime
+    title: Optional[str] = None  # Optional title/summary of conversation
+
+
+class ChatMessageDB(SQLModel, table=True):
+    """Database model for individual chat messages in a conversation."""
+
+    id: str = Field(primary_key=True, index=True)
+    conversation_id: str = Field(foreign_key="conversationdb.id", index=True)
+    role: str  # "user" or "assistant"
+    content: str
+    citations: Dict[str, Any] = Field(
+        default_factory=dict,
+        sa_column=Column(JSON, nullable=False),
+    )
+    created_at: datetime
+

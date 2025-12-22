@@ -458,13 +458,57 @@ async def chat_about_job(job_id: str, body: ChatRequest) -> ChatResponse:
     # Generate the chat response using the job result as context
     job_result = result_row.result
     response = await generate_chat_response(
+        job_id=job_id,
         job_result=job_result,
         user_message=body.message,
         context_hint=body.context_hint,
-        conversation_history=None,  # TODO: Implement conversation persistence
+        conversation_id=body.conversation_id,
+        use_rag=True,
     )
 
     return response
+
+
+@app.post("/api/v1/jobs/{job_id}/reindex")
+async def reindex_job(job_id: str) -> dict:
+    """Rebuild the RAG index for a completed job.
+
+    Use this endpoint to regenerate embeddings without re-running the full analysis.
+    Useful after model updates or if the index was corrupted.
+
+    Args:
+        job_id: The job ID to reindex
+
+    Returns:
+        Status message with document count
+    """
+    from sqlmodel import select
+    from .rag_index import index_job_result
+
+    # Fetch the job and verify it's completed
+    with get_session() as session:
+        job = session.get(JobDB, job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="job not found")
+        if job.status != JobStatus.COMPLETED:
+            raise HTTPException(status_code=409, detail="job not yet completed")
+
+        result_row = session.exec(
+            select(JobResultDB).where(JobResultDB.job_id == job_id)
+        ).one_or_none()
+
+    if not result_row:
+        raise HTTPException(status_code=500, detail="result missing for completed job")
+
+    try:
+        doc_count = index_job_result(job_id, result_row.result)
+        return {
+            "status": "success",
+            "job_id": job_id,
+            "documents_indexed": doc_count,
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Indexing failed: {str(e)}")
 
 
 # ============================================================================

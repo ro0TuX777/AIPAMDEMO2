@@ -42,6 +42,11 @@ class EffectiveSettings:
     arkime_api_username: Optional[str]
     arkime_api_password: Optional[str]
 
+    # RAG / Embeddings (Phase 1 Chat)
+    embedding_model_name: str
+    embedding_model_path: Optional[Path]  # Local path for air-gapped environments
+    vector_store_path: Path
+
 
 def _load_settings_row() -> dict:
     """Return raw settings dict from SettingsDB (or empty dict)."""
@@ -107,6 +112,16 @@ def get_effective_settings() -> EffectiveSettings:
     ark_user = raw.get("arkime_api_username") or os.getenv("ARKIME_API_USERNAME")
     ark_pass = raw.get("arkime_api_password") or os.getenv("ARKIME_API_PASSWORD")
 
+    # RAG / Embeddings
+    embedding_model_name = raw.get("embedding_model_name") or os.getenv(
+        "EMBEDDING_MODEL_NAME", "sentence-transformers/all-MiniLM-L6-v2"
+    )
+    embedding_model_path_str = raw.get("embedding_model_path") or os.getenv("EMBEDDING_MODEL_PATH")
+    embedding_model_path = Path(embedding_model_path_str) if embedding_model_path_str else None
+
+    vector_store_path_str = raw.get("vector_store_path") or os.getenv("VECTOR_STORE_PATH")
+    vector_store_path = Path(vector_store_path_str) if vector_store_path_str else (file_storage_path / "vector_store")
+
     return EffectiveSettings(
         llm_endpoint=llm_endpoint,
         llm_model_name=llm_model_name,
@@ -124,5 +139,8 @@ def get_effective_settings() -> EffectiveSettings:
         arkime_api_url=ark_url,
         arkime_api_username=ark_user,
         arkime_api_password=ark_pass,
+        embedding_model_name=embedding_model_name,
+        embedding_model_path=embedding_model_path,
+        vector_store_path=vector_store_path,
     )
 

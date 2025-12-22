@@ -28,7 +28,7 @@ OUTPUT_DIR = "training_data"
 MAX_PACKET_LENGTH = 1024
 
 # Instruction template (matching TrafficLLM's EMD task)
-INSTRUCTION_TEMPLATE = """Given the following traffic data <packet> that contains protocol fields, traffic features, and payloads. Please conduct the ENCRYPTED MALWARE DETECTION TASK to determine which application category the encrypted benign or malicious traffic belongs to. The categories include 'BitTorrent, FTP, Facetime, Gmail, MySQL, Outlook, SMB, Skype, Weibo, WorldOfWarcraft, Cridex, Geodo, Htbot, Miuref, Neris, Nsis-ay, Shifu, Tinba, Virut, Zeus, Lumma_Stealer, Remcos_RAT, NetSupport_RAT, AsyncRAT, DarkGate, Danabot, Formbook, Redline_Stealer, CobaltStrike, Pikabot, Latrodectus'.
+INSTRUCTION_TEMPLATE = """Given the following traffic data <packet> that contains protocol fields, traffic features, and payloads. Please conduct the ENCRYPTED MALWARE DETECTION TASK to determine which application category the encrypted benign or malicious traffic belongs to. The categories include 'BitTorrent, FTP, Facetime, Gmail, MySQL, Outlook, SMB, Skype, Weibo, WorldOfWarcraft, Cridex, Geodo, Htbot, Miuref, Neris, Nsis-ay, Shifu, Tinba, Virut, Zeus, IcedID, Qakbot, Emotet, TrickBot, Formbook, CobaltStrike, BazarLoader, DarkGate, Ursnif, Pikabot, BumbleBee, Matanbuchus, Astaroth, AgentTesla, Lumma_Stealer, Danabot, SSLoad, Remcos_RAT, Sliver, Latrodectus, NetSupport_RAT, Redline_Stealer, SocGholish, Raccoon, Meduza_Stealer, GuLoader, AsyncRAT'.
 <packet>: {packet_data}"""
 
 OUTPUT_TEMPLATE = "This might be a Malware traffic packet. The category is likely to be recognized as {malware_label}."
