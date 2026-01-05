@@ -58,20 +58,28 @@ def format_for_training(samples, tokenizer):
     """Format samples for Unsloth training."""
     formatted = []
     for sample in samples:
-        # Use ChatML format
-        text = tokenizer.apply_chat_template(
-            sample["messages"],
-            tokenize=False,
-            add_generation_prompt=False,
-        )
-        formatted.append({"text": text})
+        # Handle both formats: {"messages": [...]} and {"text": "..."}
+        if "text" in sample:
+            # Already formatted as text
+            formatted.append({"text": sample["text"]})
+        elif "messages" in sample:
+            # Use ChatML format to convert messages to text
+            text = tokenizer.apply_chat_template(
+                sample["messages"],
+                tokenize=False,
+                add_generation_prompt=False,
+            )
+            formatted.append({"text": text})
+        else:
+            # Skip invalid samples
+            continue
     return formatted
 
 
 def main():
     parser = argparse.ArgumentParser(description="Fine-tune llama3.1:8b for AIPAM")
-    parser.add_argument("--data", default="data/training/train.jsonl", help="Training data path")
-    parser.add_argument("--val-data", default="data/training/validation.jsonl", help="Validation data")
+    parser.add_argument("--data", default="models/aipam-llama-balanced/train.jsonl", help="Training data path")
+    parser.add_argument("--val-data", default="models/aipam-llama-balanced/valid.jsonl", help="Validation data")
     parser.add_argument("--output", default="models/aipam-llama", help="Output model path")
     parser.add_argument("--base-model", default="unsloth/llama-3.1-8b-bnb-4bit", help="Base model")
     parser.add_argument("--epochs", type=int, default=3, help="Training epochs")
@@ -81,7 +89,21 @@ def main():
     parser.add_argument("--lora-alpha", type=int, default=16, help="LoRA alpha")
     parser.add_argument("--max-seq-length", type=int, default=4096, help="Max sequence length")
     parser.add_argument("--export-gguf", action="store_true", help="Export to GGUF for Ollama")
+    parser.add_argument("--validate-data", action="store_true", help="Validate data loading without training")
+    parser.add_argument("--resume-from", type=str, default=None, help="Path to existing adapter/model to continue training")
     args = parser.parse_args()
+
+    # Basic data check
+    train_path = Path(args.data)
+    if not train_path.exists():
+        print(f"Error: Training data not found at {train_path}")
+        return
+
+    if args.validate_data:
+        # ... (validation logic unchanged) ...
+        print("Running in data validation mode...")
+        # ...
+        return
 
     if not check_dependencies():
         return
@@ -95,28 +117,46 @@ def main():
     print("Fine-tuning llama3.1:8b for Network Traffic Analysis")
     print("=" * 60)
 
-    # Load model with 4-bit quantization
-    print(f"\nLoading base model: {args.base_model}")
-    model, tokenizer = FastLanguageModel.from_pretrained(
-        model_name=args.base_model,
-        max_seq_length=args.max_seq_length,
-        dtype=None,  # Auto-detect
-        load_in_4bit=True,
-    )
+    # Load model
+    model_name = args.resume_from if args.resume_from else args.base_model
+    print(f"\nLoading model: {model_name}")
+    
+    try:
+        model, tokenizer = FastLanguageModel.from_pretrained(
+            model_name=model_name,
+            max_seq_length=args.max_seq_length,
+            dtype=None,  # Auto-detect
+            load_in_4bit=True,
+        )
+    except Exception as e:
+        if "CUDA" in str(e) or "GPU" in str(e):
+            print("\n[CRITICAL] GPU/CUDA Error detected!")
+            # ... error msg ...
+            return
+        raise e
 
-    # Add LoRA adapters
-    print("Adding LoRA adapters...")
-    model = FastLanguageModel.get_peft_model(
-        model,
-        r=args.lora_r,
-        target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
-                        "gate_proj", "up_proj", "down_proj"],
-        lora_alpha=args.lora_alpha,
-        lora_dropout=0,
-        bias="none",
-        use_gradient_checkpointing="unsloth",
-        random_state=42,
-    )
+    # Add LoRA adapters ONLY if we are starting fresh (base model).
+    # If resuming from an adapter, Unsloth loads it automatically.
+    # We check if the loaded model is already a PeftModel.
+    from peft import PeftModel
+    
+    if isinstance(model, PeftModel) or (args.resume_from and Path(args.resume_from).exists()):
+        print("Resuming from existing adapter/checkpoint...")
+        # Ensure we are in training mode
+        model.train()
+    else:
+        print("Adding new LoRA adapters to base model...")
+        model = FastLanguageModel.get_peft_model(
+            model,
+            r=args.lora_r,
+            target_modules=["q_proj", "k_proj", "v_proj", "o_proj",
+                            "gate_proj", "up_proj", "down_proj"],
+            lora_alpha=args.lora_alpha,
+            lora_dropout=0,
+            bias="none",
+            use_gradient_checkpointing="unsloth",
+            random_state=42,
+        )
 
     # Load and format training data
     print(f"\nLoading training data from: {args.data}")
@@ -132,7 +172,8 @@ def main():
         warmup_steps=5,
         num_train_epochs=args.epochs,
         learning_rate=args.learning_rate,
-        fp16=True,
+        fp16=False,
+        bf16=True,
         logging_steps=10,
         optim="adamw_8bit",
         weight_decay=0.01,

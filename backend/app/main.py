@@ -34,7 +34,7 @@ app = FastAPI(title="AIPAM API", version="0.1.0")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=["http://localhost:5173", "http://localhost:5174", "http://localhost:5175", "http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -467,6 +467,105 @@ async def chat_about_job(job_id: str, body: ChatRequest) -> ChatResponse:
     )
 
     return response
+
+
+@app.get("/api/v1/jobs/{job_id}/conversations")
+async def list_job_conversations(job_id: str) -> list:
+    """List all conversations for a job.
+
+    Args:
+        job_id: The job ID to get conversations for
+
+    Returns:
+        List of conversation summaries
+    """
+    from sqlmodel import select, func
+    from .db_models import ConversationDB, ChatMessageDB
+    from .schemas import ConversationSummary
+
+    with get_session() as session:
+        # Check job exists
+        job = session.get(JobDB, job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="job not found")
+
+        # Get conversations with message counts
+        convs = session.exec(
+            select(ConversationDB)
+            .where(ConversationDB.job_id == job_id)
+            .order_by(ConversationDB.updated_at.desc())
+        ).all()
+
+        result = []
+        for conv in convs:
+            msg_count = session.exec(
+                select(func.count(ChatMessageDB.id))
+                .where(ChatMessageDB.conversation_id == conv.id)
+            ).one()
+            result.append(ConversationSummary(
+                id=conv.id,
+                job_id=conv.job_id,
+                created_at=conv.created_at,
+                updated_at=conv.updated_at,
+                title=conv.title,
+                message_count=msg_count,
+            ))
+
+        return result
+
+
+@app.get("/api/v1/jobs/{job_id}/conversations/{conversation_id}")
+async def get_conversation_history(job_id: str, conversation_id: str):
+    """Get the full message history for a conversation.
+
+    Args:
+        job_id: The job ID
+        conversation_id: The conversation ID
+
+    Returns:
+        Full conversation with all messages
+    """
+    from sqlmodel import select
+    from .db_models import ConversationDB, ChatMessageDB
+    from .schemas import ConversationHistory, ChatMessage, ChatCitation
+
+    with get_session() as session:
+        # Get conversation
+        conv = session.get(ConversationDB, conversation_id)
+        if not conv or conv.job_id != job_id:
+            raise HTTPException(status_code=404, detail="conversation not found")
+
+        # Get messages
+        messages = session.exec(
+            select(ChatMessageDB)
+            .where(ChatMessageDB.conversation_id == conversation_id)
+            .order_by(ChatMessageDB.created_at.asc())
+        ).all()
+
+        chat_messages = []
+        for msg in messages:
+            citations = []
+            if msg.citations and "items" in msg.citations:
+                for c in msg.citations["items"]:
+                    citations.append(ChatCitation(
+                        type=c.get("type", ""),
+                        id=c.get("id"),
+                        snippet=c.get("snippet", ""),
+                    ))
+            chat_messages.append(ChatMessage(
+                role=msg.role,
+                content=msg.content,
+                citations=citations,
+                timestamp=msg.created_at,
+            ))
+
+        return ConversationHistory(
+            id=conv.id,
+            job_id=conv.job_id,
+            messages=chat_messages,
+            created_at=conv.created_at,
+            updated_at=conv.updated_at,
+        )
 
 
 @app.post("/api/v1/jobs/{job_id}/reindex")

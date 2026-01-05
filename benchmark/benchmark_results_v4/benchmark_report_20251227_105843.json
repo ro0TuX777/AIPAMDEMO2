@@ -1,0 +1,549 @@
+{
+  "timestamp": "2025-12-27T10:58:43.523047",
+  "model_name": "aipam-cybersec-llm",
+  "total_samples": 50,
+  "correct": 0,
+  "accuracy": 0.0,
+  "malicious_detection_accuracy": 1.0,
+  "avg_inference_time": 1.6731282663345337,
+  "precision_per_family": {
+    "Emotet": 0.0,
+    "Cridex": 0.0,
+    "IcedID": 0.0,
+    "TrickBot": 0.0,
+    "Dridex": 0.0,
+    "Formbook": 0.0,
+    "BazarLoader": 0.0,
+    "Ransomware": 0.0,
+    "Qakbot": 0.0,
+    "RigEK": 0.0,
+    "Ursnif": 0.0,
+    "Nymaim": 0.0,
+    "Hancitor": 0.0,
+    "Raccoon": 0.0
+  },
+  "recall_per_family": {
+    "Emotet": 0.0,
+    "Cridex": 0.0,
+    "IcedID": 0.0,
+    "TrickBot": 0.0,
+    "Dridex": 0.0,
+    "Formbook": 0.0,
+    "BazarLoader": 0.0,
+    "Ransomware": 0.0,
+    "Qakbot": 0.0,
+    "RigEK": 0.0,
+    "Ursnif": 0.0,
+    "Nymaim": 0.0,
+    "Hancitor": 0.0,
+    "Raccoon": 0.0
+  },
+  "f1_per_family": {
+    "Emotet": 0.0,
+    "Cridex": 0.0,
+    "IcedID": 0.0,
+    "TrickBot": 0.0,
+    "Dridex": 0.0,
+    "Formbook": 0.0,
+    "BazarLoader": 0.0,
+    "Ransomware": 0.0,
+    "Qakbot": 0.0,
+    "RigEK": 0.0,
+    "Ursnif": 0.0,
+    "Nymaim": 0.0,
+    "Hancitor": 0.0,
+    "Raccoon": 0.0
+  },
+  "confusion_matrix": {
+    "Qakbot": {
+      "Raccoon": 1,
+      "RigEK": 1
+    },
+    "TrickBot": {
+      "Raccoon": 4,
+      "Formbook": 1
+    },
+    "RigEK": {
+      "Raccoon": 1
+    },
+    "Ursnif": {
+      "Raccoon": 8,
+      "BazarLoader": 1,
+      "RigEK": 2
+    },
+    "IcedID": {
+      "Raccoon": 3,
+      "RigEK": 2
+    },
+    "Emotet": {
+      "Raccoon": 10,
+      "RigEK": 9,
+      "Cridex": 1
+    },
+    "Hancitor": {
+      "Raccoon": 2,
+      "RigEK": 1
+    },
+    "Dridex": {
+      "Raccoon": 1
+    },
+    "Ransomware": {
+      "Raccoon": 1
+    },
+    "Nymaim": {
+      "Raccoon": 1
+    }
+  },
+  "results": [
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Qakbot/2019-12-27-Qakbot-infection-traffic.pcap",
+      "ground_truth": "Qakbot",
+      "prediction": "Raccoon",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 1.3105056285858154,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/TrickBot/2019-12-26-IcedID-infection-with-Trickbot-gtag-tin233.pcap",
+      "ground_truth": "TrickBot",
+      "prediction": "Raccoon",
+      "confidence": 0.7,
+      "is_correct": false,
+      "inference_time": 1.484485387802124,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/RigEK/2019-12-23-Rig-EK-sends-a-payload-I-cannot-identify.pcap",
+      "ground_truth": "RigEK",
+      "prediction": "Raccoon",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 2.567128896713257,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2019-12-23-Ursnif-example-1-infection-traffic.pcap",
+      "ground_truth": "Ursnif",
+      "prediction": "Raccoon",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 1.2265868186950684,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/IcedID/2019-12-23-IcedID-infection-from-malspam-1st-run.pcap",
+      "ground_truth": "IcedID",
+      "prediction": "Raccoon",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 1.6551225185394287,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-12-20-Emotet-epoch-2-with-Trickbot-mor70.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "Raccoon",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 1.2201285362243652,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/IcedID/2019-12-19-Ursnif-infection-with-IcedID-and-Valak.pcap",
+      "ground_truth": "IcedID",
+      "prediction": "RigEK",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 1.893735647201538,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-12-16-Emotet-infection-with-spambot-traffic.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "RigEK",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 2.494328260421753,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-12-16-Emotet-epoch-3-infection-with-Trickbot-gtag-mor66.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "Cridex",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 1.4798128604888916,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2019-12-11-Ursnif-infection-with-Dridex.pcap",
+      "ground_truth": "Ursnif",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 1.2115528583526611,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/TrickBot/2019-12-10-Trickbot-gtag-mango21-infection-traffic.pcap",
+      "ground_truth": "TrickBot",
+      "prediction": "Raccoon",
+      "confidence": 0.9,
+      "is_correct": false,
+      "inference_time": 1.4022436141967773,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2019-12-10-Hancitor-infection-with-Ursnif-and-Cobalt-Strike.pcap",
+      "ground_truth": "Ursnif",
+      "prediction": "Raccoon",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 1.8285155296325684,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-12-09-Emotet-epoch-2-infection-with-Trickbot-gtag-mor61.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "Raccoon",
+      "confidence": 0.3,
+      "is_correct": false,
+      "inference_time": 1.6034033298492432,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2019-12-09-Hancitor-infection-traffic.pcap",
+      "ground_truth": "Hancitor",
+      "prediction": "Raccoon",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 1.4161744117736816,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-12-06-Emotet-epoch-3-with-Trickbot-gtag-mor60-infection-traffic.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "Raccoon",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 1.1948604583740234,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2019-12-05-Hancitor-infection-traffic.pcap",
+      "ground_truth": "Hancitor",
+      "prediction": "RigEK",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 1.3806302547454834,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2019-12-02-Ursnif-infection-with-Dridex.pcap",
+      "ground_truth": "Ursnif",
+      "prediction": "RigEK",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 1.86680006980896,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-11-27-Emotet-epoch-3-infected-Windows-client-as-spambot.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "RigEK",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 4.515242099761963,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Dridex/2019-11-27-Dridex-infection-traffic.pcap",
+      "ground_truth": "Dridex",
+      "prediction": "Raccoon",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 1.2730493545532227,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Qakbot/2019-11-25-Spelevo-EK.pcap",
+      "ground_truth": "Qakbot",
+      "prediction": "RigEK",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 1.37666916847229,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2019-11-25-Ursnif-infection-with-Dridex.pcap",
+      "ground_truth": "Ursnif",
+      "prediction": "RigEK",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 3.5611395835876465,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-11-25-Emotet-epoch-3-infection-with-Trickbot-gtag-mor51.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "RigEK",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 3.0473408699035645,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-11-22-Emotet-epoch-2-with-Trickbot-gtag-mor50.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "RigEK",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 1.4436633586883545,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-11-21-Emotet-epoch-3-with-Trickbot-gtag-mor49-and-spambot-traffic.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "RigEK",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 1.3631184101104736,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-11-15-Emotet-epoch-3-infection-with-Trickbot-gtag-mor45.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "Raccoon",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 1.2207410335540771,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-11-13-Emotet-epoch-1-infection-with-Trickbot-gtag-mor43.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "RigEK",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 1.4447824954986572,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/IcedID/2019-11-13-IcedID-infection-with-Anubis-VNC-and-Trickbot-in-AD-environment.pcap",
+      "ground_truth": "IcedID",
+      "prediction": "Raccoon",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 1.4349310398101807,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-11-11-Emotet-epoch-1-infection-with-Trickbot-gtag-mor41.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "Raccoon",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 2.6697051525115967,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-11-08-Emotet-epoch-2-infection-with-Trickbot-gtag-mor40.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "Raccoon",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 1.3996174335479736,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/TrickBot/2019-11-08-traffic-from-Ursnif-infection-with-Trickbot-gtag-lleo8.pcap",
+      "ground_truth": "TrickBot",
+      "prediction": "Raccoon",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 1.2371110916137695,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2019-11-07-Ursnif-infection-from-Italian-malspam.pcap",
+      "ground_truth": "Ursnif",
+      "prediction": "Raccoon",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 1.6891753673553467,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2019-11-06-Ursnif-infection-with-Dridex-and-proxy-activity.pcap",
+      "ground_truth": "Ursnif",
+      "prediction": "Raccoon",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 1.5288012027740479,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/TrickBot/2019-10-31-IcedID-infection-with-Trickbot.pcap",
+      "ground_truth": "TrickBot",
+      "prediction": "Formbook",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 1.372927188873291,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/TrickBot/2019-10-25-Ursnif-infection-with-IcedID-then-Trickbot-gtag-tin188.pcap",
+      "ground_truth": "TrickBot",
+      "prediction": "Raccoon",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 1.3948414325714111,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-10-25-Emotet-infection-with-Trickbot-gtag-mor31.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "RigEK",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 1.2249126434326172,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-10-24-Emotet-infection-with-Trickbot-gtag-mor30.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "Raccoon",
+      "confidence": 0.7,
+      "is_correct": false,
+      "inference_time": 1.4564998149871826,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-10-22-Emotet-infection-wth-Trickbot-gtag-mor28.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "RigEK",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 1.461719274520874,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-10-21-Emotet-infection-with-Trickbot-gtag-mor27-and-spambot-activity.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "Raccoon",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 1.7357416152954102,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/IcedID/2019-10-21-Ursnif-infection-with-IcedID.pcap",
+      "ground_truth": "IcedID",
+      "prediction": "Raccoon",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 1.4862885475158691,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2019-10-17-Ursnif-infection-from-Italian-malspam.pcap",
+      "ground_truth": "Ursnif",
+      "prediction": "Raccoon",
+      "confidence": 0.7,
+      "is_correct": false,
+      "inference_time": 1.4142234325408936,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ransomware/2018-12-27-shade-ransomware-infection.pcap",
+      "ground_truth": "Ransomware",
+      "prediction": "Raccoon",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 1.6829774379730225,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2018-12-20-Emotet-infection-with-Gootkit.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "Raccoon",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 1.5799436569213867,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2018-12-20-Hancitor-1st-run-retreives-Pony-EvilPony-Ursnif-and-SmokeLoader.pcap",
+      "ground_truth": "Ursnif",
+      "prediction": "Raccoon",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 1.4182703495025635,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/IcedID/2018-12-17-IcedID-from-password-protected-Word-doc.pcap",
+      "ground_truth": "IcedID",
+      "prediction": "RigEK",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 1.303907871246338,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2018-12-17-Hancitor-infection-with-Urnsif.pcap",
+      "ground_truth": "Hancitor",
+      "prediction": "Raccoon",
+      "confidence": 0.7,
+      "is_correct": false,
+      "inference_time": 1.4825522899627686,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2018-12-14-Emotet-infection-with-Qakbot.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "Raccoon",
+      "confidence": 0.7,
+      "is_correct": false,
+      "inference_time": 1.734283685684204,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2018-12-13-Hancitor-infection-with-Ursnif.pcap",
+      "ground_truth": "Ursnif",
+      "prediction": "Raccoon",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 1.493652105331421,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2018-12-10-Ursnif-infection-with-Dridex.pcap",
+      "ground_truth": "Ursnif",
+      "prediction": "Raccoon",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 1.4172344207763672,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Nymaim/2018-12-10-password-protected-Word-doc-pushes-Nymaim.pcap",
+      "ground_truth": "Nymaim",
+      "prediction": "Raccoon",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 2.0957248210906982,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2018-12-10-Emotet-infection-with-IcedID.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "RigEK",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 1.4596099853515625,
+      "error": null
+    }
+  ]
+}

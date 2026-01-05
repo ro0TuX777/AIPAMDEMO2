@@ -19,6 +19,20 @@ of a Python backend (FastAPI + Celery + SQLModel) and a React (Vite) frontend.
   - Create jobs via REST API
   - Check job status and per-step progress
   - Retrieve final analysis results and report URLs
+- **Performance Benchmarking**
+  - Continuous evaluation against known malware families
+  - Detailed metrics on detection accuracy and type classification
+
+## Benchmark Results (Latest)
+
+Our recently completed benchmark on 15 malicious samples shows:
+- **Malicious Detection:** 100%
+- **Type Accuracy:** 33.3%
+- **Exact Family Match:** 6.7%
+
+For detailed analysis and latest results, see:
+- [RESULTS_LATEST.md](file:///home/bc/Documents/AIPAM/benchmark/RESULTS_LATEST.md)
+- [BIAS_ANALYSIS.md](file:///home/bc/Documents/AIPAM/benchmark/BIAS_ANALYSIS.md)
 
 ## Architecture
 

@@ -94,10 +94,11 @@ TARGET_MALWARE = {
 }
 
 # Years to download from
-YEARS = ["2024", "2023", "2022", "2021", "2020"]
+YEARS = ["2025", "2024", "2023", "2022", "2021", "2020"]
 
-# Output directory
-OUTPUT_DIR = "pcaps"
+# Output directory for training data
+# We target the modern ingestion subdirectories specifically
+OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "raw", "modern")
 
 def get_pcap_links(year="2024"):
     """Get links to blog posts from the index page."""

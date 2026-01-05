@@ -1,0 +1,2865 @@
+{
+  "timestamp": "2025-12-27T19:52:07.231027",
+  "model_name": "aipam-cybersec-llm",
+  "total_samples": 286,
+  "correct": 2,
+  "accuracy": 0.006993006993006993,
+  "malicious_detection_accuracy": 0.9965034965034965,
+  "avg_inference_time": 19.465991376996875,
+  "precision_per_family": {
+    "NeutrinoEK": 0.0,
+    "Latrodectus": 0.0,
+    "Matanbuchus": 0.0,
+    "RigEK": 0.0,
+    "AnglerEK": 0.0,
+    "AgentTesla": 0.0,
+    "XWorm": 0.0,
+    "Lumma_Stealer": 0.0,
+    "Astaroth": 0.0,
+    "BazarLoader": 0.0,
+    "Remcos_RAT": 0.0,
+    "Qakbot": 0.0,
+    "Hancitor": 0.0,
+    "XLoader": 0.0,
+    "Zeus": 0.0,
+    "DarkGate": 0.0,
+    "SocGholish": 0.0,
+    "Formbook": 0.01680672268907563,
+    "Locky": 0.0,
+    "Necurs": 0.0,
+    "StealC": 0.0,
+    "SSLoad": 0.0,
+    "Dridex": 0.0,
+    "NetSupport_RAT": 0.0,
+    "Nymaim": 0.0,
+    "Ursnif": 0.0,
+    "Redline_Stealer": 0.0,
+    "Meduza_Stealer": 0.0,
+    "CobaltStrike": 0.0,
+    "Pony": 0.0,
+    "BitTorrent": 0.0,
+    "Ransomware": 0.0,
+    "Vawtrak": 0.0,
+    "IcedID": 0.0,
+    "Pikabot": 0.0,
+    "GuLoader": 0.0,
+    "TrickBot": 0.0,
+    "Emotet": 0.0,
+    "Danabot": 0.0,
+    "Cerber": 0.0,
+    "AsyncRAT": 0.0
+  },
+  "recall_per_family": {
+    "NeutrinoEK": 0.0,
+    "Latrodectus": 0.0,
+    "Matanbuchus": 0.0,
+    "RigEK": 0.0,
+    "AnglerEK": 0.0,
+    "AgentTesla": 0.0,
+    "XWorm": 0.0,
+    "Lumma_Stealer": 0.0,
+    "Astaroth": 0.0,
+    "BazarLoader": 0.0,
+    "Remcos_RAT": 0.0,
+    "Qakbot": 0.0,
+    "Hancitor": 0.0,
+    "XLoader": 0.0,
+    "Zeus": 0.0,
+    "DarkGate": 0.0,
+    "SocGholish": 0.0,
+    "Formbook": 0.14285714285714285,
+    "Locky": 0.0,
+    "Necurs": 0.0,
+    "StealC": 0.0,
+    "SSLoad": 0.0,
+    "Dridex": 0.0,
+    "NetSupport_RAT": 0.0,
+    "Nymaim": 0.0,
+    "Ursnif": 0.0,
+    "Redline_Stealer": 0.0,
+    "Meduza_Stealer": 0.0,
+    "CobaltStrike": 0.0,
+    "Pony": 0.0,
+    "BitTorrent": 0.0,
+    "Ransomware": 0.0,
+    "Vawtrak": 0.0,
+    "IcedID": 0.0,
+    "Pikabot": 0.0,
+    "GuLoader": 0.0,
+    "TrickBot": 0.0,
+    "Emotet": 0.0,
+    "Danabot": 0.0,
+    "Cerber": 0.0,
+    "AsyncRAT": 0.0
+  },
+  "f1_per_family": {
+    "NeutrinoEK": 0.0,
+    "Latrodectus": 0.0,
+    "Matanbuchus": 0.0,
+    "RigEK": 0.0,
+    "AnglerEK": 0.0,
+    "AgentTesla": 0.0,
+    "XWorm": 0.0,
+    "Lumma_Stealer": 0.0,
+    "Astaroth": 0.0,
+    "BazarLoader": 0.0,
+    "Remcos_RAT": 0.0,
+    "Qakbot": 0.0,
+    "Hancitor": 0.0,
+    "XLoader": 0.0,
+    "Zeus": 0.0,
+    "DarkGate": 0.0,
+    "SocGholish": 0.0,
+    "Formbook": 0.030075187969924814,
+    "Locky": 0.0,
+    "Necurs": 0.0,
+    "StealC": 0.0,
+    "SSLoad": 0.0,
+    "Dridex": 0.0,
+    "NetSupport_RAT": 0.0,
+    "Nymaim": 0.0,
+    "Ursnif": 0.0,
+    "Redline_Stealer": 0.0,
+    "Meduza_Stealer": 0.0,
+    "CobaltStrike": 0.0,
+    "Pony": 0.0,
+    "BitTorrent": 0.0,
+    "Ransomware": 0.0,
+    "Vawtrak": 0.0,
+    "IcedID": 0.0,
+    "Pikabot": 0.0,
+    "GuLoader": 0.0,
+    "TrickBot": 0.0,
+    "Emotet": 0.0,
+    "Danabot": 0.0,
+    "Cerber": 0.0,
+    "AsyncRAT": 0.0
+  },
+  "confusion_matrix": {
+    "Qakbot": {
+      "BazarLoader": 2,
+      "Formbook": 1
+    },
+    "TrickBot": {
+      "BazarLoader": 5,
+      "Formbook": 9
+    },
+    "RigEK": {
+      "BazarLoader": 14,
+      "Formbook": 7
+    },
+    "Ursnif": {
+      "Formbook": 8,
+      "BazarLoader": 10,
+      "Astaroth": 1
+    },
+    "IcedID": {
+      "Formbook": 7,
+      "BazarLoader": 8,
+      "BitTorrent": 1
+    },
+    "Emotet": {
+      "Formbook": 16,
+      "Astaroth": 3,
+      "BazarLoader": 8,
+      "DarkGate": 1
+    },
+    "Hancitor": {
+      "BazarLoader": 11,
+      "Formbook": 12,
+      "Astaroth": 2,
+      "DarkGate": 1
+    },
+    "Dridex": {
+      "Formbook": 2
+    },
+    "Ransomware": {
+      "Formbook": 6,
+      "BazarLoader": 5,
+      "CobaltStrike": 1
+    },
+    "Nymaim": {
+      "Formbook": 2,
+      "BazarLoader": 1
+    },
+    "Necurs": {
+      "BazarLoader": 6,
+      "Formbook": 3
+    },
+    "Remcos_RAT": {
+      "BazarLoader": 3,
+      "Formbook": 2
+    },
+    "NetSupport_RAT": {
+      "BazarLoader": 1,
+      "Formbook": 1
+    },
+    "Zeus": {
+      "BazarLoader": 1
+    },
+    "Locky": {
+      "Formbook": 5,
+      "BazarLoader": 5,
+      "Astaroth": 1
+    },
+    "Cerber": {
+      "Formbook": 7,
+      "BazarLoader": 9
+    },
+    "Vawtrak": {
+      "BazarLoader": 1
+    },
+    "AnglerEK": {
+      "Formbook": 10,
+      "BazarLoader": 9
+    },
+    "Pony": {
+      "BazarLoader": 2
+    },
+    "NeutrinoEK": {
+      "Formbook": 2,
+      "BazarLoader": 2
+    },
+    "Pikabot": {
+      "BazarLoader": 3,
+      "Formbook": 3
+    },
+    "Astaroth": {
+      "Formbook": 1
+    },
+    "DarkGate": {
+      "BazarLoader": 7,
+      "Formbook": 4
+    },
+    "Formbook": {
+      "BazarLoader": 11,
+      "Formbook": 2,
+      "DarkGate": 1
+    },
+    "AgentTesla": {
+      "BazarLoader": 4
+    },
+    "CobaltStrike": {
+      "BazarLoader": 1
+    },
+    "Lumma_Stealer": {
+      "BazarLoader": 9,
+      "Formbook": 3
+    },
+    "Danabot": {
+      "BazarLoader": 2
+    },
+    "GuLoader": {
+      "BazarLoader": 1,
+      "Formbook": 1
+    },
+    "Redline_Stealer": {
+      "BazarLoader": 1
+    },
+    "Latrodectus": {
+      "Formbook": 1,
+      "BazarLoader": 1
+    },
+    "Matanbuchus": {
+      "BazarLoader": 2
+    },
+    "SSLoad": {
+      "BazarLoader": 3
+    },
+    "AsyncRAT": {
+      "Formbook": 1
+    },
+    "Meduza_Stealer": {
+      "Formbook": 1
+    },
+    "SocGholish": {
+      "BazarLoader": 1
+    },
+    "StealC": {
+      "Formbook": 2,
+      "BazarLoader": 4
+    },
+    "XWorm": {
+      "BazarLoader": 1
+    },
+    "XLoader": {
+      "BazarLoader": 1
+    }
+  },
+  "results": [
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Qakbot/2019-12-27-Qakbot-infection-traffic.pcap",
+      "ground_truth": "Qakbot",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 19.939088821411133,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/TrickBot/2019-12-26-IcedID-infection-with-Trickbot-gtag-tin233.pcap",
+      "ground_truth": "TrickBot",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 19.940848112106323,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/RigEK/2019-12-23-Rig-EK-sends-a-payload-I-cannot-identify.pcap",
+      "ground_truth": "RigEK",
+      "prediction": "BazarLoader",
+      "confidence": 0.7,
+      "is_correct": false,
+      "inference_time": 19.66312289237976,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2019-12-23-Ursnif-example-1-infection-traffic.pcap",
+      "ground_truth": "Ursnif",
+      "prediction": "Formbook",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 20.577778577804565,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/IcedID/2019-12-23-IcedID-infection-from-malspam-1st-run.pcap",
+      "ground_truth": "IcedID",
+      "prediction": "Formbook",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 19.45412039756775,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-12-20-Emotet-epoch-2-with-Trickbot-mor70.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "Formbook",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 19.54064178466797,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/IcedID/2019-12-19-Ursnif-infection-with-IcedID-and-Valak.pcap",
+      "ground_truth": "IcedID",
+      "prediction": "BazarLoader",
+      "confidence": 0.7,
+      "is_correct": false,
+      "inference_time": 19.258633136749268,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-12-16-Emotet-infection-with-spambot-traffic.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "Formbook",
+      "confidence": 0.3,
+      "is_correct": false,
+      "inference_time": 18.96347951889038,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-12-16-Emotet-epoch-3-infection-with-Trickbot-gtag-mor66.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "Formbook",
+      "confidence": 0.8,
+      "is_correct": false,
+      "inference_time": 19.78830313682556,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2019-12-11-Ursnif-infection-with-Dridex.pcap",
+      "ground_truth": "Ursnif",
+      "prediction": "Formbook",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 19.364757299423218,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/TrickBot/2019-12-10-Trickbot-gtag-mango21-infection-traffic.pcap",
+      "ground_truth": "TrickBot",
+      "prediction": "Formbook",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 19.54322838783264,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2019-12-10-Hancitor-infection-with-Ursnif-and-Cobalt-Strike.pcap",
+      "ground_truth": "Ursnif",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 20.938478231430054,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-12-09-Emotet-epoch-2-infection-with-Trickbot-gtag-mor61.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "Astaroth",
+      "confidence": 0.3,
+      "is_correct": false,
+      "inference_time": 19.767857551574707,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2019-12-09-Hancitor-infection-traffic.pcap",
+      "ground_truth": "Hancitor",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 19.471806526184082,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-12-06-Emotet-epoch-3-with-Trickbot-gtag-mor60-infection-traffic.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 20.459815740585327,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2019-12-05-Hancitor-infection-traffic.pcap",
+      "ground_truth": "Hancitor",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.419842958450317,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2019-12-02-Ursnif-infection-with-Dridex.pcap",
+      "ground_truth": "Ursnif",
+      "prediction": "Formbook",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.452849626541138,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-11-27-Emotet-epoch-3-infected-Windows-client-as-spambot.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "BazarLoader",
+      "confidence": 0.8,
+      "is_correct": false,
+      "inference_time": 20.026471376419067,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Dridex/2019-11-27-Dridex-infection-traffic.pcap",
+      "ground_truth": "Dridex",
+      "prediction": "Formbook",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.728994607925415,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Qakbot/2019-11-25-Spelevo-EK.pcap",
+      "ground_truth": "Qakbot",
+      "prediction": "BazarLoader",
+      "confidence": 0.7,
+      "is_correct": false,
+      "inference_time": 19.139196634292603,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2019-11-25-Ursnif-infection-with-Dridex.pcap",
+      "ground_truth": "Ursnif",
+      "prediction": "Formbook",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 20.42889642715454,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-11-25-Emotet-epoch-3-infection-with-Trickbot-gtag-mor51.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 20.661946058273315,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-11-22-Emotet-epoch-2-with-Trickbot-gtag-mor50.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "Formbook",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 19.67721676826477,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-11-21-Emotet-epoch-3-with-Trickbot-gtag-mor49-and-spambot-traffic.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "Astaroth",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 20.709763050079346,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-11-15-Emotet-epoch-3-infection-with-Trickbot-gtag-mor45.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "BazarLoader",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 19.183186769485474,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-11-13-Emotet-epoch-1-infection-with-Trickbot-gtag-mor43.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "Formbook",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 20.20167303085327,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/IcedID/2019-11-13-IcedID-infection-with-Anubis-VNC-and-Trickbot-in-AD-environment.pcap",
+      "ground_truth": "IcedID",
+      "prediction": "Formbook",
+      "confidence": 0.8,
+      "is_correct": false,
+      "inference_time": 18.87162733078003,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-11-11-Emotet-epoch-1-infection-with-Trickbot-gtag-mor41.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 20.66041398048401,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-11-08-Emotet-epoch-2-infection-with-Trickbot-gtag-mor40.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "Formbook",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 20.07807183265686,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/TrickBot/2019-11-08-traffic-from-Ursnif-infection-with-Trickbot-gtag-lleo8.pcap",
+      "ground_truth": "TrickBot",
+      "prediction": "Formbook",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 19.42268133163452,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2019-11-07-Ursnif-infection-from-Italian-malspam.pcap",
+      "ground_truth": "Ursnif",
+      "prediction": "BazarLoader",
+      "confidence": 0.7,
+      "is_correct": false,
+      "inference_time": 20.63065242767334,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2019-11-06-Ursnif-infection-with-Dridex-and-proxy-activity.pcap",
+      "ground_truth": "Ursnif",
+      "prediction": "BazarLoader",
+      "confidence": 0.3,
+      "is_correct": false,
+      "inference_time": 19.315330743789673,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/TrickBot/2019-10-31-IcedID-infection-with-Trickbot.pcap",
+      "ground_truth": "TrickBot",
+      "prediction": "Formbook",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 20.012917518615723,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/TrickBot/2019-10-25-Ursnif-infection-with-IcedID-then-Trickbot-gtag-tin188.pcap",
+      "ground_truth": "TrickBot",
+      "prediction": "BazarLoader",
+      "confidence": 0.3,
+      "is_correct": false,
+      "inference_time": 20.22641944885254,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-10-25-Emotet-infection-with-Trickbot-gtag-mor31.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "Formbook",
+      "confidence": 0.3,
+      "is_correct": false,
+      "inference_time": 20.426177501678467,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-10-24-Emotet-infection-with-Trickbot-gtag-mor30.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "Formbook",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 18.74403166770935,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-10-22-Emotet-infection-wth-Trickbot-gtag-mor28.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "Formbook",
+      "confidence": 0.3,
+      "is_correct": false,
+      "inference_time": 19.92025065422058,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-10-21-Emotet-infection-with-Trickbot-gtag-mor27-and-spambot-activity.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "Astaroth",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 20.160648107528687,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/IcedID/2019-10-21-Ursnif-infection-with-IcedID.pcap",
+      "ground_truth": "IcedID",
+      "prediction": "BazarLoader",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 20.23611092567444,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2019-10-17-Ursnif-infection-from-Italian-malspam.pcap",
+      "ground_truth": "Ursnif",
+      "prediction": "Formbook",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 19.00095272064209,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ransomware/2018-12-27-shade-ransomware-infection.pcap",
+      "ground_truth": "Ransomware",
+      "prediction": "Formbook",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.102821350097656,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2018-12-20-Emotet-infection-with-Gootkit.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "Formbook",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 20.796594381332397,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2018-12-20-Hancitor-1st-run-retreives-Pony-EvilPony-Ursnif-and-SmokeLoader.pcap",
+      "ground_truth": "Ursnif",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 20.387818336486816,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/IcedID/2018-12-17-IcedID-from-password-protected-Word-doc.pcap",
+      "ground_truth": "IcedID",
+      "prediction": "Formbook",
+      "confidence": 0.7,
+      "is_correct": false,
+      "inference_time": 19.658422231674194,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2018-12-17-Hancitor-infection-with-Urnsif.pcap",
+      "ground_truth": "Hancitor",
+      "prediction": "Formbook",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 20.15537714958191,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2018-12-14-Emotet-infection-with-Qakbot.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "Formbook",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 19.399556636810303,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2018-12-13-Hancitor-infection-with-Ursnif.pcap",
+      "ground_truth": "Ursnif",
+      "prediction": "BazarLoader",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 20.072635412216187,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2018-12-10-Ursnif-infection-with-Dridex.pcap",
+      "ground_truth": "Ursnif",
+      "prediction": "Formbook",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 20.680406093597412,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Nymaim/2018-12-10-password-protected-Word-doc-pushes-Nymaim.pcap",
+      "ground_truth": "Nymaim",
+      "prediction": "Formbook",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 20.040032386779785,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2018-12-10-Emotet-infection-with-IcedID.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "Formbook",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 20.806745052337646,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2018-12-10-Hancitor-infection-with-Ursnif.pcap",
+      "ground_truth": "Hancitor",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 20.567055702209473,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/TrickBot/2018-12-07-Trickbot-infection-traffic-ser1207.pcap",
+      "ground_truth": "TrickBot",
+      "prediction": "Formbook",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.631603479385376,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2018-12-07-Emotet-infection-with-IcedID.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.207855224609375,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2018-12-06-Hancitor-infection-with-Ursnif.pcap",
+      "ground_truth": "Hancitor",
+      "prediction": "Formbook",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.901530265808105,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2018-12-05-Hancitor-infection-with-Ursnif.pcap",
+      "ground_truth": "Hancitor",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 18.614763259887695,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2018-12-04-Hancitor-infection-with-Ursnif-and-SSEbot.pcap",
+      "ground_truth": "Hancitor",
+      "prediction": "BazarLoader",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 20.897383451461792,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2018-11-30-Emotet-infection-with-IcedID-and-Trickbot.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "Formbook",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 20.156819581985474,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2018-11-29-Hancitor-infection-with-Ursnif.pcap",
+      "ground_truth": "Ursnif",
+      "prediction": "Formbook",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 20.087201833724976,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2018-11-27-Ursnif-infection-traffic-with-Dridex.pcap",
+      "ground_truth": "Ursnif",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 20.656630277633667,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2018-11-23-Emotet-infection-with-Gootkit.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "Formbook",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 20.10236167907715,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2018-11-21-Ursnif-infection-with-Dridex.pcap",
+      "ground_truth": "Ursnif",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.65248417854309,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2018-11-16-Emotet-infection-with-IcedID-and-AZORult.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "DarkGate",
+      "confidence": 0.3,
+      "is_correct": false,
+      "inference_time": 18.843791961669922,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2018-11-14-Emotet-infection-with-IcedID-banking-Trojan.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "Formbook",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.417439460754395,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/TrickBot/2018-11-12-Trickbot-infection-traffic-gtag-sat100.pcap",
+      "ground_truth": "TrickBot",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.852131128311157,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/TrickBot/2018-11-09-one-week-of-a-Trickbot-infection.pcap",
+      "ground_truth": "TrickBot",
+      "prediction": "Formbook",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.58937668800354,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2018-11-08-Ursnif-infection-with-IcedID-banking-Trojan.pcap",
+      "ground_truth": "Ursnif",
+      "prediction": "BazarLoader",
+      "confidence": 0.7,
+      "is_correct": false,
+      "inference_time": 20.941555500030518,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2018-11-06-Emotet-infection-with-Trickbot.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.88679265975952,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ransomware/2018-11-02-GandCrab-ransomware-infection.pcap",
+      "ground_truth": "Ransomware",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 19.661845922470093,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2018-10-29-Hancitor-infection-traffic-with-Ursnif.pcap",
+      "ground_truth": "Ursnif",
+      "prediction": "Formbook",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 19.93067240715027,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/TrickBot/2018-10-26-Trickbot-spreads-from-client-to-DC-ser1025us.pcap",
+      "ground_truth": "TrickBot",
+      "prediction": "Formbook",
+      "confidence": 0.3,
+      "is_correct": false,
+      "inference_time": 20.8530375957489,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/TrickBot/2018-10-22-Trickbot-ser1022-infection-traffic.pcap",
+      "ground_truth": "TrickBot",
+      "prediction": "Formbook",
+      "confidence": 0.8,
+      "is_correct": false,
+      "inference_time": 16.26456618309021,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2018-10-22-Hancitor-malspam-infection-traffic.pcap",
+      "ground_truth": "Hancitor",
+      "prediction": "Formbook",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 19.52260422706604,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Nymaim/2018-10-19-Nymaim-infection-traffic.pcap",
+      "ground_truth": "Nymaim",
+      "prediction": "Formbook",
+      "confidence": 0.2,
+      "is_correct": false,
+      "inference_time": 20.830283641815186,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/TrickBot/2018-10-18-Trickbot-spreads-from-client-to-DC.pcap",
+      "ground_truth": "TrickBot",
+      "prediction": "Formbook",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 20.742034196853638,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2018-10-17-Hancitor-infection-traffic-AD-environment.pcap",
+      "ground_truth": "Hancitor",
+      "prediction": "Formbook",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 20.145442962646484,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/TrickBot/2018-10-15-Trickbot-gtag-jim332-infection-traffic.pcap",
+      "ground_truth": "TrickBot",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 18.669169187545776,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/TrickBot/2018-10-10-Trickbot-gtag-sat77-infection-for-24-hours.pcap",
+      "ground_truth": "TrickBot",
+      "prediction": "Formbook",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 20.572749137878418,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2018-10-10-Hancitor-infection-with-Zeus-Panda-Banker.pcap",
+      "ground_truth": "Hancitor",
+      "prediction": "Astaroth",
+      "confidence": 0.7,
+      "is_correct": false,
+      "inference_time": 19.86045789718628,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2018-10-09-Hancitor-infection-with-Zeus-Panda-Banker.pcap",
+      "ground_truth": "Hancitor",
+      "prediction": "Formbook",
+      "confidence": 0.3,
+      "is_correct": false,
+      "inference_time": 20.033059120178223,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/TrickBot/2018-10-08-Trickbot-sat75-infection-with-powershell-empire-traffic.pcap",
+      "ground_truth": "TrickBot",
+      "prediction": "BazarLoader",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 19.863473892211914,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/RigEK/2017-12-28-Seamless-campaign-Rig-EK-sends-Ramnit.pcap",
+      "ground_truth": "RigEK",
+      "prediction": "BazarLoader",
+      "confidence": 0.7,
+      "is_correct": false,
+      "inference_time": 20.58698320388794,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2017-12-27-Emotet-infection-with-Zeus-Panda-Banker.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 20.37719964981079,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Necurs/2017-12-26-Necurs-Botnet-malspam-pushes-GlobeImposter-ransomware-traffic.pcap",
+      "ground_truth": "Necurs",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 20.870275735855103,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Remcos_RAT/2017-12-22-Remcos-RAT-infection-traffic.pcap",
+      "ground_truth": "Remcos_RAT",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 20.005812406539917,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2017-12-21-Hancitor-infection-wth-Zeus-Panda-Banker.pcap",
+      "ground_truth": "Hancitor",
+      "prediction": "Astaroth",
+      "confidence": 0.3,
+      "is_correct": false,
+      "inference_time": 19.429423809051514,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2017-12-20-Hancitor-infection-with-Zeus-Panda-Banker.pcap",
+      "ground_truth": "Hancitor",
+      "prediction": "Formbook",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 20.397749423980713,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2017-12-19-Hancitor-infection-with-Zeus-Panda-Banker.pcap",
+      "ground_truth": "Hancitor",
+      "prediction": "Formbook",
+      "confidence": 0.3,
+      "is_correct": false,
+      "inference_time": 20.435086250305176,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Necurs/2017-12-19-GlobeImposter-infection-traffic.pcap",
+      "ground_truth": "Necurs",
+      "prediction": "BazarLoader",
+      "confidence": 0.7,
+      "is_correct": false,
+      "inference_time": 20.39113163948059,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2017-12-18-Hancitor-infection-with-Zeus-Panda-Banker.pcap",
+      "ground_truth": "Hancitor",
+      "prediction": "Formbook",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 20.234155893325806,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/RigEK/2017-12-14-Ngay-campaign-Rig-EK-sends-Quant-Loader-and-Monero-coin-miner.pcap",
+      "ground_truth": "RigEK",
+      "prediction": "Formbook",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 20.953848838806152,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/IcedID/2017-12-13-Hancitor-infection-with-IcedID.pcap",
+      "ground_truth": "IcedID",
+      "prediction": "BitTorrent",
+      "confidence": 0.3,
+      "is_correct": false,
+      "inference_time": 20.916812896728516,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2017-12-11-Hancitor-infection-with-Zeus-Panda-Banker.pcap",
+      "ground_truth": "Hancitor",
+      "prediction": "BazarLoader",
+      "confidence": 0.3,
+      "is_correct": false,
+      "inference_time": 20.187858819961548,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/RigEK/2017-12-08-Fobos-campaign-Rig-EK-sends-Bunitu.pcap",
+      "ground_truth": "RigEK",
+      "prediction": "Formbook",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 20.669116973876953,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/IcedID/2017-12-06-Hancitor-infection-with-IcedID.pcap",
+      "ground_truth": "IcedID",
+      "prediction": "Formbook",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 20.41985297203064,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Necurs/2017-12-06-Necurs-Botnet-malspam-pushes-GlobeImposter-ransomware.pcap",
+      "ground_truth": "Necurs",
+      "prediction": "Formbook",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 20.16105842590332,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/NetSupport_RAT/2017-12-06-HoeflerText-popup-pushes-NetSupport-Manager-RAT.pcap",
+      "ground_truth": "NetSupport_RAT",
+      "prediction": "BazarLoader",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 19.667684316635132,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2017-12-05-Hancitor-infection-with-Zeus-Panda-Banker.pcap",
+      "ground_truth": "Hancitor",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.839728832244873,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Necurs/2017-12-05-Necurs-Botnet-malspam-pushes-GlobeImposter-traffic.pcap",
+      "ground_truth": "Necurs",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.21942687034607,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Dridex/2017-12-04-Dridex-infection-traffic.pcap",
+      "ground_truth": "Dridex",
+      "prediction": "Formbook",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 18.893649101257324,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Necurs/2017-12-04-Necurs-Botnet-malspam-pushes-GlobeImposter-ransomware.pcap",
+      "ground_truth": "Necurs",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 19.146182775497437,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2017-11-28-Hancitor-infection-with-Zeus-Panda-Banker.pcap",
+      "ground_truth": "Hancitor",
+      "prediction": "DarkGate",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.019676446914673,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Necurs/2017-11-23-Necurs-Botnet-malspam-pushes-Scarab-ransomware.pcap",
+      "ground_truth": "Necurs",
+      "prediction": "Formbook",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.253929138183594,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Zeus/2017-11-21-Zeus-Panda-Banker-infection-traffic.pcap",
+      "ground_truth": "Zeus",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 17.526657342910767,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/IcedID/2017-11-21-Hancitor-infection-with-IcedID.pcap",
+      "ground_truth": "IcedID",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 19.7665114402771,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2017-11-16-Hancitor-infection-with-Zeus-Panda-Banker.pcap",
+      "ground_truth": "Hancitor",
+      "prediction": "BazarLoader",
+      "confidence": 0.7,
+      "is_correct": false,
+      "inference_time": 20.667029857635498,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2017-11-08-Hancitor-infection-with-Zeus-Panda-Banker.pcap",
+      "ground_truth": "Hancitor",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 20.08597421646118,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2017-11-06-Hancitor-infection-with-Zeus-Panda-Banker.pcap",
+      "ground_truth": "Hancitor",
+      "prediction": "Formbook",
+      "confidence": 0.3,
+      "is_correct": false,
+      "inference_time": 20.952404499053955,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Nymaim/2017-11-03-Nymaim-infection-traffic.pcap",
+      "ground_truth": "Nymaim",
+      "prediction": "BazarLoader",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 19.865991592407227,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2017-11-01-Hancitor-infection-with-Zeus-Panda-Banker.pcap",
+      "ground_truth": "Hancitor",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 20.214942932128906,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Locky/2017-11-01-Necurs-botnet-malspam-pushes-Locky-ransomware.pcap",
+      "ground_truth": "Locky",
+      "prediction": "Formbook",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.859967470169067,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2017-10-31-Hancitor-infection-with-Zeus-Panda-Banker.pcap",
+      "ground_truth": "Hancitor",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 19.632419109344482,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Necurs/2017-10-31-Necurs-Botnet-malspam-pushes-Locky-ransomware.pcap",
+      "ground_truth": "Necurs",
+      "prediction": "Formbook",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 20.376978874206543,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2017-10-30-Hancitor-infection-traffic.pcap",
+      "ground_truth": "Hancitor",
+      "prediction": "Formbook",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 20.01099467277527,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Locky/2017-10-30-Necurs-Botnet-malspam-pushes-Locky-ransomware.pcap",
+      "ground_truth": "Locky",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 18.501880168914795,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Remcos_RAT/2017-10-27-Remcos-RAT-infection-traffic.pcap",
+      "ground_truth": "Remcos_RAT",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 18.564881563186646,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2017-10-26-Hancitor-infection-with-Zeus-Panda-Banker.pcap",
+      "ground_truth": "Hancitor",
+      "prediction": "Formbook",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 19.232908964157104,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Locky/2017-10-24-Necurs-botnet-DDE-doc-sends-Locky-ransomware.pcap",
+      "ground_truth": "Locky",
+      "prediction": "Formbook",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 20.262405395507812,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Necurs/2017-10-19-Necurs-Botnet-malspam-pushing-Locky-ransomware.pcap",
+      "ground_truth": "Necurs",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 20.098356246948242,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2017-10-16-Hancitor-infection-with-ZLoader.pcap",
+      "ground_truth": "Hancitor",
+      "prediction": "Formbook",
+      "confidence": 0.7,
+      "is_correct": false,
+      "inference_time": 20.892717838287354,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Locky/2017-10-13-Blank-Slate-campaign-pushes-Sage-2.2-ransomware.pcap",
+      "ground_truth": "Locky",
+      "prediction": "Formbook",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.57164239883423,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Cerber/2016-12-29-pseudoDarkleech-Rig-V-sends-Cerber-ransomware.pcap",
+      "ground_truth": "Cerber",
+      "prediction": "Formbook",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 20.333106994628906,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Cerber/2016-12-27-pseudoDarkleech-Rig-V-sends-Cerber-ransomware.pcap",
+      "ground_truth": "Cerber",
+      "prediction": "Formbook",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.454232931137085,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/RigEK/2016-12-27-EITest-Rig-E-sends-Chthonic-banking-Trojan.pcap",
+      "ground_truth": "RigEK",
+      "prediction": "Formbook",
+      "confidence": 0.7,
+      "is_correct": false,
+      "inference_time": 20.59736704826355,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Cerber/2016-12-26-pseudoDarkleech-Rig-V-sends-Cerber-ransomware.pcap",
+      "ground_truth": "Cerber",
+      "prediction": "BazarLoader",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 19.390321493148804,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Locky/2016-12-23-Afraidgate-Rig-V-sends-Locky-ransomware.pcap",
+      "ground_truth": "Locky",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 20.33107566833496,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Cerber/2016-12-22-Cerber-ransomware-traffic.pcap",
+      "ground_truth": "Cerber",
+      "prediction": "Formbook",
+      "confidence": 0.3,
+      "is_correct": false,
+      "inference_time": 17.99896788597107,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Cerber/2016-12-22-pseudoDarkleech-Rig-V-sends-Cerber-ransomware.pcap",
+      "ground_truth": "Cerber",
+      "prediction": "Formbook",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.175259113311768,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Cerber/2016-12-21-pseudoDarkleech-Rig-V-sends-Cerber-ransomware.pcap",
+      "ground_truth": "Cerber",
+      "prediction": "BazarLoader",
+      "confidence": 0.3,
+      "is_correct": false,
+      "inference_time": 19.792543172836304,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/RigEK/2016-12-21-EITest-Rig-E-traffic.pcap",
+      "ground_truth": "RigEK",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 18.92560601234436,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Locky/2016-12-21-Afraidgate-Rig-V-sends-Locky-ransomware.pcap",
+      "ground_truth": "Locky",
+      "prediction": "Astaroth",
+      "confidence": 0.3,
+      "is_correct": false,
+      "inference_time": 19.687987327575684,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Locky/2016-12-20-Locky-ransomware-infection-traffic.pcap",
+      "ground_truth": "Locky",
+      "prediction": "Formbook",
+      "confidence": 0.3,
+      "is_correct": false,
+      "inference_time": 19.89592218399048,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/RigEK/2016-12-20-TDS-based-Rig-V-sends-Terdot.A-or-Zloader.pcap",
+      "ground_truth": "RigEK",
+      "prediction": "BazarLoader",
+      "confidence": 0.7,
+      "is_correct": false,
+      "inference_time": 18.496493101119995,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/RigEK/2016-12-19-EITest-Rig-E-sends-Zeprox.B.pcap",
+      "ground_truth": "RigEK",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 19.53279757499695,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Locky/2016-12-16-Locky-ransomware-infection-traffic.pcap",
+      "ground_truth": "Locky",
+      "prediction": "BazarLoader",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 19.777177095413208,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Cerber/2016-12-13-pseudoDarkleech-Rig-V-sends-Cerber-ransomware.pcap",
+      "ground_truth": "Cerber",
+      "prediction": "Formbook",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.354990482330322,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Locky/2016-12-12-Locky-ransomware-infection-traffic.pcap",
+      "ground_truth": "Locky",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.234540224075317,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/RigEK/2016-12-12-EITest-Rig-V-sends-CryptoMix-ransomware.pcap",
+      "ground_truth": "RigEK",
+      "prediction": "Formbook",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.814759969711304,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Cerber/2016-12-11-pseudoDarkleech-Rig-V-sends-Cerber-ransomware.pcap",
+      "ground_truth": "Cerber",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 20.07753562927246,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Locky/2016-12-09-Locky-ransomware-traffic.pcap",
+      "ground_truth": "Locky",
+      "prediction": "BazarLoader",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 18.11113667488098,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Locky/2016-12-09-Afraidgate-Rig-V-sends-Locky-ransomware.pcap",
+      "ground_truth": "Locky",
+      "prediction": "Formbook",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 18.960440635681152,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Cerber/2016-12-02-pseudoDarkleech-Rig-V-sends-Cerber-ransomware.pcap",
+      "ground_truth": "Cerber",
+      "prediction": "BazarLoader",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 19.34342932701111,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2016-12-01-EITest-Rig-E-sends-Emotet.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "Formbook",
+      "confidence": 0.3,
+      "is_correct": false,
+      "inference_time": 20.050093173980713,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2016-12-01-Gozi-ISFB-infection-traffic.pcap",
+      "ground_truth": "Ursnif",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.755427360534668,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2016-11-30-Gozi-ISFB-infection-traffic.pcap",
+      "ground_truth": "Ursnif",
+      "prediction": "Astaroth",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.265293836593628,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/RigEK/2016-11-28-3rd-run-EITest-Rig-E-sends-Chthonic.pcap",
+      "ground_truth": "RigEK",
+      "prediction": "BazarLoader",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 20.07001566886902,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Cerber/2016-11-28-2nd-run-pseudoDarkleech-Rig-V-sends-Cerber-ransomware.pcap",
+      "ground_truth": "Cerber",
+      "prediction": "BazarLoader",
+      "confidence": 0.7,
+      "is_correct": false,
+      "inference_time": 19.831722021102905,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/RigEK/2016-11-28-1st-run-EITest-Rig-V-sends-CryptoMix-ransomware.pcap",
+      "ground_truth": "RigEK",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 19.637059211730957,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/RigEK/2016-11-17-EITest-Rig-E-sends-CHIP-ransomware.pcap",
+      "ground_truth": "RigEK",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.717589616775513,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Cerber/2016-11-13-pseudoDarkleech-RIGv-sends-Cerber-ransomware.pcap",
+      "ground_truth": "Cerber",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 17.615535974502563,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/RigEK/2016-11-10-EITest-second-run-Rig-standard-sends-CryptFile2-ransomware.pcap",
+      "ground_truth": "RigEK",
+      "prediction": "BazarLoader",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 18.65440058708191,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Vawtrak/2016-11-10-EITest-first-run-RIGe-causes-Vawtrak-infection.pcap",
+      "ground_truth": "Vawtrak",
+      "prediction": "BazarLoader",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 18.84583353996277,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Cerber/2016-11-10-pseudoDarkleech-RIGv-sends-Cerber-ransomware.pcap",
+      "ground_truth": "Cerber",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.246145725250244,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/RigEK/2016-11-07-EITest-Rig-EK-sends-CryptFile2-ransomware.pcap",
+      "ground_truth": "RigEK",
+      "prediction": "BazarLoader",
+      "confidence": 0.3,
+      "is_correct": false,
+      "inference_time": 19.594926118850708,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/RigEK/2016-11-07-EITest-Rig-EK-traffic.pcap",
+      "ground_truth": "RigEK",
+      "prediction": "Formbook",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 19.602143049240112,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Cerber/2016-11-07-pseudoDarkleech-RIGv-sends-Cerber-ransomware.pcap",
+      "ground_truth": "Cerber",
+      "prediction": "Formbook",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.93543314933777,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Cerber/2016-11-06-pseudoDarkleech-RIGv-sends-Cerber-ransomware.pcap",
+      "ground_truth": "Cerber",
+      "prediction": "BazarLoader",
+      "confidence": 1.0,
+      "is_correct": false,
+      "inference_time": 19.966524124145508,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Cerber/2016-11-04-pseudoDarkleech-RIGv-sends-Cerber-ransomware.pcap",
+      "ground_truth": "Cerber",
+      "prediction": "BazarLoader",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 19.353119373321533,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Cerber/2016-10-31-pseudoDarkleech-RIGv-sends-Cerber-ransomware.pcap",
+      "ground_truth": "Cerber",
+      "prediction": "Formbook",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.571062803268433,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/RigEK/2016-10-31-EITest-Rig-EK-traffic.pcap",
+      "ground_truth": "RigEK",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 19.31980538368225,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/RigEK/2016-10-31-pseudoDarkleech-RIGv-sends-ddos-botnet-malware.pcap",
+      "ground_truth": "RigEK",
+      "prediction": "Formbook",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 18.282154083251953,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/AnglerEK/2015-12-29-Angler-EK-sends-Bedep-traffic.pcap",
+      "ground_truth": "AnglerEK",
+      "prediction": "Formbook",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 19.890125036239624,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/AnglerEK/2015-12-28-Angler-EK-sends-TeslaCrypt-ransomware-traffic.pcap",
+      "ground_truth": "AnglerEK",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 18.47386598587036,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Qakbot/2015-12-18-Rig-EK-traffic.pcap",
+      "ground_truth": "Qakbot",
+      "prediction": "Formbook",
+      "confidence": 0.7,
+      "is_correct": false,
+      "inference_time": 19.422531127929688,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ransomware/2015-12-17-TeslaCrypt-ransomware-traffic.pcap",
+      "ground_truth": "Ransomware",
+      "prediction": "Formbook",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 16.98894166946411,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/AnglerEK/2015-12-16-Angler-EK-sends-CryptoWall-ransomware-traffic.pcap",
+      "ground_truth": "AnglerEK",
+      "prediction": "BazarLoader",
+      "confidence": 0.7,
+      "is_correct": false,
+      "inference_time": 18.957541704177856,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/AnglerEK/2015-12-14-Angler-EK-sends-CryptoWall-ransomware-traffic.pcap",
+      "ground_truth": "AnglerEK",
+      "prediction": "Formbook",
+      "confidence": 0.3,
+      "is_correct": false,
+      "inference_time": 19.104238271713257,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/AnglerEK/2015-12-08-Angler-EK-traffic.pcap",
+      "ground_truth": "AnglerEK",
+      "prediction": "Formbook",
+      "confidence": 0.8,
+      "is_correct": false,
+      "inference_time": 18.41227960586548,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/AnglerEK/2015-12-04-Angler-EK-sends-TeslaCrypt-ransomware-traffic.pcap",
+      "ground_truth": "AnglerEK",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 19.532312154769897,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/AnglerEK/2015-12-03-Angler-EK-delivers-CryptoWall-ransomware-traffic.pcap",
+      "ground_truth": "AnglerEK",
+      "prediction": "Formbook",
+      "confidence": 0.3,
+      "is_correct": false,
+      "inference_time": 18.1169171333313,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/AnglerEK/2015-11-30-Angler-EK-sends-CryptoWall-ransomware.pcap",
+      "ground_truth": "AnglerEK",
+      "prediction": "Formbook",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 19.769156217575073,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Pony/2015-11-25-Pony-Vawtrak-infection-traffic.pcap",
+      "ground_truth": "Pony",
+      "prediction": "BazarLoader",
+      "confidence": 0.8,
+      "is_correct": false,
+      "inference_time": 18.973101139068604,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/AnglerEK/2015-11-23-Angler-EK-sends-CryptoWall-3.0-ransomware-traffic.pcap",
+      "ground_truth": "AnglerEK",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.662564992904663,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ransomware/2015-11-23-BizCN-gate-actor-Nuclear-EK-sends-CryptoWall-ransomware-traffic.pcap",
+      "ground_truth": "Ransomware",
+      "prediction": "Formbook",
+      "confidence": 0.7,
+      "is_correct": false,
+      "inference_time": 18.619037628173828,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ransomware/2015-11-21-BizCN-gate-actor-Nuclear-EK-sends-CryptoWall-ransomware-traffic.pcap",
+      "ground_truth": "Ransomware",
+      "prediction": "BazarLoader",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 19.430341720581055,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ransomware/2015-11-20-BizCN-gate-actor-Nuclear-EK-traffic.pcap",
+      "ground_truth": "Ransomware",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 18.63704752922058,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/AnglerEK/2015-11-20-Angler-EK-sends-CryptoWall-3.0-ransomware-traffic.pcap",
+      "ground_truth": "AnglerEK",
+      "prediction": "Formbook",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 19.065194845199585,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ransomware/2015-11-19-BizCN-gate-actor-Nuclear-EK-traffic.pcap",
+      "ground_truth": "Ransomware",
+      "prediction": "CobaltStrike",
+      "confidence": 0.3,
+      "is_correct": false,
+      "inference_time": 19.373607873916626,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/RigEK/2015-11-17-Rig-EK-traffic.pcap",
+      "ground_truth": "RigEK",
+      "prediction": "BazarLoader",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 19.933332204818726,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ransomware/2015-11-12-Nuclear-EK-sends-CryptoWall-3.0-ransomware-traffic.pcap",
+      "ground_truth": "Ransomware",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.32848834991455,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/AnglerEK/2015-11-09-Angler-EK-sends-Bedep-traffic.pcap",
+      "ground_truth": "AnglerEK",
+      "prediction": "Formbook",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.341290950775146,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/RigEK/2015-11-02-Rig-EK-traffic.pcap",
+      "ground_truth": "RigEK",
+      "prediction": "Formbook",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.53789734840393,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/AnglerEK/2015-10-27-Angler-EK-sends-TeslaCrypt-2.1-ransomware-traffic.pcap",
+      "ground_truth": "AnglerEK",
+      "prediction": "BazarLoader",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 18.32067608833313,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/AnglerEK/2015-10-23-Angler-EK-sends-TeslaCrypt-2.0-ransomware-traffic.pcap",
+      "ground_truth": "AnglerEK",
+      "prediction": "BazarLoader",
+      "confidence": 0.7,
+      "is_correct": false,
+      "inference_time": 19.116217851638794,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Necurs/2015-10-21-Neutrino-EK-traffic.pcap",
+      "ground_truth": "Necurs",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 18.951805114746094,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ransomware/2015-10-20-052F-gate-Nuclear-EK-traffic.pcap",
+      "ground_truth": "Ransomware",
+      "prediction": "Formbook",
+      "confidence": 0.3,
+      "is_correct": false,
+      "inference_time": 18.480305910110474,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ransomware/2015-10-18-BizCN-gate-actor-Nuclear-EK-traffic.pcap",
+      "ground_truth": "Ransomware",
+      "prediction": "Formbook",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 18.50665307044983,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/AnglerEK/2015-10-13-Angler-EK-sends-CryptoWall-3.0-traffic-ransomware.pcap",
+      "ground_truth": "AnglerEK",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 18.57362389564514,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/AnglerEK/2015-10-12-Angler-EK-sends-Bedep-traffic.pcap",
+      "ground_truth": "AnglerEK",
+      "prediction": "BazarLoader",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 18.995075464248657,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/AnglerEK/2015-09-29-Angler-EK-sends-CryptoWall-3.0-ransomware-traffic.pcap",
+      "ground_truth": "AnglerEK",
+      "prediction": "Formbook",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 19.607878923416138,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Pony/2015-09-23-bartalex-word-macro-sends-pony-and-vawtrak.pcap",
+      "ground_truth": "Pony",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 18.732644081115723,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/RigEK/2015-09-21-Rig-EK-traffic.pcap",
+      "ground_truth": "RigEK",
+      "prediction": "BazarLoader",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 19.817464590072632,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/NeutrinoEK/2015-09-16-Neutrino-EK-sends-CryptoWall-3.0-ransomware-traffic.pcap",
+      "ground_truth": "NeutrinoEK",
+      "prediction": "Formbook",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 20.009140968322754,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ransomware/2015-09-16-Nuclear-EK-sends-TeslaCrypt-2.0-ransomware-traffic.pcap",
+      "ground_truth": "Ransomware",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 19.45452117919922,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/AnglerEK/2015-09-15-Angler-EK-sends-bedep-traffic.pcap",
+      "ground_truth": "AnglerEK",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 18.64878797531128,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ransomware/2015-09-15-Nuclear-EK-sends-TeslaCrypt-2.0-ransomware-traffic.pcap",
+      "ground_truth": "Ransomware",
+      "prediction": "Formbook",
+      "confidence": 0.3,
+      "is_correct": false,
+      "inference_time": 18.76268434524536,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/AnglerEK/2015-09-14-Angler-EK-sends-CryptoWall-3.0-ransomware-traffic.pcap",
+      "ground_truth": "AnglerEK",
+      "prediction": "Formbook",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 18.655609130859375,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/NeutrinoEK/2015-09-14-BizCN-gate-actor-Neutrino-EK-sends-CryptoWall-3.0-ransomware.pcap",
+      "ground_truth": "NeutrinoEK",
+      "prediction": "Formbook",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.071882724761963,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/NeutrinoEK/2015-09-11-BizCN-gate-actor-Neutrino-EK-traffic-sends-CryptoWall-3.0-ransomware-traffic.pcap",
+      "ground_truth": "NeutrinoEK",
+      "prediction": "BazarLoader",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 19.437525749206543,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/AnglerEK/2015-09-10-Angler-EK-traffic.pcap",
+      "ground_truth": "AnglerEK",
+      "prediction": "Formbook",
+      "confidence": 0.3,
+      "is_correct": false,
+      "inference_time": 19.28791093826294,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/NeutrinoEK/2015-09-08-Neutrino-EK-sends-CryptWall-3.0-ransomware-traffic.pcap",
+      "ground_truth": "NeutrinoEK",
+      "prediction": "BazarLoader",
+      "confidence": 0.7,
+      "is_correct": false,
+      "inference_time": 19.061267614364624,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Pikabot/2023-12-18-TA577-Pikabot-infection-with-Cobalt-Strike.pcap",
+      "ground_truth": "Pikabot",
+      "prediction": "BazarLoader",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 19.35019302368164,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Pikabot/2023-12-15-TA577-Pikabot-infection-traffic.pcap",
+      "ground_truth": "Pikabot",
+      "prediction": "Formbook",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 18.729491233825684,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Astaroth/2023-12-11-Astaroth-Guildma-infection-trafffic.pcap",
+      "ground_truth": "Astaroth",
+      "prediction": "Formbook",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 18.688942909240723,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/DarkGate/2023-12-07-DarkGate-infection.pcap",
+      "ground_truth": "DarkGate",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.963961362838745,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/DarkGate/2023-11-30-DarkGate-infection-traffic.pcap",
+      "ground_truth": "DarkGate",
+      "prediction": "Formbook",
+      "confidence": 0.3,
+      "is_correct": false,
+      "inference_time": 19.04808020591736,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Formbook/2023-11-29-JinxLoader-to-Formbook-XLoader.pcap",
+      "ground_truth": "Formbook",
+      "prediction": "BazarLoader",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 19.611429929733276,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/IcedID/2023-11-27-TA577-pushes-IcedID-variant.pcap",
+      "ground_truth": "IcedID",
+      "prediction": "Formbook",
+      "confidence": 0.8,
+      "is_correct": false,
+      "inference_time": 19.927417516708374,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/AgentTesla/2023-11-22-AgentTesla-infection-FTP-data-exfil.pcap",
+      "ground_truth": "AgentTesla",
+      "prediction": "BazarLoader",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 18.606340885162354,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/DarkGate/2023-11-20-DarkGate-infection-traffic.pcap",
+      "ground_truth": "DarkGate",
+      "prediction": "BazarLoader",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 18.93527889251709,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/CobaltStrike/2023-11-06-404TDS-to-malware-to-Cobalt-Strike.pcap",
+      "ground_truth": "CobaltStrike",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.179550886154175,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Pikabot/2023-11-02-Pikabot-infection-traffic.pcap",
+      "ground_truth": "Pikabot",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 18.538501024246216,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/IcedID/2023-10-31-IcedID-infection-traffic.pcap",
+      "ground_truth": "IcedID",
+      "prediction": "Formbook",
+      "confidence": 0.7,
+      "is_correct": false,
+      "inference_time": 17.860086917877197,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/DarkGate/2023-10-25-DarkGate-infection-traffic.pcap",
+      "ground_truth": "DarkGate",
+      "prediction": "Formbook",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 19.886618614196777,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/IcedID/2023-10-18-IcedID-forked-variant-infection-with-follow-up-activity.pcap",
+      "ground_truth": "IcedID",
+      "prediction": "BazarLoader",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 19.85010075569153,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Pikabot/2023-10-17-TA577-Pikabot-infection-with-Cobalt-Strike.pcap",
+      "ground_truth": "Pikabot",
+      "prediction": "Formbook",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.296967267990112,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/IcedID/2023-10-16-IcedID-infection.pcap",
+      "ground_truth": "IcedID",
+      "prediction": "Formbook",
+      "confidence": 0.3,
+      "is_correct": false,
+      "inference_time": 18.03778839111328,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/DarkGate/2023-10-13-DarkGate-infection-traffic.pcap",
+      "ground_truth": "DarkGate",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 18.198615074157715,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/DarkGate/2023-10-12-DarkGate-infection-traffic.pcap",
+      "ground_truth": "DarkGate",
+      "prediction": "BazarLoader",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 18.651366472244263,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Lumma_Stealer/2023-10-11-Lumma-Stealer-infection-traffic.pcap",
+      "ground_truth": "Lumma_Stealer",
+      "prediction": "BazarLoader",
+      "confidence": 0.7,
+      "is_correct": false,
+      "inference_time": 19.858031511306763,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/DarkGate/2023-10-04-DarkGate-infection.pcap",
+      "ground_truth": "DarkGate",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 18.625356674194336,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Pikabot/2023-10-03-Pikabot-infection-with-Cobalt-Strike.pcap",
+      "ground_truth": "Pikabot",
+      "prediction": "Formbook",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 18.675031661987305,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/IcedID/2023-09-28-IcedID-infection-with-Keyhole-VNC-and-Cobalt-Strike.pcap",
+      "ground_truth": "IcedID",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 18.220693349838257,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/AgentTesla/2023-09-21-AgentTesla-traffic-expertsconsultgh.co.pcap",
+      "ground_truth": "AgentTesla",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 18.96885347366333,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/IcedID/2023-08-09-IcedID-with-BackConnect-and-Keyhole-VNC.pcap",
+      "ground_truth": "IcedID",
+      "prediction": "BazarLoader",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 19.316619873046875,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Danabot/2023-08-03-malicious-ad-to-Danabot-traffic.pcap",
+      "ground_truth": "Danabot",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 19.006892442703247,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/IcedID/2023-07-25-IcedID-infection-traffic.pcap",
+      "ground_truth": "IcedID",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.185420989990234,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Ursnif/2023-07-12-Gozi-infection-with-Cobalt-Strike.pcap",
+      "ground_truth": "Ursnif",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 19.44397497177124,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Formbook/2023-07-11-loader-based-Formbook-infection-traffic.pcap",
+      "ground_truth": "Formbook",
+      "prediction": "Formbook",
+      "confidence": 0.3,
+      "is_correct": true,
+      "inference_time": 18.5246000289917,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Formbook/2023-07-04-Formbook-infection-traffic.pcap",
+      "ground_truth": "Formbook",
+      "prediction": "BazarLoader",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 19.152748107910156,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/GuLoader/2023-07-03-GuLoader-for-Formbook-infection-traffic.pcap",
+      "ground_truth": "GuLoader",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 18.458405256271362,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Formbook/2023-07-02-Formbook-infection-traffic.pcap",
+      "ground_truth": "Formbook",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 19.985389709472656,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Formbook/2023-07-01-Formbook-infection-traffic.pcap",
+      "ground_truth": "Formbook",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 18.847470998764038,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Formbook/2023-06-30-Formbook-infection-traffic.pcap",
+      "ground_truth": "Formbook",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 19.834062576293945,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Formbook/2023-06-29-Formbook-infection-traffic.pcap",
+      "ground_truth": "Formbook",
+      "prediction": "BazarLoader",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 18.917298555374146,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/IcedID/2023-06-28-IcedID-infection.pcap",
+      "ground_truth": "IcedID",
+      "prediction": "BazarLoader",
+      "confidence": 0.3,
+      "is_correct": false,
+      "inference_time": 19.395480394363403,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Formbook/2023-06-28-Formbook-infection-traffic.pcap",
+      "ground_truth": "Formbook",
+      "prediction": "BazarLoader",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 18.859830141067505,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Formbook/2023-06-27-Formbook-infection-traffic.pcap",
+      "ground_truth": "Formbook",
+      "prediction": "Formbook",
+      "confidence": 0.3,
+      "is_correct": true,
+      "inference_time": 19.232587814331055,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Remcos_RAT/2023-06-26-guloader-or-modiloader-style-infection-for-Remcos-RAT.pcap",
+      "ground_truth": "Remcos_RAT",
+      "prediction": "Formbook",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 18.707118034362793,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Formbook/2023-06-26-Formbook-infection-traffic.pcap",
+      "ground_truth": "Formbook",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.210511207580566,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Formbook/2023-06-25-Formbook-infection-traffic.pcap",
+      "ground_truth": "Formbook",
+      "prediction": "DarkGate",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 19.39193034172058,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/NetSupport_RAT/2024-12-17-SmartApeSG-to-NetSupport-RAT.pcap",
+      "ground_truth": "NetSupport_RAT",
+      "prediction": "Formbook",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 18.89342451095581,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/AgentTesla/2024-12-04-AgentTesla-variant-using-FTP.pcap",
+      "ground_truth": "AgentTesla",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 19.14382815361023,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Redline_Stealer/2024-10-23-Redline-Stealer-infection-traffic.pcap",
+      "ground_truth": "Redline_Stealer",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.748094081878662,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Lumma_Stealer/2024-10-03-SmartLoader-to-Lumma-Stealer.pcap",
+      "ground_truth": "Lumma_Stealer",
+      "prediction": "Formbook",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 19.046964645385742,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Lumma_Stealer/2024-09-19-file-downloader-to-Lumma-Stealer.pcap",
+      "ground_truth": "Lumma_Stealer",
+      "prediction": "BazarLoader",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 18.323079824447632,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Remcos_RAT/2024-08-26-GuLoader-for-Remcos-RAT.pcap",
+      "ground_truth": "Remcos_RAT",
+      "prediction": "Formbook",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 17.80777883529663,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Formbook/2024-08-12-XLoader-Formbook-infection-traffic.pcap",
+      "ground_truth": "Formbook",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.131065607070923,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Latrodectus/2024-06-25-Latrodectus-infection-with-BackConnect-and-Keyhole-VNC.pcap",
+      "ground_truth": "Latrodectus",
+      "prediction": "Formbook",
+      "confidence": 0.3,
+      "is_correct": false,
+      "inference_time": 19.845399141311646,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Matanbuchus/2024-06-17-Matanbuchus-infection-with-Danbot-traffic.pcap",
+      "ground_truth": "Matanbuchus",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 19.13753080368042,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/RigEK/2024-06-10-OriginLogger-infection.pcap",
+      "ground_truth": "RigEK",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.156808853149414,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/DarkGate/2024-05-14-DarkGate-infection-traffic.pcap",
+      "ground_truth": "DarkGate",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.475186824798584,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/SSLoad/2024-04-18-SSLoad-with-follow-up-Cobalt-Strike-DLL.pcap",
+      "ground_truth": "SSLoad",
+      "prediction": "BazarLoader",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 19.519341945648193,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/SSLoad/2024-04-17-TA578-SSLoad-infection.pcap",
+      "ground_truth": "SSLoad",
+      "prediction": "BazarLoader",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 17.444709539413452,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/SSLoad/2024-04-15-SSLoad-infection-traffic.pcap",
+      "ground_truth": "SSLoad",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.16636633872986,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Matanbuchus/2024-03-26-Matanbuchus-infection-with-Danabot.pcap",
+      "ground_truth": "Matanbuchus",
+      "prediction": "BazarLoader",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 18.26872992515564,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/DarkGate/2024-03-19-DarkGate-infection-traffic.pcap",
+      "ground_truth": "DarkGate",
+      "prediction": "Formbook",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 19.650368452072144,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/AsyncRAT/2024-03-14-AsyncRAT-and-XWorm-infection-traffic.pcap",
+      "ground_truth": "AsyncRAT",
+      "prediction": "Formbook",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 17.739147186279297,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Lumma_Stealer/2024-03-07-Latrodectus-infection-with-Lumma-Stealer.pcap",
+      "ground_truth": "Lumma_Stealer",
+      "prediction": "BazarLoader",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 19.911579608917236,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Meduza_Stealer/2024-03-06-traffic-from-Piakbot-infection-with-Meduza-Stealer.pcap",
+      "ground_truth": "Meduza_Stealer",
+      "prediction": "Formbook",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 19.80404043197632,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Latrodectus/2024-02-09-Contact-Forms-campaign-Latrodectus-infection-traffic-with-Keyhole-VNC-carved.pcap",
+      "ground_truth": "Latrodectus",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 18.982121229171753,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/SocGholish/2024-02-21-SocGholish-AsyncRAT-infection.pcap",
+      "ground_truth": "SocGholish",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 19.418578386306763,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Danabot/2024-02-14-Danabot-infection-traffic.pcap",
+      "ground_truth": "Danabot",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 19.57739496231079,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Pikabot/2024-02-08-TA577-Pikabot-infection-traffic.pcap",
+      "ground_truth": "Pikabot",
+      "prediction": "BazarLoader",
+      "confidence": 0.3,
+      "is_correct": false,
+      "inference_time": 19.62733221054077,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/DarkGate/2024-01-30-DarkGate-infection-traffic.pcap",
+      "ground_truth": "DarkGate",
+      "prediction": "Formbook",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 18.46639108657837,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/DarkGate/2024-01-25-DarkGate-infection-traffic.pcap",
+      "ground_truth": "DarkGate",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 20.008138179779053,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/StealC/2024-01-12-StealC-infection-traffic.pcap",
+      "ground_truth": "StealC",
+      "prediction": "Formbook",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 19.523364543914795,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/XWorm/2025-11-19-Xworm-infection-traffic.pcap",
+      "ground_truth": "XWorm",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.093815088272095,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Lumma_Stealer/2025-09-24-traffic-from-running-Setup.exe.pcap",
+      "ground_truth": "Lumma_Stealer",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.303450345993042,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Formbook/2025-09-05-XLoader-infection-traffic.pcap",
+      "ground_truth": "Formbook",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 18.610392808914185,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Lumma_Stealer/2025-09-03-Kongtuke-ClickFix-leading-to-Lumma-Stealer.pcap",
+      "ground_truth": "Lumma_Stealer",
+      "prediction": "Formbook",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 18.503993034362793,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/StealC/2025-08-20-SmartAgeSG-Netsupport-RAT-with-StealCv2.pcap",
+      "ground_truth": "StealC",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 19.093125343322754,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Lumma_Stealer/2025-08-15-Lumma-Stealer-infection-with-Sectop-RAT.pcap",
+      "ground_truth": "Lumma_Stealer",
+      "prediction": "BazarLoader",
+      "confidence": 0.8,
+      "is_correct": false,
+      "inference_time": 19.878051280975342,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Lumma_Stealer/2025-08-13-Lumma-Stealer-infection.pcap",
+      "ground_truth": "Lumma_Stealer",
+      "prediction": "BazarLoader",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 18.94276475906372,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Formbook/2025-08-11-XLoader-infection-traffic.pcap",
+      "ground_truth": "Formbook",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 20.062878370285034,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Lumma_Stealer/2025-07-15-traffic-from-Lumma-Stealer-infection-with-SecTop-RAT.pcap",
+      "ground_truth": "Lumma_Stealer",
+      "prediction": "BazarLoader",
+      "confidence": 0.7,
+      "is_correct": false,
+      "inference_time": 20.043379545211792,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Lumma_Stealer/2025-07-02-Lumma-Stealer-infection-with-Rsockstun-malware.pcap",
+      "ground_truth": "Lumma_Stealer",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.861815214157104,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Lumma_Stealer/2025-06-26-Lumma-Stealer-infection-with-follow-up-malware.pcap",
+      "ground_truth": "Lumma_Stealer",
+      "prediction": "Formbook",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 18.272863149642944,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/StealC/2025-06-18-SmartApeSG-ClickFix-to-NetSupport-RAT-to-StealCv2.pcap",
+      "ground_truth": "StealC",
+      "prediction": "Formbook",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 18.95417356491089,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/StealC/2025-05-22-StealCv2-infection.pcap",
+      "ground_truth": "StealC",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 18.56990385055542,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/StealC/2025-03-26-SmartApeSG-leads-to-NetSupport-RAT-and-StealC.pcap",
+      "ground_truth": "StealC",
+      "prediction": "BazarLoader",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 19.0408296585083,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Remcos_RAT/2025-03-10-Remcos-RAT-infection-traffic.pcap",
+      "ground_truth": "Remcos_RAT",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.301199674606323,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/StealC/2025-02-18-SmartApeSG-leads-to-NetSupport-RAT-and-StealC.pcap",
+      "ground_truth": "StealC",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 19.36833357810974,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Lumma_Stealer/2025-02-13-ClickFix-style-copy-past-script-leads-to-Lumma-Stealer.pcap",
+      "ground_truth": "Lumma_Stealer",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 19.91198182106018,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/AgentTesla/2025-01-31-AgentTesla-style-data-exifil-over-FTP.pcap",
+      "ground_truth": "AgentTesla",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 17.69809103012085,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/XLoader/2025-01-30-XLoader-infection-traffic.pcap",
+      "ground_truth": "XLoader",
+      "prediction": "BazarLoader",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 19.12507200241089,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/GuLoader/2025-01-09-CVE-2017-0199-XLS-to-DBatLoader-or-GuLoader-for-AgentTesla-variant.pcap",
+      "ground_truth": "GuLoader",
+      "prediction": "Formbook",
+      "confidence": 0.3,
+      "is_correct": false,
+      "inference_time": 19.753976106643677,
+      "error": null
+    }
+  ]
+}

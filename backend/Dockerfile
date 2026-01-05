@@ -38,7 +38,8 @@ RUN pip install --upgrade pip && \
         celery \
         redis \
         httpx \
-        python-multipart
+        python-multipart \
+        scapy
 
 # Default runtime configuration (can be overridden by docker-compose)
 ENV FILE_STORAGE_PATH=/data/storage \

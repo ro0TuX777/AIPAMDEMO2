@@ -1,0 +1,216 @@
+{
+  "description": "Benchmark using PCAPs from families the model was trained on",
+  "total_samples": 46,
+  "families": [
+    "AgentTesla",
+    "Astaroth",
+    "AsyncRAT",
+    "CobaltStrike",
+    "Danabot",
+    "DarkGate",
+    "Formbook",
+    "GuLoader",
+    "IcedID",
+    "Latrodectus",
+    "Lumma_Stealer",
+    "Matanbuchus",
+    "Meduza_Stealer",
+    "NetSupport_RAT",
+    "Pikabot",
+    "Redline_Stealer",
+    "Remcos_RAT",
+    "RigEK",
+    "SSLoad",
+    "SocGholish",
+    "StealC",
+    "Ursnif",
+    "XLoader",
+    "XWorm"
+  ],
+  "samples": [
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/AgentTesla/2023-09-21-AgentTesla-traffic-expertsconsultgh.co.pcap",
+      "label": "AgentTesla"
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/AgentTesla/2023-11-22-AgentTesla-infection-FTP-data-exfil.pcap",
+      "label": "AgentTesla"
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/AgentTesla/2024-12-04-AgentTesla-variant-using-FTP.pcap",
+      "label": "AgentTesla"
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/Astaroth/2023-12-11-Astaroth-Guildma-infection-trafffic.pcap",
+      "label": "Astaroth"
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/AsyncRAT/2024-03-14-AsyncRAT-and-XWorm-infection-traffic.pcap",
+      "label": "AsyncRAT"
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/CobaltStrike/2023-11-06-404TDS-to-malware-to-Cobalt-Strike.pcap",
+      "label": "CobaltStrike"
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/Danabot/2023-08-03-malicious-ad-to-Danabot-traffic.pcap",
+      "label": "Danabot"
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/Danabot/2024-02-14-Danabot-infection-traffic.pcap",
+      "label": "Danabot"
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/DarkGate/2023-10-04-DarkGate-infection.pcap",
+      "label": "DarkGate"
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/DarkGate/2023-10-12-DarkGate-infection-traffic.pcap",
+      "label": "DarkGate"
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/DarkGate/2023-10-13-DarkGate-infection-traffic.pcap",
+      "label": "DarkGate"
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/Formbook/2023-06-25-Formbook-infection-traffic.pcap",
+      "label": "Formbook"
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/Formbook/2023-06-26-Formbook-infection-traffic.pcap",
+      "label": "Formbook"
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/Formbook/2023-06-27-Formbook-infection-traffic.pcap",
+      "label": "Formbook"
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/GuLoader/2023-07-03-GuLoader-for-Formbook-infection-traffic.pcap",
+      "label": "GuLoader"
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/GuLoader/2025-01-09-CVE-2017-0199-XLS-to-DBatLoader-or-GuLoader-for-AgentTesla-variant.pcap",
+      "label": "GuLoader"
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/IcedID/2023-06-28-IcedID-infection.pcap",
+      "label": "IcedID"
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/IcedID/2023-07-25-IcedID-infection-traffic.pcap",
+      "label": "IcedID"
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/IcedID/2023-08-09-IcedID-with-BackConnect-and-Keyhole-VNC.pcap",
+      "label": "IcedID"
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/Latrodectus/2024-02-09-Contact-Forms-campaign-Latrodectus-infection-traffic-with-Keyhole-VNC-carved.pcap",
+      "label": "Latrodectus"
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/Latrodectus/2024-06-25-Latrodectus-infection-with-BackConnect-and-Keyhole-VNC.pcap",
+      "label": "Latrodectus"
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/Lumma_Stealer/2023-10-11-Lumma-Stealer-infection-traffic.pcap",
+      "label": "Lumma_Stealer"
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/Lumma_Stealer/2024-03-07-Latrodectus-infection-with-Lumma-Stealer.pcap",
+      "label": "Lumma_Stealer"
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/Lumma_Stealer/2024-09-19-file-downloader-to-Lumma-Stealer.pcap",
+      "label": "Lumma_Stealer"
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/Matanbuchus/2024-03-26-Matanbuchus-infection-with-Danabot.pcap",
+      "label": "Matanbuchus"
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/Matanbuchus/2024-06-17-Matanbuchus-infection-with-Danbot-traffic.pcap",
+      "label": "Matanbuchus"
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/Meduza_Stealer/2024-03-06-traffic-from-Piakbot-infection-with-Meduza-Stealer.pcap",
+      "label": "Meduza_Stealer"
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/NetSupport_RAT/2024-12-17-SmartApeSG-to-NetSupport-RAT.pcap",
+      "label": "NetSupport_RAT"
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/Pikabot/2023-10-03-Pikabot-infection-with-Cobalt-Strike.pcap",
+      "label": "Pikabot"
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/Pikabot/2023-10-17-TA577-Pikabot-infection-with-Cobalt-Strike.pcap",
+      "label": "Pikabot"
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/Pikabot/2023-11-02-Pikabot-infection-traffic.pcap",
+      "label": "Pikabot"
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/Redline_Stealer/2024-10-23-Redline-Stealer-infection-traffic.pcap",
+      "label": "Redline_Stealer"
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/Remcos_RAT/2023-06-26-guloader-or-modiloader-style-infection-for-Remcos-RAT.pcap",
+      "label": "Remcos_RAT"
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/Remcos_RAT/2024-08-26-GuLoader-for-Remcos-RAT.pcap",
+      "label": "Remcos_RAT"
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/Remcos_RAT/2025-03-10-Remcos-RAT-infection-traffic.pcap",
+      "label": "Remcos_RAT"
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/RigEK/2024-06-10-OriginLogger-infection.pcap",
+      "label": "RigEK"
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/SSLoad/2024-04-15-SSLoad-infection-traffic.pcap",
+      "label": "SSLoad"
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/SSLoad/2024-04-17-TA578-SSLoad-infection.pcap",
+      "label": "SSLoad"
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/SSLoad/2024-04-18-SSLoad-with-follow-up-Cobalt-Strike-DLL.pcap",
+      "label": "SSLoad"
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/SocGholish/2024-02-21-SocGholish-AsyncRAT-infection.pcap",
+      "label": "SocGholish"
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/StealC/2024-01-12-StealC-infection-traffic.pcap",
+      "label": "StealC"
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/StealC/2025-02-18-SmartApeSG-leads-to-NetSupport-RAT-and-StealC.pcap",
+      "label": "StealC"
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/StealC/2025-03-26-SmartApeSG-leads-to-NetSupport-RAT-and-StealC.pcap",
+      "label": "StealC"
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/Ursnif/2023-07-12-Gozi-infection-with-Cobalt-Strike.pcap",
+      "label": "Ursnif"
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/XLoader/2025-01-30-XLoader-infection-traffic.pcap",
+      "label": "XLoader"
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/XWorm/2025-11-19-Xworm-infection-traffic.pcap",
+      "label": "XWorm"
+    }
+  ]
+}

@@ -1,0 +1,1726 @@
+{
+  "description": "Benchmark set for AIPAM v2 - held-out samples not in training",
+  "created": "2025-12-24T13:40:59.067175",
+  "composition": {
+    "old_samples": 200,
+    "new_samples": 86
+  },
+  "samples": [
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Qakbot/2019-12-27-Qakbot-infection-traffic.pcap",
+      "label": "Qakbot",
+      "date": "2019-12-27",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/TrickBot/2019-12-26-IcedID-infection-with-Trickbot-gtag-tin233.pcap",
+      "label": "TrickBot",
+      "date": "2019-12-26",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/RigEK/2019-12-23-Rig-EK-sends-a-payload-I-cannot-identify.pcap",
+      "label": "RigEK",
+      "date": "2019-12-23",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2019-12-23-Ursnif-example-1-infection-traffic.pcap",
+      "label": "Ursnif",
+      "date": "2019-12-23",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/IcedID/2019-12-23-IcedID-infection-from-malspam-1st-run.pcap",
+      "label": "IcedID",
+      "date": "2019-12-23",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-12-20-Emotet-epoch-2-with-Trickbot-mor70.pcap",
+      "label": "Emotet",
+      "date": "2019-12-20",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/IcedID/2019-12-19-Ursnif-infection-with-IcedID-and-Valak.pcap",
+      "label": "IcedID",
+      "date": "2019-12-19",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-12-16-Emotet-infection-with-spambot-traffic.pcap",
+      "label": "Emotet",
+      "date": "2019-12-16",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-12-16-Emotet-epoch-3-infection-with-Trickbot-gtag-mor66.pcap",
+      "label": "Emotet",
+      "date": "2019-12-16",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2019-12-11-Ursnif-infection-with-Dridex.pcap",
+      "label": "Ursnif",
+      "date": "2019-12-11",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/TrickBot/2019-12-10-Trickbot-gtag-mango21-infection-traffic.pcap",
+      "label": "TrickBot",
+      "date": "2019-12-10",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2019-12-10-Hancitor-infection-with-Ursnif-and-Cobalt-Strike.pcap",
+      "label": "Ursnif",
+      "date": "2019-12-10",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-12-09-Emotet-epoch-2-infection-with-Trickbot-gtag-mor61.pcap",
+      "label": "Emotet",
+      "date": "2019-12-09",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2019-12-09-Hancitor-infection-traffic.pcap",
+      "label": "Hancitor",
+      "date": "2019-12-09",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-12-06-Emotet-epoch-3-with-Trickbot-gtag-mor60-infection-traffic.pcap",
+      "label": "Emotet",
+      "date": "2019-12-06",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2019-12-05-Hancitor-infection-traffic.pcap",
+      "label": "Hancitor",
+      "date": "2019-12-05",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2019-12-02-Ursnif-infection-with-Dridex.pcap",
+      "label": "Ursnif",
+      "date": "2019-12-02",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-11-27-Emotet-epoch-3-infected-Windows-client-as-spambot.pcap",
+      "label": "Emotet",
+      "date": "2019-11-27",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Dridex/2019-11-27-Dridex-infection-traffic.pcap",
+      "label": "Dridex",
+      "date": "2019-11-27",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Qakbot/2019-11-25-Spelevo-EK.pcap",
+      "label": "Qakbot",
+      "date": "2019-11-25",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2019-11-25-Ursnif-infection-with-Dridex.pcap",
+      "label": "Ursnif",
+      "date": "2019-11-25",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-11-25-Emotet-epoch-3-infection-with-Trickbot-gtag-mor51.pcap",
+      "label": "Emotet",
+      "date": "2019-11-25",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-11-22-Emotet-epoch-2-with-Trickbot-gtag-mor50.pcap",
+      "label": "Emotet",
+      "date": "2019-11-22",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-11-21-Emotet-epoch-3-with-Trickbot-gtag-mor49-and-spambot-traffic.pcap",
+      "label": "Emotet",
+      "date": "2019-11-21",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-11-15-Emotet-epoch-3-infection-with-Trickbot-gtag-mor45.pcap",
+      "label": "Emotet",
+      "date": "2019-11-15",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-11-13-Emotet-epoch-1-infection-with-Trickbot-gtag-mor43.pcap",
+      "label": "Emotet",
+      "date": "2019-11-13",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/IcedID/2019-11-13-IcedID-infection-with-Anubis-VNC-and-Trickbot-in-AD-environment.pcap",
+      "label": "IcedID",
+      "date": "2019-11-13",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-11-11-Emotet-epoch-1-infection-with-Trickbot-gtag-mor41.pcap",
+      "label": "Emotet",
+      "date": "2019-11-11",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-11-08-Emotet-epoch-2-infection-with-Trickbot-gtag-mor40.pcap",
+      "label": "Emotet",
+      "date": "2019-11-08",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/TrickBot/2019-11-08-traffic-from-Ursnif-infection-with-Trickbot-gtag-lleo8.pcap",
+      "label": "TrickBot",
+      "date": "2019-11-08",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2019-11-07-Ursnif-infection-from-Italian-malspam.pcap",
+      "label": "Ursnif",
+      "date": "2019-11-07",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2019-11-06-Ursnif-infection-with-Dridex-and-proxy-activity.pcap",
+      "label": "Ursnif",
+      "date": "2019-11-06",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/TrickBot/2019-10-31-IcedID-infection-with-Trickbot.pcap",
+      "label": "TrickBot",
+      "date": "2019-10-31",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/TrickBot/2019-10-25-Ursnif-infection-with-IcedID-then-Trickbot-gtag-tin188.pcap",
+      "label": "TrickBot",
+      "date": "2019-10-25",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-10-25-Emotet-infection-with-Trickbot-gtag-mor31.pcap",
+      "label": "Emotet",
+      "date": "2019-10-25",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-10-24-Emotet-infection-with-Trickbot-gtag-mor30.pcap",
+      "label": "Emotet",
+      "date": "2019-10-24",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-10-22-Emotet-infection-wth-Trickbot-gtag-mor28.pcap",
+      "label": "Emotet",
+      "date": "2019-10-22",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-10-21-Emotet-infection-with-Trickbot-gtag-mor27-and-spambot-activity.pcap",
+      "label": "Emotet",
+      "date": "2019-10-21",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/IcedID/2019-10-21-Ursnif-infection-with-IcedID.pcap",
+      "label": "IcedID",
+      "date": "2019-10-21",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2019-10-17-Ursnif-infection-from-Italian-malspam.pcap",
+      "label": "Ursnif",
+      "date": "2019-10-17",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ransomware/2018-12-27-shade-ransomware-infection.pcap",
+      "label": "Ransomware",
+      "date": "2018-12-27",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2018-12-20-Emotet-infection-with-Gootkit.pcap",
+      "label": "Emotet",
+      "date": "2018-12-20",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2018-12-20-Hancitor-1st-run-retreives-Pony-EvilPony-Ursnif-and-SmokeLoader.pcap",
+      "label": "Ursnif",
+      "date": "2018-12-20",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/IcedID/2018-12-17-IcedID-from-password-protected-Word-doc.pcap",
+      "label": "IcedID",
+      "date": "2018-12-17",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2018-12-17-Hancitor-infection-with-Urnsif.pcap",
+      "label": "Hancitor",
+      "date": "2018-12-17",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2018-12-14-Emotet-infection-with-Qakbot.pcap",
+      "label": "Emotet",
+      "date": "2018-12-14",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2018-12-13-Hancitor-infection-with-Ursnif.pcap",
+      "label": "Ursnif",
+      "date": "2018-12-13",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2018-12-10-Ursnif-infection-with-Dridex.pcap",
+      "label": "Ursnif",
+      "date": "2018-12-10",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Nymaim/2018-12-10-password-protected-Word-doc-pushes-Nymaim.pcap",
+      "label": "Nymaim",
+      "date": "2018-12-10",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2018-12-10-Emotet-infection-with-IcedID.pcap",
+      "label": "Emotet",
+      "date": "2018-12-10",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2018-12-10-Hancitor-infection-with-Ursnif.pcap",
+      "label": "Hancitor",
+      "date": "2018-12-10",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/TrickBot/2018-12-07-Trickbot-infection-traffic-ser1207.pcap",
+      "label": "TrickBot",
+      "date": "2018-12-07",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2018-12-07-Emotet-infection-with-IcedID.pcap",
+      "label": "Emotet",
+      "date": "2018-12-07",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2018-12-06-Hancitor-infection-with-Ursnif.pcap",
+      "label": "Hancitor",
+      "date": "2018-12-06",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2018-12-05-Hancitor-infection-with-Ursnif.pcap",
+      "label": "Hancitor",
+      "date": "2018-12-05",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2018-12-04-Hancitor-infection-with-Ursnif-and-SSEbot.pcap",
+      "label": "Hancitor",
+      "date": "2018-12-04",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2018-11-30-Emotet-infection-with-IcedID-and-Trickbot.pcap",
+      "label": "Emotet",
+      "date": "2018-11-30",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2018-11-29-Hancitor-infection-with-Ursnif.pcap",
+      "label": "Ursnif",
+      "date": "2018-11-29",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2018-11-27-Ursnif-infection-traffic-with-Dridex.pcap",
+      "label": "Ursnif",
+      "date": "2018-11-27",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2018-11-23-Emotet-infection-with-Gootkit.pcap",
+      "label": "Emotet",
+      "date": "2018-11-23",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2018-11-21-Ursnif-infection-with-Dridex.pcap",
+      "label": "Ursnif",
+      "date": "2018-11-21",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2018-11-16-Emotet-infection-with-IcedID-and-AZORult.pcap",
+      "label": "Emotet",
+      "date": "2018-11-16",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2018-11-14-Emotet-infection-with-IcedID-banking-Trojan.pcap",
+      "label": "Emotet",
+      "date": "2018-11-14",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/TrickBot/2018-11-12-Trickbot-infection-traffic-gtag-sat100.pcap",
+      "label": "TrickBot",
+      "date": "2018-11-12",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/TrickBot/2018-11-09-one-week-of-a-Trickbot-infection.pcap",
+      "label": "TrickBot",
+      "date": "2018-11-09",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2018-11-08-Ursnif-infection-with-IcedID-banking-Trojan.pcap",
+      "label": "Ursnif",
+      "date": "2018-11-08",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2018-11-06-Emotet-infection-with-Trickbot.pcap",
+      "label": "Emotet",
+      "date": "2018-11-06",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ransomware/2018-11-02-GandCrab-ransomware-infection.pcap",
+      "label": "Ransomware",
+      "date": "2018-11-02",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2018-10-29-Hancitor-infection-traffic-with-Ursnif.pcap",
+      "label": "Ursnif",
+      "date": "2018-10-29",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/TrickBot/2018-10-26-Trickbot-spreads-from-client-to-DC-ser1025us.pcap",
+      "label": "TrickBot",
+      "date": "2018-10-26",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/TrickBot/2018-10-22-Trickbot-ser1022-infection-traffic.pcap",
+      "label": "TrickBot",
+      "date": "2018-10-22",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2018-10-22-Hancitor-malspam-infection-traffic.pcap",
+      "label": "Hancitor",
+      "date": "2018-10-22",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Nymaim/2018-10-19-Nymaim-infection-traffic.pcap",
+      "label": "Nymaim",
+      "date": "2018-10-19",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/TrickBot/2018-10-18-Trickbot-spreads-from-client-to-DC.pcap",
+      "label": "TrickBot",
+      "date": "2018-10-18",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2018-10-17-Hancitor-infection-traffic-AD-environment.pcap",
+      "label": "Hancitor",
+      "date": "2018-10-17",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/TrickBot/2018-10-15-Trickbot-gtag-jim332-infection-traffic.pcap",
+      "label": "TrickBot",
+      "date": "2018-10-15",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/TrickBot/2018-10-10-Trickbot-gtag-sat77-infection-for-24-hours.pcap",
+      "label": "TrickBot",
+      "date": "2018-10-10",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2018-10-10-Hancitor-infection-with-Zeus-Panda-Banker.pcap",
+      "label": "Hancitor",
+      "date": "2018-10-10",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2018-10-09-Hancitor-infection-with-Zeus-Panda-Banker.pcap",
+      "label": "Hancitor",
+      "date": "2018-10-09",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/TrickBot/2018-10-08-Trickbot-sat75-infection-with-powershell-empire-traffic.pcap",
+      "label": "TrickBot",
+      "date": "2018-10-08",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/RigEK/2017-12-28-Seamless-campaign-Rig-EK-sends-Ramnit.pcap",
+      "label": "RigEK",
+      "date": "2017-12-28",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2017-12-27-Emotet-infection-with-Zeus-Panda-Banker.pcap",
+      "label": "Emotet",
+      "date": "2017-12-27",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Necurs/2017-12-26-Necurs-Botnet-malspam-pushes-GlobeImposter-ransomware-traffic.pcap",
+      "label": "Necurs",
+      "date": "2017-12-26",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Remcos_RAT/2017-12-22-Remcos-RAT-infection-traffic.pcap",
+      "label": "Remcos_RAT",
+      "date": "2017-12-22",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2017-12-21-Hancitor-infection-wth-Zeus-Panda-Banker.pcap",
+      "label": "Hancitor",
+      "date": "2017-12-21",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2017-12-20-Hancitor-infection-with-Zeus-Panda-Banker.pcap",
+      "label": "Hancitor",
+      "date": "2017-12-20",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2017-12-19-Hancitor-infection-with-Zeus-Panda-Banker.pcap",
+      "label": "Hancitor",
+      "date": "2017-12-19",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Necurs/2017-12-19-GlobeImposter-infection-traffic.pcap",
+      "label": "Necurs",
+      "date": "2017-12-19",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2017-12-18-Hancitor-infection-with-Zeus-Panda-Banker.pcap",
+      "label": "Hancitor",
+      "date": "2017-12-18",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/RigEK/2017-12-14-Ngay-campaign-Rig-EK-sends-Quant-Loader-and-Monero-coin-miner.pcap",
+      "label": "RigEK",
+      "date": "2017-12-14",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/IcedID/2017-12-13-Hancitor-infection-with-IcedID.pcap",
+      "label": "IcedID",
+      "date": "2017-12-13",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2017-12-11-Hancitor-infection-with-Zeus-Panda-Banker.pcap",
+      "label": "Hancitor",
+      "date": "2017-12-11",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/RigEK/2017-12-08-Fobos-campaign-Rig-EK-sends-Bunitu.pcap",
+      "label": "RigEK",
+      "date": "2017-12-08",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/IcedID/2017-12-06-Hancitor-infection-with-IcedID.pcap",
+      "label": "IcedID",
+      "date": "2017-12-06",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Necurs/2017-12-06-Necurs-Botnet-malspam-pushes-GlobeImposter-ransomware.pcap",
+      "label": "Necurs",
+      "date": "2017-12-06",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/NetSupport_RAT/2017-12-06-HoeflerText-popup-pushes-NetSupport-Manager-RAT.pcap",
+      "label": "NetSupport_RAT",
+      "date": "2017-12-06",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2017-12-05-Hancitor-infection-with-Zeus-Panda-Banker.pcap",
+      "label": "Hancitor",
+      "date": "2017-12-05",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Necurs/2017-12-05-Necurs-Botnet-malspam-pushes-GlobeImposter-traffic.pcap",
+      "label": "Necurs",
+      "date": "2017-12-05",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Dridex/2017-12-04-Dridex-infection-traffic.pcap",
+      "label": "Dridex",
+      "date": "2017-12-04",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Necurs/2017-12-04-Necurs-Botnet-malspam-pushes-GlobeImposter-ransomware.pcap",
+      "label": "Necurs",
+      "date": "2017-12-04",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2017-11-28-Hancitor-infection-with-Zeus-Panda-Banker.pcap",
+      "label": "Hancitor",
+      "date": "2017-11-28",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Necurs/2017-11-23-Necurs-Botnet-malspam-pushes-Scarab-ransomware.pcap",
+      "label": "Necurs",
+      "date": "2017-11-23",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Zeus/2017-11-21-Zeus-Panda-Banker-infection-traffic.pcap",
+      "label": "Zeus",
+      "date": "2017-11-21",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/IcedID/2017-11-21-Hancitor-infection-with-IcedID.pcap",
+      "label": "IcedID",
+      "date": "2017-11-21",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2017-11-16-Hancitor-infection-with-Zeus-Panda-Banker.pcap",
+      "label": "Hancitor",
+      "date": "2017-11-16",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2017-11-08-Hancitor-infection-with-Zeus-Panda-Banker.pcap",
+      "label": "Hancitor",
+      "date": "2017-11-08",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2017-11-06-Hancitor-infection-with-Zeus-Panda-Banker.pcap",
+      "label": "Hancitor",
+      "date": "2017-11-06",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Nymaim/2017-11-03-Nymaim-infection-traffic.pcap",
+      "label": "Nymaim",
+      "date": "2017-11-03",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2017-11-01-Hancitor-infection-with-Zeus-Panda-Banker.pcap",
+      "label": "Hancitor",
+      "date": "2017-11-01",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Locky/2017-11-01-Necurs-botnet-malspam-pushes-Locky-ransomware.pcap",
+      "label": "Locky",
+      "date": "2017-11-01",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2017-10-31-Hancitor-infection-with-Zeus-Panda-Banker.pcap",
+      "label": "Hancitor",
+      "date": "2017-10-31",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Necurs/2017-10-31-Necurs-Botnet-malspam-pushes-Locky-ransomware.pcap",
+      "label": "Necurs",
+      "date": "2017-10-31",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2017-10-30-Hancitor-infection-traffic.pcap",
+      "label": "Hancitor",
+      "date": "2017-10-30",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Locky/2017-10-30-Necurs-Botnet-malspam-pushes-Locky-ransomware.pcap",
+      "label": "Locky",
+      "date": "2017-10-30",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Remcos_RAT/2017-10-27-Remcos-RAT-infection-traffic.pcap",
+      "label": "Remcos_RAT",
+      "date": "2017-10-27",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2017-10-26-Hancitor-infection-with-Zeus-Panda-Banker.pcap",
+      "label": "Hancitor",
+      "date": "2017-10-26",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Locky/2017-10-24-Necurs-botnet-DDE-doc-sends-Locky-ransomware.pcap",
+      "label": "Locky",
+      "date": "2017-10-24",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Necurs/2017-10-19-Necurs-Botnet-malspam-pushing-Locky-ransomware.pcap",
+      "label": "Necurs",
+      "date": "2017-10-19",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Hancitor/2017-10-16-Hancitor-infection-with-ZLoader.pcap",
+      "label": "Hancitor",
+      "date": "2017-10-16",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Locky/2017-10-13-Blank-Slate-campaign-pushes-Sage-2.2-ransomware.pcap",
+      "label": "Locky",
+      "date": "2017-10-13",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Cerber/2016-12-29-pseudoDarkleech-Rig-V-sends-Cerber-ransomware.pcap",
+      "label": "Cerber",
+      "date": "2016-12-29",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Cerber/2016-12-27-pseudoDarkleech-Rig-V-sends-Cerber-ransomware.pcap",
+      "label": "Cerber",
+      "date": "2016-12-27",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/RigEK/2016-12-27-EITest-Rig-E-sends-Chthonic-banking-Trojan.pcap",
+      "label": "RigEK",
+      "date": "2016-12-27",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Cerber/2016-12-26-pseudoDarkleech-Rig-V-sends-Cerber-ransomware.pcap",
+      "label": "Cerber",
+      "date": "2016-12-26",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Locky/2016-12-23-Afraidgate-Rig-V-sends-Locky-ransomware.pcap",
+      "label": "Locky",
+      "date": "2016-12-23",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Cerber/2016-12-22-Cerber-ransomware-traffic.pcap",
+      "label": "Cerber",
+      "date": "2016-12-22",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Cerber/2016-12-22-pseudoDarkleech-Rig-V-sends-Cerber-ransomware.pcap",
+      "label": "Cerber",
+      "date": "2016-12-22",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Cerber/2016-12-21-pseudoDarkleech-Rig-V-sends-Cerber-ransomware.pcap",
+      "label": "Cerber",
+      "date": "2016-12-21",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/RigEK/2016-12-21-EITest-Rig-E-traffic.pcap",
+      "label": "RigEK",
+      "date": "2016-12-21",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Locky/2016-12-21-Afraidgate-Rig-V-sends-Locky-ransomware.pcap",
+      "label": "Locky",
+      "date": "2016-12-21",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Locky/2016-12-20-Locky-ransomware-infection-traffic.pcap",
+      "label": "Locky",
+      "date": "2016-12-20",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/RigEK/2016-12-20-TDS-based-Rig-V-sends-Terdot.A-or-Zloader.pcap",
+      "label": "RigEK",
+      "date": "2016-12-20",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/RigEK/2016-12-19-EITest-Rig-E-sends-Zeprox.B.pcap",
+      "label": "RigEK",
+      "date": "2016-12-19",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Locky/2016-12-16-Locky-ransomware-infection-traffic.pcap",
+      "label": "Locky",
+      "date": "2016-12-16",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Cerber/2016-12-13-pseudoDarkleech-Rig-V-sends-Cerber-ransomware.pcap",
+      "label": "Cerber",
+      "date": "2016-12-13",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Locky/2016-12-12-Locky-ransomware-infection-traffic.pcap",
+      "label": "Locky",
+      "date": "2016-12-12",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/RigEK/2016-12-12-EITest-Rig-V-sends-CryptoMix-ransomware.pcap",
+      "label": "RigEK",
+      "date": "2016-12-12",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Cerber/2016-12-11-pseudoDarkleech-Rig-V-sends-Cerber-ransomware.pcap",
+      "label": "Cerber",
+      "date": "2016-12-11",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Locky/2016-12-09-Locky-ransomware-traffic.pcap",
+      "label": "Locky",
+      "date": "2016-12-09",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Locky/2016-12-09-Afraidgate-Rig-V-sends-Locky-ransomware.pcap",
+      "label": "Locky",
+      "date": "2016-12-09",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Cerber/2016-12-02-pseudoDarkleech-Rig-V-sends-Cerber-ransomware.pcap",
+      "label": "Cerber",
+      "date": "2016-12-02",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2016-12-01-EITest-Rig-E-sends-Emotet.pcap",
+      "label": "Emotet",
+      "date": "2016-12-01",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2016-12-01-Gozi-ISFB-infection-traffic.pcap",
+      "label": "Ursnif",
+      "date": "2016-12-01",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2016-11-30-Gozi-ISFB-infection-traffic.pcap",
+      "label": "Ursnif",
+      "date": "2016-11-30",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/RigEK/2016-11-28-3rd-run-EITest-Rig-E-sends-Chthonic.pcap",
+      "label": "RigEK",
+      "date": "2016-11-28",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Cerber/2016-11-28-2nd-run-pseudoDarkleech-Rig-V-sends-Cerber-ransomware.pcap",
+      "label": "Cerber",
+      "date": "2016-11-28",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/RigEK/2016-11-28-1st-run-EITest-Rig-V-sends-CryptoMix-ransomware.pcap",
+      "label": "RigEK",
+      "date": "2016-11-28",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/RigEK/2016-11-17-EITest-Rig-E-sends-CHIP-ransomware.pcap",
+      "label": "RigEK",
+      "date": "2016-11-17",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Cerber/2016-11-13-pseudoDarkleech-RIGv-sends-Cerber-ransomware.pcap",
+      "label": "Cerber",
+      "date": "2016-11-13",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/RigEK/2016-11-10-EITest-second-run-Rig-standard-sends-CryptFile2-ransomware.pcap",
+      "label": "RigEK",
+      "date": "2016-11-10",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Vawtrak/2016-11-10-EITest-first-run-RIGe-causes-Vawtrak-infection.pcap",
+      "label": "Vawtrak",
+      "date": "2016-11-10",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Cerber/2016-11-10-pseudoDarkleech-RIGv-sends-Cerber-ransomware.pcap",
+      "label": "Cerber",
+      "date": "2016-11-10",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/RigEK/2016-11-07-EITest-Rig-EK-sends-CryptFile2-ransomware.pcap",
+      "label": "RigEK",
+      "date": "2016-11-07",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/RigEK/2016-11-07-EITest-Rig-EK-traffic.pcap",
+      "label": "RigEK",
+      "date": "2016-11-07",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Cerber/2016-11-07-pseudoDarkleech-RIGv-sends-Cerber-ransomware.pcap",
+      "label": "Cerber",
+      "date": "2016-11-07",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Cerber/2016-11-06-pseudoDarkleech-RIGv-sends-Cerber-ransomware.pcap",
+      "label": "Cerber",
+      "date": "2016-11-06",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Cerber/2016-11-04-pseudoDarkleech-RIGv-sends-Cerber-ransomware.pcap",
+      "label": "Cerber",
+      "date": "2016-11-04",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Cerber/2016-10-31-pseudoDarkleech-RIGv-sends-Cerber-ransomware.pcap",
+      "label": "Cerber",
+      "date": "2016-10-31",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/RigEK/2016-10-31-EITest-Rig-EK-traffic.pcap",
+      "label": "RigEK",
+      "date": "2016-10-31",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/RigEK/2016-10-31-pseudoDarkleech-RIGv-sends-ddos-botnet-malware.pcap",
+      "label": "RigEK",
+      "date": "2016-10-31",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/AnglerEK/2015-12-29-Angler-EK-sends-Bedep-traffic.pcap",
+      "label": "AnglerEK",
+      "date": "2015-12-29",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/AnglerEK/2015-12-28-Angler-EK-sends-TeslaCrypt-ransomware-traffic.pcap",
+      "label": "AnglerEK",
+      "date": "2015-12-28",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Qakbot/2015-12-18-Rig-EK-traffic.pcap",
+      "label": "Qakbot",
+      "date": "2015-12-18",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ransomware/2015-12-17-TeslaCrypt-ransomware-traffic.pcap",
+      "label": "Ransomware",
+      "date": "2015-12-17",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/AnglerEK/2015-12-16-Angler-EK-sends-CryptoWall-ransomware-traffic.pcap",
+      "label": "AnglerEK",
+      "date": "2015-12-16",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/AnglerEK/2015-12-14-Angler-EK-sends-CryptoWall-ransomware-traffic.pcap",
+      "label": "AnglerEK",
+      "date": "2015-12-14",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/AnglerEK/2015-12-08-Angler-EK-traffic.pcap",
+      "label": "AnglerEK",
+      "date": "2015-12-08",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/AnglerEK/2015-12-04-Angler-EK-sends-TeslaCrypt-ransomware-traffic.pcap",
+      "label": "AnglerEK",
+      "date": "2015-12-04",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/AnglerEK/2015-12-03-Angler-EK-delivers-CryptoWall-ransomware-traffic.pcap",
+      "label": "AnglerEK",
+      "date": "2015-12-03",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/AnglerEK/2015-11-30-Angler-EK-sends-CryptoWall-ransomware.pcap",
+      "label": "AnglerEK",
+      "date": "2015-11-30",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Pony/2015-11-25-Pony-Vawtrak-infection-traffic.pcap",
+      "label": "Pony",
+      "date": "2015-11-25",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/AnglerEK/2015-11-23-Angler-EK-sends-CryptoWall-3.0-ransomware-traffic.pcap",
+      "label": "AnglerEK",
+      "date": "2015-11-23",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ransomware/2015-11-23-BizCN-gate-actor-Nuclear-EK-sends-CryptoWall-ransomware-traffic.pcap",
+      "label": "Ransomware",
+      "date": "2015-11-23",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ransomware/2015-11-21-BizCN-gate-actor-Nuclear-EK-sends-CryptoWall-ransomware-traffic.pcap",
+      "label": "Ransomware",
+      "date": "2015-11-21",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ransomware/2015-11-20-BizCN-gate-actor-Nuclear-EK-traffic.pcap",
+      "label": "Ransomware",
+      "date": "2015-11-20",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/AnglerEK/2015-11-20-Angler-EK-sends-CryptoWall-3.0-ransomware-traffic.pcap",
+      "label": "AnglerEK",
+      "date": "2015-11-20",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ransomware/2015-11-19-BizCN-gate-actor-Nuclear-EK-traffic.pcap",
+      "label": "Ransomware",
+      "date": "2015-11-19",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/RigEK/2015-11-17-Rig-EK-traffic.pcap",
+      "label": "RigEK",
+      "date": "2015-11-17",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ransomware/2015-11-12-Nuclear-EK-sends-CryptoWall-3.0-ransomware-traffic.pcap",
+      "label": "Ransomware",
+      "date": "2015-11-12",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/AnglerEK/2015-11-09-Angler-EK-sends-Bedep-traffic.pcap",
+      "label": "AnglerEK",
+      "date": "2015-11-09",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/RigEK/2015-11-02-Rig-EK-traffic.pcap",
+      "label": "RigEK",
+      "date": "2015-11-02",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/AnglerEK/2015-10-27-Angler-EK-sends-TeslaCrypt-2.1-ransomware-traffic.pcap",
+      "label": "AnglerEK",
+      "date": "2015-10-27",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/AnglerEK/2015-10-23-Angler-EK-sends-TeslaCrypt-2.0-ransomware-traffic.pcap",
+      "label": "AnglerEK",
+      "date": "2015-10-23",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Necurs/2015-10-21-Neutrino-EK-traffic.pcap",
+      "label": "Necurs",
+      "date": "2015-10-21",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ransomware/2015-10-20-052F-gate-Nuclear-EK-traffic.pcap",
+      "label": "Ransomware",
+      "date": "2015-10-20",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ransomware/2015-10-18-BizCN-gate-actor-Nuclear-EK-traffic.pcap",
+      "label": "Ransomware",
+      "date": "2015-10-18",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/AnglerEK/2015-10-13-Angler-EK-sends-CryptoWall-3.0-traffic-ransomware.pcap",
+      "label": "AnglerEK",
+      "date": "2015-10-13",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/AnglerEK/2015-10-12-Angler-EK-sends-Bedep-traffic.pcap",
+      "label": "AnglerEK",
+      "date": "2015-10-12",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/AnglerEK/2015-09-29-Angler-EK-sends-CryptoWall-3.0-ransomware-traffic.pcap",
+      "label": "AnglerEK",
+      "date": "2015-09-29",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Pony/2015-09-23-bartalex-word-macro-sends-pony-and-vawtrak.pcap",
+      "label": "Pony",
+      "date": "2015-09-23",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/RigEK/2015-09-21-Rig-EK-traffic.pcap",
+      "label": "RigEK",
+      "date": "2015-09-21",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/NeutrinoEK/2015-09-16-Neutrino-EK-sends-CryptoWall-3.0-ransomware-traffic.pcap",
+      "label": "NeutrinoEK",
+      "date": "2015-09-16",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ransomware/2015-09-16-Nuclear-EK-sends-TeslaCrypt-2.0-ransomware-traffic.pcap",
+      "label": "Ransomware",
+      "date": "2015-09-16",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/AnglerEK/2015-09-15-Angler-EK-sends-bedep-traffic.pcap",
+      "label": "AnglerEK",
+      "date": "2015-09-15",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ransomware/2015-09-15-Nuclear-EK-sends-TeslaCrypt-2.0-ransomware-traffic.pcap",
+      "label": "Ransomware",
+      "date": "2015-09-15",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/AnglerEK/2015-09-14-Angler-EK-sends-CryptoWall-3.0-ransomware-traffic.pcap",
+      "label": "AnglerEK",
+      "date": "2015-09-14",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/NeutrinoEK/2015-09-14-BizCN-gate-actor-Neutrino-EK-sends-CryptoWall-3.0-ransomware.pcap",
+      "label": "NeutrinoEK",
+      "date": "2015-09-14",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/NeutrinoEK/2015-09-11-BizCN-gate-actor-Neutrino-EK-traffic-sends-CryptoWall-3.0-ransomware-traffic.pcap",
+      "label": "NeutrinoEK",
+      "date": "2015-09-11",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/AnglerEK/2015-09-10-Angler-EK-traffic.pcap",
+      "label": "AnglerEK",
+      "date": "2015-09-10",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/NeutrinoEK/2015-09-08-Neutrino-EK-sends-CryptWall-3.0-ransomware-traffic.pcap",
+      "label": "NeutrinoEK",
+      "date": "2015-09-08",
+      "set": "benchmark_old"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Pikabot/2023-12-18-TA577-Pikabot-infection-with-Cobalt-Strike.pcap",
+      "label": "Pikabot",
+      "date": "2023-12-18",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Pikabot/2023-12-15-TA577-Pikabot-infection-traffic.pcap",
+      "label": "Pikabot",
+      "date": "2023-12-15",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Astaroth/2023-12-11-Astaroth-Guildma-infection-trafffic.pcap",
+      "label": "Astaroth",
+      "date": "2023-12-11",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/DarkGate/2023-12-07-DarkGate-infection.pcap",
+      "label": "DarkGate",
+      "date": "2023-12-07",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/DarkGate/2023-11-30-DarkGate-infection-traffic.pcap",
+      "label": "DarkGate",
+      "date": "2023-11-30",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Formbook/2023-11-29-JinxLoader-to-Formbook-XLoader.pcap",
+      "label": "Formbook",
+      "date": "2023-11-29",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/IcedID/2023-11-27-TA577-pushes-IcedID-variant.pcap",
+      "label": "IcedID",
+      "date": "2023-11-27",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/AgentTesla/2023-11-22-AgentTesla-infection-FTP-data-exfil.pcap",
+      "label": "AgentTesla",
+      "date": "2023-11-22",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/DarkGate/2023-11-20-DarkGate-infection-traffic.pcap",
+      "label": "DarkGate",
+      "date": "2023-11-20",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/CobaltStrike/2023-11-06-404TDS-to-malware-to-Cobalt-Strike.pcap",
+      "label": "CobaltStrike",
+      "date": "2023-11-06",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Pikabot/2023-11-02-Pikabot-infection-traffic.pcap",
+      "label": "Pikabot",
+      "date": "2023-11-02",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/IcedID/2023-10-31-IcedID-infection-traffic.pcap",
+      "label": "IcedID",
+      "date": "2023-10-31",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/DarkGate/2023-10-25-DarkGate-infection-traffic.pcap",
+      "label": "DarkGate",
+      "date": "2023-10-25",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/IcedID/2023-10-18-IcedID-forked-variant-infection-with-follow-up-activity.pcap",
+      "label": "IcedID",
+      "date": "2023-10-18",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Pikabot/2023-10-17-TA577-Pikabot-infection-with-Cobalt-Strike.pcap",
+      "label": "Pikabot",
+      "date": "2023-10-17",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/IcedID/2023-10-16-IcedID-infection.pcap",
+      "label": "IcedID",
+      "date": "2023-10-16",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/DarkGate/2023-10-13-DarkGate-infection-traffic.pcap",
+      "label": "DarkGate",
+      "date": "2023-10-13",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/DarkGate/2023-10-12-DarkGate-infection-traffic.pcap",
+      "label": "DarkGate",
+      "date": "2023-10-12",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Lumma_Stealer/2023-10-11-Lumma-Stealer-infection-traffic.pcap",
+      "label": "Lumma_Stealer",
+      "date": "2023-10-11",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/DarkGate/2023-10-04-DarkGate-infection.pcap",
+      "label": "DarkGate",
+      "date": "2023-10-04",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Pikabot/2023-10-03-Pikabot-infection-with-Cobalt-Strike.pcap",
+      "label": "Pikabot",
+      "date": "2023-10-03",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/IcedID/2023-09-28-IcedID-infection-with-Keyhole-VNC-and-Cobalt-Strike.pcap",
+      "label": "IcedID",
+      "date": "2023-09-28",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/AgentTesla/2023-09-21-AgentTesla-traffic-expertsconsultgh.co.pcap",
+      "label": "AgentTesla",
+      "date": "2023-09-21",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/IcedID/2023-08-09-IcedID-with-BackConnect-and-Keyhole-VNC.pcap",
+      "label": "IcedID",
+      "date": "2023-08-09",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Danabot/2023-08-03-malicious-ad-to-Danabot-traffic.pcap",
+      "label": "Danabot",
+      "date": "2023-08-03",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/IcedID/2023-07-25-IcedID-infection-traffic.pcap",
+      "label": "IcedID",
+      "date": "2023-07-25",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Ursnif/2023-07-12-Gozi-infection-with-Cobalt-Strike.pcap",
+      "label": "Ursnif",
+      "date": "2023-07-12",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Formbook/2023-07-11-loader-based-Formbook-infection-traffic.pcap",
+      "label": "Formbook",
+      "date": "2023-07-11",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Formbook/2023-07-04-Formbook-infection-traffic.pcap",
+      "label": "Formbook",
+      "date": "2023-07-04",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/GuLoader/2023-07-03-GuLoader-for-Formbook-infection-traffic.pcap",
+      "label": "GuLoader",
+      "date": "2023-07-03",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Formbook/2023-07-02-Formbook-infection-traffic.pcap",
+      "label": "Formbook",
+      "date": "2023-07-02",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Formbook/2023-07-01-Formbook-infection-traffic.pcap",
+      "label": "Formbook",
+      "date": "2023-07-01",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Formbook/2023-06-30-Formbook-infection-traffic.pcap",
+      "label": "Formbook",
+      "date": "2023-06-30",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Formbook/2023-06-29-Formbook-infection-traffic.pcap",
+      "label": "Formbook",
+      "date": "2023-06-29",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/IcedID/2023-06-28-IcedID-infection.pcap",
+      "label": "IcedID",
+      "date": "2023-06-28",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Formbook/2023-06-28-Formbook-infection-traffic.pcap",
+      "label": "Formbook",
+      "date": "2023-06-28",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Formbook/2023-06-27-Formbook-infection-traffic.pcap",
+      "label": "Formbook",
+      "date": "2023-06-27",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Remcos_RAT/2023-06-26-guloader-or-modiloader-style-infection-for-Remcos-RAT.pcap",
+      "label": "Remcos_RAT",
+      "date": "2023-06-26",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Formbook/2023-06-26-Formbook-infection-traffic.pcap",
+      "label": "Formbook",
+      "date": "2023-06-26",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Formbook/2023-06-25-Formbook-infection-traffic.pcap",
+      "label": "Formbook",
+      "date": "2023-06-25",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/NetSupport_RAT/2024-12-17-SmartApeSG-to-NetSupport-RAT.pcap",
+      "label": "NetSupport_RAT",
+      "date": "2024-12-17",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/AgentTesla/2024-12-04-AgentTesla-variant-using-FTP.pcap",
+      "label": "AgentTesla",
+      "date": "2024-12-04",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Redline_Stealer/2024-10-23-Redline-Stealer-infection-traffic.pcap",
+      "label": "Redline_Stealer",
+      "date": "2024-10-23",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Lumma_Stealer/2024-10-03-SmartLoader-to-Lumma-Stealer.pcap",
+      "label": "Lumma_Stealer",
+      "date": "2024-10-03",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Lumma_Stealer/2024-09-19-file-downloader-to-Lumma-Stealer.pcap",
+      "label": "Lumma_Stealer",
+      "date": "2024-09-19",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Remcos_RAT/2024-08-26-GuLoader-for-Remcos-RAT.pcap",
+      "label": "Remcos_RAT",
+      "date": "2024-08-26",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Formbook/2024-08-12-XLoader-Formbook-infection-traffic.pcap",
+      "label": "Formbook",
+      "date": "2024-08-12",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Latrodectus/2024-06-25-Latrodectus-infection-with-BackConnect-and-Keyhole-VNC.pcap",
+      "label": "Latrodectus",
+      "date": "2024-06-25",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Matanbuchus/2024-06-17-Matanbuchus-infection-with-Danbot-traffic.pcap",
+      "label": "Matanbuchus",
+      "date": "2024-06-17",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/RigEK/2024-06-10-OriginLogger-infection.pcap",
+      "label": "RigEK",
+      "date": "2024-06-10",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/DarkGate/2024-05-14-DarkGate-infection-traffic.pcap",
+      "label": "DarkGate",
+      "date": "2024-05-14",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/SSLoad/2024-04-18-SSLoad-with-follow-up-Cobalt-Strike-DLL.pcap",
+      "label": "SSLoad",
+      "date": "2024-04-18",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/SSLoad/2024-04-17-TA578-SSLoad-infection.pcap",
+      "label": "SSLoad",
+      "date": "2024-04-17",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/SSLoad/2024-04-15-SSLoad-infection-traffic.pcap",
+      "label": "SSLoad",
+      "date": "2024-04-15",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Matanbuchus/2024-03-26-Matanbuchus-infection-with-Danabot.pcap",
+      "label": "Matanbuchus",
+      "date": "2024-03-26",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/DarkGate/2024-03-19-DarkGate-infection-traffic.pcap",
+      "label": "DarkGate",
+      "date": "2024-03-19",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/AsyncRAT/2024-03-14-AsyncRAT-and-XWorm-infection-traffic.pcap",
+      "label": "AsyncRAT",
+      "date": "2024-03-14",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Lumma_Stealer/2024-03-07-Latrodectus-infection-with-Lumma-Stealer.pcap",
+      "label": "Lumma_Stealer",
+      "date": "2024-03-07",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Meduza_Stealer/2024-03-06-traffic-from-Piakbot-infection-with-Meduza-Stealer.pcap",
+      "label": "Meduza_Stealer",
+      "date": "2024-03-06",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Latrodectus/2024-02-09-Contact-Forms-campaign-Latrodectus-infection-traffic-with-Keyhole-VNC-carved.pcap",
+      "label": "Latrodectus",
+      "date": "2024-02-09",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/SocGholish/2024-02-21-SocGholish-AsyncRAT-infection.pcap",
+      "label": "SocGholish",
+      "date": "2024-02-21",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Danabot/2024-02-14-Danabot-infection-traffic.pcap",
+      "label": "Danabot",
+      "date": "2024-02-14",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Pikabot/2024-02-08-TA577-Pikabot-infection-traffic.pcap",
+      "label": "Pikabot",
+      "date": "2024-02-08",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/DarkGate/2024-01-30-DarkGate-infection-traffic.pcap",
+      "label": "DarkGate",
+      "date": "2024-01-30",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/DarkGate/2024-01-25-DarkGate-infection-traffic.pcap",
+      "label": "DarkGate",
+      "date": "2024-01-25",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/StealC/2024-01-12-StealC-infection-traffic.pcap",
+      "label": "StealC",
+      "date": "2024-01-12",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/XWorm/2025-11-19-Xworm-infection-traffic.pcap",
+      "label": "XWorm",
+      "date": "2025-11-19",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Lumma_Stealer/2025-09-24-traffic-from-running-Setup.exe.pcap",
+      "label": "Lumma_Stealer",
+      "date": "2025-09-24",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Formbook/2025-09-05-XLoader-infection-traffic.pcap",
+      "label": "Formbook",
+      "date": "2025-09-05",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Lumma_Stealer/2025-09-03-Kongtuke-ClickFix-leading-to-Lumma-Stealer.pcap",
+      "label": "Lumma_Stealer",
+      "date": "2025-09-03",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/StealC/2025-08-20-SmartAgeSG-Netsupport-RAT-with-StealCv2.pcap",
+      "label": "StealC",
+      "date": "2025-08-20",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Lumma_Stealer/2025-08-15-Lumma-Stealer-infection-with-Sectop-RAT.pcap",
+      "label": "Lumma_Stealer",
+      "date": "2025-08-15",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Lumma_Stealer/2025-08-13-Lumma-Stealer-infection.pcap",
+      "label": "Lumma_Stealer",
+      "date": "2025-08-13",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Formbook/2025-08-11-XLoader-infection-traffic.pcap",
+      "label": "Formbook",
+      "date": "2025-08-11",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Lumma_Stealer/2025-07-15-traffic-from-Lumma-Stealer-infection-with-SecTop-RAT.pcap",
+      "label": "Lumma_Stealer",
+      "date": "2025-07-15",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Lumma_Stealer/2025-07-02-Lumma-Stealer-infection-with-Rsockstun-malware.pcap",
+      "label": "Lumma_Stealer",
+      "date": "2025-07-02",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Lumma_Stealer/2025-06-26-Lumma-Stealer-infection-with-follow-up-malware.pcap",
+      "label": "Lumma_Stealer",
+      "date": "2025-06-26",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/StealC/2025-06-18-SmartApeSG-ClickFix-to-NetSupport-RAT-to-StealCv2.pcap",
+      "label": "StealC",
+      "date": "2025-06-18",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/StealC/2025-05-22-StealCv2-infection.pcap",
+      "label": "StealC",
+      "date": "2025-05-22",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/StealC/2025-03-26-SmartApeSG-leads-to-NetSupport-RAT-and-StealC.pcap",
+      "label": "StealC",
+      "date": "2025-03-26",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Remcos_RAT/2025-03-10-Remcos-RAT-infection-traffic.pcap",
+      "label": "Remcos_RAT",
+      "date": "2025-03-10",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/StealC/2025-02-18-SmartApeSG-leads-to-NetSupport-RAT-and-StealC.pcap",
+      "label": "StealC",
+      "date": "2025-02-18",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/Lumma_Stealer/2025-02-13-ClickFix-style-copy-past-script-leads-to-Lumma-Stealer.pcap",
+      "label": "Lumma_Stealer",
+      "date": "2025-02-13",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/AgentTesla/2025-01-31-AgentTesla-style-data-exifil-over-FTP.pcap",
+      "label": "AgentTesla",
+      "date": "2025-01-31",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/XLoader/2025-01-30-XLoader-infection-traffic.pcap",
+      "label": "XLoader",
+      "date": "2025-01-30",
+      "set": "benchmark_new"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/new/GuLoader/2025-01-09-CVE-2017-0199-XLS-to-DBatLoader-or-GuLoader-for-AgentTesla-variant.pcap",
+      "label": "GuLoader",
+      "date": "2025-01-09",
+      "set": "benchmark_new"
+    }
+  ]
+}

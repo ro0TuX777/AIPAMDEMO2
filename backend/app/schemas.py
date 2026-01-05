@@ -149,3 +149,22 @@ class ChatResponse(BaseModel):
     citations: List[ChatCitation] = Field(default_factory=list, description="Evidence citations")
     conversation_id: str = Field(..., description="Conversation ID for follow-up questions")
     confidence: Optional[float] = Field(None, description="Confidence score 0.0-1.0")
+
+
+class ConversationSummary(BaseModel):
+    """Summary of a conversation."""
+    id: str = Field(..., description="Conversation ID")
+    job_id: str = Field(..., description="Associated job ID")
+    created_at: datetime = Field(..., description="When conversation started")
+    updated_at: datetime = Field(..., description="Last message timestamp")
+    title: Optional[str] = Field(None, description="Conversation title")
+    message_count: int = Field(..., description="Number of messages")
+
+
+class ConversationHistory(BaseModel):
+    """Full conversation history with messages."""
+    id: str = Field(..., description="Conversation ID")
+    job_id: str = Field(..., description="Associated job ID")
+    messages: List[ChatMessage] = Field(default_factory=list, description="Messages in order")
+    created_at: datetime = Field(..., description="When conversation started")
+    updated_at: datetime = Field(..., description="Last message timestamp")

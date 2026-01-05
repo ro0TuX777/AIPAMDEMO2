@@ -1,0 +1,590 @@
+{
+  "timestamp": "2025-12-28T13:36:00.688523",
+  "model_name": "aipam-cybersec-llm",
+  "total_samples": 46,
+  "correct": 1,
+  "accuracy": 0.021739130434782608,
+  "malicious_detection_accuracy": 1.0,
+  "avg_inference_time": 247.8779575202776,
+  "precision_per_family": {
+    "AgentTesla": 0.0,
+    "Ursnif": 0.0,
+    "SSLoad": 0.0,
+    "SocGholish": 0.0,
+    "Formbook": 0.058823529411764705,
+    "Matanbuchus": 0.0,
+    "Danabot": 0.0,
+    "Latrodectus": 0.0,
+    "Lumma_Stealer": 0.0,
+    "Astaroth": 0.0,
+    "XWorm": 0.0,
+    "StealC": 0.0,
+    "BazarLoader": 0.0,
+    "CobaltStrike": 0.0,
+    "Remcos_RAT": 0.0,
+    "GuLoader": 0.0,
+    "Pikabot": 0.0,
+    "AsyncRAT": 0.0,
+    "Meduza_Stealer": 0.0,
+    "NetSupport_RAT": 0.0,
+    "IcedID": 0.0,
+    "DarkGate": 0.0,
+    "RigEK": 0.0,
+    "Redline_Stealer": 0.0,
+    "XLoader": 0.0
+  },
+  "recall_per_family": {
+    "AgentTesla": 0.0,
+    "Ursnif": 0.0,
+    "SSLoad": 0.0,
+    "SocGholish": 0.0,
+    "Formbook": 0.3333333333333333,
+    "Matanbuchus": 0.0,
+    "Danabot": 0.0,
+    "Latrodectus": 0.0,
+    "Lumma_Stealer": 0.0,
+    "Astaroth": 0.0,
+    "XWorm": 0.0,
+    "StealC": 0.0,
+    "BazarLoader": 0.0,
+    "CobaltStrike": 0.0,
+    "Remcos_RAT": 0.0,
+    "GuLoader": 0.0,
+    "Pikabot": 0.0,
+    "AsyncRAT": 0.0,
+    "Meduza_Stealer": 0.0,
+    "NetSupport_RAT": 0.0,
+    "IcedID": 0.0,
+    "DarkGate": 0.0,
+    "RigEK": 0.0,
+    "Redline_Stealer": 0.0,
+    "XLoader": 0.0
+  },
+  "f1_per_family": {
+    "AgentTesla": 0.0,
+    "Ursnif": 0.0,
+    "SSLoad": 0.0,
+    "SocGholish": 0.0,
+    "Formbook": 0.1,
+    "Matanbuchus": 0.0,
+    "Danabot": 0.0,
+    "Latrodectus": 0.0,
+    "Lumma_Stealer": 0.0,
+    "Astaroth": 0.0,
+    "XWorm": 0.0,
+    "StealC": 0.0,
+    "BazarLoader": 0.0,
+    "CobaltStrike": 0.0,
+    "Remcos_RAT": 0.0,
+    "GuLoader": 0.0,
+    "Pikabot": 0.0,
+    "AsyncRAT": 0.0,
+    "Meduza_Stealer": 0.0,
+    "NetSupport_RAT": 0.0,
+    "IcedID": 0.0,
+    "DarkGate": 0.0,
+    "RigEK": 0.0,
+    "Redline_Stealer": 0.0,
+    "XLoader": 0.0
+  },
+  "confusion_matrix": {
+    "AgentTesla": {
+      "Formbook": 1,
+      "BazarLoader": 2
+    },
+    "Astaroth": {
+      "Formbook": 1
+    },
+    "AsyncRAT": {
+      "BazarLoader": 1
+    },
+    "CobaltStrike": {
+      "Formbook": 1
+    },
+    "Danabot": {
+      "BazarLoader": 1,
+      "Formbook": 1
+    },
+    "DarkGate": {
+      "BazarLoader": 2,
+      "Formbook": 1
+    },
+    "Formbook": {
+      "BazarLoader": 2,
+      "Formbook": 1
+    },
+    "GuLoader": {
+      "Formbook": 2
+    },
+    "IcedID": {
+      "Formbook": 1,
+      "BazarLoader": 2
+    },
+    "Latrodectus": {
+      "Formbook": 1,
+      "BazarLoader": 1
+    },
+    "Lumma_Stealer": {
+      "BazarLoader": 2,
+      "Formbook": 1
+    },
+    "Matanbuchus": {
+      "BazarLoader": 2
+    },
+    "Meduza_Stealer": {
+      "BazarLoader": 1
+    },
+    "NetSupport_RAT": {
+      "Formbook": 1
+    },
+    "Pikabot": {
+      "BazarLoader": 2,
+      "Formbook": 1
+    },
+    "Redline_Stealer": {
+      "BazarLoader": 1
+    },
+    "Remcos_RAT": {
+      "Formbook": 2,
+      "BazarLoader": 1
+    },
+    "RigEK": {
+      "BazarLoader": 1
+    },
+    "SSLoad": {
+      "BazarLoader": 3
+    },
+    "SocGholish": {
+      "BazarLoader": 1
+    },
+    "StealC": {
+      "BazarLoader": 2,
+      "Formbook": 1
+    },
+    "Ursnif": {
+      "Formbook": 1
+    },
+    "XLoader": {
+      "BazarLoader": 1
+    },
+    "XWorm": {
+      "BazarLoader": 1
+    }
+  },
+  "results": [
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/AgentTesla/2023-09-21-AgentTesla-traffic-expertsconsultgh.co.pcap",
+      "ground_truth": "AgentTesla",
+      "prediction": "Formbook",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 230.15813994407654,
+      "error": null
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/AgentTesla/2023-11-22-AgentTesla-infection-FTP-data-exfil.pcap",
+      "ground_truth": "AgentTesla",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 312.3192961215973,
+      "error": null
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/AgentTesla/2024-12-04-AgentTesla-variant-using-FTP.pcap",
+      "ground_truth": "AgentTesla",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 244.58801746368408,
+      "error": null
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/Astaroth/2023-12-11-Astaroth-Guildma-infection-trafffic.pcap",
+      "ground_truth": "Astaroth",
+      "prediction": "Formbook",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 260.2823233604431,
+      "error": null
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/AsyncRAT/2024-03-14-AsyncRAT-and-XWorm-infection-traffic.pcap",
+      "ground_truth": "AsyncRAT",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 233.7706983089447,
+      "error": null
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/CobaltStrike/2023-11-06-404TDS-to-malware-to-Cobalt-Strike.pcap",
+      "ground_truth": "CobaltStrike",
+      "prediction": "Formbook",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 244.6248209476471,
+      "error": null
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/Danabot/2023-08-03-malicious-ad-to-Danabot-traffic.pcap",
+      "ground_truth": "Danabot",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 242.86548495292664,
+      "error": null
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/Danabot/2024-02-14-Danabot-infection-traffic.pcap",
+      "ground_truth": "Danabot",
+      "prediction": "Formbook",
+      "confidence": 0.3,
+      "is_correct": false,
+      "inference_time": 240.7571017742157,
+      "error": null
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/DarkGate/2023-10-04-DarkGate-infection.pcap",
+      "ground_truth": "DarkGate",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 237.7427761554718,
+      "error": null
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/DarkGate/2023-10-12-DarkGate-infection-traffic.pcap",
+      "ground_truth": "DarkGate",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 241.8063519001007,
+      "error": null
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/DarkGate/2023-10-13-DarkGate-infection-traffic.pcap",
+      "ground_truth": "DarkGate",
+      "prediction": "Formbook",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 237.30810284614563,
+      "error": null
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/Formbook/2023-06-25-Formbook-infection-traffic.pcap",
+      "ground_truth": "Formbook",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 267.4870421886444,
+      "error": null
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/Formbook/2023-06-26-Formbook-infection-traffic.pcap",
+      "ground_truth": "Formbook",
+      "prediction": "BazarLoader",
+      "confidence": 0.3,
+      "is_correct": false,
+      "inference_time": 267.2933840751648,
+      "error": null
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/Formbook/2023-06-27-Formbook-infection-traffic.pcap",
+      "ground_truth": "Formbook",
+      "prediction": "Formbook",
+      "confidence": 0.3,
+      "is_correct": true,
+      "inference_time": 247.53737473487854,
+      "error": null
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/GuLoader/2023-07-03-GuLoader-for-Formbook-infection-traffic.pcap",
+      "ground_truth": "GuLoader",
+      "prediction": "Formbook",
+      "confidence": 0.3,
+      "is_correct": false,
+      "inference_time": 251.25933694839478,
+      "error": null
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/GuLoader/2025-01-09-CVE-2017-0199-XLS-to-DBatLoader-or-GuLoader-for-AgentTesla-variant.pcap",
+      "ground_truth": "GuLoader",
+      "prediction": "Formbook",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 256.35283279418945,
+      "error": null
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/IcedID/2023-06-28-IcedID-infection.pcap",
+      "ground_truth": "IcedID",
+      "prediction": "Formbook",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 257.362585067749,
+      "error": null
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/IcedID/2023-07-25-IcedID-infection-traffic.pcap",
+      "ground_truth": "IcedID",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 251.19724106788635,
+      "error": null
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/IcedID/2023-08-09-IcedID-with-BackConnect-and-Keyhole-VNC.pcap",
+      "ground_truth": "IcedID",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 237.85237741470337,
+      "error": null
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/Latrodectus/2024-02-09-Contact-Forms-campaign-Latrodectus-infection-traffic-with-Keyhole-VNC-carved.pcap",
+      "ground_truth": "Latrodectus",
+      "prediction": "Formbook",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 236.1200294494629,
+      "error": null
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/Latrodectus/2024-06-25-Latrodectus-infection-with-BackConnect-and-Keyhole-VNC.pcap",
+      "ground_truth": "Latrodectus",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 238.90051937103271,
+      "error": null
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/Lumma_Stealer/2023-10-11-Lumma-Stealer-infection-traffic.pcap",
+      "ground_truth": "Lumma_Stealer",
+      "prediction": "BazarLoader",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 239.8264124393463,
+      "error": null
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/Lumma_Stealer/2024-03-07-Latrodectus-infection-with-Lumma-Stealer.pcap",
+      "ground_truth": "Lumma_Stealer",
+      "prediction": "BazarLoader",
+      "confidence": 0.7,
+      "is_correct": false,
+      "inference_time": 248.15244221687317,
+      "error": null
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/Lumma_Stealer/2024-09-19-file-downloader-to-Lumma-Stealer.pcap",
+      "ground_truth": "Lumma_Stealer",
+      "prediction": "Formbook",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 239.27922177314758,
+      "error": null
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/Matanbuchus/2024-03-26-Matanbuchus-infection-with-Danabot.pcap",
+      "ground_truth": "Matanbuchus",
+      "prediction": "BazarLoader",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 243.17234468460083,
+      "error": null
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/Matanbuchus/2024-06-17-Matanbuchus-infection-with-Danbot-traffic.pcap",
+      "ground_truth": "Matanbuchus",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 239.1624903678894,
+      "error": null
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/Meduza_Stealer/2024-03-06-traffic-from-Piakbot-infection-with-Meduza-Stealer.pcap",
+      "ground_truth": "Meduza_Stealer",
+      "prediction": "BazarLoader",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 244.73235940933228,
+      "error": null
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/NetSupport_RAT/2024-12-17-SmartApeSG-to-NetSupport-RAT.pcap",
+      "ground_truth": "NetSupport_RAT",
+      "prediction": "Formbook",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 233.609228849411,
+      "error": null
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/Pikabot/2023-10-03-Pikabot-infection-with-Cobalt-Strike.pcap",
+      "ground_truth": "Pikabot",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 241.98066329956055,
+      "error": null
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/Pikabot/2023-10-17-TA577-Pikabot-infection-with-Cobalt-Strike.pcap",
+      "ground_truth": "Pikabot",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 258.12742137908936,
+      "error": null
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/Pikabot/2023-11-02-Pikabot-infection-traffic.pcap",
+      "ground_truth": "Pikabot",
+      "prediction": "Formbook",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 241.7087790966034,
+      "error": null
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/Redline_Stealer/2024-10-23-Redline-Stealer-infection-traffic.pcap",
+      "ground_truth": "Redline_Stealer",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 229.91158246994019,
+      "error": null
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/Remcos_RAT/2023-06-26-guloader-or-modiloader-style-infection-for-Remcos-RAT.pcap",
+      "ground_truth": "Remcos_RAT",
+      "prediction": "Formbook",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 245.86931157112122,
+      "error": null
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/Remcos_RAT/2024-08-26-GuLoader-for-Remcos-RAT.pcap",
+      "ground_truth": "Remcos_RAT",
+      "prediction": "Formbook",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 244.138680934906,
+      "error": null
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/Remcos_RAT/2025-03-10-Remcos-RAT-infection-traffic.pcap",
+      "ground_truth": "Remcos_RAT",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 234.3539924621582,
+      "error": null
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/RigEK/2024-06-10-OriginLogger-infection.pcap",
+      "ground_truth": "RigEK",
+      "prediction": "BazarLoader",
+      "confidence": 0.7,
+      "is_correct": false,
+      "inference_time": 227.23185276985168,
+      "error": null
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/SSLoad/2024-04-15-SSLoad-infection-traffic.pcap",
+      "ground_truth": "SSLoad",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 261.9903767108917,
+      "error": null
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/SSLoad/2024-04-17-TA578-SSLoad-infection.pcap",
+      "ground_truth": "SSLoad",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 220.6238055229187,
+      "error": null
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/SSLoad/2024-04-18-SSLoad-with-follow-up-Cobalt-Strike-DLL.pcap",
+      "ground_truth": "SSLoad",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 263.8097016811371,
+      "error": null
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/SocGholish/2024-02-21-SocGholish-AsyncRAT-infection.pcap",
+      "ground_truth": "SocGholish",
+      "prediction": "BazarLoader",
+      "confidence": 0.8,
+      "is_correct": false,
+      "inference_time": 248.37849712371826,
+      "error": null
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/StealC/2024-01-12-StealC-infection-traffic.pcap",
+      "ground_truth": "StealC",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 260.9417598247528,
+      "error": null
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/StealC/2025-02-18-SmartApeSG-leads-to-NetSupport-RAT-and-StealC.pcap",
+      "ground_truth": "StealC",
+      "prediction": "Formbook",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 279.5194773674011,
+      "error": null
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/StealC/2025-03-26-SmartApeSG-leads-to-NetSupport-RAT-and-StealC.pcap",
+      "ground_truth": "StealC",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 257.7513692378998,
+      "error": null
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/Ursnif/2023-07-12-Gozi-infection-with-Cobalt-Strike.pcap",
+      "ground_truth": "Ursnif",
+      "prediction": "Formbook",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 260.7290816307068,
+      "error": null
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/XLoader/2025-01-30-XLoader-infection-traffic.pcap",
+      "ground_truth": "XLoader",
+      "prediction": "BazarLoader",
+      "confidence": 0.9,
+      "is_correct": false,
+      "inference_time": 250.05327343940735,
+      "error": null
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/XWorm/2025-11-19-Xworm-infection-traffic.pcap",
+      "ground_truth": "XWorm",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 249.74608278274536,
+      "error": null
+    }
+  ]
+}

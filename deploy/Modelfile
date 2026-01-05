@@ -1,7 +1,7 @@
-# AIPAM Unified Traffic Analysis Model
+# AIPAM Cybersecurity LLM v2
 # Fine-tuned Llama 3.1 8B for cybersecurity and traffic analysis
 
-FROM /models/aipam-traffic-llm.gguf
+FROM /models/aipam-cybersec-llm.gguf
 
 # Model parameters optimized for analysis tasks
 PARAMETER temperature 0.7

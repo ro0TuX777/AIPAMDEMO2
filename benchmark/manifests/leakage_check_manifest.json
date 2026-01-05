@@ -1,0 +1,128 @@
+{
+  "description": "Leakage check set - known training samples for overfitting detection",
+  "created": "2025-12-24T12:24:20.799100",
+  "expected_behavior": "Model should perform BETTER on these than benchmark set",
+  "warning": "If benchmark accuracy \u2248 leakage accuracy, model may be overfitting",
+  "samples": [
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Sliver/2021-10-20-TA551-pushes-Sliver.pcap",
+      "label": "Sliver",
+      "set": "leakage_check",
+      "purpose": "Overfitting detection - these samples were used in training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Qakbot/2022-10-14-bb02-Qakbot-infection-traffic-carved-and-sanitized.pcap",
+      "label": "Qakbot",
+      "set": "leakage_check",
+      "purpose": "Overfitting detection - these samples were used in training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Emotet/2022-11-03-Emotet-epoch4-infection-with-IcedID.pcap",
+      "label": "Emotet",
+      "set": "leakage_check",
+      "purpose": "Overfitting detection - these samples were used in training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/CobaltStrike/2021-06-15-Hancitor-with-Ficker-Stealer-and-Cobalt-Strike.pcap",
+      "label": "CobaltStrike",
+      "set": "leakage_check",
+      "purpose": "Overfitting detection - these samples were used in training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Qakbot/2022-06-27-part-1-of-2-Qakbot-with-Cobalt-Strike-and-Dark-Cat-VNC.pcap",
+      "label": "Qakbot",
+      "set": "leakage_check",
+      "purpose": "Overfitting detection - these samples were used in training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Astaroth/2023-12-11-Astaroth-Guildma-infection-trafffic.pcap",
+      "label": "Astaroth",
+      "set": "leakage_check",
+      "purpose": "Overfitting detection - these samples were used in training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/SSLoad/2024-04-17-TA578-SSLoad-infection.pcap",
+      "label": "SSLoad",
+      "set": "leakage_check",
+      "purpose": "Overfitting detection - these samples were used in training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Qakbot/2020-06-08-Qakbot-spx135-infection-with-spambot-activity.pcap",
+      "label": "Qakbot",
+      "set": "leakage_check",
+      "purpose": "Overfitting detection - these samples were used in training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/AgentTesla/2024-06-10-OriginLogger-infection.pcap",
+      "label": "AgentTesla",
+      "set": "leakage_check",
+      "purpose": "Overfitting detection - these samples were used in training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Formbook/2023-06-25-Formbook-infection-traffic.pcap",
+      "label": "Formbook",
+      "set": "leakage_check",
+      "purpose": "Overfitting detection - these samples were used in training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Astaroth/2021-07-02-Astaroth-Guildma-infection-traffic.pcap",
+      "label": "Astaroth",
+      "set": "leakage_check",
+      "purpose": "Overfitting detection - these samples were used in training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Ursnif/2020-07-13-Hancitor-infection-with-Ursnif.pcap",
+      "label": "Ursnif",
+      "set": "leakage_check",
+      "purpose": "Overfitting detection - these samples were used in training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/CobaltStrike/2020-11-23-Hancitor-infection-with-Cobalt-Strike.pcap",
+      "label": "CobaltStrike",
+      "set": "leakage_check",
+      "purpose": "Overfitting detection - these samples were used in training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Pikabot/2024-03-06-traffic-from-Piakbot-infection-with-Meduza-Stealer.pcap",
+      "label": "Pikabot",
+      "set": "leakage_check",
+      "purpose": "Overfitting detection - these samples were used in training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Formbook/2023-06-27-Formbook-infection-traffic.pcap",
+      "label": "Formbook",
+      "set": "leakage_check",
+      "purpose": "Overfitting detection - these samples were used in training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/CobaltStrike/2021-09-14-Hancitor-with-Cobalt-Strike-infection-traffic.pcap",
+      "label": "CobaltStrike",
+      "set": "leakage_check",
+      "purpose": "Overfitting detection - these samples were used in training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2022-08-10-IcedID-part-1-initial-infection-carved.pcap",
+      "label": "IcedID",
+      "set": "leakage_check",
+      "purpose": "Overfitting detection - these samples were used in training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2022-09-23-IcedID-infection-with-Cobalt-Strike.pcap",
+      "label": "IcedID",
+      "set": "leakage_check",
+      "purpose": "Overfitting detection - these samples were used in training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Qakbot/2020-12-23-Qakbot-infection-with-spambot-activity.pcap",
+      "label": "Qakbot",
+      "set": "leakage_check",
+      "purpose": "Overfitting detection - these samples were used in training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2022-11-11-IcedID-with-VNC.pcap",
+      "label": "IcedID",
+      "set": "leakage_check",
+      "purpose": "Overfitting detection - these samples were used in training"
+    }
+  ]
+}

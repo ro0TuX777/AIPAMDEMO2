@@ -1,5 +1,5 @@
-import { useState, useRef, useEffect } from "react";
-import { api, ChatResponse, ChatCitation } from "../api";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { api, ChatResponse, ChatCitation, ConversationSummary } from "../api";
 
 interface ChatMessage {
     role: "user" | "assistant";
@@ -18,19 +18,61 @@ export function ChatPanel({ jobId, initialContext, onClose }: ChatPanelProps) {
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [input, setInput] = useState("");
     const [isLoading, setIsLoading] = useState(false);
+    const [isLoadingHistory, setIsLoadingHistory] = useState(true);
     const [conversationId, setConversationId] = useState<string | undefined>();
+    const [conversations, setConversations] = useState<ConversationSummary[]>([]);
     const messagesEndRef = useRef<HTMLDivElement>(null);
+    const initialContextHandled = useRef(false);
 
     useEffect(() => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [messages]);
 
-    // If initialContext is provided, send it as the first message
+    // Load existing conversations on mount
     useEffect(() => {
-        if (initialContext && messages.length === 0) {
+        const loadConversations = async () => {
+            try {
+                const convs = await api.getJobConversations(jobId);
+                setConversations(convs);
+
+                // If there's a recent conversation, load it
+                if (convs.length > 0) {
+                    const mostRecent = convs[0]; // Already sorted by updated_at desc
+                    await loadConversation(mostRecent.id);
+                }
+            } catch (error) {
+                console.error("Failed to load conversations:", error);
+            } finally {
+                setIsLoadingHistory(false);
+            }
+        };
+        loadConversations();
+    }, [jobId]);
+
+    const loadConversation = async (convId: string) => {
+        try {
+            const history = await api.getConversationHistory(jobId, convId);
+            setConversationId(history.id);
+            setMessages(
+                history.messages.map((m) => ({
+                    role: m.role as "user" | "assistant",
+                    content: m.content,
+                    citations: m.citations,
+                    timestamp: m.timestamp ? new Date(m.timestamp) : new Date(),
+                }))
+            );
+        } catch (error) {
+            console.error("Failed to load conversation:", error);
+        }
+    };
+
+    // If initialContext is provided, send it as the first message (only once)
+    useEffect(() => {
+        if (initialContext && !isLoadingHistory && messages.length === 0 && !initialContextHandled.current) {
+            initialContextHandled.current = true;
             handleSend(initialContext);
         }
-    }, [initialContext]);
+    }, [initialContext, isLoadingHistory, messages.length]);
 
     const handleSend = async (messageText?: string) => {
         const text = messageText || input.trim();
@@ -128,6 +170,12 @@ export function ChatPanel({ jobId, initialContext, onClose }: ChatPanelProps) {
         URL.revokeObjectURL(url);
     };
 
+    const startNewConversation = () => {
+        setMessages([]);
+        setConversationId(undefined);
+        initialContextHandled.current = false;
+    };
+
     return (
         <div className="flex flex-col h-full bg-gray-900 rounded-lg border border-gray-700">
             {/* Header */}
@@ -135,13 +183,22 @@ export function ChatPanel({ jobId, initialContext, onClose }: ChatPanelProps) {
                 <h3 className="text-lg font-semibold text-white">Ask about findings</h3>
                 <div className="flex items-center gap-2">
                     {messages.length > 0 && (
-                        <button
-                            onClick={exportToMarkdown}
-                            className="text-gray-400 hover:text-white transition-colors text-sm px-2 py-1 rounded hover:bg-gray-700"
-                            title="Export chat to Markdown"
-                        >
-                            📥 Export
-                        </button>
+                        <>
+                            <button
+                                onClick={startNewConversation}
+                                className="text-gray-400 hover:text-white transition-colors text-sm px-2 py-1 rounded hover:bg-gray-700"
+                                title="Start new conversation"
+                            >
+                                ➕ New
+                            </button>
+                            <button
+                                onClick={exportToMarkdown}
+                                className="text-gray-400 hover:text-white transition-colors text-sm px-2 py-1 rounded hover:bg-gray-700"
+                                title="Export chat to Markdown"
+                            >
+                                📥 Export
+                            </button>
+                        </>
                     )}
                     {onClose && (
                         <button
@@ -156,14 +213,18 @@ export function ChatPanel({ jobId, initialContext, onClose }: ChatPanelProps) {
 
             {/* Messages */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
-                {messages.length === 0 && (
+                {isLoadingHistory ? (
+                    <div className="text-gray-500 text-center py-8">
+                        <span className="animate-pulse">Loading conversation history...</span>
+                    </div>
+                ) : messages.length === 0 ? (
                     <div className="text-gray-500 text-center py-8">
                         <p>Ask questions about the analysis findings.</p>
                         <p className="text-sm mt-2">
                             Examples: "What malware was detected?" or "Explain the lateral movement"
                         </p>
                     </div>
-                )}
+                ) : null}
                 {messages.map((msg, idx) => (
                     <div
                         key={idx}

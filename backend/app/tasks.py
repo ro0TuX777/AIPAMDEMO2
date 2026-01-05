@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from datetime import datetime, timezone
 from typing import Any, Dict, List
@@ -7,6 +8,8 @@ from typing import Any, Dict, List
 from celery import Celery
 
 from sqlmodel import Session, select
+
+logger = logging.getLogger(__name__)
 
 from .aggregation import AggregatedData, aggregate_host_pairs, aggregate_hosts, diff_change_summaries
 from .connectors import ArkimeConnector, SecurityOnionConnector
@@ -237,6 +240,74 @@ def _flow_to_hex(flow: Any) -> str:
         parts.append(f"{min(flow.bytes_received, 0xFFFF):04x}")
 
     return " ".join(parts)
+ 
+ 
+def _extract_raw_packets(pcap_paths: List[str], max_packets: int = 5) -> List[str]:
+    """Extract raw packet fields in the training format using Scapy.
+    
+    This matches the format the Llama 3.1 8B model was fine-tuned on.
+    """
+    try:
+        from scapy.all import rdpcap, IP, TCP, UDP
+    except ImportError:
+        print("[WARNING] Scapy not installed, skipping raw packet extraction")
+        return []
+
+    packet_strings = []
+    try:
+        for pcap_path in pcap_paths:
+            if not Path(pcap_path).exists():
+                continue
+            pkts = rdpcap(pcap_path, count=max_packets)
+            for pkt in pkts:
+                if not pkt.haslayer(IP):
+                    continue
+                
+                ip = pkt[IP]
+                fields = [
+                    f"ip.version: {ip.version}",
+                    f"ip.len: {ip.len}",
+                    f"ip.ttl: {ip.ttl}",
+                    f"ip.proto: {ip.proto}",
+                    f"ip.src: {ip.src}",
+                    f"ip.dst: {ip.dst}"
+                ]
+                
+                if pkt.haslayer(TCP):
+                    tcp = pkt[TCP]
+                    fields.extend([
+                        f"tcp.srcport: {tcp.sport}",
+                        f"tcp.dstport: {tcp.dport}",
+                        f"tcp.seq: {tcp.seq}",
+                        f"tcp.ack: {tcp.ack}",
+                        f"tcp.flags: {tcp.flags}",
+                        f"tcp.window: {tcp.window}"
+                    ])
+                    if tcp.payload:
+                        import binascii
+                        payload_hex = binascii.hexlify(bytes(tcp.payload)[:128]).decode()
+                        fields.append(f"tcp.payload: {payload_hex}")
+                elif pkt.haslayer(UDP):
+                    udp = pkt[UDP]
+                    fields.extend([
+                        f"udp.srcport: {udp.sport}",
+                        f"udp.dstport: {udp.dport}",
+                        f"udp.len: {udp.len}"
+                    ])
+                    if udp.payload:
+                        import binascii
+                        payload_hex = binascii.hexlify(bytes(udp.payload)[:128]).decode()
+                        fields.append(f"udp.payload: {payload_hex}")
+                
+                packet_strings.append(", ".join(fields))
+                if len(packet_strings) >= max_packets:
+                    break
+            if len(packet_strings) >= max_packets:
+                break
+    except Exception as e:
+        print(f"[ERROR] Failed to extract raw packets: {e}")
+    
+    return packet_strings
 
 
 from .baseline_utils import _split_baseline_exploit
@@ -593,6 +664,9 @@ def run_pipeline(job_id: str) -> None:
                 pcap_filename = Path(pcap_paths[0]).stem  # Get filename without extension
             exercise_id = job.exercise_id or pcap_filename or job.id
 
+            # Extract raw packets for the model's "packet vision" (training alignment)
+            raw_packet_samples = _extract_raw_packets(pcap_paths)
+
             bundles = build_llm_chunks(
                 exercise_id=exercise_id,
                 mode=job.mode,
@@ -604,6 +678,7 @@ def run_pipeline(job_id: str) -> None:
                 change_summaries=changes,
                 alerts=alerts,
                 trafficllm_results=trafficllm_data,
+                raw_packet_samples=raw_packet_samples,
             )
 
             # Build LLM client from effective settings so persisted config is honored.

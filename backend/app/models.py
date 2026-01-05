@@ -172,6 +172,7 @@ class AnalysisSummary(BaseModel):
     short human-readable strings.
     """
 
+    classification: Optional[str] = None
     severity: str
     key_findings: List[str]
     mitre_techniques: List[Dict[str, str]]  # {"id": "T1190", "name": "..."}
@@ -215,6 +216,7 @@ class Anomaly(BaseModel):
 
 
 class LLMOutput(BaseModel):
+    classification: Optional[str] = None
     overall_severity: str
     attack_chain: List[AttackChainItem]
     host_findings: List[HostFindingLLM]
@@ -255,4 +257,5 @@ class LLMInputBundle(BaseModel):
     change_summaries: List["ChangeSummary"]
     alerts: List["AlertRecord"]
     trafficllm_results: Optional[TrafficLLMResult] = None
+    raw_packet_samples: List[str] = Field(default_factory=list)
 

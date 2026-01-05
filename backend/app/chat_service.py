@@ -116,6 +116,33 @@ def build_context_from_job_result(
                         snippet=alert_text
                     ))
 
+    # 4. Include detailed forensic anomalies (SSIs)
+    # Access chunks via raw -> llm_analysis_raw
+    llm_raw = job_result.get("raw", {}).get("llm_analysis_raw", {})
+    chunks = llm_raw.get("chunks", []) if isinstance(llm_raw, dict) else []
+    
+    if chunks:
+        context_parts.append("\n## Detailed Forensic Anomalies (SSIs)")
+        seen_anomalies = set()
+        for chunk in chunks:
+            if isinstance(chunk, dict) and chunk.get("anomalies"):
+                for a in chunk["anomalies"]:
+                    desc = a.get('description', 'Anomaly')
+                    if desc in seen_anomalies:
+                        continue
+                    seen_anomalies.add(desc)
+                    
+                    reason = a.get('reason', '')
+                    hosts = ", ".join(a.get('related_hosts', []))
+                    anomaly_text = f"[{desc}] Reason: {reason} (Hosts: {hosts})"
+                    context_parts.append(f"- {anomaly_text}")
+                    
+                    citations.append(ChatCitation(
+                        type="forensic_anomaly",
+                        id=f"anomaly-{len(seen_anomalies)}",
+                        snippet=anomaly_text
+                    ))
+
     return "\n".join(context_parts), citations
 
 

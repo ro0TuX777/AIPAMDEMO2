@@ -63,6 +63,17 @@ _ROLE_PRIORITY: Dict[str, int] = {
     "attacker": 3,
 }
 
+# Family Priority: Specific weights for high-interest families in Detonation scenarios
+_FAMILY_PRIORITY: Dict[str, int] = {
+    "Pikabot": 5,
+    "Meduza_Stealer": 5,
+    "NetSupport_RAT": 5,
+    "Lumma_Stealer": 5,
+    "DarkGate": 5,
+    "Vidar": 3,
+    "Redline_Stealer": 3,
+}
+
 
 def _alerts_by_host(alerts: List[AlertRecord]) -> Dict[str, List[AlertRecord]]:
     mapping: Dict[str, List[AlertRecord]] = defaultdict(list)
@@ -135,6 +146,7 @@ def _make_bundle(
     change_summaries: List[ChangeSummary],
     alerts: List[AlertRecord],
     trafficllm_results: Optional[TrafficLLMResult] = None,
+    raw_packet_samples: Optional[List[str]] = None,
 ) -> LLMInputBundle:
     return LLMInputBundle(
         exercise_id=exercise_id,
@@ -147,6 +159,7 @@ def _make_bundle(
         change_summaries=change_summaries,
         alerts=alerts,
         trafficllm_results=trafficllm_results,
+        raw_packet_samples=raw_packet_samples or [],
     )
 
 
@@ -162,6 +175,7 @@ def build_llm_chunks(
     change_summaries: List[ChangeSummary],
     alerts: List[AlertRecord],
     trafficllm_results: Optional[TrafficLLMResult] = None,
+    raw_packet_samples: Optional[List[str]] = None,
     max_hosts_per_chunk: int = 3,
 ) -> List[LLMInputBundle]:
     """Build one or more LLMInputBundle chunks based on anomaly scores.
@@ -185,6 +199,7 @@ def build_llm_chunks(
                 change_summaries=change_summaries,
                 alerts=alerts,
                 trafficllm_results=trafficllm_results,
+                raw_packet_samples=raw_packet_samples,
             )
         ]
 
@@ -202,6 +217,7 @@ def build_llm_chunks(
                 change_summaries=change_summaries,
                 alerts=alerts,
                 trafficllm_results=trafficllm_results,
+                raw_packet_samples=raw_packet_samples,
             )
         ]
 
@@ -254,6 +270,7 @@ def build_llm_chunks(
                 change_summaries=chgs,
                 alerts=chunk_alerts,
                 trafficllm_results=trafficllm_results,
+                raw_packet_samples=raw_packet_samples,
             )
         )
 
@@ -276,30 +293,63 @@ def aggregate_llm_results(
     # Global severity = max over chunks.
     best_sev = "unknown"
     best_rank = _SEVERITY_RANK["unknown"]
+    
+    # Classification aggregation: Prefer specific malware over generic/unknown
+    class_counts = defaultdict(int)
     for out in llm_outputs:
         sev = (out.overall_severity or "unknown").lower()
         rank = _SEVERITY_RANK.get(sev, _SEVERITY_RANK["unknown"])
         if rank > best_rank:
             best_rank = rank
             best_sev = sev
+        
+        c = out.classification or "unknown"
+        # Apply family priority weights to break ties/biases toward generic loaders
+        priority_weight = _FAMILY_PRIORITY.get(c, 0)
+        
+        if c.lower() not in ["unknown", "benign", "anomalous/zero-day"]:
+            class_counts[c] += (2 + priority_weight)  # Weight specific families higher
+        else:
+            class_counts[c] += (1 + priority_weight)
+
+    # Pick the most common/highest-weight classification
+    best_class = "unknown"
+    if class_counts:
+        # Filter out 'unknown' if we have other options
+        options = [k for k in class_counts.keys() if k.lower() != "unknown"]
+        if options:
+            best_class = max(options, key=lambda k: class_counts[k])
+        else:
+            best_class = "unknown"
+    
+    # If we have no specific family but TrafficLLM detected something, use that as a hint
+    if best_class.lower() in ["unknown", "anomalous/zero-day"] and trafficllm_results:
+        if trafficllm_results.malware_types:
+            best_class = trafficllm_results.malware_types[0]
+        elif trafficllm_results.botnet_types:
+            best_class = trafficllm_results.botnet_types[0]
 
     # Merge attack_chain entries, deduplicating by (stage, description), and
     # flatten them into human-readable key finding strings for the summary.
+    # ENHANCEMENT: Preserve evidence in the summary text if present.
     key_findings: List[str] = []
     seen_attack = set()
     for out in llm_outputs:
         for item in out.attack_chain:
             stage = (item.stage or "").strip()
             desc = (item.description or "").strip()
+            evidence = ", ".join(item.evidence or [])
             key = (stage, desc)
             if key in seen_attack:
                 continue
             seen_attack.add(key)
 
+            text = desc or stage
             if stage and desc:
                 text = f"{stage}: {desc}"
-            else:
-                text = desc or stage
+            
+            if evidence:
+                text += f" (Evidence: {evidence})"
 
             if text and text not in key_findings:
                 key_findings.append(text)
@@ -347,14 +397,26 @@ def aggregate_llm_results(
             # Prepend TrafficLLM findings at the top
             key_findings = trafficllm_findings + key_findings
 
-    # Add MITRE techniques for malware if not present
-    if trafficllm_results and trafficllm_results.malware_detections > 0:
-        if "T1204" not in mitre_by_id:
-            mitre_by_id["T1204"] = {"id": "T1204", "name": "User Execution: Malicious File"}
+    # Check for Zero-Day findings in LLM outputs and promote them
+    for out in llm_outputs:
+        if out.classification == "Anomalous/Zero-Day":
+            best_sev = "critical"
+            # ENHANCEMENT: Include anomaly reasons in the zero-day finding
+            reasons = [a.reason for a in out.anomalies if a.reason]
+            reason_text = f" Reasons: {'; '.join(reasons)}" if reasons else ""
+            finding = f"ZERO-DAY DETECTED: Model identified anomalous traffic patterns with malicious intent but no known signature.{reason_text}"
+            if finding not in key_findings:
+                key_findings.insert(0, finding)
+
         if "T1059" not in mitre_by_id:
             mitre_by_id["T1059"] = {"id": "T1059", "name": "Command and Scripting Interpreter"}
 
+    # Prepended primary classification to key findings for visibility
+    if best_class != "unknown" and best_class != "benign":
+        key_findings.insert(0, f"Primary Classification: {best_class}")
+
     summary = AnalysisSummary(
+        classification=best_class,
         severity=best_sev,
         key_findings=key_findings,
         mitre_techniques=list(mitre_by_id.values()),

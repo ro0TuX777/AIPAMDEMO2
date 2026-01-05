@@ -1,0 +1,245 @@
+{
+  "total_samples": 46,
+  "correct": 1,
+  "accuracy": 0.021739130434782608,
+  "malicious_detection_accuracy": 0.9782608695652174,
+  "predictions": {
+    "DarkGate": 14,
+    "Formbook": 6,
+    "BazarLoader": 23,
+    "Astaroth": 2,
+    "BitTorrent": 1
+  },
+  "results": [
+    {
+      "expected": "AgentTesla",
+      "predicted": "DarkGate",
+      "correct": false
+    },
+    {
+      "expected": "AgentTesla",
+      "predicted": "Formbook",
+      "correct": false
+    },
+    {
+      "expected": "AgentTesla",
+      "predicted": "Formbook",
+      "correct": false
+    },
+    {
+      "expected": "Astaroth",
+      "predicted": "DarkGate",
+      "correct": false
+    },
+    {
+      "expected": "AsyncRAT",
+      "predicted": "BazarLoader",
+      "correct": false
+    },
+    {
+      "expected": "CobaltStrike",
+      "predicted": "BazarLoader",
+      "correct": false
+    },
+    {
+      "expected": "Danabot",
+      "predicted": "DarkGate",
+      "correct": false
+    },
+    {
+      "expected": "Danabot",
+      "predicted": "BazarLoader",
+      "correct": false
+    },
+    {
+      "expected": "DarkGate",
+      "predicted": "Formbook",
+      "correct": false
+    },
+    {
+      "expected": "DarkGate",
+      "predicted": "BazarLoader",
+      "correct": false
+    },
+    {
+      "expected": "DarkGate",
+      "predicted": "Formbook",
+      "correct": false
+    },
+    {
+      "expected": "Formbook",
+      "predicted": "DarkGate",
+      "correct": false
+    },
+    {
+      "expected": "Formbook",
+      "predicted": "Formbook",
+      "correct": true
+    },
+    {
+      "expected": "Formbook",
+      "predicted": "Astaroth",
+      "correct": false
+    },
+    {
+      "expected": "GuLoader",
+      "predicted": "DarkGate",
+      "correct": false
+    },
+    {
+      "expected": "GuLoader",
+      "predicted": "DarkGate",
+      "correct": false
+    },
+    {
+      "expected": "IcedID",
+      "predicted": "BazarLoader",
+      "correct": false
+    },
+    {
+      "expected": "IcedID",
+      "predicted": "DarkGate",
+      "correct": false
+    },
+    {
+      "expected": "IcedID",
+      "predicted": "Formbook",
+      "correct": false
+    },
+    {
+      "expected": "Latrodectus",
+      "predicted": "BazarLoader",
+      "correct": false
+    },
+    {
+      "expected": "Latrodectus",
+      "predicted": "BazarLoader",
+      "correct": false
+    },
+    {
+      "expected": "Lumma_Stealer",
+      "predicted": "BazarLoader",
+      "correct": false
+    },
+    {
+      "expected": "Lumma_Stealer",
+      "predicted": "BazarLoader",
+      "correct": false
+    },
+    {
+      "expected": "Lumma_Stealer",
+      "predicted": "BazarLoader",
+      "correct": false
+    },
+    {
+      "expected": "Matanbuchus",
+      "predicted": "DarkGate",
+      "correct": false
+    },
+    {
+      "expected": "Matanbuchus",
+      "predicted": "DarkGate",
+      "correct": false
+    },
+    {
+      "expected": "Meduza_Stealer",
+      "predicted": "BazarLoader",
+      "correct": false
+    },
+    {
+      "expected": "NetSupport_RAT",
+      "predicted": "DarkGate",
+      "correct": false
+    },
+    {
+      "expected": "Pikabot",
+      "predicted": "BazarLoader",
+      "correct": false
+    },
+    {
+      "expected": "Pikabot",
+      "predicted": "BazarLoader",
+      "correct": false
+    },
+    {
+      "expected": "Pikabot",
+      "predicted": "BazarLoader",
+      "correct": false
+    },
+    {
+      "expected": "Redline_Stealer",
+      "predicted": "DarkGate",
+      "correct": false
+    },
+    {
+      "expected": "Remcos_RAT",
+      "predicted": "DarkGate",
+      "correct": false
+    },
+    {
+      "expected": "Remcos_RAT",
+      "predicted": "BazarLoader",
+      "correct": false
+    },
+    {
+      "expected": "Remcos_RAT",
+      "predicted": "BazarLoader",
+      "correct": false
+    },
+    {
+      "expected": "RigEK",
+      "predicted": "DarkGate",
+      "correct": false
+    },
+    {
+      "expected": "SSLoad",
+      "predicted": "BazarLoader",
+      "correct": false
+    },
+    {
+      "expected": "SSLoad",
+      "predicted": "BazarLoader",
+      "correct": false
+    },
+    {
+      "expected": "SSLoad",
+      "predicted": "BazarLoader",
+      "correct": false
+    },
+    {
+      "expected": "SocGholish",
+      "predicted": "BazarLoader",
+      "correct": false
+    },
+    {
+      "expected": "StealC",
+      "predicted": "Astaroth",
+      "correct": false
+    },
+    {
+      "expected": "StealC",
+      "predicted": "DarkGate",
+      "correct": false
+    },
+    {
+      "expected": "StealC",
+      "predicted": "BazarLoader",
+      "correct": false
+    },
+    {
+      "expected": "Ursnif",
+      "predicted": "BitTorrent",
+      "correct": false
+    },
+    {
+      "expected": "XLoader",
+      "predicted": "BazarLoader",
+      "correct": false
+    },
+    {
+      "expected": "XWorm",
+      "predicted": "BazarLoader",
+      "correct": false
+    }
+  ]
+}

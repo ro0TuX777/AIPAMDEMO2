@@ -22,6 +22,7 @@ export interface JobResultResponse {
     job_id: string;
     status: string;
     summary: {
+        classification?: string;
         severity: string;
         key_findings: any[];
         mitre_techniques: any[];
@@ -87,6 +88,30 @@ export interface ChatResponse {
     citations: ChatCitation[];
     conversation_id: string;
     confidence?: number;
+}
+
+export interface ChatMessage {
+    role: string;
+    content: string;
+    citations: ChatCitation[];
+    timestamp?: string;
+}
+
+export interface ConversationSummary {
+    id: string;
+    job_id: string;
+    created_at: string;
+    updated_at: string;
+    title?: string;
+    message_count: number;
+}
+
+export interface ConversationHistory {
+    id: string;
+    job_id: string;
+    messages: ChatMessage[];
+    created_at: string;
+    updated_at: string;
 }
 
 
@@ -203,6 +228,18 @@ export const api = {
             body: JSON.stringify(request),
         });
         if (!res.ok) throw new Error("Failed to send chat message");
+        return res.json();
+    },
+
+    async getJobConversations(jobId: string): Promise<ConversationSummary[]> {
+        const res = await fetch(`${API_BASE}/jobs/${jobId}/conversations`);
+        if (!res.ok) throw new Error("Failed to fetch conversations");
+        return res.json();
+    },
+
+    async getConversationHistory(jobId: string, conversationId: string): Promise<ConversationHistory> {
+        const res = await fetch(`${API_BASE}/jobs/${jobId}/conversations/${conversationId}`);
+        if (!res.ok) throw new Error("Failed to fetch conversation history");
         return res.json();
     },
 };

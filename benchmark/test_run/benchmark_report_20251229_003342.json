@@ -1,0 +1,55 @@
+{
+  "timestamp": "2025-12-29T00:33:42.378186",
+  "model_name": "aipam-cybersec-llm",
+  "total_samples": 3,
+  "correct": 0,
+  "accuracy": 0.0,
+  "malicious_detection_accuracy": 1.0,
+  "avg_inference_time": 350.9788341522217,
+  "precision_per_family": {
+    "BazarLoader": 0.0,
+    "AgentTesla": 0.0
+  },
+  "recall_per_family": {
+    "BazarLoader": 0.0,
+    "AgentTesla": 0.0
+  },
+  "f1_per_family": {
+    "BazarLoader": 0.0,
+    "AgentTesla": 0.0
+  },
+  "confusion_matrix": {
+    "AgentTesla": {
+      "BazarLoader": 3
+    }
+  },
+  "results": [
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/AgentTesla/2023-09-21-AgentTesla-traffic-expertsconsultgh.co.pcap",
+      "ground_truth": "AgentTesla",
+      "prediction": "BazarLoader",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 372.6420648097992,
+      "error": null
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/AgentTesla/2023-11-22-AgentTesla-infection-FTP-data-exfil.pcap",
+      "ground_truth": "AgentTesla",
+      "prediction": "BazarLoader",
+      "confidence": 0.3,
+      "is_correct": false,
+      "inference_time": 373.51811122894287,
+      "error": null
+    },
+    {
+      "pcap": "benchmark/benchmark_pcaps/new/AgentTesla/2024-12-04-AgentTesla-variant-using-FTP.pcap",
+      "ground_truth": "AgentTesla",
+      "prediction": "BazarLoader",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 306.776326417923,
+      "error": null
+    }
+  ]
+}

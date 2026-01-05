@@ -1,0 +1,1414 @@
+{
+  "model": "AIPAM-v2",
+  "version": "2.0",
+  "created": "2025-12-24T12:24:20.798556",
+  "description": "Training set manifest for AIPAM v2 fine-tuned model",
+  "source": "malware-traffic-analysis.net",
+  "date_range": {
+    "start": "2020-01-01",
+    "end": "2024-12-31"
+  },
+  "statistics": {
+    "total_pcaps": 228,
+    "families": 27,
+    "pcaps_per_family": {
+      "AgentTesla": 5,
+      "Astaroth": 6,
+      "AsyncRAT": 1,
+      "BazarLoader": 15,
+      "BumbleBee": 7,
+      "CobaltStrike": 16,
+      "Danabot": 4,
+      "DarkGate": 11,
+      "Emotet": 18,
+      "Formbook": 16,
+      "GuLoader": 1,
+      "IcedID": 49,
+      "Latrodectus": 2,
+      "Lumma_Stealer": 4,
+      "Matanbuchus": 6,
+      "Meduza_Stealer": 1,
+      "NetSupport_RAT": 1,
+      "Pikabot": 7,
+      "Qakbot": 30,
+      "Raccoon": 1,
+      "Redline_Stealer": 1,
+      "Remcos_RAT": 3,
+      "SSLoad": 3,
+      "Sliver": 2,
+      "SocGholish": 1,
+      "TrickBot": 10,
+      "Ursnif": 7
+    }
+  },
+  "samples": [
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/AgentTesla/2020-11-06-possible-Agent-Tesla-traffic.pcap",
+      "label": "AgentTesla",
+      "date": "2020-11-06",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/AgentTesla/2023-09-21-AgentTesla-traffic-expertsconsultgh.co.pcap",
+      "label": "AgentTesla",
+      "date": "2023-09-21",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/AgentTesla/2023-11-22-AgentTesla-infection-FTP-data-exfil.pcap",
+      "label": "AgentTesla",
+      "date": "2023-11-22",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/AgentTesla/2024-06-10-OriginLogger-infection.pcap",
+      "label": "AgentTesla",
+      "date": "2024-06-10",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/AgentTesla/2024-12-04-AgentTesla-variant-using-FTP.pcap",
+      "label": "AgentTesla",
+      "date": "2024-12-04",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Astaroth/2021-07-02-Astaroth-Guildma-infection-traffic.pcap",
+      "label": "Astaroth",
+      "date": "2021-07-02",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Astaroth/2021-08-31-Astaroth-Guildma-infection-traffic.pcap",
+      "label": "Astaroth",
+      "date": "2021-08-31",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Astaroth/2021-12-23-Astaroth-Guildma-infection-traffic.pcap",
+      "label": "Astaroth",
+      "date": "2021-12-23",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Astaroth/2022-08-19-Astaroth-Guildma-infection-traffic.pcap",
+      "label": "Astaroth",
+      "date": "2022-08-19",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Astaroth/2022-09-21-Astaroth-Guildma-infection.pcap",
+      "label": "Astaroth",
+      "date": "2022-09-21",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Astaroth/2023-12-11-Astaroth-Guildma-infection-trafffic.pcap",
+      "label": "Astaroth",
+      "date": "2023-12-11",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/AsyncRAT/2024-03-14-AsyncRAT-and-XWorm-infection-traffic.pcap",
+      "label": "AsyncRAT",
+      "date": "2024-03-14",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/BazarLoader/2021-06-03-BazarCall-website-to-BazarLoader-infection-with-Cobalt-Strike.pcap",
+      "label": "BazarLoader",
+      "date": "2021-06-03",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/BazarLoader/2021-06-16-BazarCall-site-to-BazarLoader-1st-run.pcap",
+      "label": "BazarLoader",
+      "date": "2021-06-16",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/BazarLoader/2021-06-21-BazarCall-to-BazarLoader-traffic.pcap",
+      "label": "BazarLoader",
+      "date": "2021-06-21",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/BazarLoader/2021-08-10-TA551-BazarLoader-to-Cobalt-Strike.pcap",
+      "label": "BazarLoader",
+      "date": "2021-08-10",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/BazarLoader/2021-08-12-BazarLoader-with-Cobalt-Strike.pcap",
+      "label": "BazarLoader",
+      "date": "2021-08-12",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/BazarLoader/2021-08-19-BazarLoader-with-CobaltStrike.pcap",
+      "label": "BazarLoader",
+      "date": "2021-08-19",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/BazarLoader/2021-08-30-TA551-BazarLoader-infection.pcap",
+      "label": "BazarLoader",
+      "date": "2021-08-30",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/BazarLoader/2021-09-01-TA551-BazarLoader-with-Trickbot.pcap",
+      "label": "BazarLoader",
+      "date": "2021-09-01",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/BazarLoader/2021-09-20-TA551-BazarLoader.pcap",
+      "label": "BazarLoader",
+      "date": "2021-09-20",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/BazarLoader/2021-10-14-Stolen-Images-Evidence-BazarLoader-infection.pcap",
+      "label": "BazarLoader",
+      "date": "2021-10-14",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/BazarLoader/2021-11-03-TA551-BazarLoader-with-Cobalt-Strike.pcap",
+      "label": "BazarLoader",
+      "date": "2021-11-03",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/BazarLoader/2021-11-05-TA551-BazarLoader-with-BackConnect-and-Cobalt-Strike-and-Dark-Cat-VNC.pcap",
+      "label": "BazarLoader",
+      "date": "2021-11-05",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/BazarLoader/2021-11-22-Contact-Forms-BazarLoader-with-Cobalt-Strike.pcap",
+      "label": "BazarLoader",
+      "date": "2021-11-22",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/BazarLoader/2021-11-24-Gigi-BazarLoader-with-IcedID.pcap",
+      "label": "BazarLoader",
+      "date": "2021-11-24",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/BazarLoader/2021-12-03-Contact-Forms-BazarLoader-with-Cobalt-Strike.pcap",
+      "label": "BazarLoader",
+      "date": "2021-12-03",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/BumbleBee/2022-05-18-TransferXL-Bumblebee-with-Cobalt-Strike.pcap",
+      "label": "BumbleBee",
+      "date": "2022-05-18",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/BumbleBee/2022-06-09-TA578-Bumblebee-infection-with-Cobalt-Strike.pcap",
+      "label": "BumbleBee",
+      "date": "2022-06-09",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/BumbleBee/2022-06-14-TA578-Bumblebee-with-Cobalt-Strike.pcap",
+      "label": "BumbleBee",
+      "date": "2022-06-14",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/BumbleBee/2022-08-30-Sliver-traffic-after-a-Bumblebee-infection.pcap",
+      "label": "BumbleBee",
+      "date": "2022-08-30",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/BumbleBee/2022-11-07-part-1-of-2-Emotet-infection.pcap",
+      "label": "BumbleBee",
+      "date": "2022-11-07",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/BumbleBee/2022-11-17-Bumblebee-infection-traffic.pcap",
+      "label": "BumbleBee",
+      "date": "2022-11-17",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/BumbleBee/2022-12-07-Bumblebee-infection-with-Cobalt-Strike.pcap",
+      "label": "BumbleBee",
+      "date": "2022-12-07",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/CobaltStrike/2020-10-20-Hancitor-infection-traffic.pcap",
+      "label": "CobaltStrike",
+      "date": "2020-10-20",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/CobaltStrike/2020-11-23-Hancitor-infection-with-Cobalt-Strike.pcap",
+      "label": "CobaltStrike",
+      "date": "2020-11-23",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/CobaltStrike/2020-12-14-Hancitor-infection-with-Cobalt-Strike-and-Ficker-Stealer.pcap",
+      "label": "CobaltStrike",
+      "date": "2020-12-14",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/CobaltStrike/2021-05-24-Hancitor-infection.pcap",
+      "label": "CobaltStrike",
+      "date": "2021-05-24",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/CobaltStrike/2021-06-01-Hancitor-with-Cobalt-Stike-and-netping-tool.pcap",
+      "label": "CobaltStrike",
+      "date": "2021-06-01",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/CobaltStrike/2021-06-15-Hancitor-with-Ficker-Stealer-and-Cobalt-Strike.pcap",
+      "label": "CobaltStrike",
+      "date": "2021-06-15",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/CobaltStrike/2021-06-17-Hancitor-infection-with-Cobalt-Strike.pcap",
+      "label": "CobaltStrike",
+      "date": "2021-06-17",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/CobaltStrike/2021-09-02-Hancitor-with-Cobalt-Strike.pcap",
+      "label": "CobaltStrike",
+      "date": "2021-09-02",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/CobaltStrike/2021-09-14-Hancitor-with-Cobalt-Strike-infection-traffic.pcap",
+      "label": "CobaltStrike",
+      "date": "2021-09-14",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/CobaltStrike/2021-09-17-Squirrelwaffle-loader-with-Cobalt-Strike.pcap",
+      "label": "CobaltStrike",
+      "date": "2021-09-17",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/CobaltStrike/2021-09-20-Squirrelwaffle-Loader-with-Cobalt-Strike.pcap",
+      "label": "CobaltStrike",
+      "date": "2021-09-20",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/CobaltStrike/2021-09-21-Squirrelwaffle-Loader-with-Cobalt-Strike.pcap",
+      "label": "CobaltStrike",
+      "date": "2021-09-21",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/CobaltStrike/2021-09-29-Hancitor-with-Cobalt-Strike-traffic.pcap",
+      "label": "CobaltStrike",
+      "date": "2021-09-29",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/CobaltStrike/2021-12-16-Hancitor-infection-with-Cobalt-Strike.pcap",
+      "label": "CobaltStrike",
+      "date": "2021-12-16",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/CobaltStrike/2023-11-06-404TDS-to-malware-to-Cobalt-Strike.pcap",
+      "label": "CobaltStrike",
+      "date": "2023-11-06",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/CobaltStrike/2024-04-18-SSLoad-with-follow-up-Cobalt-Strike-DLL.pcap",
+      "label": "CobaltStrike",
+      "date": "2024-04-18",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Danabot/2023-08-03-malicious-ad-to-Danabot-traffic.pcap",
+      "label": "Danabot",
+      "date": "2023-08-03",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Danabot/2024-02-14-Danabot-infection-traffic.pcap",
+      "label": "Danabot",
+      "date": "2024-02-14",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Danabot/2024-03-26-Matanbuchus-infection-with-Danabot.pcap",
+      "label": "Danabot",
+      "date": "2024-03-26",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Danabot/2024-06-17-Matanbuchus-infection-with-Danbot-traffic.pcap",
+      "label": "Danabot",
+      "date": "2024-06-17",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/DarkGate/2023-10-04-DarkGate-infection.pcap",
+      "label": "DarkGate",
+      "date": "2023-10-04",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/DarkGate/2023-10-12-DarkGate-infection-traffic.pcap",
+      "label": "DarkGate",
+      "date": "2023-10-12",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/DarkGate/2023-10-13-DarkGate-infection-traffic.pcap",
+      "label": "DarkGate",
+      "date": "2023-10-13",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/DarkGate/2023-10-25-DarkGate-infection-traffic.pcap",
+      "label": "DarkGate",
+      "date": "2023-10-25",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/DarkGate/2023-11-20-DarkGate-infection-traffic.pcap",
+      "label": "DarkGate",
+      "date": "2023-11-20",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/DarkGate/2023-11-30-DarkGate-infection-traffic.pcap",
+      "label": "DarkGate",
+      "date": "2023-11-30",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/DarkGate/2023-12-07-DarkGate-infection.pcap",
+      "label": "DarkGate",
+      "date": "2023-12-07",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/DarkGate/2024-01-25-DarkGate-infection-traffic.pcap",
+      "label": "DarkGate",
+      "date": "2024-01-25",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/DarkGate/2024-01-30-DarkGate-infection-traffic.pcap",
+      "label": "DarkGate",
+      "date": "2024-01-30",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/DarkGate/2024-03-19-DarkGate-infection-traffic.pcap",
+      "label": "DarkGate",
+      "date": "2024-03-19",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/DarkGate/2024-05-14-DarkGate-infection-traffic.pcap",
+      "label": "DarkGate",
+      "date": "2024-05-14",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Emotet/2020-07-17-Emotet-infection-traffic.pcap",
+      "label": "Emotet",
+      "date": "2020-07-17",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Emotet/2020-07-20-Emotet-epoch-1-infection-with-Trickbot-gtag-mor113.pcap",
+      "label": "Emotet",
+      "date": "2020-07-20",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Emotet/2020-07-21-Emotet-infection-with-Qakbot.pcap",
+      "label": "Emotet",
+      "date": "2020-07-21",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Emotet/2020-08-10-Emotet-infection-with-Qakbot.pcap",
+      "label": "Emotet",
+      "date": "2020-08-10",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Emotet/2020-09-01-Emotet-epoch-3-infection-with-Trickbot-gtag-mor119.pcap",
+      "label": "Emotet",
+      "date": "2020-09-01",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Emotet/2020-09-02-Emotet-epoch-1-with-Trickbot-gtag-mor119.pcap",
+      "label": "Emotet",
+      "date": "2020-09-02",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Emotet/2020-09-03-Emotet-epoch-1-infection-wtih-Trickbot-gtag-mor119.pcap",
+      "label": "Emotet",
+      "date": "2020-09-03",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Emotet/2020-09-30-Emotet-infection-with-Trickbot.pcap",
+      "label": "Emotet",
+      "date": "2020-09-30",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Emotet/2020-12-23-Emotet-infection-1st-run.pcap",
+      "label": "Emotet",
+      "date": "2020-12-23",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Emotet/2020-12-28-1st-run-Emotet-infection-with-Trickbot.pcap",
+      "label": "Emotet",
+      "date": "2020-12-28",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Emotet/2020-12-29-Emotet-infection-with-Trickbot-and-spambot-activity.pcap",
+      "label": "Emotet",
+      "date": "2020-12-29",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Emotet/2021-11-18-Emotet-infection-with-spambot-activity-carved-and-sanitized.pcap",
+      "label": "Emotet",
+      "date": "2021-11-18",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Emotet/2021-11-29-Emotet-epoch-5-infection-traffic.pcap",
+      "label": "Emotet",
+      "date": "2021-11-29",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Emotet/2021-11-30-Emotet-epoch4-infection-from-appinstaller.pcap",
+      "label": "Emotet",
+      "date": "2021-11-30",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Emotet/2022-06-07-Emotet-epoch5-infection-with-Cobalt-Strike-and-spambot-activity.pcap",
+      "label": "Emotet",
+      "date": "2022-06-07",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Emotet/2022-07-05-Emotet-epoch4-infection-with-spambot-traffic.pcap",
+      "label": "Emotet",
+      "date": "2022-07-05",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Emotet/2022-07-07-Emotet-infection-with-Cobalt-Strike.pcap",
+      "label": "Emotet",
+      "date": "2022-07-07",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Emotet/2022-11-03-Emotet-epoch4-infection-with-IcedID.pcap",
+      "label": "Emotet",
+      "date": "2022-11-03",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Formbook/2020-07-09-Formbook-infection-traffic.pcap",
+      "label": "Formbook",
+      "date": "2020-07-09",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Formbook/2023-06-22-Formbook-infection-traffic.pcap",
+      "label": "Formbook",
+      "date": "2023-06-22",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Formbook/2023-06-23-Formbook-infection-traffic.pcap",
+      "label": "Formbook",
+      "date": "2023-06-23",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Formbook/2023-06-24-Formbook-infection-traffic.pcap",
+      "label": "Formbook",
+      "date": "2023-06-24",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Formbook/2023-06-25-Formbook-infection-traffic.pcap",
+      "label": "Formbook",
+      "date": "2023-06-25",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Formbook/2023-06-26-Formbook-infection-traffic.pcap",
+      "label": "Formbook",
+      "date": "2023-06-26",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Formbook/2023-06-27-Formbook-infection-traffic.pcap",
+      "label": "Formbook",
+      "date": "2023-06-27",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Formbook/2023-06-28-Formbook-infection-traffic.pcap",
+      "label": "Formbook",
+      "date": "2023-06-28",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Formbook/2023-06-29-Formbook-infection-traffic.pcap",
+      "label": "Formbook",
+      "date": "2023-06-29",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Formbook/2023-06-30-Formbook-infection-traffic.pcap",
+      "label": "Formbook",
+      "date": "2023-06-30",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Formbook/2023-07-01-Formbook-infection-traffic.pcap",
+      "label": "Formbook",
+      "date": "2023-07-01",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Formbook/2023-07-02-Formbook-infection-traffic.pcap",
+      "label": "Formbook",
+      "date": "2023-07-02",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Formbook/2023-07-04-Formbook-infection-traffic.pcap",
+      "label": "Formbook",
+      "date": "2023-07-04",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Formbook/2023-07-11-loader-based-Formbook-infection-traffic.pcap",
+      "label": "Formbook",
+      "date": "2023-07-11",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Formbook/2023-11-29-JinxLoader-to-Formbook-XLoader.pcap",
+      "label": "Formbook",
+      "date": "2023-11-29",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Formbook/2024-08-12-XLoader-Formbook-infection-traffic.pcap",
+      "label": "Formbook",
+      "date": "2024-08-12",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/GuLoader/2023-07-03-GuLoader-for-Formbook-infection-traffic.pcap",
+      "label": "GuLoader",
+      "date": "2023-07-03",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2020-05-19-IcedID-infection-traffic.pcap",
+      "label": "IcedID",
+      "date": "2020-05-19",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2020-05-27-traffic-from-Valak-infection-with-IcedID.pcap",
+      "label": "IcedID",
+      "date": "2020-05-27",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2020-05-27-IcedID-infection-from-COVID19-themed-Word-doc.pcap",
+      "label": "IcedID",
+      "date": "2020-05-27",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2020-06-03-Valak-infection-with-IcedID.pcap",
+      "label": "IcedID",
+      "date": "2020-06-03",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2020-06-08-IcedID-infection-traffic.pcap",
+      "label": "IcedID",
+      "date": "2020-06-08",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2020-06-09-Valak-infection-with-IcedID.pcap",
+      "label": "IcedID",
+      "date": "2020-06-09",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2020-06-24-Valak-infection-with-IcedID.pcap",
+      "label": "IcedID",
+      "date": "2020-06-24",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2020-06-26-Valak-infection-with-IcedID.pcap",
+      "label": "IcedID",
+      "date": "2020-06-26",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2020-06-30-Valak-infection-with-IcedID.pcap",
+      "label": "IcedID",
+      "date": "2020-06-30",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2020-07-01-Valak-infection-with-IcedID.pcap",
+      "label": "IcedID",
+      "date": "2020-07-01",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2020-07-07-Ursnif-infection-with-IcedID.pcap",
+      "label": "IcedID",
+      "date": "2020-07-07",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2020-07-14-IcedID-infection-traffic.pcap",
+      "label": "IcedID",
+      "date": "2020-07-14",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2020-07-20-IcedID-infection-traffic.pcap",
+      "label": "IcedID",
+      "date": "2020-07-20",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2020-09-10-TA551-sends-IcedID-infection-traffic.pcap",
+      "label": "IcedID",
+      "date": "2020-09-10",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2020-10-06-TA551-pushes-IcedID.pcap",
+      "label": "IcedID",
+      "date": "2020-10-06",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2020-10-16-TA551-Word-doc-pushes-IcedID.pcap",
+      "label": "IcedID",
+      "date": "2020-10-16",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2020-12-11-TA551-pushes-IcedID-traffic.pcap",
+      "label": "IcedID",
+      "date": "2020-12-11",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2021-05-24-TA551-IcedID-infection-with-BackConnect-and-Anubis-VNC.pcap",
+      "label": "IcedID",
+      "date": "2021-05-24",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2021-05-27-IcedID-infection-traffic.pcap",
+      "label": "IcedID",
+      "date": "2021-05-27",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2021-06-02-TA551-IcedID-infection-traffic-with-BackConnect-and-Anubis-VNC.pcap",
+      "label": "IcedID",
+      "date": "2021-06-02",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2021-10-12-IcedID-infection.pcap",
+      "label": "IcedID",
+      "date": "2021-10-12",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2021-12-10-TA551-IcedID-with-Cobalt-Strike-and-BackConnect-and-Anubis-VNC.pcap",
+      "label": "IcedID",
+      "date": "2021-12-10",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2021-12-13-Contact-Forms-IcedID-with-Cobalt-Strike-and-BackConnect-and-Anubis-VNC.pcap",
+      "label": "IcedID",
+      "date": "2021-12-13",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2022-05-23-IcedID-infection-with-BackConnect-and-Anubis-VNC.pcap",
+      "label": "IcedID",
+      "date": "2022-05-23",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2022-06-28-TA578-IcedID-with-BackConnect-and-Anubis-VNC-and-Cobalt-Strike.pcap",
+      "label": "IcedID",
+      "date": "2022-06-28",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2022-07-06-TA578-Contact-Forms-IcedID-with-BackConnect-and-Anubis-VNC-and-Cobalt-Strike.pcap",
+      "label": "IcedID",
+      "date": "2022-07-06",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2022-07-22-IcedID-with-BackConnect-and-Anubis-VNC-and-Cobalt-Strike.pcap",
+      "label": "IcedID",
+      "date": "2022-07-22",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2022-07-25-IcedID-with-Cobalt-Strike-carved.pcap",
+      "label": "IcedID",
+      "date": "2022-07-25",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2022-07-26-IcedID-with-BackConnect-and-Cobalt-Strike-carved.pcap",
+      "label": "IcedID",
+      "date": "2022-07-26",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2022-08-03-IcedID-with-Cobalt-Strike-carved.pcap",
+      "label": "IcedID",
+      "date": "2022-08-03",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2022-08-08-IcedID-with-Cobalt-Strike-carved.pcap",
+      "label": "IcedID",
+      "date": "2022-08-08",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2022-08-10-IcedID-part-1-initial-infection-carved.pcap",
+      "label": "IcedID",
+      "date": "2022-08-10",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2022-08-31-IcedID-with-Cobalt-Strike-carved-and-sanitized.pcap",
+      "label": "IcedID",
+      "date": "2022-08-31",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2022-09-23-IcedID-infection-with-Cobalt-Strike.pcap",
+      "label": "IcedID",
+      "date": "2022-09-23",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2022-10-04-IcedID-infection-with-Cobalt-Strike.pcap",
+      "label": "IcedID",
+      "date": "2022-10-04",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2022-10-06-IcedID-with-Cobalt-Strike-santized-and-carved.pcap",
+      "label": "IcedID",
+      "date": "2022-10-06",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2022-10-17-IcedID-with-Cobalt-Strike-carved-and-sanitized.pcap",
+      "label": "IcedID",
+      "date": "2022-10-17",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2022-10-31-IcedID-part-1-with-BackConnect-and-Keyhole-VNC.pcap",
+      "label": "IcedID",
+      "date": "2022-10-31",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2022-11-11-IcedID-with-VNC.pcap",
+      "label": "IcedID",
+      "date": "2022-11-11",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2022-12-14-IcedID-with-Cobalt-Strike-and-VNC-and-Sliver-or-DonutLoader.pcap",
+      "label": "IcedID",
+      "date": "2022-12-14",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2022-12-20-IcedID-infection-with-Cobalt-Strike.pcap",
+      "label": "IcedID",
+      "date": "2022-12-20",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2023-06-28-IcedID-infection.pcap",
+      "label": "IcedID",
+      "date": "2023-06-28",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2023-07-25-IcedID-infection-traffic.pcap",
+      "label": "IcedID",
+      "date": "2023-07-25",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2023-08-09-IcedID-with-BackConnect-and-Keyhole-VNC.pcap",
+      "label": "IcedID",
+      "date": "2023-08-09",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2023-09-28-IcedID-infection-with-Keyhole-VNC-and-Cobalt-Strike.pcap",
+      "label": "IcedID",
+      "date": "2023-09-28",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2023-10-16-IcedID-infection.pcap",
+      "label": "IcedID",
+      "date": "2023-10-16",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2023-10-18-IcedID-forked-variant-infection-with-follow-up-activity.pcap",
+      "label": "IcedID",
+      "date": "2023-10-18",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2023-10-31-IcedID-infection-traffic.pcap",
+      "label": "IcedID",
+      "date": "2023-10-31",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/IcedID/2023-11-27-TA577-pushes-IcedID-variant.pcap",
+      "label": "IcedID",
+      "date": "2023-11-27",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Latrodectus/2024-02-09-Contact-Forms-campaign-Latrodectus-infection-traffic-with-Keyhole-VNC-carved.pcap",
+      "label": "Latrodectus",
+      "date": "2024-02-09",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Latrodectus/2024-06-25-Latrodectus-infection-with-BackConnect-and-Keyhole-VNC.pcap",
+      "label": "Latrodectus",
+      "date": "2024-06-25",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Lumma_Stealer/2023-10-11-Lumma-Stealer-infection-traffic.pcap",
+      "label": "Lumma_Stealer",
+      "date": "2023-10-11",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Lumma_Stealer/2024-03-07-Latrodectus-infection-with-Lumma-Stealer.pcap",
+      "label": "Lumma_Stealer",
+      "date": "2024-03-07",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Lumma_Stealer/2024-09-19-file-downloader-to-Lumma-Stealer.pcap",
+      "label": "Lumma_Stealer",
+      "date": "2024-09-19",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Lumma_Stealer/2024-10-03-SmartLoader-to-Lumma-Stealer.pcap",
+      "label": "Lumma_Stealer",
+      "date": "2024-10-03",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Matanbuchus/2021-11-15-Matanbuchus-infection-with-obama128b-Qakbot-and-Cobalt-Strike.pcap",
+      "label": "Matanbuchus",
+      "date": "2021-11-15",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Matanbuchus/2021-12-07-obama141-Qakbot-and-Matanbuchus-traffic.pcap",
+      "label": "Matanbuchus",
+      "date": "2021-12-07",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Matanbuchus/2022-06-16-Matanbuchus-with-Cobalt-Strike.pcap",
+      "label": "Matanbuchus",
+      "date": "2022-06-16",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Matanbuchus/2022-06-17-Matanbuchus-with-Cobalt-Strike.pcap",
+      "label": "Matanbuchus",
+      "date": "2022-06-17",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Matanbuchus/2024-03-26-Matanbuchus-infection-with-Danabot.pcap",
+      "label": "Matanbuchus",
+      "date": "2024-03-26",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Matanbuchus/2024-06-17-Matanbuchus-infection-with-Danbot-traffic.pcap",
+      "label": "Matanbuchus",
+      "date": "2024-06-17",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Meduza_Stealer/2024-03-06-traffic-from-Piakbot-infection-with-Meduza-Stealer.pcap",
+      "label": "Meduza_Stealer",
+      "date": "2024-03-06",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/NetSupport_RAT/2024-12-17-SmartApeSG-to-NetSupport-RAT.pcap",
+      "label": "NetSupport_RAT",
+      "date": "2024-12-17",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Pikabot/2023-10-03-Pikabot-infection-with-Cobalt-Strike.pcap",
+      "label": "Pikabot",
+      "date": "2023-10-03",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Pikabot/2023-10-17-TA577-Pikabot-infection-with-Cobalt-Strike.pcap",
+      "label": "Pikabot",
+      "date": "2023-10-17",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Pikabot/2023-11-02-Pikabot-infection-traffic.pcap",
+      "label": "Pikabot",
+      "date": "2023-11-02",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Pikabot/2023-12-15-TA577-Pikabot-infection-traffic.pcap",
+      "label": "Pikabot",
+      "date": "2023-12-15",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Pikabot/2023-12-18-TA577-Pikabot-infection-with-Cobalt-Strike.pcap",
+      "label": "Pikabot",
+      "date": "2023-12-18",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Pikabot/2024-02-08-TA577-Pikabot-infection-traffic.pcap",
+      "label": "Pikabot",
+      "date": "2024-02-08",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Pikabot/2024-03-06-traffic-from-Piakbot-infection-with-Meduza-Stealer.pcap",
+      "label": "Pikabot",
+      "date": "2024-03-06",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Qakbot/2020-05-29-Qakbot-spx129-enencrypted-SMTP-spambot-traffic-example.pcap",
+      "label": "Qakbot",
+      "date": "2020-05-29",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Qakbot/2020-06-08-Qakbot-spx135-infection-with-spambot-activity.pcap",
+      "label": "Qakbot",
+      "date": "2020-06-08",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Qakbot/2020-06-12-Qakbot-spx139-with-ZLoader-infection-traffic.pcap",
+      "label": "Qakbot",
+      "date": "2020-06-12",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Qakbot/2020-06-16-Qakbot-spx141-infection-traffic.pcap",
+      "label": "Qakbot",
+      "date": "2020-06-16",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Qakbot/2020-06-17-Qakbot-spx142-infection-traffic.pcap",
+      "label": "Qakbot",
+      "date": "2020-06-17",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Qakbot/2020-06-18-Qakbot-spx143-infection-traffic.pcap",
+      "label": "Qakbot",
+      "date": "2020-06-18",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Qakbot/2020-09-16-Qakbot-infection-traffic.pcap",
+      "label": "Qakbot",
+      "date": "2020-09-16",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Qakbot/2020-09-23-example-of-Qakbot-spambot-activity.pcap",
+      "label": "Qakbot",
+      "date": "2020-09-23",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Qakbot/2020-12-07-Qakbot-with-Cobalt-Strike-and-spambot-activity.pcap",
+      "label": "Qakbot",
+      "date": "2020-12-07",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Qakbot/2020-12-08-Qakbot-infection-traffic.pcap",
+      "label": "Qakbot",
+      "date": "2020-12-08",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Qakbot/2020-12-15-Qakbot-infection-part-1.pcap",
+      "label": "Qakbot",
+      "date": "2020-12-15",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Qakbot/2020-12-23-Qakbot-infection-with-spambot-activity.pcap",
+      "label": "Qakbot",
+      "date": "2020-12-23",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Qakbot/2021-06-04-part-01-Qakbot-infection-with-Cobalt-Strike.pcap",
+      "label": "Qakbot",
+      "date": "2021-06-04",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Qakbot/2021-09-20-Qakbot-infection-traffic.pcap",
+      "label": "Qakbot",
+      "date": "2021-09-20",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Qakbot/2021-09-22-Squirrelwaffle-with-Qakbot-and-Cobalt-Strike.pcap",
+      "label": "Qakbot",
+      "date": "2021-09-22",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Qakbot/2021-09-23-Squirrelwaffle-with-Qakbot-and-Cobalt-Strike.pcap",
+      "label": "Qakbot",
+      "date": "2021-09-23",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Qakbot/2021-09-24-Squirrelwaffle-with-Qakbot-and-Cobalt-Strike.pcap",
+      "label": "Qakbot",
+      "date": "2021-09-24",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Qakbot/2021-10-01-TR-Qakbot-infection-wtih-spambot-acitvity.pcap",
+      "label": "Qakbot",
+      "date": "2021-10-01",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Qakbot/2021-10-07-obama111-Qakbot-with-Cobalt-Strike-and-email-and-ANGRYPUPPY-bloodhound-activity.pcap",
+      "label": "Qakbot",
+      "date": "2021-10-07",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Qakbot/2021-11-04-TR-Qakbot-with-Cobalt-Strike.pcap",
+      "label": "Qakbot",
+      "date": "2021-11-04",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Qakbot/2022-06-07-obama186-Qakbot-infection-with-Dark-Cat-VNC-and-spambot-traffic.pcap",
+      "label": "Qakbot",
+      "date": "2022-06-07",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Qakbot/2022-06-21-AA-Qakbot-with-Dark-Cat-VNC-and-Cobalt-Strike.pcap",
+      "label": "Qakbot",
+      "date": "2022-06-21",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Qakbot/2022-06-27-part-1-of-2-Qakbot-with-Cobalt-Strike-and-Dark-Cat-VNC.pcap",
+      "label": "Qakbot",
+      "date": "2022-06-27",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Qakbot/2022-09-29-Qakbot-with-Cobalt-Strike.pcap",
+      "label": "Qakbot",
+      "date": "2022-09-29",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Qakbot/2022-10-10-Qakbot-infection-with-Cobalt-Strike-carved-and-sanitized.pcap",
+      "label": "Qakbot",
+      "date": "2022-10-10",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Qakbot/2022-10-14-bb02-Qakbot-infection-traffic-carved-and-sanitized.pcap",
+      "label": "Qakbot",
+      "date": "2022-10-14",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Qakbot/2022-11-14-obama221-Qakbot-infection-part-1-of-2-initial-infection.pcap",
+      "label": "Qakbot",
+      "date": "2022-11-14",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Qakbot/2022-11-28-BB08-Qakbot-with-Cobakt-Strike-and-VNC-traffic.pcap",
+      "label": "Qakbot",
+      "date": "2022-11-28",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Qakbot/2022-12-09-azd-Qakbot-infection-traffic-carved-and-santized.pcap",
+      "label": "Qakbot",
+      "date": "2022-12-09",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Qakbot/2023-06-22-initial-Obama271-Qakbot-infection-traffic.pcap",
+      "label": "Qakbot",
+      "date": "2023-06-22",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Raccoon/2021-09-23-Gozi-infection-with-Raccoon-part-1.pcap",
+      "label": "Raccoon",
+      "date": "2021-09-23",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Redline_Stealer/2024-10-23-Redline-Stealer-infection-traffic.pcap",
+      "label": "Redline_Stealer",
+      "date": "2024-10-23",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Remcos_RAT/2021-09-03-GuLoader-for-possible-Remcos-RAT.pcap",
+      "label": "Remcos_RAT",
+      "date": "2021-09-03",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Remcos_RAT/2023-06-26-guloader-or-modiloader-style-infection-for-Remcos-RAT.pcap",
+      "label": "Remcos_RAT",
+      "date": "2023-06-26",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Remcos_RAT/2024-08-26-GuLoader-for-Remcos-RAT.pcap",
+      "label": "Remcos_RAT",
+      "date": "2024-08-26",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/SSLoad/2024-04-15-SSLoad-infection-traffic.pcap",
+      "label": "SSLoad",
+      "date": "2024-04-15",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/SSLoad/2024-04-17-TA578-SSLoad-infection.pcap",
+      "label": "SSLoad",
+      "date": "2024-04-17",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/SSLoad/2024-04-18-SSLoad-with-follow-up-Cobalt-Strike-DLL.pcap",
+      "label": "SSLoad",
+      "date": "2024-04-18",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Sliver/2021-10-20-TA551-pushes-Sliver.pcap",
+      "label": "Sliver",
+      "date": "2021-10-20",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Sliver/2021-10-20-Stolen-Images-Evidence-campaign-pushes-Sliver.pcap",
+      "label": "Sliver",
+      "date": "2021-10-20",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/SocGholish/2024-02-21-SocGholish-AsyncRAT-infection.pcap",
+      "label": "SocGholish",
+      "date": "2024-02-21",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/TrickBot/2020-06-10-Trickbot-gtag-gi6-infection-traffic.pcap",
+      "label": "TrickBot",
+      "date": "2020-06-10",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/TrickBot/2020-06-16-Trickbot-gtag-ono47-infection-traffic.pcap",
+      "label": "TrickBot",
+      "date": "2020-06-16",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/TrickBot/2020-06-25-Trickbot-gtag-gi6-infection-traffic.pcap",
+      "label": "TrickBot",
+      "date": "2020-06-25",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/TrickBot/2020-07-10-Trickbot-gtag-chil65-infection-traffic.pcap",
+      "label": "TrickBot",
+      "date": "2020-07-10",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/TrickBot/2020-09-08-Trickbot-gtag-ono72-infection-traffic.pcap",
+      "label": "TrickBot",
+      "date": "2020-09-08",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/TrickBot/2020-11-09-Trickbot-gtag-rob2-infection-traffic.pcap",
+      "label": "TrickBot",
+      "date": "2020-11-09",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/TrickBot/2021-05-26-Trickbot-infection-with-Cobalt-Strike.pcap",
+      "label": "TrickBot",
+      "date": "2021-05-26",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/TrickBot/2021-06-30-TA551-Trickbot-with-Cobalt-Strike.pcap",
+      "label": "TrickBot",
+      "date": "2021-06-30",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/TrickBot/2021-07-12-Trickbot-gtag-rob106-infection-traffic.pcap",
+      "label": "TrickBot",
+      "date": "2021-07-12",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/TrickBot/2021-07-15-TA551-Trickbot-infection-with-Cobalt-Strike.pcap",
+      "label": "TrickBot",
+      "date": "2021-07-15",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Ursnif/2020-06-10-Ursnif-with-Ursnif-infection-traffic.pcap",
+      "label": "Ursnif",
+      "date": "2020-06-10",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Ursnif/2020-07-09-Ursnif-infection-traffic.pcap",
+      "label": "Ursnif",
+      "date": "2020-07-09",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Ursnif/2020-07-13-Hancitor-infection-with-Ursnif.pcap",
+      "label": "Ursnif",
+      "date": "2020-07-13",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Ursnif/2020-12-03-TA551-sends-Ursnif-with-pushdo.pcap",
+      "label": "Ursnif",
+      "date": "2020-12-03",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Ursnif/2021-06-18-TA551-Gozi-ISFB-Ursnif-infection-traffic.pcap",
+      "label": "Ursnif",
+      "date": "2021-06-18",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Ursnif/2021-10-06-Gozi-ISFB-Ursnif-infection.pcap",
+      "label": "Ursnif",
+      "date": "2021-10-06",
+      "set": "training"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/finetuning/trafficllm_training/pcaps/Ursnif/2023-07-12-Gozi-infection-with-Cobalt-Strike.pcap",
+      "label": "Ursnif",
+      "date": "2023-07-12",
+      "set": "training"
+    }
+  ]
+}

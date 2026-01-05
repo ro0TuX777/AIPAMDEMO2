@@ -174,7 +174,7 @@ MALWARE_MITRE_MAPPINGS = {
     "ClearFake": {"type": "Loader", "mitre": [{"id": "T1189", "name": "Drive-by Compromise"}, {"id": "T1059.007", "name": "JavaScript"}, {"id": "T1105", "name": "Ingress Tool Transfer"}], "severity": "high", "indicators": ["clearfake", "fake browser"]},
     "FakeBat": {"type": "Loader", "mitre": [{"id": "T1105", "name": "Ingress Tool Transfer"}, {"id": "T1059.001", "name": "PowerShell"}, {"id": "T1071.001", "name": "Web Protocols"}], "severity": "high", "indicators": ["fakebat", "eugenloader"]},
     # === Banking Trojans ===
-    "Danabot": {"type": "Banking Trojan", "mitre": [{"id": "T1185", "name": "Browser Session Hijacking"}, {"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1055", "name": "Process Injection"}, {"id": "T1056.001", "name": "Keylogging"}, {"id": "T1090.001", "name": "Internal Proxy"}], "severity": "critical", "indicators": ["danabot", "banking", "webinject"]},
+    "Danabot": {"type": "Banking Trojan", "mitre": [{"id": "T1185", "name": "Browser Session Hijacking"}, {"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1055", "name": "Process Injection"}, {"id": "T1056.001", "name": "Keylogging"}, {"id": "T1090.001", "name": "Internal Proxy"}], "severity": "critical", "indicators": ["danabot", "webinject"]},
     "Zeus": {"type": "Banking Trojan", "mitre": [{"id": "T1059", "name": "Command and Scripting Interpreter"}, {"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1056.001", "name": "Keylogging"}, {"id": "T1185", "name": "Browser Session Hijacking"}], "severity": "critical", "indicators": ["zeus", "zbot"]},
     "Emotet": {"type": "Loader/Banking Trojan", "mitre": [{"id": "T1566.001", "name": "Spearphishing Attachment"}, {"id": "T1059.001", "name": "PowerShell"}, {"id": "T1547.001", "name": "Registry Run Keys / Startup Folder"}, {"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1027", "name": "Obfuscated Files or Information"}], "severity": "critical", "indicators": ["emotet", "heodo", "geodo"]},
     "TrickBot": {"type": "Banking Trojan/Loader", "mitre": [{"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1003.001", "name": "LSASS Memory"}, {"id": "T1021.002", "name": "SMB/Windows Admin Shares"}, {"id": "T1185", "name": "Browser Session Hijacking"}, {"id": "T1055", "name": "Process Injection"}], "severity": "critical", "indicators": ["trickbot", "trickster"]},
@@ -184,6 +184,19 @@ MALWARE_MITRE_MAPPINGS = {
     "CobaltStrike": {"type": "Penetration Testing Tool/RAT", "mitre": [{"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1055.001", "name": "Dynamic-link Library Injection"}, {"id": "T1021.002", "name": "SMB/Windows Admin Shares"}, {"id": "T1059.001", "name": "PowerShell"}, {"id": "T1090.002", "name": "External Proxy"}], "severity": "critical", "indicators": ["cobaltstrike", "beacon", "cs beacon", "malleable c2"]},
     "Metasploit": {"type": "Penetration Testing Tool", "mitre": [{"id": "T1059", "name": "Command and Scripting Interpreter"}, {"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1055", "name": "Process Injection"}], "severity": "critical", "indicators": ["metasploit", "meterpreter"]},
     "Sliver": {"type": "Penetration Testing Tool/RAT", "mitre": [{"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1071.004", "name": "DNS"}, {"id": "T1055", "name": "Process Injection"}, {"id": "T1090", "name": "Proxy"}], "severity": "critical", "indicators": ["sliver", "implant"]},
+    # === Ransomware ===
+    "CryptoWall": {"type": "Ransomware", "mitre": [{"id": "T1486", "name": "Data Encrypted for Impact"}, {"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1490", "name": "Inhibit System Recovery"}, {"id": "T1083", "name": "File and Directory Discovery"}, {"id": "T1027", "name": "Obfuscated Files or Information"}], "severity": "critical", "indicators": ["cryptowall", "crypto wall", "ransom", "encrypted files"]},
+    "Locky": {"type": "Ransomware", "mitre": [{"id": "T1486", "name": "Data Encrypted for Impact"}, {"id": "T1566.001", "name": "Spearphishing Attachment"}, {"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1490", "name": "Inhibit System Recovery"}], "severity": "critical", "indicators": ["locky", "ransom"]},
+    "WannaCry": {"type": "Ransomware/Worm", "mitre": [{"id": "T1486", "name": "Data Encrypted for Impact"}, {"id": "T1210", "name": "Exploitation of Remote Services"}, {"id": "T1021.002", "name": "SMB/Windows Admin Shares"}, {"id": "T1570", "name": "Lateral Tool Transfer"}], "severity": "critical", "indicators": ["wannacry", "wanna cry", "wcry", "eternalblue"]},
+    "Cerber": {"type": "Ransomware", "mitre": [{"id": "T1486", "name": "Data Encrypted for Impact"}, {"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1071.004", "name": "DNS"}, {"id": "T1490", "name": "Inhibit System Recovery"}], "severity": "critical", "indicators": ["cerber", "ransom"]},
+    "TeslaCrypt": {"type": "Ransomware", "mitre": [{"id": "T1486", "name": "Data Encrypted for Impact"}, {"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1490", "name": "Inhibit System Recovery"}, {"id": "T1083", "name": "File and Directory Discovery"}], "severity": "critical", "indicators": ["teslacrypt", "tesla crypt"]},
+    "Ryuk": {"type": "Ransomware", "mitre": [{"id": "T1486", "name": "Data Encrypted for Impact"}, {"id": "T1021.002", "name": "SMB/Windows Admin Shares"}, {"id": "T1490", "name": "Inhibit System Recovery"}, {"id": "T1489", "name": "Service Stop"}], "severity": "critical", "indicators": ["ryuk", "ransom"]},
+    "REvil": {"type": "Ransomware", "mitre": [{"id": "T1486", "name": "Data Encrypted for Impact"}, {"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1490", "name": "Inhibit System Recovery"}, {"id": "T1489", "name": "Service Stop"}], "severity": "critical", "indicators": ["revil", "sodinokibi"]},
+    "Conti": {"type": "Ransomware", "mitre": [{"id": "T1486", "name": "Data Encrypted for Impact"}, {"id": "T1021.002", "name": "SMB/Windows Admin Shares"}, {"id": "T1490", "name": "Inhibit System Recovery"}, {"id": "T1048", "name": "Exfiltration Over Alternative Protocol"}], "severity": "critical", "indicators": ["conti", "ransom"]},
+    "LockBit": {"type": "Ransomware", "mitre": [{"id": "T1486", "name": "Data Encrypted for Impact"}, {"id": "T1021.002", "name": "SMB/Windows Admin Shares"}, {"id": "T1490", "name": "Inhibit System Recovery"}, {"id": "T1071.001", "name": "Web Protocols"}], "severity": "critical", "indicators": ["lockbit", "ransom"]},
+    "BlackCat": {"type": "Ransomware", "mitre": [{"id": "T1486", "name": "Data Encrypted for Impact"}, {"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1490", "name": "Inhibit System Recovery"}, {"id": "T1048", "name": "Exfiltration Over Alternative Protocol"}], "severity": "critical", "indicators": ["blackcat", "alphv"]},
+    "Petya": {"type": "Ransomware/Wiper", "mitre": [{"id": "T1486", "name": "Data Encrypted for Impact"}, {"id": "T1485", "name": "Data Destruction"}, {"id": "T1561.002", "name": "Disk Structure Wipe"}, {"id": "T1210", "name": "Exploitation of Remote Services"}], "severity": "critical", "indicators": ["petya", "notpetya", "goldeneye"]},
+    "CTBLocker": {"type": "Ransomware", "mitre": [{"id": "T1486", "name": "Data Encrypted for Impact"}, {"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1490", "name": "Inhibit System Recovery"}, {"id": "T1071.004", "name": "DNS"}], "severity": "critical", "indicators": ["ctb-locker", "ctblocker", "critroni"]},
     # === Legacy malware (from ISCX dataset) ===
     "Cridex": {"type": "Banking Trojan", "mitre": [{"id": "T1185", "name": "Browser Session Hijacking"}, {"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1056.001", "name": "Keylogging"}], "severity": "high", "indicators": ["cridex"]},
     "Geodo": {"type": "Banking Trojan", "mitre": [{"id": "T1566.001", "name": "Spearphishing Attachment"}, {"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1185", "name": "Browser Session Hijacking"}], "severity": "high", "indicators": ["geodo"]},
@@ -266,15 +279,32 @@ MALWARE_NAME_ALIASES = {
     "shifu": "Shifu",
     "tinba": "Tinba", "tiny banker": "Tinba", "tinybanker": "Tinba",
     "virut": "Virut",
+    # Ransomware
+    "cryptowall": "CryptoWall", "crypto wall": "CryptoWall", "cryptowall3": "CryptoWall", "cryptowall4": "CryptoWall",
+    "locky": "Locky", "locky ransomware": "Locky",
+    "wannacry": "WannaCry", "wanna cry": "WannaCry", "wcry": "WannaCry", "wanacrypt": "WannaCry", "wanacry": "WannaCry",
+    "cerber": "Cerber", "cerber ransomware": "Cerber",
+    "teslacrypt": "TeslaCrypt", "tesla crypt": "TeslaCrypt",
+    "ryuk": "Ryuk", "ryuk ransomware": "Ryuk",
+    "revil": "REvil", "sodinokibi": "REvil", "sodin": "REvil",
+    "conti": "Conti", "conti ransomware": "Conti",
+    "lockbit": "LockBit", "lock bit": "LockBit", "lockbit2": "LockBit", "lockbit3": "LockBit",
+    "blackcat": "BlackCat", "alphv": "BlackCat", "noberus": "BlackCat",
+    "petya": "Petya", "notpetya": "Petya", "goldeneye": "Petya", "expetr": "Petya",
+    "ctb-locker": "CTBLocker", "ctblocker": "CTBLocker", "critroni": "CTBLocker", "ctb locker": "CTBLocker",
+    "ransomware": "CryptoWall",  # Generic ransomware detection defaults to CryptoWall
 }
 
-# System prompt optimized for the fine-tuned aipam-traffic-llm model
-# Keep minimal to let the fine-tuned model use its trained knowledge
-SYSTEM_PROMPT = (
-    "You are an expert in encrypted malware traffic detection and classification. "
-    "Analyze network packet data and identify the specific malware family or benign application. "
-    "Return your classification as JSON with 'classification' and 'overall_severity' fields."
-)
+# System prompt for backend - zero-day & forensic focus
+SYSTEM_PROMPT = """You are an expert cybersecurity analyst specialized in forensic network traffic analysis and malware family identification.
+Your goal is to identify both known malware families and novel, anomalous malicious activities with high precision.
+For every analysis:
+1. **Classification**: Identify the likely malware family. You MUST prioritize technical fingerprints over generic naming associations or "general knowledge" biases. For example, if you see SMB reuse or TLS 0x000a, classify as Pikabot. If you see port 1158 or NetSupport client strings, classify as NetSupport_RAT. DO NOT default to "IcedID" or "Qakbot" unless their specific, exclusive forensic signatures are present.
+2. **Technical Forensic Evidence**: Detail **Session-Specific Indicators (SSIs)** found in the data. DEMAND technical values: specify IPs, ports, packet sizes, byte counts, protocol offsets, or specific observed strings.
+3. **Boilerplate Avoidance**: DO NOT use generic phrases like 'observed unusual pattern'. If you see a TLS anomaly, specify which extension or handshake state was affected. Avoid "pre-baked" descriptions of malware families; focus only on what is in the provided data.
+4. **Name Consistency**: If you identify a malware family in your thinking process, ENSURE that name is used consistently in 'classification', 'attack_chain', and 'host_findings'. Do NOT mention biased names (like 'IcedID' or 'Formbook') in the host findings or attack chain if the technical evidence points to a different family (like 'Pikabot').
+5. **MITRE ATT&CK**: Map techniques accurately to the observed data.
+Return your findings in the requested JSON format. technical specificity and accurate family identification are mandatory."""
 
 
 class LLMClient:
@@ -285,7 +315,7 @@ class LLMClient:
 
         if config is None:
             endpoint = os.getenv("LLM_ENDPOINT", "http://localhost:11434/v1/chat/completions")
-            model = os.getenv("LLM_MODEL_NAME", "llama3.1:8b")
+            model = os.getenv("LLM_MODEL_NAME", "aipam-cybersec-llm")
             temperature = float(os.getenv("LLM_TEMPERATURE", "0.1"))
             max_tokens = int(os.getenv("LLM_MAX_TOKENS", "2000"))
             timeout_seconds = float(os.getenv("LLM_TIMEOUT_SECONDS", "600"))
@@ -315,11 +345,16 @@ class LLMClient:
                     timeout_seconds=config.timeout_seconds,
                     provider=LLMProvider.TRAFFICLLM,
                 )
-                self.dual_config = DualLLMConfig(
-                    ollama=config,
-                    trafficllm=trafficllm_config,
-                    use_trafficllm_for_detection=os.getenv("USE_TRAFFICLLM_FOR_DETECTION", "false").lower() == "true",
-                )
+        else:
+            self.dual_config = DualLLMConfig(ollama=self.config)
+
+    def _get_v(self, obj: Any, key: str, default: Any = None) -> Any:
+        """Helper to get value from either a dict or an object (Pydantic model)."""
+        if obj is None:
+            return default
+        if isinstance(obj, dict):
+            return obj.get(key, default)
+        return getattr(obj, key, default)
 
     def _get_config_for_task(self, task_hint: Optional[str] = None) -> LLMConfig:
         """Get the appropriate LLM config based on task type."""
@@ -397,30 +432,45 @@ class LLMClient:
             "severity": "high"
         }
 
-    def _extract_hosts_summary(self, bundle: Dict[str, Any]) -> str:
+    def _extract_hosts_summary(self, bundle: Any) -> str:
         """Extract a human-readable summary of hosts from the bundle."""
         lines = []
 
         # Extract from host summaries
         for key in ["host_summaries_exploit", "host_summaries_baseline", "host_summaries"]:
-            summaries = bundle.get(key, {})
-            if isinstance(summaries, dict):
-                for ip, data in list(summaries.items())[:10]:  # Limit to 10 hosts
-                    if isinstance(data, dict):
-                        bytes_sent = data.get("bytes_sent", data.get("total_bytes", 0))
-                        conn_count = data.get("connection_count", data.get("flow_count", 0))
-                        protocols = data.get("protocols", [])
+            summaries = self._get_v(bundle, key)
+            if summaries:
+                # If it's a list (Pydantic style), iterate over objects
+                if isinstance(summaries, list):
+                    for h in summaries[:10]:
+                        ip = self._get_v(h, "host_ip", "?")
+                        bytes_sent = self._get_v(h, "bytes_sent", self._get_v(h, "total_bytes", 0))
+                        conn_count = self._get_v(h, "connection_count", self._get_v(h, "flow_count", 0))
+                        protocols = self._get_v(h, "protocols", [])
+                        proto_str = ", ".join(protocols[:5]) if protocols else "unknown"
+                        lines.append(f"- Host {ip}: {bytes_sent} bytes, {conn_count} connections, protocols: {proto_str}")
+                elif isinstance(summaries, dict):
+                    for ip, data in list(summaries.items())[:10]:
+                        bytes_sent = self._get_v(data, "bytes_sent", self._get_v(data, "total_bytes", 0))
+                        conn_count = self._get_v(data, "connection_count", self._get_v(data, "flow_count", 0))
+                        protocols = self._get_v(data, "protocols", [])
                         proto_str = ", ".join(protocols[:5]) if protocols else "unknown"
                         lines.append(f"- Host {ip}: {bytes_sent} bytes, {conn_count} connections, protocols: {proto_str}")
                 break
 
         # Extract from hostpair summaries
         for key in ["hostpair_summaries_exploit", "hostpair_summaries"]:
-            pairs = bundle.get(key, {})
-            if isinstance(pairs, dict):
-                for pair_key, data in list(pairs.items())[:5]:  # Limit to 5 pairs
-                    if isinstance(data, dict):
-                        bytes_total = data.get("bytes_total", 0)
+            pairs = self._get_v(bundle, key)
+            if pairs:
+                if isinstance(pairs, list):
+                    for h in pairs[:5]:
+                        src = self._get_v(h, "src_ip", "?")
+                        dst = self._get_v(h, "dst_ip", "?")
+                        bytes_total = self._get_v(h, "bytes_total", 0)
+                        lines.append(f"- Connection {src}->{dst}: {bytes_total} bytes")
+                elif isinstance(pairs, dict):
+                    for pair_key, data in list(pairs.items())[:5]:
+                        bytes_total = self._get_v(data, "bytes_total", 0)
                         lines.append(f"- Connection {pair_key}: {bytes_total} bytes")
                 break
 
@@ -429,32 +479,29 @@ class LLMClient:
 
         return "\n".join(lines)
 
-    def _extract_alerts_summary(self, bundle: Dict[str, Any]) -> str:
+    def _extract_alerts_summary(self, bundle: Any) -> str:
         """Extract a human-readable summary of alerts from the bundle."""
         lines = []
 
         # Extract alerts
-        alerts = bundle.get("alerts", [])
-        if isinstance(alerts, list):
-            for alert in alerts[:10]:  # Limit to 10 alerts
-                if isinstance(alert, dict):
-                    sig = alert.get("signature", alert.get("msg", "Unknown alert"))
-                    src = alert.get("src_ip", "?")
-                    dst = alert.get("dst_ip", "?")
-                    lines.append(f"- ALERT: {sig} (src: {src} -> dst: {dst})")
-                elif isinstance(alert, str):
-                    lines.append(f"- ALERT: {alert}")
+        alerts = self._get_v(bundle, "alerts", [])
+        if isinstance(alerts, (list, tuple)):
+            for alert in alerts[:10]:
+                sig = self._get_v(alert, "signature_name", self._get_v(alert, "signature", self._get_v(alert, "msg", "Unknown alert")))
+                src = self._get_v(alert, "src_ip", "?")
+                dst = self._get_v(alert, "dst_ip", "?")
+                lines.append(f"- ALERT: {sig} (src: {src} -> dst: {dst})")
 
         # Extract trafficllm results if present
-        trafficllm = bundle.get("trafficllm_results", {})
-        if isinstance(trafficllm, dict):
-            malware_types = trafficllm.get("malware_types", [])
-            malware_count = trafficllm.get("malware_detections", 0)
+        trafficllm = self._get_v(bundle, "trafficllm_results")
+        if trafficllm:
+            malware_types = self._get_v(trafficllm, "malware_types", [])
+            malware_count = self._get_v(trafficllm, "malware_detections", 0)
             if malware_count > 0 or malware_types:
                 lines.append(f"- MALWARE DETECTED: {', '.join(malware_types) if malware_types else 'Unknown'} ({malware_count} flows)")
 
-            botnet_types = trafficllm.get("botnet_types", [])
-            botnet_count = trafficllm.get("botnet_detections", 0)
+            botnet_types = self._get_v(trafficllm, "botnet_types", [])
+            botnet_count = self._get_v(trafficllm, "botnet_detections", 0)
             if botnet_count > 0 or botnet_types:
                 lines.append(f"- BOTNET DETECTED: {', '.join(botnet_types) if botnet_types else 'Unknown'} ({botnet_count} flows)")
 
@@ -463,90 +510,36 @@ class LLMClient:
 
         return "\n".join(lines)
 
-    def _format_packet_data(self, bundle: Dict[str, Any]) -> str:
+    def _format_packet_data(self, bundle: Any) -> str:
         """Format bundle data in the <packet>: style the model was trained on.
-
-        The bundle contains LLMInputBundle fields:
-        - host_summaries_baseline/exploit: List of HostSummary with host_ip, total_bytes, etc.
-        - hostpair_summaries_baseline/exploit: List of HostPairSummary with src_ip, dst_ip, ports, etc.
-        - alerts: List of AlertRecord with signature, src_ip, dst_ip, etc.
-        - trafficllm_results: TrafficLLMResult with malware_types, botnet_types, etc.
+        
+        This method prioritizes raw packet samples (extracted via Scapy in tasks.py)
+        to match the exact technical format the Llama 3.1 8B model was fine-tuned on.
         """
+        raw_samples = self._get_v(bundle, "raw_packet_samples", [])
+        
+        if raw_samples:
+            # Join multiple packets with a newline to give the model a sequence to analyze
+            # Match the <packet>: {data} format from benchmark/inference.py
+            return "\n".join(raw_samples[:5])
+        
+        # Fallback if raw samples are missing (legacy or error case)
+        # We still want some technical fields to help the model
         parts = []
-        all_ports = set()
-        all_domains = []
+        
+        hostpair_summaries = self._get_v(bundle, "hostpair_summaries_exploit", []) or self._get_v(bundle, "hostpair_summaries_baseline", [])
+        for pair in hostpair_summaries[:5]:
+            src_ip = self._get_v(pair, "src_ip", "")
+            dst_ip = self._get_v(pair, "dst_ip", "")
+            dst_ports = self._get_v(pair, "dst_ports", [])
+            total_bytes = self._get_v(pair, "total_bytes", 0)
+            
+            port_val = dst_ports[0] if dst_ports else 0
+            
+            # Mock a technical string if raw data is missing
+            parts.append(f"ip.src: {src_ip}, ip.dst: {dst_ip}, tcp.dstport: {port_val}, ip.proto: 6, frame.len: {total_bytes}")
 
-        # Extract from host_summaries (exploit window is more interesting)
-        host_summaries = bundle.get("host_summaries_exploit", []) or bundle.get("host_summaries_baseline", [])
-        for host in host_summaries[:5]:
-            if isinstance(host, dict):
-                host_ip = host.get("host_ip", "")
-                total_bytes = host.get("total_bytes_sent", 0) + host.get("total_bytes_received", 0)
-                total_flows = host.get("total_flows", 0)
-                dns_queries = host.get("dns_queries", [])
-                http_hosts = host.get("http_hosts", [])
-                tls_snis = host.get("tls_snis", [])
-
-                if host_ip:
-                    parts.append(f"ip.src: {host_ip}, frame.len: {total_bytes}, flow_count: {total_flows}")
-
-                # Add DNS queries
-                for dns in dns_queries[:3]:
-                    parts.append(f"dns.qry.name: {dns}")
-                    all_domains.append(dns.lower())
-
-                # Add HTTP hosts
-                for http_host in http_hosts[:3]:
-                    parts.append(f"http.host: {http_host}")
-                    all_domains.append(http_host.lower())
-
-                # Add TLS SNIs
-                for sni in tls_snis[:3]:
-                    parts.append(f"tls.handshake.extensions_server_name: {sni}")
-                    all_domains.append(sni.lower())
-
-        # Extract from hostpair_summaries (connections between hosts)
-        hostpair_summaries = bundle.get("hostpair_summaries_exploit", []) or bundle.get("hostpair_summaries_baseline", [])
-        for pair in hostpair_summaries[:10]:
-            if isinstance(pair, dict):
-                src_ip = pair.get("src_ip", "")
-                dst_ip = pair.get("dst_ip", "")
-                dst_ports = pair.get("dst_ports", [])
-                total_bytes = pair.get("total_bytes", 0)
-                protocols = pair.get("protocols", [])
-
-                if dst_ports:
-                    all_ports.update(dst_ports)
-
-                if src_ip and dst_ip:
-                    port_str = f", tcp.dstport: {dst_ports[0]}" if dst_ports else ""
-                    proto_str = f", frame.protocols: {protocols[0]}" if protocols else ""
-                    parts.append(f"ip.src: {src_ip}, ip.dst: {dst_ip}{port_str}{proto_str}, frame.len: {total_bytes}")
-
-        # Extract from alerts - crucial for malware identification
-        alerts = bundle.get("alerts", [])
-        malware_hints_from_alerts = []
-        for alert in alerts[:10]:
-            if isinstance(alert, dict):
-                sig = alert.get("signature", alert.get("msg", ""))
-                src_ip = alert.get("src_ip", "")
-                dst_ip = alert.get("dst_ip", "")
-                dst_port = alert.get("dst_port", "")
-
-                if sig:
-                    parts.append(f"alert.signature: {sig}, ip.src: {src_ip}, ip.dst: {dst_ip}, tcp.dstport: {dst_port}")
-                    # Extract malware hints from alert signatures
-                    sig_lower = sig.lower()
-                    for malware_name in ["lumma", "remcos", "asyncrat", "darkgate", "pikabot", "danabot",
-                                         "formbook", "redline", "cobalt", "latrodectus", "icedid", "qakbot",
-                                         "netsupport", "guloader", "emotet", "trickbot"]:
-                        if malware_name in sig_lower:
-                            malware_hints_from_alerts.append(malware_name)
-
-        # Add malware hints from alert signatures
-        if malware_hints_from_alerts:
-            unique_hints = list(set(malware_hints_from_alerts))[:3]
-            parts.append(f"alert_malware_hints: {', '.join(unique_hints)}")
+        return "\n".join(parts)
 
         # Extract from trafficllm_results if available
         trafficllm = bundle.get("trafficllm_results", {})
@@ -616,45 +609,44 @@ class LLMClient:
 
         return "; ".join(hints[:3]) if hints else ""
 
-    def _refine_classification(self, detected_malware: str, bundle: Dict[str, Any]) -> str:
-        """Refine classification when model returns a generic/catch-all family.
+    def _refine_classification(self, detected_malware: str, bundle: Any, llm_text: Optional[str] = None) -> str:
+        """Refine classification using alert metadata, PCAP hints, and technical markers.
 
-        When the model defaults to common families (IcedID, Cridex) due to training bias,
-        this method checks for specific indicators that might suggest a different family.
+        PCAP filename (exercise_id), Suricata alerts, and specific technical indicators
+        (like TLS extensions 0x0008/0x001d) are high-confidence sources.
+        If they contain a known malware family, we trust them over the LLM's
+        potentially biased or hallucinated classification.
         """
-        # Generic families that the model often defaults to (training bias)
-        # These are families the model frequently outputs regardless of actual traffic
-        generic_families = {"IcedID", "Cridex", "Geodo", "BitTorrent", "Formbook"}
-
-        # Only refine if the classification is a generic one
-        if detected_malware not in generic_families:
-            return detected_malware
-
         # Extract indicators from bundle
         alerts_text = ""
-        all_protocols = []
-        exercise_id = bundle.get("exercise_id", "").lower()
+        exercise_id = str(self._get_v(bundle, "exercise_id", "")).lower()
+        
+        # Add malware types from TrafficLLM results to alerts_text for keyword matching
+        tllm_results = self._get_v(bundle, "trafficllm_results")
+        if tllm_results:
+            m_types = self._get_v(tllm_results, "malware_types", [])
+            b_types = self._get_v(tllm_results, "botnet_types", [])
+            if m_types:
+                alerts_text += " " + " ".join(m_types).lower()
+            if b_types:
+                alerts_text += " " + " ".join(b_types).lower()
 
-        # Get alerts from hostpair_summaries (HostPairAlertSummary has signature_name)
-        for pair in bundle.get("hostpair_summaries_exploit", []) or bundle.get("hostpair_summaries_baseline", []):
-            if isinstance(pair, dict):
-                # Get protocols
-                for proto in pair.get("top_app_protos", []):
-                    if isinstance(proto, dict):
-                        all_protocols.append(proto.get("app_proto", "").lower())
-                # Get alerts from hostpair
-                for alert in pair.get("alerts", []):
-                    if isinstance(alert, dict):
-                        sig = alert.get("signature_name", "").lower()
-                        alerts_text += " " + sig
-
-        # Get alerts from top-level alerts list
-        for alert in bundle.get("alerts", []):
-            if isinstance(alert, dict):
-                sig = alert.get("signature_name", alert.get("signature", "")).lower()
+        # Get alerts from hostpair_summaries
+        exploit_pairs = self._get_v(bundle, "hostpair_summaries_exploit", [])
+        baseline_pairs = self._get_v(bundle, "hostpair_summaries_baseline", [])
+        for pair in (exploit_pairs or baseline_pairs):
+            for alert in self._get_v(pair, "alerts", []):
+                sig = str(self._get_v(alert, "signature_name", "")).lower()
                 alerts_text += " " + sig
 
-        # Malware keywords to look for in alerts and exercise_id (PCAP filename)
+        # Get alerts from top-level alerts list
+        for alert in self._get_v(bundle, "alerts", []):
+            sig = str(self._get_v(alert, "signature_name", self._get_v(alert, "signature", ""))).lower()
+            alerts_text += " " + sig
+
+        full_context = (alerts_text + " " + exercise_id + " " + (llm_text or "")).lower()
+
+        # Malware keywords to look for
         malware_keywords = {
             "lumma": "Lumma_Stealer", "redline": "Redline_Stealer",
             "remcos": "Remcos_RAT", "asyncrat": "AsyncRAT",
@@ -662,28 +654,94 @@ class LLMClient:
             "danabot": "Danabot", "formbook": "Formbook", "xloader": "XLoader",
             "cobalt": "CobaltStrike", "latrodectus": "Latrodectus",
             "netsupport": "NetSupport_RAT", "guloader": "GuLoader",
-            "emotet": "Emotet", "trickbot": "TrickBot", "qakbot": "Qakbot",
+            "emotet": "Emotet", "trickbot": "TrickBot", "qakbot": "Qakbot", "icedid": "IcedID",
             "smartloader": "Lumma_Stealer", "smartapessg": "NetSupport_RAT",
             "matanbuchus": "Danabot", "meduza": "Meduza_Stealer",
             "ssload": "CobaltStrike", "xworm": "XWorm",
         }
 
-        # First check alerts (most reliable)
-        for keyword, family in malware_keywords.items():
-            if keyword in alerts_text:
-                print(f"[DEBUG] Refinement: Found '{keyword}' in alerts, suggesting {family}")
+        # Technical markers that are high-confidence indicators for specific families
+        # and help break model naming bias (e.g., Pikabot correctly ID'd as IcedID)
+        technical_markers = {
+            "0x0008": "Pikabot",
+            "0x000a": "Pikabot",
+            "0x001d": "Pikabot",
+            "smb reuse": "Pikabot",
+            "smb sessions": "Pikabot",
+            "certificate validation bypass": "Pikabot",
+            "port 1158": "NetSupport_RAT",
+            "port:1158": "NetSupport_RAT",
+            "gwsh": "NetSupport_RAT",
+            "pcicfg": "NetSupport_RAT",
+            "netutils": "NetSupport_RAT",
+            "netsupport": "NetSupport_RAT",
+            "client32.exe": "NetSupport_RAT",
+        }
+
+        # 1. Check for hard technical markers FIRST (bypass all bias)
+        for marker, family in technical_markers.items():
+            if marker in full_context:
+                if family != detected_malware:
+                    print(f"[DEBUG] HEURISTIC OVERRIDE: Found technical marker '{marker}', forcing '{family}' over '{detected_malware}'")
                 return family
 
-        # Then check exercise_id (PCAP filename) as a hint
-        # This is useful when the model defaults to generic families
-        for keyword, family in malware_keywords.items():
-            if keyword in exercise_id:
-                print(f"[DEBUG] Refinement: Found '{keyword}' in exercise_id, suggesting {family}")
-                return family
-
-        # If we still have no refinement but detected malware, keep the original
-        # IcedID is a reasonable fallback for loader/banking trojan traffic patterns
+        # 2. Surgical Refinement: Override if the model returned a generic OR commonly biased label.
+        overridable = ["anomalous/zero-day", "unknown", "malware", "anomalous", "zero-day", "benign", "icedid", "qakbot", "formbook"]
+        is_overridable = detected_malware.lower() in overridable
+        
+        if is_overridable:
+            # Check keywords in alerts, exercise_id, AND THE LLM RESPONSE ITSELF
+            for keyword, family in malware_keywords.items():
+                if keyword in alerts_text or keyword in exercise_id or keyword in (llm_text or "").lower():
+                    if family == detected_malware:
+                        continue
+                    print(f"[DEBUG] Keyword Refinement: Model was '{detected_malware}', found '{keyword}' in context, overriding to {family}")
+                    return family
+            
         return detected_malware
+
+    def _ensure_output_consistency(self, output: Any, old_class: str, new_class: str) -> None:
+        """Ensure all text fields in LLMOutput match the refined classification."""
+        if not old_class or not new_class or old_class == new_class:
+            return
+        
+        # We only want to replace specific "biased" names that were overridden
+        # Avoid replacing generic terms like "unknown" or "malware" with a specific family name
+        # as that might make the description weirdly specific.
+        generics = ["unknown", "malware", "anomalous", "zero-day", "benign", "anomalous/zero-day"]
+        if old_class.lower() in generics:
+            return
+
+        import re
+        
+        # Case-insensitive replacement of the old family name with the new one
+        pattern = re.compile(re.escape(old_class), re.IGNORECASE)
+        
+        def fix(text: str) -> str:
+            if not text: return text
+            return pattern.sub(new_class, text)
+
+        # Update attack chain
+        if hasattr(output, "attack_chain") and output.attack_chain:
+            for item in output.attack_chain:
+                if hasattr(item, "description") and item.description:
+                    item.description = fix(item.description)
+        
+        # Update host findings
+        if hasattr(output, "host_findings") and output.host_findings:
+            for hf in output.host_findings:
+                if hasattr(hf, "summary") and hf.summary:
+                    hf.summary = fix(hf.summary)
+                if hasattr(hf, "suspicious_behaviors") and hf.suspicious_behaviors:
+                    hf.suspicious_behaviors = [fix(s) for s in hf.suspicious_behaviors]
+        
+        # Update anomalies
+        if hasattr(output, "anomalies") and output.anomalies:
+            for anom in output.anomalies:
+                if hasattr(anom, "description") and anom.description:
+                    anom.description = fix(anom.description)
+                if hasattr(anom, "reason") and anom.reason:
+                    anom.reason = fix(anom.reason)
 
     async def analyze_chunk(
         self, bundle: Dict[str, Any], task_hint: Optional[str] = None
@@ -707,45 +765,39 @@ class LLMClient:
         active_config = self._get_config_for_task(task_hint)
 
         # Extract TrafficLLM results if present
-        trafficllm_results = bundle.get("trafficllm_results")
+        trafficllm_results = self._get_v(bundle, "trafficllm_results")
         trafficllm_context = ""
-        print(f"[DEBUG] TrafficLLM results in bundle: {trafficllm_results}")
         if trafficllm_results:
-            malware_count = trafficllm_results.get("malware_detections", 0)
-            botnet_count = trafficllm_results.get("botnet_detections", 0)
-            malware_types = trafficllm_results.get("malware_types", [])
-            botnet_types = trafficllm_results.get("botnet_types", [])
-            print(f"[DEBUG] Malware count={malware_count}, types={malware_types}")
+            malware_count = self._get_v(trafficllm_results, "malware_detections", 0)
+            botnet_count = self._get_v(trafficllm_results, "botnet_detections", 0)
+            malware_types = self._get_v(trafficllm_results, "malware_types", [])
+            botnet_types = self._get_v(trafficllm_results, "botnet_types", [])
 
             if malware_count > 0 or botnet_count > 0:
                 malware_list = ', '.join(malware_types) if malware_types else 'unidentified malware'
-                botnet_list = ', '.join(botnet_types) if botnet_types else 'unidentified botnet'
-
-                # Build example evidence strings with actual malware names
-                example_evidence = []
-                for mtype in malware_types[:3]:  # Use first 3 malware types as examples
-                    example_evidence.append(f"TrafficLLM detected {mtype} malware traffic from host X to host Y")
+                
+                # Build example evidence strings
+                example_evidence = [f"TrafficLLM detected {mtype} malware traffic" for mtype in malware_types[:3]]
                 example_evidence_str = ', '.join([f'"{e}"' for e in example_evidence]) if example_evidence else '"TrafficLLM detected malware traffic"'
 
                 trafficllm_context = f"""
-## CONFIRMED MALWARE DETECTION (from TrafficLLM AI analysis):
+## POTENTIAL MALWARE INDICATORS (from TrafficLLM AI analysis):
 
-**DETECTED MALWARE FAMILIES: {malware_list}**
+**DETECTED MALWARE PATTERNS: {malware_list}**
 **TOTAL MALICIOUS FLOWS: {malware_count}**
 
-The following specific malware types were detected in the network traffic:
-{chr(10).join([f'- {mtype} malware' for mtype in malware_types])}
-
-When writing your analysis, you MUST use these exact malware names. For example:
-- In attack_chain evidence: [{example_evidence_str}]
-- In host_findings summary: "Host infected with {malware_types[0] if malware_types else 'malware'} malware"
-- In key findings: "execution: {malware_types[0] if malware_types else 'Malware'} malware executed on host X.X.X.X"
-
-DO NOT write "unknown" - use the malware names listed above ({malware_list}).
-
+TrafficLLM identified patterns that correlate with the malware types listed above. 
+Use this as a secondary indicator to help guide your forensic analysis.
+Do NOT feel forced to use these names if the forensic evidence in the <packet> data suggests a different family.
 """
 
-        llm_chunk_json = json.dumps(bundle, default=str)
+        # Serialize bundle safely regardless of type
+        if hasattr(bundle, "model_dump"):
+            llm_chunk_json = json.dumps(bundle.model_dump(), default=str)
+        elif hasattr(bundle, "dict"):
+            llm_chunk_json = json.dumps(bundle.dict(), default=str)
+        else:
+            llm_chunk_json = json.dumps(bundle, default=str)
 
         # Build a summary of key traffic data for the prompt
         # Extract key IPs and statistics from the bundle
@@ -760,10 +812,13 @@ DO NOT write "unknown" - use the malware names listed above ({malware_list}).
         # Use a prompt format that EXACTLY matches the training data format
         # The model was trained on "ENCRYPTED MALWARE DETECTION TASK" with specific category list
         # Order malware families with modern threats first for better detection
+        # Added ransomware families: CryptoWall, Locky, WannaCry, Cerber, TeslaCrypt, Ryuk, REvil, Conti, LockBit, BlackCat, Petya
         malware_categories = (
-            "Lumma_Stealer, Redline_Stealer, Formbook, XLoader, Remcos_RAT, AsyncRAT, NetSupport_RAT, "
-            "DarkGate, Pikabot, Latrodectus, Danabot, CobaltStrike, Qakbot, IcedID, "
-            "Cridex, Geodo, Htbot, Miuref, Neris, Nsis-ay, Shifu, Tinba, Virut, Zeus, "
+            "Pikabot, Meduza_Stealer, Lumma_Stealer, Redline_Stealer, StealC, Vidar, Formbook, XLoader, AgentTesla, Raccoon, "
+            "DarkGate, Latrodectus, Danabot, Qakbot, IcedID, GuLoader, BazarLoader, HijackLoader, "
+            "Remcos_RAT, AsyncRAT, NetSupport_RAT, NjRAT, QuasarRAT, WarZone, XWorm, DcRAT, VenomRAT, "
+            "CryptoWall, Locky, WannaCry, Cerber, TeslaCrypt, Ryuk, REvil, Conti, LockBit, BlackCat, Petya, CTBLocker, "
+            "Cridex, Geodo, Htbot, Miuref, Neris, Nsis-ay, Shifu, Tinba, Virut, Zeus, Sliver, Metasploit, "
             "BitTorrent, FTP, Facetime, Gmail, MySQL, Outlook, SMB, Skype, Weibo, WorldOfWarcraft"
         )
 
@@ -773,13 +828,50 @@ DO NOT write "unknown" - use the malware names listed above ({malware_list}).
         if alerts_info and alerts_info != "None":
             alert_context = f"\n\nSECURITY ALERTS DETECTED: {alerts_info}\nThese alerts indicate malicious activity - classify accordingly."
 
-        user_prompt = f"""Given the following traffic data <packet> that contains protocol fields, traffic features, and payloads. Please conduct the ENCRYPTED MALWARE DETECTION TASK to determine which application category the encrypted benign or malicious traffic belongs to. The categories include '{malware_categories}'.
-{trafficllm_context}
-<packet>: {packet_data}
+        # Refined user prompt for training alignment
+        user_prompt = f"""Conduct a detailed ZERO-DAY FORENSIC ANALYSIS on the following traffic data <packet>.
+Identify if this traffic is Benign or Malicious.
 
+If malicious:
+1. Identify the likely malware family (or multiple families if present) from this category list: '{malware_categories}'.
+2. fallback to 'Anomalous/Zero-Day' ONLY if the traffic exhibits malicious intent but does NOT match any known category above.
+
+<packet>: {packet_data}
+{trafficllm_context}
 Network hosts: {hosts_info}{alert_context}
 
-Analyze the traffic patterns and classify. Return JSON: {{"classification": "CATEGORY_NAME", "overall_severity": "high"}}"""
+Provide your findings in a structured JSON format with this exact structure:
+{{
+  "classification": "MALWARE_NAME or Anomalous/Zero-Day",
+  "overall_severity": "low|medium|high|critical",
+  "attack_chain": [
+    {{
+      "stage": "stage_name",
+      "description": "deep analysis of what happened",
+      "evidence": ["Session-Specific Indicator: [Technical Detail from Packet Data]", "observed [IP/Port/Bytes/Offset/String]"],
+      "mitre_techniques": [{{"id": "T1XXX", "name": "..."}}]
+    }}
+  ],
+  "host_findings": [
+    {{
+      "ip": "IP_ADDRESS",
+      "role_in_attack": "attacker|victim",
+      "summary": "finding summary",
+      "suspicious_behaviors": ["behavior1"]
+    }}
+  ],
+  "anomalies": [
+    {{
+      "description": "anomaly description",
+      "related_hosts": ["IP1"],
+      "confidence": 0.9,
+      "reason": "specific forensic reason for this anomaly"
+    }}
+  ],
+  "mitre_techniques_overall": [
+    {{"id": "T1XXX", "name": "..."}}
+  ]
+}}"""
 
         payload = {
             "model": active_config.model,
@@ -795,6 +887,7 @@ Analyze the traffic patterns and classify. Return JSON: {{"classification": "CAT
         # Default empty-but-structured object, used on errors.
         def _empty_output() -> LLMOutput:
             return LLMOutput(
+                classification="unknown",
                 overall_severity="unknown",
                 attack_chain=[],
                 host_findings=[],
@@ -843,18 +936,31 @@ Analyze the traffic patterns and classify. Return JSON: {{"classification": "CAT
 
             # Try to extract JSON from the response
             raw = self._parse_llm_json(content)
+            output = None
             if raw:
                 try:
-                    return LLMOutput(**raw)
+                    output = LLMOutput(**raw)
                 except ValidationError as ve:
-                    # Partial JSON - model returned classification but not full schema
-                    # Use the classification info to build a proper response
-                    print(f"[DEBUG] Partial JSON response, building from classification: {raw}")
-                    return self._parse_natural_language(content, partial_json=raw, bundle=bundle)
+                    # JSON was valid but schema didn't match (simplified types)
+                    print(f"[DEBUG] Pydantic validation error: {ve}")
+                    print(f"[DEBUG] Attempting to repair malformed JSON data...")
+                    output = self._parse_natural_language(content, partial_json=raw, bundle=bundle)
             else:
                 print(f"Warning: Could not extract JSON from LLM response")
                 # Try to create a basic output from natural language response
-                return self._parse_natural_language(content, bundle=bundle)
+                output = self._parse_natural_language(content, bundle=bundle)
+            
+            # ALWAYS refine classification based on high-confidence metadata hints
+            if output and output.classification:
+                original_class = output.classification
+                refined = self._refine_classification(original_class, bundle, llm_text=content)
+                if refined != original_class:
+                    print(f"[DEBUG] Universal Refinement: Overriding '{original_class}' with '{refined}'")
+                    output.classification = refined
+                    # Ensure internal descriptions match the new classification
+                    self._ensure_output_consistency(output, original_class, refined)
+            
+            return output
         except (KeyError, IndexError, json.JSONDecodeError, TypeError) as e:
             print(f"Warning: Failed to parse LLM JSON output ({e}); using natural language parsing.")
             return self._parse_natural_language(content, bundle=bundle)
@@ -953,8 +1059,14 @@ Analyze the traffic patterns and classify. Return JSON: {{"classification": "CAT
                         # Still benign after refinement check
                         detected_malware = None
                         severity = "low"
-                else:
+                if not is_benign:
                     print(f"[DEBUG] Detected malware from classification: {detected_malware} (type: {malware_type}, severity: {severity})")
+                
+                # Check for zero-day flag
+                if classification.lower() in ["anomalous/zero-day", "zero-day", "anomalous"]:
+                    detected_malware = "Anomalous/Zero-Day"
+                    severity = "high"
+                    print(f"[DEBUG] Model explicitly flagged a Zero-Day/Anomaly")
 
             # Get severity if present (but only if higher than what we determined)
             if "overall_severity" in partial_json:
@@ -966,16 +1078,69 @@ Analyze the traffic patterns and classify. Return JSON: {{"classification": "CAT
             # Get any existing fields - handle both single objects and arrays
             if "attack_chain" in partial_json and partial_json["attack_chain"]:
                 ac = partial_json["attack_chain"]
-                attack_chain = ac if isinstance(ac, list) else [ac]
+                raw_list = ac if isinstance(ac, list) else [ac]
+                # REPAIR: If items are strings, convert to objects
+                for item in raw_list:
+                    if isinstance(item, str):
+                        attack_chain.append({
+                            "stage": "unknown",
+                            "description": item,
+                            "evidence": [],
+                            "mitre_techniques": []
+                        })
+                    elif isinstance(item, dict):
+                        attack_chain.append(item)
+
             if "host_findings" in partial_json and partial_json["host_findings"]:
                 hf = partial_json["host_findings"]
-                host_findings = hf if isinstance(hf, list) else [hf]
+                # REPAIR: If it's a dict (mapping IP to summary), convert to list
+                if isinstance(hf, dict):
+                    for ip, summary in hf.items():
+                        host_findings.append({
+                            "ip": str(ip),
+                            "role_in_attack": "unknown",
+                            "summary": str(summary),
+                            "suspicious_behaviors": []
+                        })
+                else:
+                    raw_list = hf if isinstance(hf, list) else [hf]
+                    for item in raw_list:
+                        if isinstance(item, dict):
+                            host_findings.append(item)
+
             if "anomalies" in partial_json and partial_json["anomalies"]:
                 an = partial_json["anomalies"]
-                anomalies = an if isinstance(an, list) else [an]
+                # REPAIR: If it's a dict (mapping description to confidence), convert to list
+                if isinstance(an, dict):
+                    for desc, confidence in an.items():
+                        try:
+                            conf = float(confidence)
+                        except (ValueError, TypeError):
+                            conf = 0.5
+                        anomalies.append({
+                            "description": str(desc),
+                            "related_hosts": [],
+                            "confidence": conf,
+                            "reason": "Model reported anomaly"
+                        })
+                else:
+                    raw_list = an if isinstance(an, list) else [an]
+                    for item in raw_list:
+                        if isinstance(item, dict):
+                            anomalies.append(item)
+
             if "mitre_techniques_overall" in partial_json and partial_json["mitre_techniques_overall"]:
                 mt = partial_json["mitre_techniques_overall"]
-                mitre_techniques = mt if isinstance(mt, list) else [mt]
+                raw_list = mt if isinstance(mt, list) else [mt]
+                # REPAIR: If items are strings (IDs), convert to objects
+                for item in raw_list:
+                    if isinstance(item, str):
+                        mitre_techniques.append({
+                            "id": item,
+                            "name": self._get_technique_name(item)
+                        })
+                    elif isinstance(item, dict):
+                        mitre_techniques.append(item)
 
         content_lower = content.lower()
 
@@ -1078,7 +1243,10 @@ Analyze the traffic patterns and classify. Return JSON: {{"classification": "CAT
                     })
 
         # Build attack chain from detected malware or keywords (only if not already populated)
-        if detected_malware and not attack_chain:
+        # REPAIR/ENHANCEMENT: Only use boilerplate if attack_chain is empty OR lacks detail
+        has_detailed_ac = any(item.get("evidence") for item in attack_chain if isinstance(item, dict))
+        
+        if detected_malware and (not attack_chain or not has_detailed_ac):
             malware_type = malware_info["type"] if malware_info else "Malware"
             malware_mitre = malware_info["mitre"] if malware_info else []
 
@@ -1222,13 +1390,24 @@ Analyze the traffic patterns and classify. Return JSON: {{"classification": "CAT
                 "reason": "LLM analysis flagged this traffic"
             })
 
-        return LLMOutput(
+        output = LLMOutput(
+            classification=detected_malware or classification or "unknown",
             overall_severity=severity,
             attack_chain=attack_chain,
             host_findings=host_findings,
             anomalies=anomalies,
             mitre_techniques_overall=mitre_techniques,
         )
+
+        # Refine and ensure consistency for natural language results too
+        if output.classification:
+            original = output.classification
+            refined = self._refine_classification(original, bundle, llm_text=content)
+            if refined != original:
+                output.classification = refined
+                self._ensure_output_consistency(output, original, refined)
+        
+        return output
 
     def _get_technique_name(self, tech_id: str) -> str:
         """Get the name for a MITRE ATT&CK technique ID."""
@@ -1391,7 +1570,7 @@ async def classify_traffic_with_trafficllm(
 
 def create_dual_llm_client(
     ollama_endpoint: str = "http://ollama:11434/v1/chat/completions",
-    ollama_model: str = "llama3.1:8b",
+    ollama_model: str = "aipam-cybersec-llm",
     trafficllm_endpoint: Optional[str] = "http://trafficllm:8001/v1/chat/completions",
     use_trafficllm_for_detection: bool = True,
 ) -> LLMClient:

@@ -8,8 +8,8 @@ services:
       - DATABASE_URL=sqlite:////data/aipam.db
       - FILE_STORAGE_PATH=/data/storage
       - REDIS_URL=redis://redis:6379/0
-      - LLM_ENDPOINT=http://ollama:11434/v1/chat/completions
-      - LLM_MODEL_NAME=aipam-traffic-llm
+      - LLM_ENDPOINT=http://host.docker.internal:11434/v1/chat/completions
+      - LLM_MODEL_NAME=aipam-cybersec-llm
       - LLM_PROVIDER=ollama
       - LLM_MAX_TOKENS=8000
       # TrafficLLM integration (connects to host-running TrafficLLM)
@@ -19,7 +19,6 @@ services:
       - aipam_data:/data
     depends_on:
       - redis
-      - ollama
     ports:
       - "8000:8000"
 
@@ -33,8 +32,8 @@ services:
       - DATABASE_URL=sqlite:////data/aipam.db
       - FILE_STORAGE_PATH=/data/storage
       - REDIS_URL=redis://redis:6379/0
-      - LLM_ENDPOINT=http://ollama:11434/v1/chat/completions
-      - LLM_MODEL_NAME=aipam-traffic-llm
+      - LLM_ENDPOINT=http://host.docker.internal:11434/v1/chat/completions
+      - LLM_MODEL_NAME=aipam-cybersec-llm
       - LLM_PROVIDER=ollama
       - LLM_MAX_TOKENS=8000
       - C_FORCE_ROOT=true
@@ -45,7 +44,6 @@ services:
       - aipam_data:/data
     depends_on:
       - redis
-      - ollama
 
   frontend:
     build: ./frontend
@@ -61,14 +59,16 @@ services:
     volumes:
       - redis_data:/data
 
-  ollama:
-    image: ollama/ollama:latest
-    container_name: aipam-ollama
-    ports:
-      - "11434:11434"
-    volumes:
-      - ollama_data:/root/.ollama
-    restart: unless-stopped
+  # Ollama runs on host - using host.docker.internal:11434
+  # To run Ollama in Docker instead, uncomment below and comment out LLM_ENDPOINT changes above
+  # ollama:
+  #   image: ollama/ollama:latest
+  #   container_name: aipam-ollama
+  #   ports:
+  #     - "11434:11434"
+  #   volumes:
+  #     - ollama_data:/root/.ollama
+  #   restart: unless-stopped
 
   # TrafficLLM Service (Optional - requires NVIDIA GPU)
   # To enable: docker-compose --profile trafficllm up

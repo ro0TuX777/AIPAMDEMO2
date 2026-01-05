@@ -174,16 +174,19 @@ export const JobDetailPage: React.FC = () => {
                 <h2 className="text-lg font-semibold text-slate-100 mb-4">Executive Summary</h2>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                   <div className="p-4 bg-slate-950 rounded border border-slate-800">
+                    <div className="text-sm text-slate-400 mb-1">Classification</div>
+                    <div className="text-xl font-bold text-slate-100 mb-2">
+                      {result.summary.classification || "Unknown"}
+                    </div>
                     <div className="text-sm text-slate-400 mb-1">Overall Severity</div>
                     <div
                       className={`text-2xl font-bold capitalize
-                      ${
-                        result.summary.severity === "high" || result.summary.severity === "critical"
+                      ${result.summary.severity === "high" || result.summary.severity === "critical"
                           ? "text-red-400"
                           : result.summary.severity === "medium"
                             ? "text-orange-400"
                             : "text-emerald-400"
-                      }`}
+                        }`}
                     >
                       {result.summary.severity}
                     </div>
@@ -228,6 +231,63 @@ export const JobDetailPage: React.FC = () => {
                   {result.summary.mitre_techniques.length === 0 && (
                     <div className="text-slate-500 text-sm">No techniques mapped.</div>
                   )}
+                </div>
+              </div>
+
+              {/* Forensic Evidence */}
+              <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-6">
+                <h2 className="text-lg font-semibold text-slate-100 mb-4">Forensic Evidence & Anomalies</h2>
+                <div className="space-y-4">
+                  {(() => {
+                    const chunks = result.raw?.llm_analysis_raw?.chunks || [];
+                    const seenAnomalies = new Set();
+                    const anomalyList: any[] = [];
+
+                    chunks.forEach((chunk: any) => {
+                      (chunk.anomalies || []).forEach((a: any) => {
+                        if (a && a.description && !seenAnomalies.has(a.description)) {
+                          seenAnomalies.add(a.description);
+                          anomalyList.push(a);
+                        }
+                      });
+                    });
+
+                    if (anomalyList.length === 0) {
+                      return <div className="text-slate-500 text-sm italic">No detailed evidence available for this session.</div>;
+                    }
+
+                    return anomalyList.map((a, i) => (
+                      <div key={i} className="p-4 bg-slate-950/50 rounded border border-slate-800/50 hover:border-emerald-500/30 transition-colors">
+                        <div className="font-semibold text-emerald-400 mb-2 truncate" title={a.description}>{a.description}</div>
+                        <div className="flex flex-wrap gap-4 text-xs text-slate-400 mb-3">
+                          <div className="flex items-center gap-1.5">
+                            <span className="w-1.5 h-1.5 rounded-full bg-blue-400 shadow-[0_0_8px_rgba(96,165,250,0.5)]"></span>
+                            Confidence: {typeof a.confidence === 'number' ? (a.confidence * 100).toFixed(0) : 'N/A'}%
+                          </div>
+                          {a.related_hosts?.length > 0 && (
+                            <div className="flex items-center gap-1.5">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]"></span>
+                              Hosts: {a.related_hosts.join(", ")}
+                            </div>
+                          )}
+                        </div>
+                        {a.reason && (
+                          <div className="text-sm text-slate-300 bg-slate-900/80 p-3 rounded border border-slate-800/40">
+                            <span className="text-slate-500 font-semibold mr-2 uppercase text-[10px] tracking-wider">Reason:</span>
+                            {a.reason}
+                          </div>
+                        )}
+                        <div className="mt-3 flex justify-end">
+                          <button
+                            onClick={() => askAbout(`Explain the forensic significance of this anomaly: ${a.description}. Reason: ${a.reason}`)}
+                            className="text-[10px] uppercase tracking-widest text-blue-400 hover:text-blue-300 transition-colors flex items-center gap-1"
+                          >
+                            Investigate Further <span>→</span>
+                          </button>
+                        </div>
+                      </div>
+                    ));
+                  })()}
                 </div>
               </div>
             </div>

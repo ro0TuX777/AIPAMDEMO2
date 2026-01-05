@@ -22,9 +22,9 @@ from trl import SFTTrainer, SFTConfig
 
 # Configuration
 MODEL_NAME = "meta-llama/Llama-3.1-8B-Instruct"
-EXISTING_LORA = "./aipam-llama-lora"  # Use None to start fresh
-OUTPUT_DIR = "./aipam-llama-lora-v2"
-MERGED_DIR = "./aipam-llama-merged-v2"
+EXISTING_LORA = "./aipam-llama-lora-v2"  # Continue from v2
+OUTPUT_DIR = "./aipam-llama-lora-v3"
+MERGED_DIR = "./aipam-llama-merged-v3"
 
 # Training hyperparameters
 NUM_EPOCHS = 1
@@ -95,8 +95,8 @@ def main():
     # Load dataset
     print("\nLoading training data...")
     dataset = load_dataset("json", data_files={
-        "train": "data/new_unified_train.jsonl",
-        "validation": "data/new_unified_valid.jsonl"
+        "train": "data/final_train.jsonl",
+        "validation": "data/final_valid.jsonl"
     })
     print(f"Training samples: {len(dataset['train'])}")
     print(f"Validation samples: {len(dataset['validation'])}")
@@ -130,13 +130,13 @@ def main():
         bf16=True,
         gradient_checkpointing=True,
         report_to="none",
-        max_seq_length=MAX_SEQ_LENGTH,
         dataset_text_field="text",
+        max_length=MAX_SEQ_LENGTH,
     )
 
     trainer = SFTTrainer(
         model=model, train_dataset=dataset["train"], eval_dataset=dataset["validation"],
-        tokenizer=tokenizer, args=sft_config,
+        processing_class=tokenizer, args=sft_config,
     )
     
     # Find latest checkpoint if resuming

@@ -1,0 +1,156 @@
+{
+  "timestamp": "2025-12-27T10:45:04.156513",
+  "model_name": "aipam-cybersec-llm",
+  "total_samples": 10,
+  "correct": 0,
+  "accuracy": 0.0,
+  "malicious_detection_accuracy": 1.0,
+  "avg_inference_time": 3.0932689905166626,
+  "precision_per_family": {
+    "BazarLoader": 0.0,
+    "TrickBot": 0.0,
+    "Ursnif": 0.0,
+    "IcedID": 0.0,
+    "RigEK": 0.0,
+    "Raccoon": 0.0,
+    "Botnet": 0.0,
+    "Qakbot": 0.0,
+    "Emotet": 0.0
+  },
+  "recall_per_family": {
+    "BazarLoader": 0.0,
+    "TrickBot": 0.0,
+    "Ursnif": 0.0,
+    "IcedID": 0.0,
+    "RigEK": 0.0,
+    "Raccoon": 0.0,
+    "Botnet": 0.0,
+    "Qakbot": 0.0,
+    "Emotet": 0.0
+  },
+  "f1_per_family": {
+    "BazarLoader": 0.0,
+    "TrickBot": 0.0,
+    "Ursnif": 0.0,
+    "IcedID": 0.0,
+    "RigEK": 0.0,
+    "Raccoon": 0.0,
+    "Botnet": 0.0,
+    "Qakbot": 0.0,
+    "Emotet": 0.0
+  },
+  "confusion_matrix": {
+    "Qakbot": {
+      "Botnet": 1
+    },
+    "TrickBot": {
+      "Botnet": 1
+    },
+    "RigEK": {
+      "BazarLoader": 1
+    },
+    "Ursnif": {
+      "Raccoon": 1,
+      "Botnet": 1
+    },
+    "IcedID": {
+      "Botnet": 2
+    },
+    "Emotet": {
+      "Botnet": 2,
+      "BazarLoader": 1
+    }
+  },
+  "results": [
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Qakbot/2019-12-27-Qakbot-infection-traffic.pcap",
+      "ground_truth": "Qakbot",
+      "prediction": "Botnet",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 2.733135938644409,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/TrickBot/2019-12-26-IcedID-infection-with-Trickbot-gtag-tin233.pcap",
+      "ground_truth": "TrickBot",
+      "prediction": "Botnet",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 2.9655539989471436,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/RigEK/2019-12-23-Rig-EK-sends-a-payload-I-cannot-identify.pcap",
+      "ground_truth": "RigEK",
+      "prediction": "BazarLoader",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 2.2513720989227295,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2019-12-23-Ursnif-example-1-infection-traffic.pcap",
+      "ground_truth": "Ursnif",
+      "prediction": "Raccoon",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 3.8214192390441895,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/IcedID/2019-12-23-IcedID-infection-from-malspam-1st-run.pcap",
+      "ground_truth": "IcedID",
+      "prediction": "Botnet",
+      "confidence": 0.5,
+      "is_correct": false,
+      "inference_time": 2.9693050384521484,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-12-20-Emotet-epoch-2-with-Trickbot-mor70.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "Botnet",
+      "confidence": 0.7,
+      "is_correct": false,
+      "inference_time": 7.786511659622192,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/IcedID/2019-12-19-Ursnif-infection-with-IcedID-and-Valak.pcap",
+      "ground_truth": "IcedID",
+      "prediction": "Botnet",
+      "confidence": 0.7,
+      "is_correct": false,
+      "inference_time": 3.1676745414733887,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-12-16-Emotet-infection-with-spambot-traffic.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "BazarLoader",
+      "confidence": 0.6,
+      "is_correct": false,
+      "inference_time": 1.6962041854858398,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Emotet/2019-12-16-Emotet-epoch-3-infection-with-Trickbot-gtag-mor66.pcap",
+      "ground_truth": "Emotet",
+      "prediction": "Botnet",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 1.587744951248169,
+      "error": null
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/old/Ursnif/2019-12-11-Ursnif-infection-with-Dridex.pcap",
+      "ground_truth": "Ursnif",
+      "prediction": "Botnet",
+      "confidence": 0.4,
+      "is_correct": false,
+      "inference_time": 1.953768253326416,
+      "error": null
+    }
+  ]
+}

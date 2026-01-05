@@ -1,0 +1,389 @@
+{
+  "description": "Benchmark using samples from trained malware families",
+  "total_samples": 65,
+  "families": [
+    "AgentTesla",
+    "Astaroth",
+    "AsyncRAT",
+    "BazarLoader",
+    "BumbleBee",
+    "CobaltStrike",
+    "Danabot",
+    "DarkGate",
+    "Emotet",
+    "Formbook",
+    "GuLoader",
+    "IcedID",
+    "Latrodectus",
+    "Lumma_Stealer",
+    "Matanbuchus",
+    "Meduza_Stealer",
+    "NetSupport_RAT",
+    "Pikabot",
+    "Qakbot",
+    "Raccoon",
+    "Redline_Stealer",
+    "Remcos_RAT",
+    "SSLoad",
+    "Sliver",
+    "SocGholish",
+    "TrickBot",
+    "Ursnif"
+  ],
+  "samples_per_family": {
+    "AgentTesla": 3,
+    "Astaroth": 3,
+    "AsyncRAT": 1,
+    "BazarLoader": 3,
+    "BumbleBee": 3,
+    "CobaltStrike": 3,
+    "Danabot": 3,
+    "DarkGate": 3,
+    "Emotet": 3,
+    "Formbook": 3,
+    "GuLoader": 1,
+    "IcedID": 3,
+    "Latrodectus": 2,
+    "Lumma_Stealer": 3,
+    "Matanbuchus": 3,
+    "Meduza_Stealer": 1,
+    "NetSupport_RAT": 1,
+    "Pikabot": 3,
+    "Qakbot": 3,
+    "Raccoon": 1,
+    "Redline_Stealer": 1,
+    "Remcos_RAT": 3,
+    "SSLoad": 3,
+    "Sliver": 2,
+    "SocGholish": 1,
+    "TrickBot": 3,
+    "Ursnif": 3
+  },
+  "samples": [
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/AgentTesla/2023-11-22-AgentTesla-infection-FTP-data-exfil.pcap",
+      "label": "AgentTesla",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/AgentTesla/2023-09-21-AgentTesla-traffic-expertsconsultgh.co.pcap",
+      "label": "AgentTesla",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/AgentTesla/2024-12-04-AgentTesla-variant-using-FTP.pcap",
+      "label": "AgentTesla",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/Astaroth/2021-12-23-Astaroth-Guildma-infection-traffic.pcap",
+      "label": "Astaroth",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/Astaroth/2023-12-11-Astaroth-Guildma-infection-trafffic.pcap",
+      "label": "Astaroth",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/Astaroth/2022-08-19-Astaroth-Guildma-infection-traffic.pcap",
+      "label": "Astaroth",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/AsyncRAT/2024-03-14-AsyncRAT-and-XWorm-infection-traffic.pcap",
+      "label": "AsyncRAT",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/BazarLoader/2021-11-03-TA551-BazarLoader-with-Cobalt-Strike.pcap",
+      "label": "BazarLoader",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/BazarLoader/2021-08-19-BazarLoader-with-CobaltStrike.pcap",
+      "label": "BazarLoader",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/BazarLoader/2021-08-30-TA551-BazarLoader-infection.pcap",
+      "label": "BazarLoader",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/BumbleBee/2022-06-14-TA578-Bumblebee-with-Cobalt-Strike.pcap",
+      "label": "BumbleBee",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/BumbleBee/2022-06-09-TA578-Bumblebee-infection-with-Cobalt-Strike.pcap",
+      "label": "BumbleBee",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/BumbleBee/2022-11-17-Bumblebee-infection-traffic.pcap",
+      "label": "BumbleBee",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/CobaltStrike/2021-09-21-Squirrelwaffle-Loader-with-Cobalt-Strike.pcap",
+      "label": "CobaltStrike",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/CobaltStrike/2021-06-15-Hancitor-with-Ficker-Stealer-and-Cobalt-Strike.pcap",
+      "label": "CobaltStrike",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/CobaltStrike/2020-12-14-Hancitor-infection-with-Cobalt-Strike-and-Ficker-Stealer.pcap",
+      "label": "CobaltStrike",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/Danabot/2024-03-26-Matanbuchus-infection-with-Danabot.pcap",
+      "label": "Danabot",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/Danabot/2024-02-14-Danabot-infection-traffic.pcap",
+      "label": "Danabot",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/Danabot/2023-08-03-malicious-ad-to-Danabot-traffic.pcap",
+      "label": "Danabot",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/DarkGate/2023-10-04-DarkGate-infection.pcap",
+      "label": "DarkGate",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/DarkGate/2023-10-12-DarkGate-infection-traffic.pcap",
+      "label": "DarkGate",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/DarkGate/2023-11-30-DarkGate-infection-traffic.pcap",
+      "label": "DarkGate",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/Emotet/2021-11-18-Emotet-infection-with-spambot-activity-carved-and-sanitized.pcap",
+      "label": "Emotet",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/Emotet/2020-12-28-1st-run-Emotet-infection-with-Trickbot.pcap",
+      "label": "Emotet",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/Emotet/2020-12-29-Emotet-infection-with-Trickbot-and-spambot-activity.pcap",
+      "label": "Emotet",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/Formbook/2020-07-09-Formbook-infection-traffic.pcap",
+      "label": "Formbook",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/Formbook/2023-06-24-Formbook-infection-traffic.pcap",
+      "label": "Formbook",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/Formbook/2023-06-27-Formbook-infection-traffic.pcap",
+      "label": "Formbook",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/GuLoader/2023-07-03-GuLoader-for-Formbook-infection-traffic.pcap",
+      "label": "GuLoader",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/IcedID/2020-07-07-Ursnif-infection-with-IcedID.pcap",
+      "label": "IcedID",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/IcedID/2022-08-31-IcedID-with-Cobalt-Strike-carved-and-sanitized.pcap",
+      "label": "IcedID",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/IcedID/2021-05-24-TA551-IcedID-infection-with-BackConnect-and-Anubis-VNC.pcap",
+      "label": "IcedID",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/Latrodectus/2024-02-09-Contact-Forms-campaign-Latrodectus-infection-traffic-with-Keyhole-VNC-carved.pcap",
+      "label": "Latrodectus",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/Latrodectus/2024-06-25-Latrodectus-infection-with-BackConnect-and-Keyhole-VNC.pcap",
+      "label": "Latrodectus",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/Lumma_Stealer/2024-03-07-Latrodectus-infection-with-Lumma-Stealer.pcap",
+      "label": "Lumma_Stealer",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/Lumma_Stealer/2023-10-11-Lumma-Stealer-infection-traffic.pcap",
+      "label": "Lumma_Stealer",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/Lumma_Stealer/2024-09-19-file-downloader-to-Lumma-Stealer.pcap",
+      "label": "Lumma_Stealer",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/Matanbuchus/2021-11-15-Matanbuchus-infection-with-obama128b-Qakbot-and-Cobalt-Strike.pcap",
+      "label": "Matanbuchus",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/Matanbuchus/2021-12-07-obama141-Qakbot-and-Matanbuchus-traffic.pcap",
+      "label": "Matanbuchus",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/Matanbuchus/2024-06-17-Matanbuchus-infection-with-Danbot-traffic.pcap",
+      "label": "Matanbuchus",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/Meduza_Stealer/2024-03-06-traffic-from-Piakbot-infection-with-Meduza-Stealer.pcap",
+      "label": "Meduza_Stealer",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/NetSupport_RAT/2024-12-17-SmartApeSG-to-NetSupport-RAT.pcap",
+      "label": "NetSupport_RAT",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/Pikabot/2023-11-02-Pikabot-infection-traffic.pcap",
+      "label": "Pikabot",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/Pikabot/2024-03-06-traffic-from-Piakbot-infection-with-Meduza-Stealer.pcap",
+      "label": "Pikabot",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/Pikabot/2023-12-18-TA577-Pikabot-infection-with-Cobalt-Strike.pcap",
+      "label": "Pikabot",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/Qakbot/2020-06-17-Qakbot-spx142-infection-traffic.pcap",
+      "label": "Qakbot",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/Qakbot/2023-06-22-initial-Obama271-Qakbot-infection-traffic.pcap",
+      "label": "Qakbot",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/Qakbot/2020-06-16-Qakbot-spx141-infection-traffic.pcap",
+      "label": "Qakbot",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/Raccoon/2021-09-23-Gozi-infection-with-Raccoon-part-1.pcap",
+      "label": "Raccoon",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/Redline_Stealer/2024-10-23-Redline-Stealer-infection-traffic.pcap",
+      "label": "Redline_Stealer",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/Remcos_RAT/2024-08-26-GuLoader-for-Remcos-RAT.pcap",
+      "label": "Remcos_RAT",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/Remcos_RAT/2021-09-03-GuLoader-for-possible-Remcos-RAT.pcap",
+      "label": "Remcos_RAT",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/Remcos_RAT/2023-06-26-guloader-or-modiloader-style-infection-for-Remcos-RAT.pcap",
+      "label": "Remcos_RAT",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/SSLoad/2024-04-17-TA578-SSLoad-infection.pcap",
+      "label": "SSLoad",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/SSLoad/2024-04-15-SSLoad-infection-traffic.pcap",
+      "label": "SSLoad",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/SSLoad/2024-04-18-SSLoad-with-follow-up-Cobalt-Strike-DLL.pcap",
+      "label": "SSLoad",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/Sliver/2021-10-20-TA551-pushes-Sliver.pcap",
+      "label": "Sliver",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/Sliver/2021-10-20-Stolen-Images-Evidence-campaign-pushes-Sliver.pcap",
+      "label": "Sliver",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/SocGholish/2024-02-21-SocGholish-AsyncRAT-infection.pcap",
+      "label": "SocGholish",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/TrickBot/2021-05-26-Trickbot-infection-with-Cobalt-Strike.pcap",
+      "label": "TrickBot",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/TrickBot/2020-06-16-Trickbot-gtag-ono47-infection-traffic.pcap",
+      "label": "TrickBot",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/TrickBot/2020-07-10-Trickbot-gtag-chil65-infection-traffic.pcap",
+      "label": "TrickBot",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/Ursnif/2021-10-06-Gozi-ISFB-Ursnif-infection.pcap",
+      "label": "Ursnif",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/Ursnif/2020-07-09-Ursnif-infection-traffic.pcap",
+      "label": "Ursnif",
+      "set": "trained_benchmark"
+    },
+    {
+      "pcap": "finetuning/trafficllm_training/pcaps/Ursnif/2021-06-18-TA551-Gozi-ISFB-Ursnif-infection-traffic.pcap",
+      "label": "Ursnif",
+      "set": "trained_benchmark"
+    }
+  ]
+}
