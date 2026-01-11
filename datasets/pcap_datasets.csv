@@ -1,0 +1,56 @@
+Dataset Name,Category,Download URL,Description,Size,Additional Info
+CICIDS2017,Academic & Research,https://www.cs.unb.ca/~alashkar/Data-sets.asp,"Benign and common attacks with labeled flows, includes HTTP/HTTPS/FTP/SSH/email protocols",Large,"Full PCAPs and CSV files available"
+CSE-CIC-IDS2018,Academic & Research,https://www.cs.unb.ca/~alashkar/Data-sets.asp,"DDoS attacks dataset with CICFlowMeter extracted features, 12 DDoS attack types",Large,"Training and testing sets, 80+ traffic features"
+CTU-13 Dataset,Academic & Research,https://www.stratosphereips.org/datasets-ctu13,"13 botnet scenarios with labeled normal, botnet, and background traffic",1.9GB,Bidirectional NetFlow files included
+CTU-13 Direct Download,Academic & Research,https://mcfp.felk.cvut.cz/publicDatasets/CTU-13-Dataset/CTU-13-Dataset.tar.bz2,Direct download link for CTU-13 complete dataset,1.9GB,Tar.bz2 archive
+CTU-13 Extended,Academic & Research,https://www.stratosphereips.org/datasets-ctu13,Extended version with truncated pcap files of all traffic types,Larger than original,Privacy-protected but complete TCP/UDP/ICMP headers
+CTU-13 on Kaggle,Academic & Research,https://www.kaggle.com/datasets/dhoogla/ctu13,Kaggle hosted version of CTU-13 dataset,1.9GB,Easy download through Kaggle platform
+UNSW-NB15,Academic & Research,https://cloudstor.aarnet.edu.au/plus/index.php/s/2DhnLGDdEECo4ys?path=/UNSW-NB15,Australian Defence Force Academy dataset with modern attack types,100GB,Comprehensive labeled dataset
+DARPA Intrusion Detection,Academic & Research,https://archive.ll.mit.edu/ideval/data/,Classic intrusion detection dataset from 1998-1999,Various,"Historical reference, widely cited"
+ISCX 2012,Academic & Research,http://www.unb.ca/research/iscx/dataset/index.html,University of New Brunswick research dataset,80GB+,Created by Shiravi et al.
+NSL-KDD,Academic & Research,Various sources,Improved version of KDD99 addressing statistical biases,Medium,Derivative of KDD99 with better distribution
+KDD Cup 99,Academic & Research,Various sources,Classic machine learning dataset for intrusion detection,Medium,Widely used but has known limitations
+UGR'16,Academic & Research,Various sources,Network traffic dataset from University of Granada,Large,Real network traffic with labeled attacks
+Malware Traffic Analysis,Malware Traffic,https://www.malware-traffic-analysis.net/,Continuously updated malware traffic captures with PCAPs,Various,Updated since 2013 with exercises
+PCAP Analysis,Malware Traffic,https://www.pcapanalysis.com,"Malware, exploit kits, DDoS attacks downloads",Various,Categorized by attack type
+Stratosphere IPS Datasets,Malware Traffic,https://www.stratosphereips.org/datasets-overview,Multiple malware and normal traffic datasets,Various,Czech Technical University project
+Contagio Malware Dump,Malware Traffic,http://contagiodump.blogspot.com/2013/04/collection-of-pcap-files-from-malware.html,"APT, crime, and Metasploit traffic",Various,Categorized malware collections
+Hybrid Analysis,Malware Traffic,https://hybrid-analysis.com/,Free malware sandbox with downloadable PCAPs,Various,Online analysis with PCAP downloads
+ThreatGlass,Malware Traffic,http://threatglass.com/,Online honeypot for web-based malware,Various,PCAP downloads for analyzed sites
+Netresec Public PCAPs,General Repository,https://www.netresec.com/?page=PcapFiles,Comprehensive categorized collection,Various,"CDX, malware, forensics, SCADA/ICS, CTF"
+GitHub Public-Pcaps,General Repository,https://github.com/thongsia/Public-Pcaps,Curated list of PCAP sources,N/A,Links to multiple repositories
+GitHub TMInfosec,General Repository,https://github.com/neu5ron/TMInfosec/blob/master/Datasets/PCAPs.md,Organized PCAP dataset links,N/A,Comprehensive link collection
+SecRepo,General Repository,https://www.secrepo.com/,Security-related data samples,Various,Curated security datasets
+GitHub elcabezzonn,General Repository,https://github.com/elcabezzonn/Pcaps,"Malware, normal traffic, pentester tools",Various,Lab environment captures
+401TRG Detections,General Repository,https://github.com/401trg/detections/tree/master/pcaps,Threat research group PCAPs,Various,Organized by detection type
+WRCCDC,Competition & Exercise,https://archive.wrccdc.org/pcaps/,Western Regional Collegiate Cyber Defense Competition,1TB+,Real competition traffic
+MACCDC,Competition & Exercise,https://www.netresec.com/?page=MACCDC,Mid-Atlantic Collegiate Cyber Defense Competition,Various,National CyberWatch competition
+ISTS,Competition & Exercise,https://www.netresec.com/?page=ISTS,Information Security Talent Search,Various,Competition traffic captures
+CDX 2009,Competition & Exercise,http://www.westpoint.edu/crc/SitePages/DataSets.aspx,Inter-Service Academy Cyber Defense Competition,Various,US Military Academy dataset
+Wireshark Sample Captures,Specialized,https://nostarch.com/download/ppa-capture-files.zip,Practical Packet Analysis book supplements,330MB,Educational samples by Chris Sanders
+The Ultimate PCAP,Specialized,https://weberblog.net/the-ultimate-pcap/,Single comprehensive PCAP with 50+ protocols,Medium,Continuously updated
+Megalodon Challenge,Specialized,http://www.packet-foo.com/megalodon2015/MegalodonChallenge.7z,Real-world network analysis challenge,3.8GB,Sanitized PCAP-NG files
+Megalodon Blog Post,Specialized,https://blog.packet-foo.com/2015/07/the-megalodon-challenge/,Description and background for Megalodon Challenge,N/A,Problem description
+Steve Karg BACnet,Specialized,http://kargs.net/captures/,Building automation and control network traffic,Various,BACnet protocol focus
+Honeybadger PCAP,Specialized,https://github.com/david415/honeybadger-pcap-files,TCP injection attack samples,Small,Research on TCP attacks
+Campus DNS Traffic,Specialized,https://data.mendeley.com/datasets/zh3wnddzxy/1,4000+ users DNS traffic over 10 days,10GB+,April-May 2016 campus network
+FOI SMIA 2011,Specialized,https://download.netresec.com/pcap/smia-2011/,Swedish Defence Research Agency dataset,Various,Information Warfare Lab
+FOI SMIA 2011 FTP,Specialized,ftp://download.iwlab.foi.se/dataset/smia2011/Network_traffic/,FTP server for SMIA 2011,Various,Direct FTP access
+FOI SMIA 2012,Specialized,ftp://download.iwlab.foi.se/dataset/smia2012/network_traffic/pcap/,2012 version of FOI dataset,Various,Continuation of 2011 dataset
+IEEE DataPort PCAPs,Specialized,https://ieee-dataport.org/data-formats/pcap-zip,Various specialized datasets including IoT,Various,Academic research datasets
+Shadowbrokers PCAPs,Specialized,https://www.dropbox.com/sh/kk24ewnqi9qjdvt/AACj7AHJrDHQeyJTuo1oBqeQa,ETERNALBLUE and ETERNALROMANCE traffic,Medium,By Eric Conrad
+Digital Corpora - Nitroba,Forensics,Various,"Network forensics scenario with harassment case, includes slides and solution",Medium,Educational forensics scenario
+FIRST 2015 Training,Forensics,https://www.first.org/conference/2015/program#phands-on-network-forensics,Hands-on Network Forensics training dataset,5.8GB VM,Includes SecurityOnion VM
+Laura Chappell Lab Kit,Training,http://cdn.novell.com/cached/video/bs_08/LLK9.iso,Network analysis study materials,1.5TB,ISO image format
+Wireshark 101,Training,http://wiresharkbook.com/wireshark101.html,Essential Skills for Network Analysis supplements,330MB,Book companion files
+Chris Sanders Captures,Training,http://chrissanders.org/packet-captures/,Freely available educational captures,Various,Network analysis training
+Pcapr Repository,Tools & Services,http://www.pcapr.net/,Capture repository with various traffic types,Various,Mu Dynamics service
+A-Packets Online,Tools & Services,https://apackets.com/,Online PCAP analysis and visualization,N/A,Web-based analysis tool
+ACS MILCOM 2016,Government,https://www.netresec.com/?page=ACS_MILCOM_2016,Applied Communication Sciences military dataset,Medium,Military communications research
+CAIDA Datasets,Research,https://www.caida.org/,Internet measurement and analysis datasets,Various,6 specialized security datasets
+Real Network Environment,Recent Research,https://www.nature.com/articles/s41597-025-04876-2,Real-time Internet traffic from actual network (2025),Large,Published in Scientific Data journal
+CCCS-CIC-AndMal-2020,Mobile Malware,https://www.cs.unb.ca/~alashkar/Data-sets.asp,400K Android apps with malware samples,Large,200K benign + 200K malware
+DIDarknet,Darknet Traffic,https://www.cs.unb.ca/~alashkar/Data-sets.asp,Darknet traffic characterization using deep learning,Medium,Tor and darknet protocols
+ISCXVPN2016,VPN Traffic,https://www.cs.unb.ca/~alashkar/Data-sets.asp,VPN and non-VPN encrypted traffic,Medium,Time-related features analysis
+IoT Attack Dataset 2023,IoT Security,Various sources,Large-scale IoT attack scenarios,Large,Real-time benchmark for IoT environments
+Awesome PCAP Tools,Tool Collection,https://github.com/caesar0301/awesome-pcaptools,Collection of PCAP processing tools and datasets,N/A,Tool references and dataset links
