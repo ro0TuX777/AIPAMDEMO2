@@ -17,10 +17,17 @@ RUN apt-get update && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
         zeek \
-        suricata && \
+        suricata \
+        suricata-update && \
     rm -rf /var/lib/apt/lists/*
+
 # Ensure Zeek binary is discoverable via PATH for shutil.which("zeek")
 RUN ln -s /opt/zeek/bin/zeek /usr/local/bin/zeek || true
+
+# Download Suricata rules (ET Open ruleset)
+RUN suricata-update --no-test && \
+    suricata-update update-sources && \
+    suricata-update enable-source et/open || true
 
 
 
@@ -39,7 +46,9 @@ RUN pip install --upgrade pip && \
         redis \
         httpx \
         python-multipart \
-        scapy
+        scapy \
+        chromadb \
+        sentence-transformers
 
 # Default runtime configuration (can be overridden by docker-compose)
 ENV FILE_STORAGE_PATH=/data/storage \

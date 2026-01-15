@@ -50,17 +50,28 @@ cp backend/.env.example backend/.env
 
 ### 3. Get Model Files (Not in Git)
 
-**Option A: Download base model (internet required)**
-```bash
-# The app will auto-download Llama 3.1 8B on first run
-# Or pre-download with:
-huggingface-cli download meta-llama/Llama-3.1-8B-Instruct
-```
+### v4 Malware-Traffic Model (Ollama GGUF) — recommended for teammates to test
 
-**Option B: Air-gapped transfer**
-Transfer these files from the development machine:
-- `finetuning/aipam_gpu_training/aipam-llama-lora-v2/` (~1.5 GB) - Trained LoRA
-- Base Llama 3.1 8B model (~16 GB)
+This repo expects a **local Ollama** model name (see `LLM_MODEL_NAME`). The v4 model artifact is **not** committed to git due to size.
+
+Provide teammates the following on a share drive:
+- `aipam-trafficllm-v4.gguf` (GGUF model file)
+- `Modelfile.trafficllm-v4` (Ollama Modelfile)
+
+Then, from the repo root on the teammate machine:
+
+```bash
+# 1) Ensure Ollama is running
+ollama serve
+
+# 2) Copy share-drive files into repo
+#    - place GGUF at: deploy/models/aipam-trafficllm-v4.gguf
+#    - place Modelfile at: deploy/Modelfile.trafficllm-v4
+
+# 3) Import the model into Ollama
+cd deploy
+ollama create aipam-trafficllm-v4 -f Modelfile.trafficllm-v4
+```
 
 ### 4. Run the Application
 
@@ -151,10 +162,10 @@ python merge_and_convert.py
 
 | File/Directory | Size | Location |
 |----------------|------|----------|
-| Trained LoRA v2 | ~1.5 GB | `finetuning/aipam_gpu_training/aipam-llama-lora-v2/` |
-| Trained LoRA v1 | ~1.7 GB | `finetuning/aipam_gpu_training/aipam-llama-lora/` |
-| Training data | ~500 MB | `finetuning/trafficllm_training/training_data/*.jsonl` |
-| Base Llama model | ~16 GB | Downloaded from HuggingFace |
+| v4 Ollama GGUF model | ~8.5 GB | share drive → copy to `deploy/models/aipam-trafficllm-v4.gguf` |
+| v4 Ollama Modelfile | ~1 KB | share drive → copy to `deploy/Modelfile.trafficllm-v4` |
+
+*(Older LoRA/merged directories under `finetuning/aipam_gpu_training/` are also not committed.)*
 
 ---
 

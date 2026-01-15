@@ -15,7 +15,21 @@ Usage:
 
 import argparse
 import json
+import os
+import sys
 from pathlib import Path
+
+# --- FIX for Unsloth/Torch/_inductor AttributeError ---
+try:
+    import torch
+    import torch._inductor.config
+    
+    # Satisfy torchao or other libraries expecting torch.int1 (added in 2.5+)
+    if hasattr(torch, "__version__") and not hasattr(torch, "int1"):
+        torch.int1 = torch.int8 # Use int8 for 1-bit mapping satisfaction
+except (ImportError, AttributeError):
+    pass
+# ------------------------------------------------------
 
 
 def check_dependencies():
@@ -84,10 +98,10 @@ def main():
     parser.add_argument("--base-model", default="unsloth/llama-3.1-8b-bnb-4bit", help="Base model")
     parser.add_argument("--epochs", type=int, default=3, help="Training epochs")
     parser.add_argument("--batch-size", type=int, default=2, help="Batch size per device")
-    parser.add_argument("--learning-rate", type=float, default=2e-4, help="Learning rate")
-    parser.add_argument("--lora-r", type=int, default=16, help="LoRA rank")
-    parser.add_argument("--lora-alpha", type=int, default=16, help="LoRA alpha")
-    parser.add_argument("--max-seq-length", type=int, default=4096, help="Max sequence length")
+    parser.add_argument("--learning-rate", type=float, default=5e-5, help="Learning rate")
+    parser.add_argument("--lora-r", type=int, default=128, help="LoRA rank")
+    parser.add_argument("--lora-alpha", type=int, default=128, help="LoRA alpha")
+    parser.add_argument("--max-seq-length", type=int, default=8192, help="Max sequence length")
     parser.add_argument("--export-gguf", action="store_true", help="Export to GGUF for Ollama")
     parser.add_argument("--validate-data", action="store_true", help="Validate data loading without training")
     parser.add_argument("--resume-from", type=str, default=None, help="Path to existing adapter/model to continue training")
@@ -129,9 +143,10 @@ def main():
             load_in_4bit=True,
         )
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         if "CUDA" in str(e) or "GPU" in str(e):
-            print("\n[CRITICAL] GPU/CUDA Error detected!")
-            # ... error msg ...
+            print(f"\n[CRITICAL] GPU/CUDA Error detected: {e}")
             return
         raise e
 

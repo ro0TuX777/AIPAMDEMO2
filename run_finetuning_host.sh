@@ -26,10 +26,19 @@ source venv_unsloth/bin/activate
 # Install dependencies (Unsloth optimized)
 echo "Installing Unsloth and dependencies..."
 pip install --upgrade pip
-# Force CUDA 12.1 PyTorch first to ensure GPU detection
-pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
-pip install "unsloth[cu121-torch240] @ git+https://github.com/unslothai/unsloth.git"
-pip install --no-deps trl peft accelerate bitsandbytes
+
+# Force specific stable versions in a single pass to avoid resolver conflicts
+# We pin EVERYTHING to avoid pip trying to be smart.
+pip install --no-cache-dir --force-reinstall \
+    "torch==2.4.0+cu121" \
+    "torchvision==0.19.0+cu121" \
+    "torchaudio==2.4.0+cu121" \
+    "unsloth[cu121-torch240] @ git+https://github.com/unslothai/unsloth.git" \
+    "trl<0.10.0" "peft" "accelerate" "bitsandbytes" "datasets" \
+    --index-url https://download.pytorch.org/whl/cu121
+
+# Fix for common Unsloth/Torchao/Transformers conflict
+pip uninstall -y torchao || true
 
 # 2. Run Fine-Tuning
 echo "============================================================"
@@ -38,7 +47,9 @@ echo "============================================================"
 
 # Auto-detect existing model
 DETECTED_MODEL=""
-if [ -d "finetuning/aipam_gpu_training/aipam-llama-lora-v2" ]; then
+if [ -d "finetuning/aipam_gpu_training/aipam-llama-lora-v3" ]; then
+    DETECTED_MODEL="finetuning/aipam_gpu_training/aipam-llama-lora-v3"
+elif [ -d "finetuning/aipam_gpu_training/aipam-llama-lora-v2" ]; then
     DETECTED_MODEL="finetuning/aipam_gpu_training/aipam-llama-lora-v2"
 elif [ -d "finetuning/aipam_gpu_training/aipam-llama-lora" ]; then
     DETECTED_MODEL="finetuning/aipam_gpu_training/aipam-llama-lora"

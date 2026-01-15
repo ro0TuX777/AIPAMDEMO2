@@ -1,7 +1,9 @@
 import React, { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { api, JobStatusResponse, JobResultResponse } from "../api";
+import { api, JobStatusResponse, JobResultResponse, AnomalyReport } from "../api";
 import { ChatPanel } from "../components/ChatPanel";
+import { AttackChainVisualization } from "../components/AttackChainVisualization";
+import { AnomalyFindings } from "../components/AnomalyFindings";
 
 type JobDetailTabId = "overview" | "hosts" | "raw" | "report" | "chat";
 
@@ -219,24 +221,72 @@ export const JobDetailPage: React.FC = () => {
               <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-6">
                 <h2 className="text-lg font-semibold text-slate-100 mb-4">MITRE ATT&CK Techniques</h2>
                 <div className="flex flex-wrap gap-2">
-                  {result.summary.mitre_techniques.map((tech: any, i: number) => (
-                    <div
-                      key={i}
-                      className="px-3 py-1.5 bg-slate-800 border border-slate-700 rounded text-xs text-slate-300 flex items-center gap-2"
-                    >
-                      <span className="font-mono text-emerald-400">{tech.id}</span>
-                      <span>{tech.name}</span>
-                    </div>
-                  ))}
+                  {result.summary.mitre_techniques.map((tech: any, i: number) => {
+                    // Generate MITRE ATT&CK link
+                    const mitreLink = tech.id.includes(".")
+                      ? `https://attack.mitre.org/techniques/${tech.id.split(".")[0]}/${tech.id.split(".")[1]}/`
+                      : `https://attack.mitre.org/techniques/${tech.id}/`;
+                    return (
+                      <a
+                        key={i}
+                        href={mitreLink}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="px-3 py-1.5 bg-slate-800 border border-slate-700 rounded text-xs text-slate-300 flex items-center gap-2 hover:bg-slate-700 hover:border-emerald-500/50 transition-colors group"
+                        title={`View ${tech.id} on MITRE ATT&CK`}
+                      >
+                        <span className="font-mono text-emerald-400 group-hover:text-emerald-300">{tech.id}</span>
+                        <span>{tech.name}</span>
+                        <span className="opacity-0 group-hover:opacity-100 transition-opacity">↗</span>
+                      </a>
+                    );
+                  })}
                   {result.summary.mitre_techniques.length === 0 && (
                     <div className="text-slate-500 text-sm">No techniques mapped.</div>
                   )}
                 </div>
               </div>
 
-              {/* Forensic Evidence */}
+              {/* Attack Chain Visualization */}
               <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-6">
-                <h2 className="text-lg font-semibold text-slate-100 mb-4">Forensic Evidence & Anomalies</h2>
+                <h2 className="text-lg font-semibold text-slate-100 mb-4">Attack Chain Timeline</h2>
+                {(() => {
+                  // Extract attack chain from raw LLM analysis
+                  const chunks = result.raw?.llm_analysis_raw?.chunks || [];
+                  const allAttackChains: any[] = [];
+                  const seenStages = new Set<string>();
+
+                  chunks.forEach((chunk: any) => {
+                    (chunk.attack_chain || []).forEach((item: any) => {
+                      // Deduplicate by stage + description
+                      const key = `${item.stage}:${item.description}`;
+                      if (!seenStages.has(key)) {
+                        seenStages.add(key);
+                        allAttackChains.push(item);
+                      }
+                    });
+                  });
+
+                  return <AttackChainVisualization attackChain={allAttackChains} />;
+                })()}
+              </div>
+
+              {/* Behavioral Anomaly Detection */}
+              <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-6">
+                <h2 className="text-lg font-semibold text-slate-100 mb-4 flex items-center gap-2">
+                  <span className="text-xl">🔬</span>
+                  Behavioral Anomaly Detection
+                  <span className="text-xs text-slate-500 font-normal ml-2">(Signature-Evasion Analysis)</span>
+                </h2>
+                <AnomalyFindings
+                  anomalyReport={result.raw?.anomaly_detection as AnomalyReport | null}
+                  onAskAbout={askAbout}
+                />
+              </div>
+
+              {/* Forensic Evidence (LLM-identified) */}
+              <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-6">
+                <h2 className="text-lg font-semibold text-slate-100 mb-4">LLM-Identified Anomalies</h2>
                 <div className="space-y-4">
                   {(() => {
                     const chunks = result.raw?.llm_analysis_raw?.chunks || [];
@@ -253,7 +303,7 @@ export const JobDetailPage: React.FC = () => {
                     });
 
                     if (anomalyList.length === 0) {
-                      return <div className="text-slate-500 text-sm italic">No detailed evidence available for this session.</div>;
+                      return <div className="text-slate-500 text-sm italic">No LLM-identified anomalies for this session.</div>;
                     }
 
                     return anomalyList.map((a, i) => (

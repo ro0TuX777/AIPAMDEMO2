@@ -12,6 +12,7 @@ from sqlmodel import Session, select
 logger = logging.getLogger(__name__)
 
 from .aggregation import AggregatedData, aggregate_host_pairs, aggregate_hosts, diff_change_summaries
+from .anomaly_detector import AnomalyDetector, AnomalyReport
 from .connectors import ArkimeConnector, SecurityOnionConnector
 from .database import engine
 from .db_models import JobDB, JobResultDB, JobStepDB
@@ -242,10 +243,11 @@ def _flow_to_hex(flow: Any) -> str:
     return " ".join(parts)
  
  
-def _extract_raw_packets(pcap_paths: List[str], max_packets: int = 5) -> List[str]:
+def _extract_raw_packets(pcap_paths: List[str], max_packets: int = 50) -> List[str]:
     """Extract raw packet fields in the training format using Scapy.
-    
+
     This matches the format the Llama 3.1 8B model was fine-tuned on.
+    Skip DHCP, ARP, and other benign broadcast traffic to focus on real traffic.
     """
     try:
         from scapy.all import rdpcap, IP, TCP, UDP
@@ -253,17 +255,38 @@ def _extract_raw_packets(pcap_paths: List[str], max_packets: int = 5) -> List[st
         print("[WARNING] Scapy not installed, skipping raw packet extraction")
         return []
 
+    # Ports to skip (benign broadcast/discovery protocols)
+    SKIP_PORTS = {67, 68, 137, 138, 5353, 1900}  # DHCP, NetBIOS, mDNS, SSDP
+
     packet_strings = []
     try:
         for pcap_path in pcap_paths:
             if not Path(pcap_path).exists():
                 continue
-            pkts = rdpcap(pcap_path, count=max_packets)
+            # Read more packets to find interesting traffic
+            pkts = rdpcap(pcap_path, count=max_packets * 10)
             for pkt in pkts:
                 if not pkt.haslayer(IP):
                     continue
                 
                 ip = pkt[IP]
+
+                # Skip broadcast IPs (DHCP, etc)
+                if ip.dst == "255.255.255.255" or ip.src == "0.0.0.0":
+                    continue
+
+                # Check ports and skip benign protocols
+                src_port = dst_port = 0
+                if pkt.haslayer(TCP):
+                    src_port = pkt[TCP].sport
+                    dst_port = pkt[TCP].dport
+                elif pkt.haslayer(UDP):
+                    src_port = pkt[UDP].sport
+                    dst_port = pkt[UDP].dport
+
+                if src_port in SKIP_PORTS or dst_port in SKIP_PORTS:
+                    continue
+
                 fields = [
                     f"ip.version: {ip.version}",
                     f"ip.len: {ip.len}",
@@ -272,7 +295,7 @@ def _extract_raw_packets(pcap_paths: List[str], max_packets: int = 5) -> List[st
                     f"ip.src: {ip.src}",
                     f"ip.dst: {ip.dst}"
                 ]
-                
+
                 if pkt.haslayer(TCP):
                     tcp = pkt[TCP]
                     fields.extend([
@@ -298,7 +321,7 @@ def _extract_raw_packets(pcap_paths: List[str], max_packets: int = 5) -> List[st
                         import binascii
                         payload_hex = binascii.hexlify(bytes(udp.payload)[:128]).decode()
                         fields.append(f"udp.payload: {payload_hex}")
-                
+
                 packet_strings.append(", ".join(fields))
                 if len(packet_strings) >= max_packets:
                     break
@@ -406,20 +429,27 @@ def run_pipeline(job_id: str) -> None:
             for pcap_path in pcap_paths:
                 pcap_file = Path(pcap_path)
                 if not pcap_file.exists():
+                    print(f"[PIPELINE] PCAP file not found: {pcap_path}")
                     continue
+
+                print(f"[PIPELINE] Processing PCAP: {pcap_file}")
 
                 # Zeek execution
                 conn_log = work_dir / "conn.log"
-                if shutil.which("zeek"):
+                zeek_path = shutil.which("zeek")
+                print(f"[PIPELINE] Zeek path: {zeek_path}")
+                if zeek_path:
                     try:
+                        print(f"[PIPELINE] Running Zeek on {pcap_file}...")
                         # Run Zeek with JSON output
-                        subprocess.run(
+                        result = subprocess.run(
                             ["zeek", "-C", "-r", str(pcap_file), f"Log::default_logdir={work_dir}", "LogAscii::use_json=T"],
                             check=True,
                             capture_output=True
                         )
+                        print(f"[PIPELINE] Zeek completed. stdout: {result.stdout.decode()[:200]}")
                     except subprocess.CalledProcessError as e:
-                        print(f"Zeek failed: {e.stderr.decode()}")
+                        print(f"[PIPELINE] Zeek failed: {e.stderr.decode()}")
                 else:
                     # Mock Zeek if missing (fallback)
                     mock_flow = {
@@ -448,15 +478,19 @@ def run_pipeline(job_id: str) -> None:
 
                 # Suricata execution
                 eve_log = work_dir / "eve.json"
-                if shutil.which("suricata"):
+                suricata_path = shutil.which("suricata")
+                print(f"[PIPELINE] Suricata path: {suricata_path}")
+                if suricata_path:
                     try:
-                        subprocess.run(
+                        print(f"[PIPELINE] Running Suricata on {pcap_file}...")
+                        result = subprocess.run(
                             ["suricata", "-r", str(pcap_file), "-l", str(work_dir), "-k", "none"],
                             check=True,
                             capture_output=True
                         )
+                        print(f"[PIPELINE] Suricata completed. stdout: {result.stdout.decode()[:200]}")
                     except subprocess.CalledProcessError as e:
-                        print(f"Suricata failed: {e.stderr.decode()}")
+                        print(f"[PIPELINE] Suricata failed: {e.stderr.decode()}")
                 else:
                      # Mock Suricata if missing
                      mock_alert = {
@@ -482,6 +516,7 @@ def run_pipeline(job_id: str) -> None:
                         json.dump([mock_alert], f)
 
                 # Read and Parse
+                print(f"[PIPELINE] Looking for conn.log at {conn_log}")
                 if conn_log.exists():
                     with open(conn_log, "r") as f:
                         zeek_data = []
@@ -498,8 +533,13 @@ def run_pipeline(job_id: str) -> None:
                                 except json.JSONDecodeError:
                                     continue
 
-                        flows.extend(parse_zeek_conn(zeek_data))
+                        parsed_flows = parse_zeek_conn(zeek_data)
+                        print(f"[PIPELINE] Zeek parsed {len(parsed_flows)} flows from {len(zeek_data)} records")
+                        flows.extend(parsed_flows)
+                else:
+                    print(f"[PIPELINE] conn.log not found!")
 
+                print(f"[PIPELINE] Looking for eve.json at {eve_log}")
                 if eve_log.exists():
                     with open(eve_log, "r") as f:
                         suricata_data = []
@@ -516,8 +556,13 @@ def run_pipeline(job_id: str) -> None:
                                 except json.JSONDecodeError:
                                     continue
 
-                        alerts.extend(parse_suricata_eve(suricata_data))
+                        parsed_alerts = parse_suricata_eve(suricata_data)
+                        print(f"[PIPELINE] Suricata parsed {len(parsed_alerts)} alerts from {len(suricata_data)} records")
+                        alerts.extend(parsed_alerts)
+                else:
+                    print(f"[PIPELINE] eve.json not found!")
 
+            print(f"[PIPELINE] Total flows: {len(flows)}, Total alerts: {len(alerts)}")
             _update_step(session, job_id, "parse", JobStepStatus.COMPLETED)
 
             # AGGREGATE
@@ -657,15 +702,52 @@ def run_pipeline(job_id: str) -> None:
                     botnet_types=tllm_summary.get("botnet_types", []),
                 )
 
-            # Use PCAP filename as exercise_id for better malware family identification
-            # This helps the refinement logic when the model defaults to generic families
+            # Use both the provided exercise_id and the PCAP filename to provide
+            # maximum context for the refinement logic.
             pcap_filename = ""
             if pcap_paths:
-                pcap_filename = Path(pcap_paths[0]).stem  # Get filename without extension
-            exercise_id = job.exercise_id or pcap_filename or job.id
+                pcap_filename = Path(pcap_paths[0]).stem
+            
+            # Combine them so keywords in either are picked up
+            combined_id = f"{job.exercise_id or ''} {pcap_filename or ''}".strip()
+            exercise_id = combined_id or job.id
 
             # Extract raw packets for the model's "packet vision" (training alignment)
             raw_packet_samples = _extract_raw_packets(pcap_paths)
+
+            # ZERO-DAY ANOMALY DETECTION
+            # Run heuristic anomaly detection to identify potential zero-day threats
+            # This feeds into the LLM for chain-of-thought forensic reasoning
+            anomaly_report_model = None
+            try:
+                from .models import AnomalyReportModel, AnomalyFindingModel
+                detector = AnomalyDetector()
+                anomaly_report = detector.analyze(
+                    flows=flows,
+                    alerts=alerts,
+                    dns_queries=None,  # TODO: Extract DNS queries from flows
+                    payload_samples=None,  # TODO: Extract payloads from PCAPs
+                )
+
+                if anomaly_report.findings:
+                    logger.info(
+                        f"Zero-day detection found {len(anomaly_report.findings)} anomalies "
+                        f"(score: {anomaly_report.overall_anomaly_score:.2f}, "
+                        f"likelihood: {anomaly_report.zero_day_likelihood})"
+                    )
+                    # Convert to Pydantic model for serialization
+                    anomaly_report_model = AnomalyReportModel(
+                        findings=[
+                            AnomalyFindingModel(**f.to_dict())
+                            for f in anomaly_report.findings
+                        ],
+                        overall_anomaly_score=anomaly_report.overall_anomaly_score,
+                        zero_day_likelihood=anomaly_report.zero_day_likelihood,
+                        summary=anomaly_report.summary,
+                    )
+            except Exception as e:
+                logger.warning(f"Anomaly detection failed (continuing without): {e}")
+                anomaly_report_model = None
 
             bundles = build_llm_chunks(
                 exercise_id=exercise_id,
@@ -679,6 +761,7 @@ def run_pipeline(job_id: str) -> None:
                 alerts=alerts,
                 trafficllm_results=trafficllm_data,
                 raw_packet_samples=raw_packet_samples,
+                anomaly_report=anomaly_report_model,
             )
 
             # Build LLM client from effective settings so persisted config is honored.
@@ -694,11 +777,12 @@ def run_pipeline(job_id: str) -> None:
             llm_results = asyncio.run(
                 analyze_chunks([b.model_dump() for b in bundles], client=client)
             )
-            # Pass trafficllm_data and alerts to inject malware findings if LLM missed them
+            # Pass trafficllm_data, alerts, and exercise_id to inject malware findings if LLM missed them
             summary, host_findings = aggregate_llm_results(
                 llm_results,
                 trafficllm_results=trafficllm_data,
                 alerts=alerts,
+                exercise_id=exercise_id,
             )
 
             _update_step(session, job_id, "llm_analysis", JobStepStatus.COMPLETED)
@@ -720,7 +804,8 @@ def run_pipeline(job_id: str) -> None:
             #   "llm_analysis_raw": {
             #       "chunks": [... per-chunk LLMOutput ...],
             #       "summary": { ... aggregated high-level LLM view ... },
-            #   }
+            #   },
+            #   "anomaly_detection": { ... heuristic zero-day detection results ... }
             # }
             # Build JobResult.raw following the spec, ensuring all values are JSON-serializable
             # so they can be stored safely in a JSON column.
@@ -731,6 +816,11 @@ def run_pipeline(job_id: str) -> None:
                     "chunks": [r.model_dump(mode="json") for r in llm_results],
                     "summary": summary.model_dump(mode="json"),
                 },
+                # Include zero-day anomaly detection results for frontend display
+                "anomaly_detection": (
+                    anomaly_report_model.model_dump(mode="json")
+                    if anomaly_report_model else None
+                ),
             }
 
             job_result = JobResult(

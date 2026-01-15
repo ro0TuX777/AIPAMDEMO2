@@ -8,8 +8,10 @@ backend/.env
 __pycache__/
 *.pyc
 *.pyo
+*.egg-info/
 .venv/
 venv/
+venv_unsloth/
 
 # Databases and large state
 *.db
@@ -80,4 +82,35 @@ TrafficLLM_repo/
 
 # Zip files
 *.zip
+
+# Benchmark outputs (generated)
+benchmark_results/
+benchmark_results_*/
+benchmark/benchmark_results*/
+benchmark/benchmark_results_*/
+
+# Local logs / misc
+frontend/nohup.out
+
+# Unsloth caches (generated)
+unsloth_compiled_cache/
+finetuning/aipam_gpu_training/venv_unsloth/
+finetuning/trafficllm_training/unsloth_compiled_cache/
+
+# Fine-tuning outputs (generated)
+finetuning/aipam_gpu_training/aipam-llama-lora-v3/
+finetuning/aipam_gpu_training/aipam-llama-lora-v4/
+finetuning/aipam_gpu_training/aipam-llama-lora-v5/
+finetuning/aipam_gpu_training/aipam-llama-merged-v3/
+finetuning/aipam_gpu_training/aipam-llama-merged-v4/
+finetuning/aipam_gpu_training/aipam-llama-merged-v5/
+finetuning/trafficllm_training/averaged_adapter/
+finetuning/trafficllm_training/merged_model/
+finetuning/trafficllm_training/merged_model_averaged/
+finetuning/trafficllm_training/trained_models/
+finetuning/trafficllm_training/training_data_batches/
+
+# Experimental / large local datasets
+zero_day_training_data/
+finetuning/custom_v5_lessons.jsonl
 

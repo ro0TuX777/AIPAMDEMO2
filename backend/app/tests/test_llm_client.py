@@ -107,7 +107,8 @@ def test_analyze_chunk_network_error_returns_mock_output(monkeypatch: pytest.Mon
     assert out.host_findings
 
 
-def test_analyze_chunk_malformed_json_returns_empty_output(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_analyze_chunk_malformed_json_returns_best_effort_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When LLM returns malformed JSON, we do best-effort recovery with natural language parsing."""
     monkeypatch.setattr(httpx, "AsyncClient", _DummyAsyncClientMalformed)
 
     client = LLMClient(config=LLMConfig(endpoint="http://test", model="test-model"))
@@ -129,13 +130,13 @@ def test_analyze_chunk_malformed_json_returns_empty_output(monkeypatch: pytest.M
         # below will exercise the empty-output fallback.
         return
 
+    # Best-effort recovery now returns medium severity as default rather than unknown
     assert isinstance(out, LLMOutput)
-    assert out.overall_severity == "unknown"
-    assert out.attack_chain == []
-    assert out.host_findings == []
+    assert out.overall_severity == "medium"  # Default for best-effort recovery
 
 
-def test_analyze_chunk_invalid_schema_returns_empty_output(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_analyze_chunk_invalid_schema_returns_best_effort_output(monkeypatch: pytest.MonkeyPatch) -> None:
+    """When LLM returns JSON with invalid schema, we do best-effort recovery."""
     monkeypatch.setattr(httpx, "AsyncClient", _DummyAsyncClientInvalidSchema)
 
     client = LLMClient(config=LLMConfig(endpoint="http://test", model="test-model"))
@@ -145,10 +146,9 @@ def test_analyze_chunk_invalid_schema_returns_empty_output(monkeypatch: pytest.M
 
     out = asyncio.run(_run())
 
+    # Best-effort recovery now returns medium severity as default rather than unknown
     assert isinstance(out, LLMOutput)
-    assert out.overall_severity == "unknown"
-    assert out.attack_chain == []
-    assert out.host_findings == []
+    assert out.overall_severity == "medium"  # Default for best-effort recovery
 
 
 

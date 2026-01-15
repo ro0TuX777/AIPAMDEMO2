@@ -15,12 +15,20 @@ This will:
 import os
 import subprocess
 import shutil
+import argparse
 from pathlib import Path
 
+# Parse command line arguments
+parser = argparse.ArgumentParser(description='Merge LoRA and convert to GGUF')
+parser.add_argument('--adapter', default='aipam-llama-lora-v4', help='LoRA adapter directory')
+parser.add_argument('--output', default='aipam-llama-merged-v4', help='Merged model output directory')
+parser.add_argument('--gguf', default='aipam-cybersec-llm-v4.gguf', help='GGUF output filename')
+args, _ = parser.parse_known_args()
+
 MODEL_NAME = "meta-llama/Llama-3.1-8B-Instruct"
-LORA_DIR = "./aipam-llama-lora"
-MERGED_DIR = "./aipam-llama-merged"
-GGUF_OUTPUT = "./aipam-cybersec-llm.gguf"
+LORA_DIR = f"./{args.adapter}"
+MERGED_DIR = f"./{args.output}"
+GGUF_OUTPUT = f"./{args.gguf}"
 
 
 def merge_lora():
@@ -103,7 +111,7 @@ def convert_to_gguf():
 
 def create_modelfile():
     """Create Ollama Modelfile."""
-    modelfile_content = '''FROM ./aipam-cybersec-llm.gguf
+    modelfile_content = '''FROM ./aipam-cybersec-llm-v4.gguf
 
 PARAMETER temperature 0.1
 PARAMETER top_p 0.9

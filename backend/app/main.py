@@ -419,6 +419,78 @@ async def get_job_result(job_id: str) -> JobResultResponse:
     return JobResultResponse.model_validate(result_row.result)
 
 
+@app.delete("/api/v1/jobs/{job_id}", status_code=204)
+async def delete_job(job_id: str):
+    """Delete a job and all associated data (results, files, RAG index).
+
+    Only completed or failed jobs can be deleted.
+    """
+    from sqlmodel import select
+    import shutil
+
+    with get_session() as session:
+        job = session.get(JobDB, job_id)
+        if not job:
+            raise HTTPException(status_code=404, detail="Job not found")
+
+        # Only allow deletion of completed or failed jobs
+        if job.status not in (JobStatus.COMPLETED, JobStatus.FAILED):
+            raise HTTPException(
+                status_code=409,
+                detail=f"Cannot delete job with status '{job.status}'. Only completed or failed jobs can be deleted."
+            )
+
+        # Delete job result if exists
+        result_row = session.exec(
+            select(JobResultDB).where(JobResultDB.job_id == job_id)
+        ).one_or_none()
+        if result_row:
+            session.delete(result_row)
+
+        # Delete job steps
+        from .db_models import JobStepDB
+        steps = session.exec(
+            select(JobStepDB).where(JobStepDB.job_id == job_id)
+        ).all()
+        for step in steps:
+            session.delete(step)
+
+        # Delete chat conversations and messages
+        try:
+            from .db_models import ChatConversationDB, ChatMessageDB
+            conversations = session.exec(
+                select(ChatConversationDB).where(ChatConversationDB.job_id == job_id)
+            ).all()
+            for conv in conversations:
+                messages = session.exec(
+                    select(ChatMessageDB).where(ChatMessageDB.conversation_id == conv.id)
+                ).all()
+                for msg in messages:
+                    session.delete(msg)
+                session.delete(conv)
+        except Exception:
+            pass  # Chat tables may not exist
+
+        # Delete RAG index
+        try:
+            from .rag_index import delete_job_index
+            delete_job_index(job_id)
+        except Exception:
+            pass  # RAG may not be available
+
+        # Delete files from storage
+        settings = get_effective_settings()
+        job_storage_path = settings.file_storage_path / job_id
+        if job_storage_path.exists():
+            shutil.rmtree(job_storage_path)
+
+        # Delete the job itself
+        session.delete(job)
+        session.commit()
+
+    return None
+
+
 # ============================================================================
 # Chat API Endpoints (Phase 1: Interactive PCAP Chat)
 # ============================================================================

@@ -45,13 +45,22 @@ def create_user_prompt(sample: Dict) -> str:
         "host_summaries": sample.get("host_summaries", []),
         "hostpair_summaries": sample.get("hostpair_summaries", []),
         "flow_count": sample.get("flow_count", 0),
+        "anomaly_report": sample.get("anomaly_report", {}), # NEW: Added heuristics
     }, indent=2)
+
+    # Add raw packets for "packet vision"
+    packet_strings = sample.get("raw_packet_samples", [])
+    packet_data = "\n".join(packet_strings) if packet_strings else "(No raw packets provided)"
 
     return f"""Analyze the following network traffic data:
 
+Network Flows:
 ```json
 {data_json}
 ```
+
+Raw Packet Snippets:
+{packet_data}
 
 Classify this traffic and provide your analysis as a JSON object with these fields:
 - overall_severity: "low" | "medium" | "high" | "critical"
@@ -105,24 +114,34 @@ def create_assistant_response(sample: Dict) -> str:
             ("Malicious activity detected", "T1071", "Application Layer Protocol")
         )
 
+        # Use Anomaly Detector's forensic reasoning if available
+        anomaly_findings = sample.get("anomaly_report", {}).get("findings", [])
+        forensic_evidence = []
+        for f in anomaly_findings:
+            if f.get("chain_of_thought"):
+                forensic_evidence.append(f["chain_of_thought"])
+        
+        if not forensic_evidence:
+            forensic_evidence = [f"Traffic patterns consistent with {dataset_type} behavior"]
+
         response = {
             "overall_severity": severity_map.get(dataset_type, "medium"),
             "classification": "malicious",
             "attack_type": dataset_type,
-            "confidence": 0.85,
+            "confidence": 0.90,
             "attack_chain": [{
                 "stage": "initial_access" if dataset_type == "apt" else "command_and_control",
                 "description": desc,
-                "evidence": [f"Traffic patterns consistent with {dataset_type}"],
+                "evidence": forensic_evidence[:3], # Use the top 3 reasoning blocks
                 "mitre_techniques": [{"id": tech_id, "name": tech_name}],
             }],
             "host_findings": [],
             "anomalies": [{
-                "description": f"Detected {dataset_type} traffic patterns",
-                "related_hosts": [],
-                "confidence": 0.85,
-                "reason": f"Traffic matches known {dataset_type} signatures",
-            }],
+                "description": f.get("description", f"Detected {dataset_type} anomaly"),
+                "related_hosts": f.get("affected_hosts", []),
+                "confidence": f.get("confidence", 0.85),
+                "reason": f.get("category", "malware"),
+            } for f in anomaly_findings[:5]],
             "mitre_techniques_overall": [{"id": tech_id, "name": tech_name}],
         }
 
@@ -179,7 +198,10 @@ def main():
         print(f"  ✓ Loaded {len(all_samples):,} TrafficLLM samples")
 
     # Option 2: Load AIPAM processed samples (if available)
-    processed_file = Path("data/processed/processed_samples.jsonl")
+    processed_file = Path("data/processed/processed_samples_v4.jsonl")
+    if not processed_file.exists():
+        processed_file = Path("data/processed/processed_samples.jsonl")
+
     if processed_file.exists():
         print(f"\nLoading AIPAM processed samples from {processed_file}...")
         aipam_count = 0

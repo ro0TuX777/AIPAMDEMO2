@@ -18,24 +18,54 @@ OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "data", "raw", "modern")
 
 # Critical families that need more samples
 CRITICAL_FAMILIES = {
-    # Most critical (< 300 samples)
-    "xworm": "XWorm",
-    "x-worm": "XWorm",
+    # Stealers
+    "lumma": "Lumma_Stealer",
+    "stealc": "StealC",
+    "raccoon": "Raccoon",
+    "meduza": "Meduza_Stealer",
+    "redline": "Redline_Stealer",
+    "vidar": "Redline_Stealer",
+    
+    # RATs & C2
+    "remcos": "Remcos_RAT",
+    "agenttesla": "AgentTesla",
+    "agent tesla": "AgentTesla",
+    "asyncrat": "AsyncRAT",
+    "async rat": "AsyncRAT",
+    "quasarrat": "QuasarRAT",
+    "quasar rat": "QuasarRAT",
+    "warzone": "WarZone",
+    "nanocore": "malware",
+    "njrat": "malware",
+    "gh0st": "malware",
+    "sliver": "Sliver",
+    "cobaltstrike": "CobaltStrike",
+    "cobalt strike": "CobaltStrike",
+
+    # Loaders & Botnets
+    "pikabot": "Pikabot",
+    "darkgate": "DarkGate",
+    "dark gate": "DarkGate",
+    "guloader": "GuLoader",
+    "gu-loader": "GuLoader",
     "xloader": "XLoader",
     "x-loader": "XLoader",
+    "formbook": "Formbook",
+    "qakbot": "Qakbot",
+    "qbot": "Qakbot",
+    "icedid": "IcedID",
+    "emotet": "Emotet",
+    "latrodectus": "Latrodectus",
+    "smartloader": "Lumma_Stealer",
+    "socgholish": "SocGholish",
+    "soc gholish": "SocGholish",
+
+    # Exploits
     "rig ek": "RigEK",
     "rig exploit": "RigEK",
     "rigek": "RigEK",
-    "raccoon": "Raccoon",
-    # Low (300-500 samples)
-    "guloader": "GuLoader",
-    "gu-loader": "GuLoader",
-    "meduza": "Meduza_Stealer",
-    "socgholish": "SocGholish",
-    "soc gholish": "SocGholish",
-    "stealc": "StealC",
-    "steal-c": "StealC",
-    "sliver": "Sliver",
+    "xworm": "XWorm",
+    "x-worm": "XWorm",
 }
 
 YEARS = ["2025", "2024", "2023", "2022"]

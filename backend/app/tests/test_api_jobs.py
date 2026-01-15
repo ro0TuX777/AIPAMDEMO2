@@ -257,6 +257,7 @@ def test_get_job_result_requires_completed_status(monkeypatch, tmp_path):
             "job_id": job_id,
             "status": JobStatus.COMPLETED,
             "summary": {
+                "classification": None,
                 "severity": "low",
                 "key_findings": [],
                 "mitre_techniques": [],
@@ -267,6 +268,7 @@ def test_get_job_result_requires_completed_status(monkeypatch, tmp_path):
                 "llm_analysis_raw": {
                     "chunks": [],
                     "summary": {
+                        "classification": None,
                         "severity": "low",
                         "key_findings": [],
                         "mitre_techniques": [],

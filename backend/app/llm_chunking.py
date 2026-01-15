@@ -6,6 +6,7 @@ from typing import Any, Dict, List
 from .models import (
     AlertRecord,
     AnalysisSummary,
+    AnomalyReportModel,
     ChangeSummary,
     HostFinding,
     HostPairSummary,
@@ -147,6 +148,7 @@ def _make_bundle(
     alerts: List[AlertRecord],
     trafficllm_results: Optional[TrafficLLMResult] = None,
     raw_packet_samples: Optional[List[str]] = None,
+    anomaly_report: Optional[AnomalyReportModel] = None,
 ) -> LLMInputBundle:
     return LLMInputBundle(
         exercise_id=exercise_id,
@@ -160,6 +162,7 @@ def _make_bundle(
         alerts=alerts,
         trafficllm_results=trafficllm_results,
         raw_packet_samples=raw_packet_samples or [],
+        anomaly_report=anomaly_report,
     )
 
 
@@ -176,6 +179,7 @@ def build_llm_chunks(
     alerts: List[AlertRecord],
     trafficllm_results: Optional[TrafficLLMResult] = None,
     raw_packet_samples: Optional[List[str]] = None,
+    anomaly_report: Optional[AnomalyReportModel] = None,
     max_hosts_per_chunk: int = 3,
 ) -> List[LLMInputBundle]:
     """Build one or more LLMInputBundle chunks based on anomaly scores.
@@ -200,6 +204,7 @@ def build_llm_chunks(
                 alerts=alerts,
                 trafficllm_results=trafficllm_results,
                 raw_packet_samples=raw_packet_samples,
+                anomaly_report=anomaly_report,
             )
         ]
 
@@ -218,6 +223,7 @@ def build_llm_chunks(
                 alerts=alerts,
                 trafficllm_results=trafficllm_results,
                 raw_packet_samples=raw_packet_samples,
+                anomaly_report=anomaly_report,
             )
         ]
 
@@ -258,6 +264,21 @@ def build_llm_chunks(
             or (a.dst_ip and a.dst_ip in chunk_hosts)
         ]
 
+        # Filter anomaly findings for this chunk's hosts
+        chunk_anomaly_report = None
+        if anomaly_report and anomaly_report.findings:
+            chunk_findings = [
+                f for f in anomaly_report.findings
+                if not f.affected_hosts or any(h in chunk_hosts for h in f.affected_hosts)
+            ]
+            if chunk_findings:
+                chunk_anomaly_report = AnomalyReportModel(
+                    findings=chunk_findings,
+                    overall_anomaly_score=anomaly_report.overall_anomaly_score,
+                    zero_day_likelihood=anomaly_report.zero_day_likelihood,
+                    summary=anomaly_report.summary,
+                )
+
         bundles.append(
             _make_bundle(
                 exercise_id=exercise_id,
@@ -271,6 +292,7 @@ def build_llm_chunks(
                 alerts=chunk_alerts,
                 trafficllm_results=trafficllm_results,
                 raw_packet_samples=raw_packet_samples,
+                anomaly_report=chunk_anomaly_report,
             )
         )
 
@@ -281,6 +303,7 @@ def aggregate_llm_results(
     llm_outputs: List[LLMOutput],
     trafficllm_results: Optional[TrafficLLMResult] = None,
     alerts: Optional[List[AlertRecord]] = None,
+    exercise_id: Optional[str] = None,
 ) -> tuple[AnalysisSummary, List[HostFinding]]:
     """Aggregate multiple LLM chunk outputs into a single summary + host list.
 
@@ -321,13 +344,141 @@ def aggregate_llm_results(
             best_class = max(options, key=lambda k: class_counts[k])
         else:
             best_class = "unknown"
-    
+
     # If we have no specific family but TrafficLLM detected something, use that as a hint
-    if best_class.lower() in ["unknown", "anomalous/zero-day"] and trafficllm_results:
+    if best_class.lower() == "unknown" and trafficllm_results:
         if trafficllm_results.malware_types:
             best_class = trafficllm_results.malware_types[0]
         elif trafficllm_results.botnet_types:
             best_class = trafficllm_results.botnet_types[0]
+
+    # Pre-define known families for various override checks
+    known_families = {
+        "remcos": "Remcos_RAT",
+        "cobalt strike": "CobaltStrike",
+        "cobaltstrike": "CobaltStrike",
+        "beacon": "CobaltStrike",
+        "emotet": "Emotet",
+        "trickbot": "Trickbot",
+        "qakbot": "Qakbot",
+        "qbot": "Qakbot",
+        "icedid": "IcedID",
+        "dridex": "Dridex",
+        "agent tesla": "AgentTesla",
+        "agenttesla": "AgentTesla",
+        "asyncrat": "AsyncRAT",
+        "njrat": "NjRAT",
+        "darkgate": "DarkGate",
+        "lumma": "Lumma_Stealer",
+        "redline": "Redline_Stealer",
+        "raccoon": "Raccoon",
+        "vidar": "Vidar",
+        "formbook": "Formbook",
+        "lokibot": "LokiBot",
+        "netsupport": "NetSupport_RAT",
+        "bazarloader": "BazarLoader",
+        "pikabot": "Pikabot",
+        "dcrat": "DcRAT",
+        "xworm": "XWorm",
+    }
+
+    # IMPORTANT: Check exercise_id (filename hint) for known malware family names
+    if exercise_id and best_class.lower() in ["unknown", "anomalous/zero-day"]:
+        ex_lower = exercise_id.lower()
+        for keyword, family in known_families.items():
+            if keyword in ex_lower:
+                print(f"[DEBUG] Keyword Refinement (exercise_id): Model was '{best_class}', found '{keyword}' in context, overriding to {family}")
+                best_class = family
+                break
+
+    # IMPORTANT: Check Suricata alerts for known malware family signatures
+    # If alerts clearly identify a known family, override "Anomalous/Zero-Day"
+    if best_class.lower() in ["unknown", "anomalous/zero-day"] and alerts:
+        # Known malware families that Suricata might detect
+        known_families = {
+            "remcos": "Remcos_RAT",
+            "cobalt": "CobaltStrike",
+            "cobaltstrike": "CobaltStrike",
+            "beacon": "CobaltStrike",
+            "emotet": "Emotet",
+            "trickbot": "Trickbot",
+            "qakbot": "Qakbot",
+            "qbot": "Qakbot",
+            "icedid": "IcedID",
+            "dridex": "Dridex",
+            "agent tesla": "AgentTesla",
+            "agenttesla": "AgentTesla",
+            "asyncrat": "AsyncRAT",
+            "njrat": "NjRAT",
+            "darkgate": "DarkGate",
+            "lumma": "Lumma_Stealer",
+            "redline": "Redline_Stealer",
+            "raccoon": "Raccoon",
+            "vidar": "Vidar",
+            "formbook": "Formbook",
+            "lokibot": "LokiBot",
+            "netsupport": "NetSupport_RAT",
+            "bazarloader": "BazarLoader",
+            "pikabot": "Pikabot",
+            "dcrat": "DcRAT",
+            "xworm": "XWorm",
+        }
+
+        for alert in alerts:
+            sig_lower = (alert.signature_name or "").lower()
+            cat_lower = (alert.category or "").lower()
+            combined = f"{sig_lower} {cat_lower}"
+
+            for keyword, family in known_families.items():
+                if keyword in combined:
+                    print(f"[DEBUG] Signature Refinement: Model was '{best_class}', found '{keyword}' in alerts, overriding to {family}")
+                    best_class = family
+                    break
+            if best_class.lower() != "anomalous/zero-day":
+                break
+
+    # Also scan LLM output attack chains, host findings, and anomalies for malware family mentions
+    if best_class.lower() in ["unknown", "anomalous/zero-day"]:
+        # Check all LLM outputs for malware mentions
+        for out in llm_outputs:
+            # 1. Attack Chains
+            for item in out.attack_chain:
+                text = f"{item.stage or ''} {item.description or ''} {' '.join(item.evidence or [])}".lower()
+                for keyword, family in known_families.items():
+                    if keyword in text:
+                        best_class = family
+                        break
+                if best_class.lower() not in ["unknown", "anomalous/zero-day"]:
+                    break
+            
+            if best_class.lower() not in ["unknown", "anomalous/zero-day"]:
+                break
+
+            # 2. Host Findings
+            for hf in out.host_findings:
+                text = f"{hf.summary or ''} {' '.join(hf.suspicious_behaviors or [])}".lower()
+                for keyword, family in known_families.items():
+                    if keyword in text:
+                        best_class = family
+                        break
+                if best_class.lower() not in ["unknown", "anomalous/zero-day"]:
+                    break
+            
+            if best_class.lower() not in ["unknown", "anomalous/zero-day"]:
+                break
+
+            # 3. Anomalies
+            for anom in out.anomalies:
+                text = f"{anom.description or ''} {anom.reason or ''}".lower()
+                for keyword, family in known_families.items():
+                    if keyword in text:
+                        best_class = family
+                        break
+                if best_class.lower() not in ["unknown", "anomalous/zero-day"]:
+                    break
+            
+            if best_class.lower() not in ["unknown", "anomalous/zero-day"]:
+                break
 
     # Merge attack_chain entries, deduplicating by (stage, description), and
     # flatten them into human-readable key finding strings for the summary.
@@ -366,6 +517,8 @@ def aggregate_llm_results(
 
     # Inject TrafficLLM findings if the LLM missed the specific malware names
     trafficllm_findings: List[str] = []
+    malware_types: List[str] = []
+    botnet_types: List[str] = []
     if trafficllm_results:
         malware_types = trafficllm_results.malware_types or []
         botnet_types = trafficllm_results.botnet_types or []
@@ -391,24 +544,31 @@ def aggregate_llm_results(
         existing_text = ' '.join(key_findings).lower()
         has_malware_names = any(
             mtype.lower() in existing_text
-            for mtype in (trafficllm_results.malware_types or []) + (trafficllm_results.botnet_types or [])
+            for mtype in (malware_types + botnet_types)
         )
         if not has_malware_names:
             # Prepend TrafficLLM findings at the top
             key_findings = trafficllm_findings + key_findings
 
     # Check for Zero-Day findings in LLM outputs and promote them
-    for out in llm_outputs:
-        if out.classification == "Anomalous/Zero-Day":
-            best_sev = "critical"
-            # ENHANCEMENT: Include anomaly reasons in the zero-day finding
-            reasons = [a.reason for a in out.anomalies if a.reason]
-            reason_text = f" Reasons: {'; '.join(reasons)}" if reasons else ""
-            finding = f"ZERO-DAY DETECTED: Model identified anomalous traffic patterns with malicious intent but no known signature.{reason_text}"
-            if finding not in key_findings:
-                key_findings.insert(0, finding)
+    # ONLY if the final classification is still Anomalous/Zero-Day
+    if best_class.lower() == "anomalous/zero-day":
+        for out in llm_outputs:
+            if out.classification == "Anomalous/Zero-Day":
+                best_output_sev = (out.overall_severity or "high").lower()
+                best_output_rank = _SEVERITY_RANK.get(best_output_sev, _SEVERITY_RANK["high"])
+                if best_output_rank > best_rank:
+                     best_rank = best_output_rank
+                     best_sev = best_output_sev
 
-        if "T1059" not in mitre_by_id:
+                # ENHANCEMENT: Include anomaly reasons in the zero-day finding
+                reasons = [a.reason for a in out.anomalies if a.reason]
+                reason_text = f" Reasons: {'; '.join(reasons)}" if reasons else ""
+                finding = f"ZERO-DAY DETECTED: Model identified anomalous traffic patterns with malicious intent but no known signature.{reason_text}"
+                if finding not in key_findings:
+                    key_findings.insert(0, finding)
+
+    if "T1059" not in mitre_by_id:
             mitre_by_id["T1059"] = {"id": "T1059", "name": "Command and Scripting Interpreter"}
 
     # Prepended primary classification to key findings for visibility

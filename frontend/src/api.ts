@@ -18,6 +18,32 @@ export interface CreateJobResponse {
     status: string;
 }
 
+export interface AnomalyFinding {
+    category: string;
+    severity: string;
+    description: string;
+    evidence: string[];
+    affected_hosts: string[];
+    confidence: number;
+    chain_of_thought: string;
+}
+
+export interface AnomalyReport {
+    findings: AnomalyFinding[];
+    overall_anomaly_score: number;
+    zero_day_likelihood: string;
+    summary: string;
+}
+
+export interface JobResultRaw {
+    alerts?: any[];
+    llm_analysis_raw?: {
+        chunks?: any[];
+        summary?: any;
+    };
+    anomaly_detection?: AnomalyReport | null;
+}
+
 export interface JobResultResponse {
     job_id: string;
     status: string;
@@ -28,7 +54,7 @@ export interface JobResultResponse {
         mitre_techniques: any[];
     };
     hosts: any[];
-    raw: any;
+    raw: JobResultRaw;
     report_urls: Record<string, string>;
 }
 
@@ -241,5 +267,15 @@ export const api = {
         const res = await fetch(`${API_BASE}/jobs/${jobId}/conversations/${conversationId}`);
         if (!res.ok) throw new Error("Failed to fetch conversation history");
         return res.json();
+    },
+
+    async deleteJob(jobId: string): Promise<void> {
+        const res = await fetch(`${API_BASE}/jobs/${jobId}`, {
+            method: "DELETE",
+        });
+        if (!res.ok) {
+            const error = await res.json().catch(() => ({ detail: "Failed to delete job" }));
+            throw new Error(error.detail || "Failed to delete job");
+        }
     },
 };

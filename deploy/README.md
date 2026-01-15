@@ -2,7 +2,15 @@
 
 **AI-Powered PCAP Analysis Module - Customer Deployment**
 
-## Quick Start
+## Internal Team (from repo)  recommended
+
+If you are a teammate testing from the GitHub repo, use the **root** `docker-compose.yml` and a **host-running Ollama** with model `aipam-trafficllm-v4`.
+
+See:
+- `docs/TEAM_TEST_DEPLOY_V4.md`
+- `docs/SHARE_DRIVE_PACKAGE_V4.md`
+
+## Quick Start (offline/customer-style package)
 
 ```bash
 # 1. Load the Docker images (provided as tar files)

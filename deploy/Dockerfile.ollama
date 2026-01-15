@@ -7,12 +7,11 @@ FROM ollama/ollama:latest
 # Create model directory
 RUN mkdir -p /root/.ollama/models
 
-# Copy the GGUF model file (must be built first via merge_and_convert.py)
-# The model file should be placed in deploy/models/ before building
-COPY deploy/models/aipam-traffic-llm.gguf /models/aipam-traffic-llm.gguf
+# Copy the GGUF model file (place it in deploy/models/ before building)
+COPY deploy/models/aipam-trafficllm-v4.gguf /models/aipam-trafficllm-v4.gguf
 
 # Copy the Modelfile
-COPY deploy/Modelfile /models/Modelfile
+COPY deploy/Modelfile.trafficllm-v4 /models/Modelfile.trafficllm-v4
 
 # Create startup script that imports the model on first run
 RUN cat > /start.sh << 'EOF'
@@ -31,9 +30,9 @@ done
 echo "Ollama is ready!"
 
 # Check if model already exists
-if ! ollama list | grep -q "aipam-unified"; then
-    echo "Importing AIPAM model..."
-    cd /models && ollama create aipam-unified -f Modelfile
+if ! ollama list | grep -q "aipam-trafficllm-v4"; then
+    echo "Importing AIPAM v4 model (aipam-trafficllm-v4)..."
+    cd /models && ollama create aipam-trafficllm-v4 -f Modelfile.trafficllm-v4
     echo "Model imported successfully!"
 else
     echo "AIPAM model already exists."

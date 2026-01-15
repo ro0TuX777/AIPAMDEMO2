@@ -7,7 +7,7 @@
 # Prerequisites:
 #   1. Training must be complete
 #   2. Run merge_and_convert.py to create the GGUF model
-#   3. Place aipam-traffic-llm.gguf in deploy/models/
+#   3. Place aipam-trafficllm-v4.gguf in deploy/models/
 
 set -e
 
@@ -36,14 +36,14 @@ echo "AIPAM Docker Build"
 echo "============================================"
 
 # Check for model file
-MODEL_FILE="deploy/models/aipam-traffic-llm.gguf"
+MODEL_FILE="deploy/models/aipam-trafficllm-v4.gguf"
 if [ ! -f "$MODEL_FILE" ]; then
     echo "⚠️  WARNING: Model file not found at $MODEL_FILE"
     echo ""
     echo "To create the model file:"
     echo "  1. Wait for training to complete"
-    echo "  2. Run: cd finetuning/aipam_gpu_training && python merge_and_convert.py"
-    echo "  3. Copy the GGUF file: cp finetuning/aipam_gpu_training/aipam-traffic-llm.gguf deploy/models/"
+    echo "  2. Run: cd finetuning/trafficllm_training && python merge_lora_average.py  (or your merge step)"
+    echo "  3. Copy the GGUF file: cp finetuning/trafficllm_training/aipam-trafficllm-v4.gguf deploy/models/"
     echo ""
     read -p "Continue building app image only? [y/N] " -n 1 -r
     echo

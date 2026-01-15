@@ -6,8 +6,9 @@ export const DashboardPage: React.FC = () => {
   const [jobs, setJobs] = useState<JobStatusResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
 
-  useEffect(() => {
+  const loadJobs = () => {
     api.getJobs()
       .then(setJobs)
       .catch((err) => {
@@ -15,7 +16,32 @@ export const DashboardPage: React.FC = () => {
         setError("Failed to load jobs");
       })
       .finally(() => setLoading(false));
+  };
+
+  useEffect(() => {
+    loadJobs();
   }, []);
+
+  const handleDelete = async (jobId: string, status: string) => {
+    if (status !== "completed" && status !== "failed") {
+      alert("Only completed or failed jobs can be deleted.");
+      return;
+    }
+
+    if (!confirm(`Are you sure you want to delete job ${jobId.slice(0, 8)}...? This cannot be undone.`)) {
+      return;
+    }
+
+    setDeletingId(jobId);
+    try {
+      await api.deleteJob(jobId);
+      setJobs(jobs.filter(j => j.job_id !== jobId));
+    } catch (err: any) {
+      alert(err.message || "Failed to delete job");
+    } finally {
+      setDeletingId(null);
+    }
+  };
 
   const getStatusColor = (status: string) => {
     switch (status) {
@@ -75,13 +101,22 @@ export const DashboardPage: React.FC = () => {
                   <td className="px-4 py-3 text-slate-400">
                     {new Date(job.updated_at).toLocaleString()}
                   </td>
-                  <td className="px-4 py-3">
+                  <td className="px-4 py-3 space-x-3">
                     <Link
                       to={`/jobs/${job.job_id}`}
                       className="text-emerald-400 hover:text-emerald-300 font-medium"
                     >
                       View
                     </Link>
+                    {(job.status === "completed" || job.status === "failed") && (
+                      <button
+                        onClick={() => handleDelete(job.job_id, job.status)}
+                        disabled={deletingId === job.job_id}
+                        className="text-red-400 hover:text-red-300 font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+                      >
+                        {deletingId === job.job_id ? "Deleting..." : "Delete"}
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))}

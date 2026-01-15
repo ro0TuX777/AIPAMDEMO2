@@ -395,7 +395,7 @@ def run_benchmark(
 def main():
     parser = argparse.ArgumentParser(description="AIPAM Benchmark Evaluation")
     parser.add_argument("manifest", help="Path to benchmark manifest JSON")
-    parser.add_argument("--model", default="aipam-traffic-llm", help="Ollama model name")
+    parser.add_argument("--model", default="aipam-trafficllm-v4", help="Ollama model name")
     parser.add_argument("--endpoint", default="http://localhost:11434/v1/chat/completions")
     parser.add_argument("--output", default="benchmark_results", help="Output directory")
     parser.add_argument("--limit", type=int, help="Limit number of samples")

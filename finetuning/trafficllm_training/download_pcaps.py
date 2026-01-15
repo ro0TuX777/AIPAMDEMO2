@@ -38,6 +38,11 @@ TARGET_MALWARE = {
     "redline": "Redline_Stealer",
     "raccoon": "Raccoon",
     "meduza": "Meduza_Stealer",
+    "rhadamanthys": "Rhadamanthys",
+    "amadey": "Amadey",
+    "aurora": "Aurora_Stealer",
+    "risepro": "RisePro",
+    "mystic": "MysticStealer",
     # RATs
     "remcos": "Remcos_RAT",
     "netsupport": "NetSupport_RAT",
@@ -48,6 +53,13 @@ TARGET_MALWARE = {
     "xworm": "XWorm",
     "warzone": "WarZone",
     "venomrat": "VenomRAT",
+    "bitrat": "BitRAT",
+    "orcus": "OrcusRAT",
+    "limerat": "LimeRAT",
+    "nanocore": "NanoCore",
+    "netwire": "NetWire",
+    "poison ivy": "PoisonIvy",
+    "darkcomet": "DarkComet",
     # Loaders
     "darkgate": "DarkGate",
     "pikabot": "Pikabot",
@@ -60,6 +72,13 @@ TARGET_MALWARE = {
     "socgholish": "SocGholish",
     "matanbuchus": "Matanbuchus",
     "smartloader": "SmartLoader",
+    "smokeloader": "SmokeLoader",
+    "privateloader": "PrivateLoader",
+    "nullmixer": "NullMixer",
+    "batloader": "BatLoader",
+    "chromeloader": "ChromeLoader",
+    "gootloader": "GootLoader",
+    "nitroloader": "NitroLoader",
     # Banking Trojans
     "danabot": "Danabot",
     "emotet": "Emotet",
@@ -70,6 +89,11 @@ TARGET_MALWARE = {
     "bokbot": "IcedID",
     "ursnif": "Ursnif",
     "gozi": "Ursnif",
+    "dridex": "Dridex",
+    "zloader": "ZLoader",
+    "zeus": "Zeus",
+    "hancitor": "Hancitor",
+    "panda banker": "PandaBanker",
     # Infostealers/Formgrabbers
     "formbook": "Formbook",
     "xloader": "XLoader",
@@ -77,6 +101,12 @@ TARGET_MALWARE = {
     "agenttesla": "AgentTesla",
     "astaroth": "Astaroth",
     "guildma": "Astaroth",
+    "lokibot": "LokiBot",
+    "azorult": "AZORult",
+    "pony": "Pony",
+    "predator": "PredatorStealer",
+    "snake keylogger": "SnakeKeylogger",
+    "snakekeylogger": "SnakeKeylogger",
     # Pentest/C2
     "cobalt strike": "CobaltStrike",
     "cobaltstrike": "CobaltStrike",
@@ -84,21 +114,44 @@ TARGET_MALWARE = {
     "metasploit": "Metasploit",
     "havoc": "Havoc",
     "brute ratel": "BruteRatel",
-    # Ransomware precursors
+    "mythic": "Mythic",
+    "empire": "Empire",
+    "poshc2": "PoshC2",
+    # Ransomware & precursors
     "conti": "Conti",
     "lockbit": "LockBit",
     "blackcat": "BlackCat",
     "alphv": "BlackCat",
     "royal": "Royal",
     "akira": "Akira",
+    "ryuk": "Ryuk",
+    "revil": "REvil",
+    "sodinokibi": "REvil",
+    "maze": "Maze",
+    "blackbasta": "BlackBasta",
+    "black basta": "BlackBasta",
+    "hive": "Hive",
+    "play": "Play",
+    # Exploit Kits
+    "rigek": "RigEK",
+    "rig ek": "RigEK",
+    "rig exploit": "RigEK",
+    "fallout": "FalloutEK",
+    "magnitude": "MagnitudeEK",
+    "spelevo": "SpelevoEK",
+    # Other
+    "mirai": "Mirai",
+    "mozi": "Mozi",
+    "systembc": "SystemBC",
+    "nymaim": "Nymaim",
+    "vawtrak": "Vawtrak",
 }
 
 # Years to download from
-YEARS = ["2025", "2024", "2023", "2022", "2021", "2020"]
+YEARS = ["2025", "2024", "2023", "2022", "2021", "2020", "2019", "2018"]
 
-# Output directory for training data
-# We target the modern ingestion subdirectories specifically
-OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "..", "data", "raw", "modern")
+# Output directory - pcaps folder in same directory as script
+OUTPUT_DIR = os.path.join(os.path.dirname(__file__), "pcaps")
 
 def get_pcap_links(year="2024"):
     """Get links to blog posts from the index page."""

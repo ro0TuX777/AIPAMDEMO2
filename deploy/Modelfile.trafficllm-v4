@@ -1,0 +1,18 @@
+# AIPAM TrafficLLM v4 (GGUF)
+# Usage:
+#   cd deploy
+#   ollama create aipam-trafficllm-v4 -f Modelfile.trafficllm-v4
+
+FROM ./models/aipam-trafficllm-v4.gguf
+
+PARAMETER temperature 0.1
+PARAMETER top_p 0.9
+PARAMETER top_k 40
+PARAMETER num_ctx 4096
+PARAMETER repeat_penalty 1.1
+PARAMETER stop "<|eot_id|>"
+
+SYSTEM """You are a cybersecurity expert specializing in malware traffic analysis.
+When given network traffic summaries, classify the malware family (if known) and malware type, and provide concise reasoning.
+If you are not confident, use family="Unknown" and/or type="Unknown" and explain what evidence is missing."""
+

@@ -246,6 +246,26 @@ class TrafficLLMResult(BaseModel):
     # The summary (counts + types) is sufficient for the LLM prompt
 
 
+class AnomalyFindingModel(BaseModel):
+    """Anomaly finding from heuristic zero-day detection."""
+    category: str
+    severity: str
+    description: str
+    evidence: List[str] = Field(default_factory=list)
+    affected_hosts: List[str] = Field(default_factory=list)
+    confidence: float = 0.0
+    chain_of_thought: str = ""
+
+
+class AnomalyReportModel(BaseModel):
+    """Anomaly detection report for zero-day identification."""
+    findings: List[AnomalyFindingModel] = Field(default_factory=list)
+    overall_anomaly_score: float = 0.0
+    zero_day_likelihood: str = "none"
+    summary: str = ""
+    interaction_graph: Dict[str, object] = Field(default_factory=dict)
+
+
 class LLMInputBundle(BaseModel):
     exercise_id: str
     mode: str
@@ -258,4 +278,6 @@ class LLMInputBundle(BaseModel):
     alerts: List["AlertRecord"]
     trafficllm_results: Optional[TrafficLLMResult] = None
     raw_packet_samples: List[str] = Field(default_factory=list)
+    # Zero-day anomaly detection findings (optional)
+    anomaly_report: Optional[AnomalyReportModel] = None
 

@@ -33,7 +33,7 @@ import httpx
 class InferenceConfig:
     """Configuration for inference."""
     endpoint: str = "http://localhost:11434/v1/chat/completions"
-    model: str = "aipam-traffic-llm"  # Fine-tuned model name in Ollama
+    model: str = "aipam-trafficllm-v4"  # Fine-tuned model name in Ollama
     temperature: float = 0.1
     max_tokens: int = 100
     timeout_seconds: float = 120.0
@@ -364,7 +364,7 @@ def main():
     """CLI entry point for inference."""
     parser = argparse.ArgumentParser(description="AIPAM Benchmark Inference")
     parser.add_argument("pcap", help="Path to PCAP file")
-    parser.add_argument("--model", default="aipam-traffic-llm", help="Ollama model name")
+    parser.add_argument("--model", default="aipam-trafficllm-v4", help="Ollama model name")
     parser.add_argument("--endpoint", default="http://localhost:11434/v1/chat/completions")
     parser.add_argument("--packets", type=int, default=10, help="Number of packets to analyze")
     parser.add_argument("--no-aggregate", action="store_true", help="Return per-packet results")

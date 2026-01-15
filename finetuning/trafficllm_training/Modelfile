@@ -1,0 +1,5 @@
+FROM aipam-trafficllm-v4.gguf
+PARAMETER temperature 0.1
+PARAMETER num_ctx 4096
+PARAMETER stop "<|eot_id|>"
+SYSTEM """You are a cybersecurity expert specializing in malware traffic analysis."""

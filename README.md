@@ -31,8 +31,8 @@ Our recently completed benchmark on 15 malicious samples shows:
 - **Exact Family Match:** 6.7%
 
 For detailed analysis and latest results, see:
-- [RESULTS_LATEST.md](file:///home/bc/Documents/AIPAM/benchmark/RESULTS_LATEST.md)
-- [BIAS_ANALYSIS.md](file:///home/bc/Documents/AIPAM/benchmark/BIAS_ANALYSIS.md)
+- [benchmark/RESULTS_LATEST.md](benchmark/RESULTS_LATEST.md)
+- [benchmark/BIAS_ANALYSIS.md](benchmark/BIAS_ANALYSIS.md)
 
 ## Architecture
 

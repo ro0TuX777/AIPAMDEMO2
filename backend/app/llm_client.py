@@ -775,7 +775,7 @@ class LLMClient:
 
             if malware_count > 0 or botnet_count > 0:
                 malware_list = ', '.join(malware_types) if malware_types else 'unidentified malware'
-                
+
                 # Build example evidence strings
                 example_evidence = [f"TrafficLLM detected {mtype} malware traffic" for mtype in malware_types[:3]]
                 example_evidence_str = ', '.join([f'"{e}"' for e in example_evidence]) if example_evidence else '"TrafficLLM detected malware traffic"'
@@ -786,10 +786,58 @@ class LLMClient:
 **DETECTED MALWARE PATTERNS: {malware_list}**
 **TOTAL MALICIOUS FLOWS: {malware_count}**
 
-TrafficLLM identified patterns that correlate with the malware types listed above. 
+TrafficLLM identified patterns that correlate with the malware types listed above.
 Use this as a secondary indicator to help guide your forensic analysis.
 Do NOT feel forced to use these names if the forensic evidence in the <packet> data suggests a different family.
 """
+
+        # Extract ZERO-DAY ANOMALY DETECTION results if present
+        anomaly_report = self._get_v(bundle, "anomaly_report")
+        anomaly_context = ""
+        if anomaly_report:
+            zero_day_likelihood = self._get_v(anomaly_report, "zero_day_likelihood", "none")
+            anomaly_score = self._get_v(anomaly_report, "overall_anomaly_score", 0.0)
+            findings = self._get_v(anomaly_report, "findings", [])
+
+            if findings and zero_day_likelihood != "none":
+                # Build the anomaly context with chain-of-thought reasoning
+                anomaly_lines = [
+                    f"\n## ZERO-DAY ANOMALY DETECTION REPORT",
+                    f"**Zero-Day Likelihood: {zero_day_likelihood.upper()}** (score: {anomaly_score:.2f})",
+                    f"**Behavioral Anomalies Detected: {len(findings)}**\n",
+                ]
+
+                for i, finding in enumerate(findings[:5], 1):  # Limit to top 5 findings
+                    category = self._get_v(finding, "category", "unknown")
+                    severity = self._get_v(finding, "severity", "medium")
+                    description = self._get_v(finding, "description", "")
+                    evidence = self._get_v(finding, "evidence", [])
+                    chain_of_thought = self._get_v(finding, "chain_of_thought", "")
+
+                    anomaly_lines.append(f"### Anomaly #{i}: [{severity.upper()}] {category.title()}")
+                    anomaly_lines.append(f"**Description:** {description}")
+                    if evidence:
+                        anomaly_lines.append(f"**Evidence:** {', '.join(evidence[:3])}")
+                    if chain_of_thought:
+                        # Include the forensic reasoning to guide the LLM
+                        anomaly_lines.append(f"\n**Forensic Analysis:**\n{chain_of_thought}\n")
+
+                anomaly_lines.append("""
+**IMPORTANT:** The above anomalies were detected using behavioral heuristics, NOT signatures.
+These behavioral patterns (beaconing, lateral movement, etc.) help identify C2 activity.
+
+CLASSIFICATION PRIORITY:
+1. If traffic matches a KNOWN malware family's indicators (Remcos, Cobalt Strike, etc.),
+   classify as that malware family - even if anomaly score is high.
+2. ONLY classify as 'Anomalous/Zero-Day' if the traffic shows clear malicious intent
+   but does NOT match ANY known malware family patterns.
+
+High anomaly scores indicate evasive C2 behavior, but known malware families
+(like Cobalt Strike, Remcos, etc.) use these techniques intentionally.
+
+Use the chain-of-thought reasoning above to inform your analysis.""")
+
+                anomaly_context = '\n'.join(anomaly_lines)
 
         # Serialize bundle safely regardless of type
         if hasattr(bundle, "model_dump"):
@@ -829,15 +877,18 @@ Do NOT feel forced to use these names if the forensic evidence in the <packet> d
             alert_context = f"\n\nSECURITY ALERTS DETECTED: {alerts_info}\nThese alerts indicate malicious activity - classify accordingly."
 
         # Refined user prompt for training alignment
-        user_prompt = f"""Conduct a detailed ZERO-DAY FORENSIC ANALYSIS on the following traffic data <packet>.
+        user_prompt = f"""Conduct a detailed FORENSIC ANALYSIS on the following traffic data <packet>.
 Identify if this traffic is Benign or Malicious.
 
 If malicious:
-1. Identify the likely malware family (or multiple families if present) from this category list: '{malware_categories}'.
-2. fallback to 'Anomalous/Zero-Day' ONLY if the traffic exhibits malicious intent but does NOT match any known category above.
+1. FIRST, check if the traffic matches ANY known malware family from this list: '{malware_categories}'.
+2. Known malware families (Cobalt Strike, Remcos, etc.) often have HIGH behavioral anomaly scores
+   because they use evasive C2 techniques - this does NOT make them "zero-day".
+3. Classify as 'Anomalous/Zero-Day' ONLY if the traffic is clearly malicious but does NOT match
+   ANY known malware family patterns above.
 
 <packet>: {packet_data}
-{trafficllm_context}
+{trafficllm_context}{anomaly_context}
 Network hosts: {hosts_info}{alert_context}
 
 Provide your findings in a structured JSON format with this exact structure:
@@ -959,7 +1010,11 @@ Provide your findings in a structured JSON format with this exact structure:
                     output.classification = refined
                     # Ensure internal descriptions match the new classification
                     self._ensure_output_consistency(output, original_class, refined)
-            
+
+            # Validate and fix MITRE techniques
+            if output:
+                output = self._validate_output_mitre(output)
+
             return output
         except (KeyError, IndexError, json.JSONDecodeError, TypeError) as e:
             print(f"Warning: Failed to parse LLM JSON output ({e}); using natural language parsing.")
@@ -1005,6 +1060,7 @@ Provide your findings in a structured JSON format with this exact structure:
 
         # Default values
         severity = "medium"
+        classification = ""
         attack_chain = []
         host_findings = []
         anomalies = []
@@ -1410,32 +1466,132 @@ Provide your findings in a structured JSON format with this exact structure:
         return output
 
     def _get_technique_name(self, tech_id: str) -> str:
-        """Get the name for a MITRE ATT&CK technique ID."""
-        # Common technique mappings
-        techniques = {
-            "T1566": "Phishing",
-            "T1059": "Command and Scripting Interpreter",
-            "T1071": "Application Layer Protocol",
-            "T1048": "Exfiltration Over Alternative Protocol",
-            "T1486": "Data Encrypted for Impact",
-            "T1003": "OS Credential Dumping",
-            "T1021": "Remote Services",
-            "T1562": "Impair Defenses",
-            "T1105": "Ingress Tool Transfer",
-            "T1027": "Obfuscated Files or Information",
-            "T1082": "System Information Discovery",
-            "T1083": "File and Directory Discovery",
-            "T1055": "Process Injection",
-            "T1047": "Windows Management Instrumentation",
-            "T1053": "Scheduled Task/Job",
-            "T1547": "Boot or Logon Autostart Execution",
-            "T1070": "Indicator Removal",
-            "T1497": "Virtualization/Sandbox Evasion",
-            "T1056": "Input Capture",
-            "T1185": "Browser Session Hijacking",
-            "T1499": "Endpoint Denial of Service",
-        }
-        return techniques.get(tech_id, f"Technique {tech_id}")
+        """Get the name for a MITRE ATT&CK technique ID using the comprehensive database."""
+        from .mitre_database import get_technique_name
+        return get_technique_name(tech_id)
+
+    def _validate_and_fix_mitre_techniques(self, techniques: List[Dict[str, str]]) -> List[Dict[str, str]]:
+        """
+        Validate MITRE technique IDs and fix incorrect names.
+
+        This catches issues like T1053 being labeled as "Pivot" when it should be
+        "Scheduled Task/Job".
+
+        Args:
+            techniques: List of {"id": "T1XXX", "name": "..."} dicts
+
+        Returns:
+            List of validated/corrected technique dicts
+        """
+        from .mitre_database import validate_and_fix_technique, validate_technique_id
+
+        validated = []
+        for tech in techniques:
+            if not isinstance(tech, dict) or "id" not in tech:
+                continue
+
+            tech_id = tech.get("id", "")
+            provided_name = tech.get("name", "")
+
+            # Validate and fix the technique
+            fixed_id, fixed_name, was_corrected = validate_and_fix_technique(tech_id, provided_name)
+
+            # Check if the ID itself is valid
+            is_valid, _ = validate_technique_id(tech_id)
+
+            if not is_valid:
+                # Log invalid technique ID for debugging
+                print(f"Warning: Invalid MITRE technique ID '{tech_id}' with name '{provided_name}'")
+
+            validated.append({
+                "id": fixed_id,
+                "name": fixed_name,
+                "_validated": is_valid,
+                "_corrected": was_corrected
+            })
+
+        return validated
+
+    def _validate_attack_chain(self, attack_chain: List[Dict]) -> List[Dict]:
+        """
+        Validate and fix MITRE techniques in attack chain items.
+
+        Args:
+            attack_chain: List of attack chain stage dicts
+
+        Returns:
+            Attack chain with validated MITRE techniques
+        """
+        validated_chain = []
+        for item in attack_chain:
+            if not isinstance(item, dict):
+                continue
+
+            validated_item = item.copy()
+
+            # Validate MITRE techniques in this stage
+            if "mitre_techniques" in item and item["mitre_techniques"]:
+                validated_item["mitre_techniques"] = self._validate_and_fix_mitre_techniques(
+                    item["mitre_techniques"]
+                )
+
+            validated_chain.append(validated_item)
+
+        return validated_chain
+
+    def _validate_output_mitre(self, output: "LLMOutput") -> "LLMOutput":
+        """
+        Validate and fix all MITRE techniques in an LLMOutput object.
+
+        This is the main entry point for MITRE validation, called after
+        the LLM output is parsed.
+
+        Args:
+            output: The LLMOutput object to validate
+
+        Returns:
+            The same LLMOutput with validated/corrected MITRE techniques
+        """
+        from .models import AttackChainItem, MitreTechnique
+
+        # Validate attack_chain techniques
+        if output.attack_chain:
+            validated_chain = []
+            for item in output.attack_chain:
+                # Handle both dict and AttackChainItem
+                if isinstance(item, dict):
+                    item_dict = item
+                else:
+                    item_dict = item.model_dump() if hasattr(item, 'model_dump') else item.__dict__
+
+                if "mitre_techniques" in item_dict and item_dict["mitre_techniques"]:
+                    validated_techs = self._validate_and_fix_mitre_techniques(
+                        [t.model_dump() if hasattr(t, 'model_dump') else t for t in item_dict["mitre_techniques"]]
+                    )
+                    # Remove internal fields before creating model
+                    cleaned_techs = [
+                        {"id": t["id"], "name": t["name"]}
+                        for t in validated_techs
+                    ]
+                    item_dict["mitre_techniques"] = [MitreTechnique(**t) for t in cleaned_techs]
+
+                validated_chain.append(AttackChainItem(**item_dict) if isinstance(item, AttackChainItem) else item_dict)
+
+            output.attack_chain = validated_chain
+
+        # Validate mitre_techniques_overall
+        if output.mitre_techniques_overall:
+            validated_overall = self._validate_and_fix_mitre_techniques(
+                [t.model_dump() if hasattr(t, 'model_dump') else t for t in output.mitre_techniques_overall]
+            )
+            # Remove internal fields
+            cleaned_overall = [
+                {"id": t["id"], "name": t["name"]}
+                for t in validated_overall
+            ]
+            output.mitre_techniques_overall = [MitreTechnique(**t) for t in cleaned_overall]
+
+        return output
 
     async def chat_completion(
         self, messages: List[Dict[str, str]], temperature: Optional[float] = None

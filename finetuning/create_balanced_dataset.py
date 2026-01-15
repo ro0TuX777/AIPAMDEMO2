@@ -1,15 +1,11 @@
-#!/usr/bin/env python3
-"""
-Create a balanced dataset with equal samples per class for better training.
-This script merges legacy TrafficLLM data (instruction/output) with 
-modern AIPAM data (metrics+packets -> instruction/output).
-"""
-
 import json
 import random
+import os
 from pathlib import Path
 from collections import defaultdict
 from typing import Dict, List
+
+BASE_DIR = Path(__file__).parent.absolute()
 
 SYSTEM_PROMPT = """You are a senior network security analyst and incident responder.
 
@@ -32,73 +28,129 @@ Do not invent facts. Base your conclusions only on the provided data."""
 # Dataset configurations
 DATASETS = [
     {
-        "path": "data/trafficllm_datasets/ustc-tfc-2016/ustc-tfc-2016_detection_packet_train.json",
+        "path": BASE_DIR / "data/trafficllm_datasets/ustc-tfc-2016/ustc-tfc-2016_detection_packet_train.json",
         "task": "Malware Detection",
         "type": "legacy",
-        "samples_per_class": 100,  # Keep legacy low to maintain modern focus
+        "samples_per_class": 100,
     },
     {
-        "path": "data/trafficllm_datasets/iscx-vpn-2016/iscx-vpn-2016_detection_packet_train.json",
+        "path": BASE_DIR / "data/trafficllm_datasets/iscx-vpn-2016/iscx-vpn-2016_detection_packet_train.json",
         "task": "VPN Detection",
         "type": "legacy",
         "samples_per_class": 100,
     },
     {
-        "path": "data/trafficllm_datasets/iscx-tor-2016/iscx-tor-2016_detection_packet_train.json",
+        "path": BASE_DIR / "data/trafficllm_datasets/iscx-tor-2016/iscx-tor-2016_detection_packet_train.json",
         "task": "Tor Detection",
         "type": "legacy",
         "samples_per_class": 100,
     },
     # NEW: Modern Families
     {
-        "path": "data/processed/processed_samples.jsonl",
+        "path": BASE_DIR / "data/processed/processed_samples_v5.jsonl",
         "task": "Modern Malware Detection",
         "type": "modern",
-        "samples_per_class": 2000, 
+        "samples_per_class": 5000, 
+    },
+    {
+        "path": BASE_DIR / "custom_v5_lessons.jsonl",
+        "task": "V5 Reasoning Reinforcement",
+        "type": "legacy",
+        "samples_per_class": 100,
     },
 ]
+
+
+
+def generate_payload_heatmap(packet_strings: List[str]) -> str:
+    """Generate a visual byte-distribution heatmap for LLM analysis."""
+    if not packet_strings:
+        return "(No raw packets provided)"
+        
+    import string
+    all_bytes = []
+    for p in packet_strings:
+        # Extract hex values from packet snippets
+        hex_vals = "".join(filter(lambda c: c in string.hexdigits, p))
+        try:
+            if len(hex_vals) % 2 == 0:
+                all_bytes.extend(bytes.fromhex(hex_vals))
+        except:
+            continue
+            
+    if not all_bytes:
+        return "(Unprocessable payload format)"
+        
+    total = len(all_bytes)
+    nulls = all_bytes.count(0)
+    printable = sum(1 for b in all_bytes if 32 <= b <= 126)
+    high_bit = sum(1 for b in all_bytes if b > 127)
+    
+    # ASCII Histogram
+    def bar(pct): 
+        filled = int(pct / 5)
+        return "█" * filled + "░" * (20 - filled)
+    
+    p_pct = (printable/total)*100
+    n_pct = (nulls/total)*100
+    h_pct = (high_bit/total)*100
+    o_pct = max(0, 100 - p_pct - n_pct - h_pct)
+
+    return f"""PAYLOAD HEATMAP (Visual Byte Distribution):
+[Printable] {bar(p_pct)} {p_pct:4.1f}% (Text/Headers)
+[Null Bytes] {bar(n_pct)} {n_pct:4.1f}% (Padding/Structure)
+[High Bit  ] {bar(h_pct)} {h_pct:4.1f}% (Encrypted/Encapsulated)
+[Other     ] {bar(o_pct)} {o_pct:4.1f}% (Control/Binary)"""
 
 
 def create_user_prompt(sample: Dict) -> str:
     """Create user prompt from processed sample (Modern Format)."""
     # 1. JSON Context
-    data_json = json.dumps({
+    ctx_data = {
         "host_summaries": sample.get("host_summaries", []),
         "hostpair_summaries": sample.get("hostpair_summaries", []),
         "flow_count": sample.get("flow_count", 0),
-    }, indent=2)
+        "alert_count": sample.get("alert_count", 0),
+        "anomaly_report": sample.get("anomaly_report", {}),
+        "interaction_graph": sample.get("anomaly_report", {}).get("interaction_graph", {}) # NEW: V5 Topologies
+    }
+    data_json = json.dumps(ctx_data, indent=2)
 
-    # 2. Raw Packets
+    # 2. Raw Packets & Heatmap
     packet_strings = sample.get("raw_packet_samples", [])
     packet_data = "\n".join(packet_strings) if packet_strings else "(No raw packets provided)"
+    heatmap = generate_payload_heatmap(packet_strings)
 
     return f"""Analyze the following network traffic data:
 
-Network Flows:
+Network Topology & Heuristics:
 ```json
 {data_json}
 ```
 
-Raw Packet Snipets:
+{heatmap}
+
+Raw Packet Snippets:
 {packet_data}
 
-
-Classify this traffic and provide your analysis as a JSON object with these fields:
-- overall_severity: "low" | "medium" | "high" | "critical"
-- classification: "normal" | "malicious" | "suspicious"
-- attack_type: specific attack type or null if normal
-- confidence: 0.0-1.0
-- attack_chain: list of attack stages with evidence
-- host_findings: list of findings per host
-- anomalies: list of detected anomalies
-- mitre_techniques_overall: list of MITRE ATT&CK technique objects"""
+Classify this traffic and provide your analysis as a JSON object.
+Use the `interaction_graph` to identify patterns such as Hubs, Authorities, or PIVOTS.
+Use the `PAYLOAD HEATMAP` to verify if the traffic is legitimately encrypted or anomalously obfuscated.
+Provide your reasoning in the `attack_chain` and `anomalies` fields."""
 
 
 def create_assistant_response(sample: Dict) -> str:
     """Create ideal assistant response based on sample label (Modern Format)."""
     label = sample.get("normalized_label", "normal")
     dataset_type = sample.get("dataset_type", "unknown")
-
+    anomaly_report = sample.get("anomaly_report", {})
+    findings = anomaly_report.get("findings", [])
+    graph = anomaly_report.get("interaction_graph", {})
+    
+    heatmap_findings = []
+    # Simple logic to extract heatmap-like observation if we were in the prompt
+    # Since we don't have the actual heatmap text here, we'll use the findings
+    
     # Map labels to structured responses
     if label == "normal":
         response = {
@@ -115,22 +167,42 @@ def create_assistant_response(sample: Dict) -> str:
         # Default templates for types
         severity_map = {"malware": "high", "botnet": "high", "apt": "critical"}
         
+        # Enrich attack chain with forensic reasoning
+        evidence = [f"Observed characteristic flows for {label}"]
+        
+        # Add Graph Reasoning
+        if graph.get("pivots"):
+            evidence.append(f"CRITICAL TOPOLOGY: Detected horizontal pivoting through {graph['pivots']}")
+        elif graph.get("hubs"):
+            evidence.append("ACTIVE RECON: Large fan-out detected from source hub IPs.")
+            
+        # Add Heuristic Reasoning
+        if findings:
+            for f in findings[:3]: # Take top 3 findings
+                if f.get("chain_of_thought"):
+                    evidence.append(f["chain_of_thought"])
+
+        # Dynamic confidence boost for high-fidelity signals
+        base_confidence = 0.90
+        if graph.get("pivots") or any(f.get("severity") == "high" for f in findings):
+            base_confidence = 0.98
+
         response = {
             "overall_severity": severity_map.get(dataset_type, "high"),
             "classification": "malicious",
             "attack_type": label if label != "malware" else dataset_type,
-            "confidence": 0.95,
+            "confidence": base_confidence,
             "attack_chain": [{
-                "stage": "execution",
-                "description": f"Traffic consistent with {label} behavior",
-                "evidence": [f"Observed characteristic flows for {label}"],
+                "stage": "detection",
+                "description": f"Traffic consistent with {label} behavior and protocol anomalies",
+                "evidence": evidence,
                 "mitre_techniques": [{"id": "T1071", "name": "Application Layer Protocol"}],
             }],
-            "host_findings": [], # Filled in by model ideally, but empty for training template is fine
-            "anomalies": [{
-                "description": f"Detected {label} traffic signatures",
+            "host_findings": [],
+            "anomalies": findings if findings else [{
+                "description": f"Detected {label} traffic signs",
                 "related_hosts": [],
-                "confidence": 0.95,
+                "confidence": 0.90,
                 "reason": f"Matches known {label} patterns",
             }],
             "mitre_techniques_overall": [{"id": "T1071", "name": "Application Layer Protocol"}],
@@ -189,7 +261,8 @@ def load_and_balance_dataset(ds_config):
                         })
                     else:
                         # Legacy JSONL (Instruction/Output)
-                        label = raw_sample.get("output", "unknown")
+                        # Check for explicit label first, then fallback to output
+                        label = raw_sample.get("label") or raw_sample.get("normalized_label") or raw_sample.get("output", "unknown")
                         samples_by_class[label].append(raw_sample)
                 except Exception as e:
                     continue
@@ -253,7 +326,7 @@ def main():
     val_data = convert_to_chatml(val_samples)
     
     # Save to balanced dataset directory
-    output_dir = Path("models/aipam-llama-balanced")
+    output_dir = BASE_DIR / "data/v5-balanced"
     output_dir.mkdir(parents=True, exist_ok=True)
     
     with open(output_dir / "train.jsonl", "w") as f:
