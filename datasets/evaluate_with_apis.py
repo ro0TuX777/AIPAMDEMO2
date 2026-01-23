@@ -16,7 +16,7 @@ import requests
 
 # API Configuration
 API_URL = "https://api.openai.com/v1/chat/completions"  # OpenAI API endpoint
-API_KEY = "REMOVED_OPENAI_API_KEY"  # Replace with your API key
+API_KEY = "<API_KEY>"  # Replace with your API key
 
 # Benchmark Manifest
 BENCHMARK_MANIFEST = "benchmark/manifests/trained_families_benchmark.json"
