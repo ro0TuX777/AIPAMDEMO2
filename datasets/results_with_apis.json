@@ -1,0 +1,1012 @@
+[
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/AZORult/2021-08-05-AZORult-infection.pcap",
+        "ground_truth": "AZORult",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 5.845296144485474
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/AgentTesla/2023-11-22-AgentTesla-infection-FTP-data-exfil.pcap",
+        "ground_truth": "AgentTesla",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 3.4386699199676514
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/AgentTesla/2023-09-21-AgentTesla-traffic-expertsconsultgh.co.pcap",
+        "ground_truth": "AgentTesla",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 4.340439081192017
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/AgentTesla/2023-01-05-Agent-Tesla-variant-traffic.pcap",
+        "ground_truth": "AgentTesla",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 6.331902980804443
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Astaroth/2021-12-23-Astaroth-Guildma-infection-traffic.pcap",
+        "ground_truth": "Astaroth",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 2.8854711055755615
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Astaroth/2023-01-04-part-1-Astaroth-Guildma-infection-traffic-on-01-03.pcap",
+        "ground_truth": "Astaroth",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 5.734403848648071
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Astaroth/2022-02-16-Astaroth-Guildma-infection-traffic.pcap",
+        "ground_truth": "Astaroth",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 2.915811061859131
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/AsyncRAT/2024-03-14-AsyncRAT-and-XWorm-infection-traffic.pcap",
+        "ground_truth": "AsyncRAT",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 5.889602899551392
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/BazarLoader/2021-12-03-Contact-Forms-BazarLoader-with-Cobalt-Strike.pcap",
+        "ground_truth": "BazarLoader",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 4.91265606880188
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/BazarLoader/2021-04-16-BazaCall-BazaLoader-infection.pcap",
+        "ground_truth": "BazarLoader",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 3.5566351413726807
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/BazarLoader/2021-08-30-TA551-BazarLoader-infection.pcap",
+        "ground_truth": "BazarLoader",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 3.8181111812591553
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/BumbleBee/2022-11-17-Bumblebee-infection-traffic.pcap",
+        "ground_truth": "BumbleBee",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 3.945693254470825
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/BumbleBee/2022-11-07-part-1-of-2-Emotet-infection.pcap",
+        "ground_truth": "BumbleBee",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 5.989894151687622
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/BumbleBee/2022-06-14-TA578-Bumblebee-with-Cobalt-Strike.pcap",
+        "ground_truth": "BumbleBee",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 5.629059076309204
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/CobaltStrike/2021-12-16-Hancitor-infection-with-Cobalt-Strike.pcap",
+        "ground_truth": "CobaltStrike",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 4.08628511428833
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/CobaltStrike/2021-09-14-Hancitor-with-Cobalt-Strike-infection-traffic.pcap",
+        "ground_truth": "CobaltStrike",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 4.427997827529907
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/CobaltStrike/2021-05-24-Hancitor-infection.pcap",
+        "ground_truth": "CobaltStrike",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 5.758457899093628
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Danabot/2024-03-26-Matanbuchus-infection-with-Danabot.pcap",
+        "ground_truth": "Danabot",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 4.161264181137085
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Danabot/2023-08-03-malicious-ad-to-Danabot-traffic.pcap",
+        "ground_truth": "Danabot",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 3.2753379344940186
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Danabot/2024-02-14-Danabot-infection-traffic.pcap",
+        "ground_truth": "Danabot",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 3.889388084411621
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/DarkGate/2023-10-25-DarkGate-infection-traffic.pcap",
+        "ground_truth": "DarkGate",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 3.690392017364502
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/DarkGate/2023-10-04-DarkGate-infection.pcap",
+        "ground_truth": "DarkGate",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 5.1238250732421875
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/DarkGate/2024-03-19-DarkGate-infection-traffic.pcap",
+        "ground_truth": "DarkGate",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 3.9287869930267334
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Dridex/2020-07-13-Dridex-infection-traffic.pcap",
+        "ground_truth": "Dridex",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 4.385876893997192
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Dridex/2021-10-13-Dridex-infection-traffic.pcap",
+        "ground_truth": "Dridex",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 6.735334157943726
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Dridex/2020-12-24-Dridex-infection-traffic.pcap",
+        "ground_truth": "Dridex",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 5.119112968444824
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Emotet/2020-08-10-Emotet-infection-with-Qakbot.pcap",
+        "ground_truth": "Emotet",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 2.5605309009552
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Emotet/2020-12-23-Emotet-infection-1st-run.pcap",
+        "ground_truth": "Emotet",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 6.714658260345459
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Emotet/2023-03-17-Emotet-E5-infection-traffic.pcap",
+        "ground_truth": "Emotet",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 3.4808080196380615
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Formbook/2023-06-13-XLoader-infection-traffic.pcap",
+        "ground_truth": "Formbook",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 3.827885866165161
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Formbook/2023-06-29-Formbook-infection-traffic.pcap",
+        "ground_truth": "Formbook",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 3.0709338188171387
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Formbook/2023-06-05-Formbook-infection.pcap",
+        "ground_truth": "Formbook",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 4.612391233444214
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/GootLoader/2024-01-08-GootLoader-infection-traffic.pcap",
+        "ground_truth": "GootLoader",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 3.3757851123809814
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/GootLoader/2024-01-19-GootLoader-infection-traffic.pcap",
+        "ground_truth": "GootLoader",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 2.2572946548461914
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/GootLoader/2024-05-09-GootLoader-infection-traffic.pcap",
+        "ground_truth": "GootLoader",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 3.583048105239868
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/GuLoader/2023-06-09-GuLoader-Formbook-infection.pcap",
+        "ground_truth": "GuLoader",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 2.459684133529663
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/GuLoader/2023-07-03-GuLoader-for-Formbook-infection-traffic.pcap",
+        "ground_truth": "GuLoader",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 6.106940984725952
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/GuLoader/2025-01-09-CVE-2017-0199-XLS-to-DBatLoader-or-GuLoader-for-AgentTesla-variant.pcap",
+        "ground_truth": "GuLoader",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 2.0845301151275635
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Hancitor/2020-11-23-Hancitor-infection-with-Cobalt-Strike.pcap",
+        "ground_truth": "Hancitor",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 4.295965909957886
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Hancitor/2020-10-20-Hancitor-infection-traffic.pcap",
+        "ground_truth": "Hancitor",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 4.5072619915008545
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Hancitor/2020-12-14-Hancitor-infection-with-Cobalt-Strike-and-Ficker-Stealer.pcap",
+        "ground_truth": "Hancitor",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 3.789443016052246
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/IcedID/2023-03-08-IcedID-with-BackConnect-and-Keyhole-VNC-traffic.pcap",
+        "ground_truth": "IcedID",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 2.972055196762085
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/IcedID/2020-05-19-IcedID-infection-traffic.pcap",
+        "ground_truth": "IcedID",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 2.046534776687622
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/IcedID/2023-05-10-IcedID-infection-with-Backconnet-and-Cobalt-Strike-and-Keyhole-VNC.pcap",
+        "ground_truth": "IcedID",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 5.530434608459473
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Latrodectus/2024-06-25-Latrodectus-infection-with-BackConnect-and-Keyhole-VNC.pcap",
+        "ground_truth": "Latrodectus",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 6.861764907836914
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Latrodectus/2024-02-09-Contact-Forms-campaign-Latrodectus-infection-traffic-with-Keyhole-VNC-carved.pcap",
+        "ground_truth": "Latrodectus",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 3.684951066970825
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/LokiBot/2020-10-12-Lokibot-infection-traffic.pcap",
+        "ground_truth": "LokiBot",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 2.2651572227478027
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/LokiBot/2020-06-15-Lokibot-infection-traffic.pcap",
+        "ground_truth": "LokiBot",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 3.0589330196380615
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/LokiBot/2020-01-16-Lokibot-infection-traffic.pcap",
+        "ground_truth": "LokiBot",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 3.6870038509368896
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Lumma_Stealer/2025-08-15-Lumma-Stealer-infection-with-Sectop-RAT.pcap",
+        "ground_truth": "Lumma_Stealer",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 5.222858905792236
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Lumma_Stealer/2025-09-03-Kongtuke-ClickFix-leading-to-Lumma-Stealer.pcap",
+        "ground_truth": "Lumma_Stealer",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 3.5945911407470703
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Lumma_Stealer/2025-07-02-Lumma-Stealer-infection-with-Rsockstun-malware.pcap",
+        "ground_truth": "Lumma_Stealer",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 4.494692325592041
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Matanbuchus/2021-12-07-obama141-Qakbot-and-Matanbuchus-traffic.pcap",
+        "ground_truth": "Matanbuchus",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 7.372179985046387
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Matanbuchus/2022-06-16-Matanbuchus-with-Cobalt-Strike.pcap",
+        "ground_truth": "Matanbuchus",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 7.045435905456543
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Matanbuchus/2021-11-15-Matanbuchus-infection-with-obama128b-Qakbot-and-Cobalt-Strike.pcap",
+        "ground_truth": "Matanbuchus",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 3.9309439659118652
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Meduza_Stealer/2024-03-06-traffic-from-Piakbot-infection-with-Meduza-Stealer.pcap",
+        "ground_truth": "Meduza_Stealer",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 3.154381036758423
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/NetSupport_RAT/2025-12-29-ClickFix-page-sends-NetSupportRAT.pcap",
+        "ground_truth": "NetSupport_RAT",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 2.7617552280426025
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/NetSupport_RAT/2024-12-17-SmartApeSG-to-NetSupport-RAT.pcap",
+        "ground_truth": "NetSupport_RAT",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 3.389618158340454
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/NetSupport_RAT/2021-02-02-Hancitor-with-Ficker-Stealer-and-Cobalt-Strike-and-NetSupport-RAT.pcap",
+        "ground_truth": "NetSupport_RAT",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 3.6097941398620605
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Pikabot/2023-12-15-TA577-Pikabot-infection-traffic.pcap",
+        "ground_truth": "Pikabot",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 3.6513941287994385
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Pikabot/2023-12-18-TA577-Pikabot-infection-with-Cobalt-Strike.pcap",
+        "ground_truth": "Pikabot",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 2.563812017440796
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Pikabot/2023-05-17-Pikabot-infection-with-Cobalt-Strike-carved.pcap",
+        "ground_truth": "Pikabot",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 5.115774869918823
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Qakbot/2021-01-19-Qakbot-infection-traffic.pcap",
+        "ground_truth": "Qakbot",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 3.891493082046509
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Qakbot/2021-09-22-Squirrelwaffle-with-Qakbot-and-Cobalt-Strike.pcap",
+        "ground_truth": "Qakbot",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 3.787898063659668
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Qakbot/2020-04-20-Qakbot-spx100-infection-traffic.pcap",
+        "ground_truth": "Qakbot",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 3.2297017574310303
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Raccoon/2021-05-21-raccoon-stealer-traffic.pcap",
+        "ground_truth": "Raccoon",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 2.406310796737671
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Raccoon/2021-09-23-Gozi-infection-with-Raccoon-part-1.pcap",
+        "ground_truth": "Raccoon",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 2.3283069133758545
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Raccoon/2022-01-27-ZLoader-infection-with-Racoon-Stealer.pcap",
+        "ground_truth": "Raccoon",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 5.042176961898804
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Redline_Stealer/2024-10-23-Redline-Stealer-infection-traffic.pcap",
+        "ground_truth": "Redline_Stealer",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 3.174165964126587
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Redline_Stealer/2023-03-02-RigEK-to-malware-loader-to-Redline-Stealer.pcap",
+        "ground_truth": "Redline_Stealer",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 3.9386417865753174
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Remcos_RAT/2021-01-06-Remcos-RAT-infection.pcap",
+        "ground_truth": "Remcos_RAT",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 4.355865240097046
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Remcos_RAT/2025-03-10-Remcos-RAT-infection-traffic.pcap",
+        "ground_truth": "Remcos_RAT",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 2.253101110458374
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Remcos_RAT/2024-08-26-GuLoader-for-Remcos-RAT.pcap",
+        "ground_truth": "Remcos_RAT",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 3.6861391067504883
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Rhadamanthys/2025-10-01-possible-Rhadamanthys-post-infection-traffic.pcap",
+        "ground_truth": "Rhadamanthys",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 6.24546480178833
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Rhadamanthys/2023-01-03-Rhadamanthys-Stealer-traffic.pcap",
+        "ground_truth": "Rhadamanthys",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 6.1729090213775635
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/RigEK/2021-02-04-Rig-EK-sends-possible-BuerLoader.pcap",
+        "ground_truth": "RigEK",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 3.350214958190918
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/RigEK/2021-01-14-Rig-EK-sends-Dridex.pcap",
+        "ground_truth": "RigEK",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 4.403908014297485
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/SSLoad/2024-04-18-SSLoad-with-follow-up-Cobalt-Strike-DLL.pcap",
+        "ground_truth": "SSLoad",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 5.940835952758789
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/SSLoad/2024-04-17-TA578-SSLoad-infection.pcap",
+        "ground_truth": "SSLoad",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 2.2524616718292236
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/SSLoad/2024-04-15-SSLoad-infection-traffic.pcap",
+        "ground_truth": "SSLoad",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 2.348717212677002
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Sliver/2021-10-20-Stolen-Images-Evidence-campaign-pushes-Sliver.pcap",
+        "ground_truth": "Sliver",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 9.321522235870361
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Sliver/2021-10-20-TA551-pushes-Sliver.pcap",
+        "ground_truth": "Sliver",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 3.68257999420166
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/SmokeLoader/2021-02-05-Spelevo-EK-sends-SmokeLoader.pcap",
+        "ground_truth": "SmokeLoader",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 3.2590789794921875
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/SnakeKeylogger/2024-09-17-Snake-KeyLogger-infection-FTP-exfil.pcap",
+        "ground_truth": "SnakeKeylogger",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 2.6883420944213867
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/SnakeKeylogger/2024-09-16-Snake-KeyLogger-traffic.pcap",
+        "ground_truth": "SnakeKeylogger",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 4.605762720108032
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/SocGholish/2024-02-21-SocGholish-AsyncRAT-infection.pcap",
+        "ground_truth": "SocGholish",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 4.095677852630615
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/SocGholish/2020-02-04-socgholish-traffic-example.pcap",
+        "ground_truth": "SocGholish",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 3.688347339630127
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/StealC/2025-02-18-SmartApeSG-leads-to-NetSupport-RAT-and-StealC.pcap",
+        "ground_truth": "StealC",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 3.6841118335723877
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/StealC/2025-03-26-SmartApeSG-leads-to-NetSupport-RAT-and-StealC.pcap",
+        "ground_truth": "StealC",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 5.633573770523071
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/StealC/2025-08-20-SmartAgeSG-Netsupport-RAT-with-StealCv2.pcap",
+        "ground_truth": "StealC",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 4.608646869659424
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/TrickBot/2020-03-04-Trickbot-spreads-from-client-to-DC.pcap",
+        "ground_truth": "TrickBot",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 2.8661251068115234
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/TrickBot/2020-03-17-Trickbot-as-DLL-gtag-red5.pcap",
+        "ground_truth": "TrickBot",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 3.481379747390747
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/TrickBot/2020-04-20-Trickbot-gtag-ono38-infection-traffic.pcap",
+        "ground_truth": "TrickBot",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 2.457244873046875
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Ursnif/2020-03-23-Ursnif-infection-traffic.pcap",
+        "ground_truth": "Ursnif",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 2.6626229286193848
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Ursnif/2021-03-17-TA551-Ursnif-1st-run-standalone-host.pcap",
+        "ground_truth": "Ursnif",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 4.403691053390503
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/Ursnif/2020-02-24-Ursnif-infection-from-Italian-XLS-macro.pcap",
+        "ground_truth": "Ursnif",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 6.045967102050781
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/XLoader/2025-01-30-XLoader-infection-traffic.pcap",
+        "ground_truth": "XLoader",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 6.955980062484741
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/XWorm/2025-11-19-Xworm-infection-traffic.pcap",
+        "ground_truth": "XWorm",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 3.6868858337402344
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/ZLoader/2020-04-03-ZLoader-infection-traffic.pcap",
+        "ground_truth": "ZLoader",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 3.1752169132232666
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/ZLoader/2020-06-25-ZLoader-infection-traffic.pcap",
+        "ground_truth": "ZLoader",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 2.4580459594726562
+    },
+    {
+        "pcap_path": "finetuning/trafficllm_training/pcaps/ZLoader/2020-03-26-ZLoader-infection-traffic.pcap",
+        "ground_truth": "ZLoader",
+        "prediction": null,
+        "confidence": null,
+        "is_correct": false,
+        "is_malicious_correct": true,
+        "error": null,
+        "inference_time": 3.279010057449341
+    }
+]
