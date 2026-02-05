@@ -372,38 +372,50 @@ AIPAM: "1. Isolate 192.168.1.105 from the network
 
 ## 🗺️ Roadmap
 
-### ✅ Completed (Current Version)
+This roadmap is organized into delivery phases from `AIPAM_ROM.docx`.
 
-- [x] PCAP upload and analysis pipeline
-- [x] AI-powered malware classification
-- [x] Interactive chat with RAG (Retrieval-Augmented Generation)
-- [x] MITRE ATT&CK technique mapping
-- [x] HTML/Markdown report generation
-- [x] Conversation persistence
-- [x] Benign traffic recognition (V7)
+### Phase 1 — MVP Delivery (Completed)
 
-### 🔄 In Progress
+- [x] Web UI for PCAP upload and results visualization
+- [x] Backend APIs for ingestion, analysis job management, and report retrieval
+- [x] Unified dataset creation (TrafficLLM + MTA PCAPs + GitHub indicator datasets)
+- [x] Fine-tuned Llama 3.1 8B cyber model
+- [x] Interactive chat interface tied to PCAP analysis
+- [x] MITRE ATT&CK-aware reasoning and mapping
+- [x] Initial integration hooks for CRO/CDAP/Elastic within the CEC Global Testing Environment (GTE)
+- [x] Unit + integration testing
+- [x] Phase 1 demo for customer approval
 
-- [ ] **V7 Model Training** - Enhanced model with benign traffic recognition
-- [ ] **Distributed Training** - Multi-GPU training for faster iteration
-- [ ] **Model Accuracy Improvements** - Better family-level classification
+### Phase 2 — Analysis Pipeline + Automated Report Generation
 
-### 🔮 Future Plans
+- [ ] Real-time scoring engine for flow analysis
+- [ ] Malware behavior detection and attribution
+- [ ] IOC matching engine
+- [ ] Full MITRE ATT&CK mapping
+- [ ] Automated report generation (web + PDF)
+- [ ] Streaming job progress indicators
+- [ ] Additional CEC GTE integration (API calls, data output pipelines, Elastic indexing and dashboard enrichment)
+- [ ] Final testing and documentation
 
-#### Short Term (Q1 2026)
-- [ ] **API Enhancements** - Webhooks and async processing
-- [ ] **Bulk Analysis** - Process multiple PCAPs in batch
-- [ ] **Real-time Monitoring** - Live PCAP stream analysis
+### Phase 3 — Threat Intelligence + Automated Playbooks
 
-#### Medium Term (Q2-Q3 2026)
-- [ ] **Multi-tenant Support** - Team collaboration features
-- [ ] **Threat Intelligence Integration** - Enrich findings with external TI
-- [ ] **SIEM Integration** - Direct export to Splunk, Elastic, etc.
-- [ ] **Self-Distillation (Continual Learning)** - Help the model improve over time by learning from high-confidence results and analyst-verified feedback (with safety checks to prevent bad data from teaching the model)
+- [ ] External threat intel integration (MISP, MetaTotal)
+- [ ] IOC auto-pivoting
+- [ ] Automated playbooks (Ransomware, C2, Exfiltration, Lateral Movement)
+- [ ] Custom workflow builder
+- [ ] Alerting system
 
-#### Long Term (2026+)
-- [ ] **Network Forensics** - Deep packet inspection and reconstruction
-- [ ] **Cloud Deployment** - Kubernetes/Cloud-native deployment
+### Phase 4 — Enterprise Features
+
+- [ ] Multi-tenancy
+- [ ] RBAC (Role-Based Access Control)
+- [ ] SIEM outputs (Elastic, Splunk, QRadar)
+- [ ] Webhooks & integration APIs
+- [ ] Audit logs
+- [ ] Extended performance tuning
+- [ ] Security hardening
+
+> Note: Phase 2–4 items are future enhancements and typically begin after Phase 1 acceptance/approval.
 
 ---
 
