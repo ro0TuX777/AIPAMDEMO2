@@ -391,23 +391,19 @@ AIPAM: "1. Isolate 192.168.1.105 from the network
 ### 🔮 Future Plans
 
 #### Short Term (Q1 2026)
-- [ ] **Real-time Monitoring** - Live PCAP stream analysis
-- [ ] **Alert Integration** - Push notifications to Slack/Teams/Email
-- [ ] **Bulk Analysis** - Process multiple PCAPs in batch
 - [ ] **API Enhancements** - Webhooks and async processing
+- [ ] **Bulk Analysis** - Process multiple PCAPs in batch
+- [ ] **Real-time Monitoring** - Live PCAP stream analysis
 
 #### Medium Term (Q2-Q3 2026)
-- [ ] **Threat Intelligence Integration** - Enrich findings with external TI
-- [ ] **Custom Model Training** - Train on your organization's data
-- [ ] **Self-Distillation (Continual Learning)** - Help the model improve over time by learning from high-confidence results and analyst-verified feedback (with safety checks to prevent bad data from teaching the model)
 - [ ] **Multi-tenant Support** - Team collaboration features
+- [ ] **Threat Intelligence Integration** - Enrich findings with external TI
 - [ ] **SIEM Integration** - Direct export to Splunk, Elastic, etc.
+- [ ] **Self-Distillation (Continual Learning)** - Help the model improve over time by learning from high-confidence results and analyst-verified feedback (with safety checks to prevent bad data from teaching the model)
 
 #### Long Term (2026+)
-- [ ] **Automated Response** - Integration with SOAR platforms
 - [ ] **Network Forensics** - Deep packet inspection and reconstruction
 - [ ] **Cloud Deployment** - Kubernetes/Cloud-native deployment
-- [ ] **Mobile App** - iOS/Android companion for alerts
 
 ---
 
