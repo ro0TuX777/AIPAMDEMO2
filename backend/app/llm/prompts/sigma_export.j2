@@ -1,0 +1,40 @@
+Generate a Sigma detection rule for the following forensic finding.
+
+## Finding Details
+- **MITRE Technique**: {{ finding.mitre_technique_id }}{% if finding.mitre_technique_name %} ({{ finding.mitre_technique_name }}){% endif %}
+
+- **Classification**: {{ finding.classification | default("Unknown") }}
+- **Severity**: {{ finding.severity }}
+- **Description**: {{ finding.description | default(finding.title) }}
+
+{% if finding.affected_hosts %}
+## Affected Hosts
+{% for host in finding.affected_hosts %}
+- {{ host }}
+{% endfor %}
+{% endif %}
+
+{% if evidence_snippets %}
+## Evidence
+{% for snippet in evidence_snippets %}
+```
+{{ snippet }}
+```
+{% endfor %}
+{% endif %}
+
+## Instructions
+1. Write a valid Sigma rule in YAML format.
+2. Set `title`, `status: experimental`, `description`, and `level` appropriately.
+3. Map the `logsource` to the correct category (e.g., `network_connection`, `proxy`, `dns`).
+4. Use the evidence to create specific detection conditions.
+5. Include the MITRE ATT&CK tags (e.g., `attack.command_and_control`, `attack.t1071.001`).
+6. Add `falsepositives` considerations.
+
+Return your answer as JSON:
+```json
+{
+  "rule": "title: ...\nstatus: experimental\n...",
+  "description": "Brief explanation of what this rule detects"
+}
+```

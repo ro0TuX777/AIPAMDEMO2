@@ -1,0 +1,7 @@
+# AIPAM Fine-tuning — Host-side Python dependencies
+# These run natively on macOS (not in Docker) for Metal GPU access.
+# Install with: pip install -r requirements.txt
+
+# MLX fine-tuning (Apple Silicon)
+mlx>=0.5.0
+mlx-lm>=0.4.0

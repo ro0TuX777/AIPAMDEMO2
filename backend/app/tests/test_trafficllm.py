@@ -153,10 +153,13 @@ def test_classify_traffic_tbd_tor(monkeypatch: pytest.MonkeyPatch) -> None:
 
 # Tests for TrafficLLM API endpoints
 
-@pytest.fixture
-def test_client(tmp_path, monkeypatch):
+import pytest_asyncio
+
+
+@pytest_asyncio.fixture
+async def test_client(tmp_path, monkeypatch):
     """Create a test client for the FastAPI app with a temporary database."""
-    from fastapi.testclient import TestClient
+    import httpx
     from app import database
     from app.main import app
 
@@ -168,39 +171,44 @@ def test_client(tmp_path, monkeypatch):
     database.engine = database.create_engine(f"sqlite:///{db_path}")
     database.init_db()
 
-    return TestClient(app)
+    transport = httpx.ASGITransport(app=app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        yield client
 
 
-def test_trafficllm_status_unavailable(test_client, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.asyncio
+async def test_trafficllm_status_unavailable(test_client, monkeypatch: pytest.MonkeyPatch) -> None:
     """Test TrafficLLM status when service is unavailable."""
     monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: _DummyAsyncClientError())
     monkeypatch.setenv("TRAFFICLLM_ENDPOINT", "http://localhost:8001/v1/chat/completions")
 
-    response = test_client.get("/api/v1/trafficllm/status")
+    response = await test_client.get("/api/v1/trafficllm/status")
     assert response.status_code == 200
     data = response.json()
     assert data["available"] is False
     assert "MTD" in data["supported_tasks"]
 
 
-def test_trafficllm_status_available(test_client, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.asyncio
+async def test_trafficllm_status_available(test_client, monkeypatch: pytest.MonkeyPatch) -> None:
     """Test TrafficLLM status when service is available."""
     monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: _DummyAsyncClientTrafficLLM("ping"))
     monkeypatch.setenv("TRAFFICLLM_ENDPOINT", "http://localhost:8001/v1/chat/completions")
 
-    response = test_client.get("/api/v1/trafficllm/status")
+    response = await test_client.get("/api/v1/trafficllm/status")
     assert response.status_code == 200
     data = response.json()
     assert data["available"] is True
     assert data["endpoint"] == "http://localhost:8001/v1/chat/completions"
 
 
-def test_trafficllm_classify_success(test_client, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.asyncio
+async def test_trafficllm_classify_success(test_client, monkeypatch: pytest.MonkeyPatch) -> None:
     """Test successful traffic classification."""
     monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: _DummyAsyncClientTrafficLLM("Zeus"))
     monkeypatch.setenv("TRAFFICLLM_ENDPOINT", "http://localhost:8001/v1/chat/completions")
 
-    response = test_client.post(
+    response = await test_client.post(
         "/api/v1/trafficllm/classify",
         json={"packet_hex": "45 00 00 3c", "task": "MTD"},
     )
@@ -211,11 +219,12 @@ def test_trafficllm_classify_success(test_client, monkeypatch: pytest.MonkeyPatc
     assert data["classification"] == "Zeus"
 
 
-def test_trafficllm_classify_invalid_task(test_client, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.asyncio
+async def test_trafficllm_classify_invalid_task(test_client, monkeypatch: pytest.MonkeyPatch) -> None:
     """Test classification with invalid task type."""
     monkeypatch.setenv("TRAFFICLLM_ENDPOINT", "http://localhost:8001/v1/chat/completions")
 
-    response = test_client.post(
+    response = await test_client.post(
         "/api/v1/trafficllm/classify",
         json={"packet_hex": "45 00 00 3c", "task": "INVALID"},
     )
@@ -223,12 +232,13 @@ def test_trafficllm_classify_invalid_task(test_client, monkeypatch: pytest.Monke
     assert "Invalid task" in response.json()["detail"]
 
 
-def test_trafficllm_classify_batch(test_client, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.asyncio
+async def test_trafficllm_classify_batch(test_client, monkeypatch: pytest.MonkeyPatch) -> None:
     """Test batch traffic classification."""
     monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: _DummyAsyncClientTrafficLLM("normal"))
     monkeypatch.setenv("TRAFFICLLM_ENDPOINT", "http://localhost:8001/v1/chat/completions")
 
-    response = test_client.post(
+    response = await test_client.post(
         "/api/v1/trafficllm/classify/batch",
         json={
             "packets": [
@@ -245,12 +255,13 @@ def test_trafficllm_classify_batch(test_client, monkeypatch: pytest.MonkeyPatch)
     assert len(data["results"]) == 3
 
 
-def test_trafficllm_test_connection_success(test_client, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.asyncio
+async def test_trafficllm_test_connection_success(test_client, monkeypatch: pytest.MonkeyPatch) -> None:
     """Test TrafficLLM connection test endpoint."""
     monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: _DummyAsyncClientTrafficLLM("normal"))
     monkeypatch.setenv("TRAFFICLLM_ENDPOINT", "http://localhost:8001/v1/chat/completions")
 
-    response = test_client.post(
+    response = await test_client.post(
         "/api/v1/settings/test_trafficllm",
         json={"trafficllm_endpoint": "http://localhost:8001/v1/chat/completions"},
     )
@@ -260,11 +271,12 @@ def test_trafficllm_test_connection_success(test_client, monkeypatch: pytest.Mon
     assert data["test_result"] == "normal"
 
 
-def test_trafficllm_test_connection_failure(test_client, monkeypatch: pytest.MonkeyPatch) -> None:
+@pytest.mark.asyncio
+async def test_trafficllm_test_connection_failure(test_client, monkeypatch: pytest.MonkeyPatch) -> None:
     """Test TrafficLLM connection test when service is unavailable."""
     monkeypatch.setattr(httpx, "AsyncClient", lambda **kw: _DummyAsyncClientError())
 
-    response = test_client.post(
+    response = await test_client.post(
         "/api/v1/settings/test_trafficllm",
         json={"trafficllm_endpoint": "http://unreachable:8001/v1/chat/completions"},
     )
@@ -272,4 +284,3 @@ def test_trafficllm_test_connection_failure(test_client, monkeypatch: pytest.Mon
     data = response.json()
     assert data["ok"] is False
     assert "error" in data
-

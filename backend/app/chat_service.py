@@ -3,7 +3,12 @@ Chat service for interactive Q&A about PCAP analysis findings.
 
 This module provides RAG-based context retrieval and LLM-powered chat functionality
 for asking follow-up questions about analysis results. Supports conversation
-persistence and anomaly-aware retrieval ranking.
+persistence, anomaly-aware retrieval ranking, and cross-job forensic memory.
+
+Phase 5: Three-source context injection:
+    1. Current case RAG / job result (per-job LanceDB)
+    2. Forensic narrative + campaign correlation (DAWN artifacts)
+    3. Global forensic memory (cross-job ChromaDB)
 """
 
 from __future__ import annotations
@@ -195,6 +200,110 @@ def build_context_from_rag(
         return "", []
 
 
+# ---------------------------------------------------------------------------
+# Phase 5: Cross-job context sources
+# ---------------------------------------------------------------------------
+
+def _load_forensic_narrative(job_id: str) -> str:
+    """Load the aipam.forensic.narrative markdown for the current case.
+
+    Looks in the DAWN project sandbox or the file storage path.
+    """
+    try:
+        effective = get_effective_settings()
+        job_dir = effective.file_storage_path / job_id
+
+        # Try DAWN artifact path first
+        for candidate in [
+            job_dir / "artifacts" / "forensic_narrative.md",
+            job_dir / "forensic_narrative.md",
+        ]:
+            if candidate.exists():
+                text = candidate.read_text()
+                if text.strip():
+                    logger.info("Loaded forensic narrative (%d chars) for job %s",
+                                len(text), job_id)
+                    return text
+    except Exception as exc:
+        logger.debug("Forensic narrative not available for %s: %s", job_id, exc)
+    return ""
+
+
+def _load_campaign_correlation(job_id: str) -> str:
+    """Load campaign correlation data for cross-case links."""
+    try:
+        import json as _json
+        effective = get_effective_settings()
+        job_dir = effective.file_storage_path / job_id
+
+        for candidate in [
+            job_dir / "artifacts" / "campaign_correlation.json",
+            job_dir / "campaign_correlation.json",
+        ]:
+            if candidate.exists():
+                with open(candidate) as f:
+                    data = _json.load(f)
+                # Format for context
+                parts = ["## Campaign Correlations (linked cases)"]
+                campaigns = data.get("campaigns", [])
+                for c in campaigns:
+                    name = c.get("campaign_name", "Unknown")
+                    shared = c.get("shared_iocs", [])
+                    projects = c.get("linked_projects", [])
+                    parts.append(f"\n### Campaign: {name}")
+                    parts.append(f"Linked cases: {', '.join(str(p) for p in projects)}")
+                    if shared:
+                        parts.append(f"Shared IOCs: {', '.join(str(i) for i in shared[:10])}")
+                return "\n".join(parts)
+    except Exception as exc:
+        logger.debug("Campaign correlation not available for %s: %s", job_id, exc)
+    return ""
+
+
+def _query_forensic_memory(
+    query: str,
+    top_k: int = 5,
+) -> tuple[str, List[ChatCitation]]:
+    """Query the global ChromaDB forensic memory for cross-case recall."""
+    try:
+        from .forensic_memory import query_memory
+
+        hits = query_memory(query, top_k=top_k)
+        if not hits:
+            return "", []
+
+        citations: List[ChatCitation] = []
+        parts = ["## Forensic Memory (similar findings from past cases)"]
+
+        for hit in hits:
+            meta = hit.get("metadata", {})
+            doc = hit.get("document", "")
+            relevance = hit.get("relevance", 0)
+            job = meta.get("job_id", "unknown")
+            project = meta.get("project_id", "unknown")
+            mitre = meta.get("mitre_technique_id", "")
+
+            parts.append(
+                f"\n### [Past Case: {project}] (relevance: {relevance:.0%})\n"
+                f"Job: {job} | MITRE: {mitre}\n"
+                f"{doc}"
+            )
+            citations.append(ChatCitation(
+                type="forensic_memory",
+                id=f"memory-{job[:8]}",
+                snippet=doc[:200],
+            ))
+
+        return "\n".join(parts), citations
+
+    except ImportError:
+        logger.debug("forensic_memory module not available")
+        return "", []
+    except Exception as exc:
+        logger.error("Forensic memory query failed: %s", exc)
+        return "", []
+
+
 # Conversation persistence functions
 
 def get_or_create_conversation(
@@ -270,22 +379,28 @@ def get_conversation_history(
         return [{"role": msg.role, "content": msg.content} for msg in messages]
 
 
-CHAT_SYSTEM_PROMPT = """You are a cybersecurity expert helping analyze PCAP findings. You have deep knowledge of MITRE ATT&CK, malware, and incident response.
+CHAT_SYSTEM_PROMPT = """You are a Lead Forensic Investigator with access to three intelligence sources:
 
-IMPORTANT: Blend your expert knowledge with the SPECIFIC analysis data. Reference actual IPs, malware names, and findings.
+1. **Current Case Analysis** — Findings, alerts, and host data from this job
+2. **Campaign Correlations** — Linked cases sharing IOCs or techniques
+3. **Forensic Memory** — Confirmed findings from ALL past investigations
 
-Response style - be conversational and analytical:
+IMPORTANT: Blend your expert knowledge with the SPECIFIC analysis data. Reference actual IPs, malware names, and findings. When citing past cases, be specific (e.g., "similar to what we observed in Case-002 last week").
 
-1. **Start with your expert knowledge** - Explain the technique/concept briefly (include MITRE ATT&CK ID).
+Response style — be conversational and analytical:
 
-2. **Then explicitly analyze the findings** - Use natural language like:
+1. **Start with your expert knowledge** — Explain the technique/concept briefly (include MITRE ATT&CK ID).
+
+2. **Then explicitly analyze the findings** — Use natural language like:
    - "I see evidence of this in the analysis: [quote specific finding]"
-   - "I don't see direct evidence of [X] in this analysis. However, I do see [Y] which could indicate..."
-   - "The [specific malware/activity] detected here is often associated with..."
+   - "I don't see direct evidence of [X] in this analysis. However, I do see [Y]..."
+   - "This traffic looks like [malware], similar to what we saw in [past case]."
 
-3. **Connect the dots** - Explain relationships between what was asked and what's present. Example: "While T1003 (Credential Dumping) is not directly detected, the lateral movement (T1021) between hosts suggests credentials may have been compromised through other means."
+3. **Connect the dots** — Explain relationships between current and historical findings.
 
-4. **End with specific recommendations** based on what IS in the analysis.
+4. **Cite your sources** — Label whether you are drawing from [Current Case], [Campaign Correlation], or [Forensic Memory].
+
+5. **End with specific recommendations** based on what IS in the analysis.
 
 Be thorough but conversational. Reference the actual hosts, malware types, and findings by name."""
 
@@ -327,37 +442,66 @@ async def generate_chat_response(
     if history and history[-1]["content"] == user_message:
         history = history[:-1]
 
-    # Try RAG retrieval first if enabled
+    # ── Source 1: Per-job RAG / direct context ─────────────────────
     rag_context = ""
     rag_citations: List[ChatCitation] = []
 
     if use_rag:
         rag_context, rag_citations = build_context_from_rag(job_id, user_message, top_k=8)
 
-    # Fallback to direct context if RAG didn't return results
     if not rag_context:
         fallback_context, fallback_citations = build_context_from_job_result(job_result, context_hint)
-        context = fallback_context
+        case_context = fallback_context
         citations = fallback_citations
     else:
-        context = rag_context
+        case_context = rag_context
         citations = rag_citations
+
+    # ── Source 2: Forensic narrative + campaign correlation ────────
+    narrative_context = _load_forensic_narrative(job_id)
+    correlation_context = _load_campaign_correlation(job_id)
+
+    # ── Source 3: Global forensic memory (cross-job ChromaDB) ─────
+    memory_context, memory_citations = _query_forensic_memory(user_message, top_k=5)
+    citations.extend(memory_citations)
+
+    # ── Assemble the three-source context window ──────────────────
+    context_sections = []
+
+    if case_context:
+        context_sections.append(
+            f"## Source 1: Current Case Analysis\n\n{case_context}"
+        )
+    if narrative_context:
+        context_sections.append(
+            f"## Source 2: Forensic Narrative (Current Case)\n\n{narrative_context[:3000]}"
+        )
+    if correlation_context:
+        context_sections.append(
+            f"## Source 3: Campaign Correlations\n\n{correlation_context}"
+        )
+    if memory_context:
+        context_sections.append(
+            f"## Source 4: Forensic Memory (Past Cases)\n\n{memory_context}"
+        )
+
+    combined_context = "\n\n---\n\n".join(context_sections) if context_sections else "No analysis data available."
 
     # Build the conversation messages
     messages = [
         {"role": "system", "content": CHAT_SYSTEM_PROMPT},
     ]
 
-    # Add context as a system message with clear formatting
+    # Add the three-source context as a system message
     messages.append({
         "role": "system",
-        "content": f"""=== PCAP ANALYSIS DATA (Reference this in your response) ===
+        "content": f"""=== FORENSIC INTELLIGENCE CONTEXT (cite sources in your response) ===
 
-{context}
+{combined_context}
 
-=== END OF ANALYSIS DATA ===
+=== END OF FORENSIC INTELLIGENCE ===
 
-When answering, you MUST reference specific items from the analysis data above (IPs, malware types, findings, alerts). If the user asks about something not in the data, explain what IS in the data that's related."""
+When answering, reference specific items from the context above. Label your sources as [Current Case], [Campaign Correlation], or [Forensic Memory]. If you find similar patterns across cases, highlight them explicitly."""
     })
 
     # Add conversation history if available

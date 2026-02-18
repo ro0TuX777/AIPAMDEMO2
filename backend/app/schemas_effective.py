@@ -9,6 +9,9 @@ class EffectiveSettingsResponse(BaseModel):
     llm_model_name: str
     llm_max_tokens: int
     llm_temperature: float
+    # Dual-model selection
+    forensic_model_name: str | None = None
+    general_model_name: str | None = None
 
     # Storage
     file_storage_path: str

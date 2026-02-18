@@ -1,0 +1,39 @@
+Generate a Suricata IDS rule for the following forensic finding.
+
+## Finding Details
+- **MITRE Technique**: {{ finding.mitre_technique_id }}{% if finding.mitre_technique_name %} ({{ finding.mitre_technique_name }}){% endif %}
+
+- **Classification**: {{ finding.classification | default("Unknown") }}
+- **Severity**: {{ finding.severity }}
+- **Description**: {{ finding.description | default(finding.title) }}
+
+{% if finding.affected_hosts %}
+## Affected Hosts
+{% for host in finding.affected_hosts %}
+- {{ host }}
+{% endfor %}
+{% endif %}
+
+{% if evidence_snippets %}
+## Evidence
+{% for snippet in evidence_snippets %}
+```
+{{ snippet }}
+```
+{% endfor %}
+{% endif %}
+
+## Instructions
+1. Write a single, production-ready Suricata rule.
+2. Use the evidence above to extract concrete network indicators (IPs, ports, protocols, byte patterns).
+3. Include a descriptive `msg` field, a `sid` (use 9000001+), and set `rev:1`.
+4. Set `classtype` appropriately for the attack type.
+5. If specific content patterns are visible in the evidence, include `content` matches.
+
+Return your answer as JSON:
+```json
+{
+  "rule": "alert tcp ...",
+  "description": "Brief explanation of what this rule detects"
+}
+```

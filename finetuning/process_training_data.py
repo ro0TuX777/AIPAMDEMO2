@@ -4,6 +4,9 @@ Process raw PCAP data into training samples.
 
 This script processes PCAP files through the same pipeline as AIPAM
 to create consistent training data.
+
+Phase 6.2: Session-Level IR mode (--session-ir) aggregates 1,000+ flows
+into a single training sample with temporal metadata for 32k context.
 """
 
 import json
@@ -432,7 +435,7 @@ def process_pcap_file(pcap_path: str, label: str) -> Optional[Dict]:
         return None
 
 
-def process_dataset(dataset_dir: str, dataset_type: str, limit: Optional[int] = None) -> List[Dict]:
+def process_dataset(dataset_dir: Path, dataset_type: str, base_dir: Path, limit: Optional[int] = None) -> List[Dict]:
     """Process all PCAP files in a dataset directory."""
     results = []
     dataset_path = Path(dataset_dir)
@@ -455,6 +458,15 @@ def process_dataset(dataset_dir: str, dataset_type: str, limit: Optional[int] = 
     pcap_files.sort()
 
     def get_label_for_file(pcap_file: Path) -> str:
+        # Phase 6.4: Check for sidecar .metadata.json first
+        sidecar = pcap_file.with_suffix(".metadata.json")
+        if sidecar.exists():
+            try:
+                with open(sidecar) as f:
+                    meta = json.load(f)
+                return meta.get("label", pcap_file.parent.name)
+            except (json.JSONDecodeError, KeyError):
+                pass
         parent_name = pcap_file.parent.name
         if parent_name in ["pcap", "raw", "data", "modern"]:
             return pcap_file.stem.split("_")[0]
@@ -467,7 +479,7 @@ def process_dataset(dataset_dir: str, dataset_type: str, limit: Optional[int] = 
     
     print(f"Starting parallel processing with {max_workers} workers...")
     
-    output_file = Path("data/processed/processed_samples_v5.jsonl")
+    output_file = base_dir / "processed/processed_samples_v5.jsonl"
     
     with open(output_file, "a") as f_out: # Use append mode for robustness
         with ProcessPoolExecutor(max_workers=max_workers) as executor:
@@ -495,19 +507,333 @@ def process_dataset(dataset_dir: str, dataset_type: str, limit: Optional[int] = 
     return results
 
 
+# =============================================================================
+# Phase 6.2 — Session-Level IR Generation
+# =============================================================================
+
+def aggregate_session_flows(
+    flows: List,
+    window_minutes: int = 15,
+) -> List[Dict]:
+    """Group flows into time windows with temporal metadata.
+
+    Preserves inter-arrival times so the model's attention mechanism
+    can detect periodic C2 heartbeats and low-and-slow exfiltration.
+
+    Args:
+        flows: List of parsed flow objects (from parse_zeek_conn).
+        window_minutes: Time window size in minutes (default 15).
+
+    Returns:
+        List of flow dicts enriched with temporal metadata,
+        grouped into windows.
+    """
+    if not flows:
+        return []
+
+    # Extract timestamps and sort chronologically
+    timed_flows = []
+    for flow in flows:
+        # Flow objects may have different attribute names
+        ts = None
+        if hasattr(flow, 'timestamp'):
+            ts = flow.timestamp
+        elif hasattr(flow, 'ts'):
+            ts = flow.ts
+        elif isinstance(flow, dict):
+            ts = flow.get('timestamp', flow.get('ts', 0))
+
+        try:
+            ts = float(ts) if ts else 0.0
+        except (TypeError, ValueError):
+            ts = 0.0
+
+        duration = 0.0
+        if hasattr(flow, 'duration'):
+            try:
+                duration = float(flow.duration) if flow.duration else 0.0
+            except (TypeError, ValueError):
+                duration = 0.0
+        elif isinstance(flow, dict):
+            try:
+                duration = float(flow.get('duration', 0))
+            except (TypeError, ValueError):
+                duration = 0.0
+
+        timed_flows.append({
+            'flow': flow,
+            'timestamp': ts,
+            'duration': duration,
+        })
+
+    # Sort by timestamp
+    timed_flows.sort(key=lambda x: x['timestamp'])
+
+    # Compute inter-arrival times
+    for i in range(len(timed_flows)):
+        if i == 0:
+            timed_flows[i]['inter_arrival_time'] = 0.0
+        else:
+            delta = timed_flows[i]['timestamp'] - timed_flows[i - 1]['timestamp']
+            timed_flows[i]['inter_arrival_time'] = round(delta, 4)
+
+    # Group into time windows
+    window_seconds = window_minutes * 60
+    windows = []
+    current_window = []
+    window_start = timed_flows[0]['timestamp'] if timed_flows else 0
+
+    for tf in timed_flows:
+        if tf['timestamp'] - window_start > window_seconds and current_window:
+            windows.append(current_window)
+            current_window = []
+            window_start = tf['timestamp']
+        current_window.append(tf)
+
+    if current_window:
+        windows.append(current_window)
+
+    # Build enriched output
+    enriched_flows = []
+    for window_idx, window in enumerate(windows):
+        for tf in window:
+            flow = tf['flow']
+            # Serialize the flow object
+            if hasattr(flow, 'model_dump'):
+                flow_dict = flow.model_dump(mode='json')
+            elif isinstance(flow, dict):
+                flow_dict = flow
+            else:
+                flow_dict = {'raw': str(flow)}
+
+            flow_dict['_temporal'] = {
+                'window_index': window_idx,
+                'timestamp': tf['timestamp'],
+                'duration': tf['duration'],
+                'inter_arrival_time': tf['inter_arrival_time'],
+            }
+            enriched_flows.append(flow_dict)
+
+    return enriched_flows
+
+
+def process_pcap_session(
+    pcap_path: str,
+    label: str,
+    max_raw_packets: int = 100,
+    max_payload_packets: int = 500,
+    window_minutes: int = 15,
+) -> Optional[Dict]:
+    """Process a PCAP in session-level mode for 32k context.
+
+    Unlike process_pcap_file (which caps at 5 raw packets / 50 payloads),
+    this function extracts up to 100 raw packets and 500 payload samples,
+    and enriches all flows with temporal metadata.
+
+    Args:
+        pcap_path: Path to PCAP file.
+        label: Ground truth label.
+        max_raw_packets: Max raw packet extractions (default 100 for 32k).
+        max_payload_packets: Max payload extractions (default 500).
+        window_minutes: Time window for flow grouping.
+
+    Returns:
+        Enriched sample dict, or None on failure.
+    """
+    try:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp_path = Path(temp_dir)
+
+            # Run Zeek
+            try:
+                run_zeek(pcap_path, output_dir=temp_path)
+            except Exception:
+                print(f"  Skipping {pcap_path}: Zeek execution failed")
+                return None
+
+            # Run Suricata
+            run_suricata(pcap_path, output_dir=temp_path)
+
+            # Parse Zeek flows
+            conn_log = temp_path / "conn.log"
+            flows = []
+            if conn_log.exists():
+                with open(conn_log, "r") as f:
+                    zeek_data = []
+                    for line in f:
+                        try:
+                            if line.strip():
+                                zeek_data.append(json.loads(line))
+                        except json.JSONDecodeError:
+                            continue
+                flows = parse_zeek_conn(zeek_data)
+
+            # Parse Suricata alerts
+            eve_json = temp_path / "eve.json"
+            alerts = []
+            if eve_json.exists():
+                with open(eve_json, "r") as f:
+                    eve_data = []
+                    for line in f:
+                        try:
+                            if line.strip():
+                                eve_data.append(json.loads(line))
+                        except json.JSONDecodeError:
+                            continue
+                alerts = parse_suricata_eve(eve_data)
+
+            if not flows:
+                print(f"  Skipping {pcap_path}: No flows found")
+                return None
+
+            # Session-level aggregation with temporal metadata
+            session_flows = aggregate_session_flows(
+                flows, window_minutes=window_minutes
+            )
+
+            # Standard aggregations (same as v5)
+            host_summaries = aggregate_hosts(flows, alerts)
+            hostpair_summaries = aggregate_host_pairs(flows, alerts)
+
+            # Anomaly detection
+            dns_queries = parse_zeek_dns(temp_path / "dns.log")
+            payload_samples = _extract_payload_bytes(
+                pcap_path, max_packets=max_payload_packets
+            )
+
+            detector = AnomalyDetector()
+            anomaly_report = detector.analyze(
+                flows=flows,
+                alerts=alerts,
+                dns_queries=dns_queries,
+                payload_samples=payload_samples,
+            )
+
+            # Extended raw packets (100 instead of 5)
+            raw_packets = _extract_raw_packets(
+                pcap_path, max_packets=max_raw_packets
+            )
+
+            return {
+                "pcap_file": os.path.basename(pcap_path),
+                "label": label,
+                "normalized_label": LABEL_MAPPING.get(label, label),
+                "mode": "session_ir",
+                "session_flows": session_flows,
+                "host_summaries": [
+                    hs.model_dump(mode='json') for hs in host_summaries
+                ],
+                "hostpair_summaries": [
+                    hps.model_dump(mode='json') for hps in hostpair_summaries
+                ],
+                "raw_packet_samples": raw_packets,
+                "anomaly_report": anomaly_report.to_dict(),
+                "flow_count": len(flows),
+                "session_flow_count": len(session_flows),
+                "alert_count": len(alerts),
+                "raw_packet_count": len(raw_packets),
+                "payload_sample_count": len(payload_samples),
+            }
+
+    except Exception as e:
+        print(f"Error processing session {pcap_path}: {e}")
+        return None
+
+
+def process_dataset_session(
+    dataset_dir: Path,
+    dataset_type: str,
+    base_dir: Path,
+    limit: Optional[int] = None,
+) -> List[Dict]:
+    """Process PCAP files in session-IR mode for 32k context."""
+    results = []
+    dataset_path = Path(dataset_dir)
+
+    if not dataset_path.exists():
+        print(f"Dataset directory not found: {dataset_dir}")
+        return results
+
+    pcap_files = list(dataset_path.glob("**/*.pcap")) + \
+                 list(dataset_path.glob("**/*.pcapng"))
+
+    print(f"Found {len(pcap_files)} PCAP files in {dataset_dir}")
+
+    if limit:
+        pcap_files = pcap_files[:limit]
+        print(f"Limiting to first {limit} files.")
+
+    pcap_files.sort()
+
+    def get_label_for_file(pcap_file: Path) -> str:
+        parent_name = pcap_file.parent.name
+        if parent_name in ["pcap", "raw", "data", "modern"]:
+            return pcap_file.stem.split("_")[0]
+        return parent_name
+
+    max_workers = min(os.cpu_count() or 4, 8)
+    print(f"Starting session-IR processing with {max_workers} workers...")
+
+    output_file = base_dir / "processed/processed_samples_v6_session.jsonl"
+    output_file.parent.mkdir(parents=True, exist_ok=True)
+
+    with open(output_file, "a") as f_out:
+        with ProcessPoolExecutor(max_workers=max_workers) as executor:
+            futures = {
+                executor.submit(
+                    process_pcap_session, str(pcap), get_label_for_file(pcap)
+                ): pcap
+                for pcap in pcap_files
+            }
+
+            iterator = as_completed(futures)
+            if tqdm:
+                iterator = tqdm(
+                    iterator, total=len(futures),
+                    desc=f"Session-IR {dataset_type}"
+                )
+
+            for future in iterator:
+                pcap = futures[future]
+                try:
+                    result = future.result()
+                    if result:
+                        result["dataset_type"] = dataset_type
+                        f_out.write(json.dumps(result) + "\n")
+                        f_out.flush()
+                        results.append(result)
+                except Exception as e:
+                    print(f"  Failed to process {pcap.name}: {e}")
+
+    return results
+
+
 def main():
     import argparse
     parser = argparse.ArgumentParser(description="Process PCAPs into training data")
     parser.add_argument("--limit", type=int, default=None, help="Limit number of PCAPs per dataset")
     parser.add_argument("--dataset", type=str, default=None, help="Process only specific dataset")
+    parser.add_argument(
+        "--session-ir", action="store_true",
+        help="Phase 6.2: Session-level IR with 1,000+ flows and temporal metadata"
+    )
+    parser.add_argument("--data-dir", type=str, default="data", help="Base directory for data storage (default: ./data)")
     args = parser.parse_args()
 
+    # Resolve absolute path for data directory
+    if args.data_dir == "data":
+        base_dir = Path("data")
+    else:
+        base_dir = Path(args.data_dir)
+
+    mode_label = "Session-Level IR (Phase 6.2)" if args.session_ir else "Standard (v5)"
     print("=" * 60)
-    print("PCAP Training Data Processor")
+    print(f"PCAP Training Data Processor — {mode_label}")
+    print(f"Data Directory: {base_dir.resolve()}")
     print("=" * 60)
 
-    raw_data_dir = Path("data/raw")
-    processed_dir = Path("data/processed")
+    raw_data_dir = base_dir / "raw"
+    processed_dir = base_dir / "processed"
     processed_dir.mkdir(parents=True, exist_ok=True)
 
     dataset_types = {
@@ -519,9 +845,11 @@ def main():
         "dapt-2020": "apt",
         "iscx-vpn-2016": "vpn",
         "iscx-tor-2016": "tor",
+        "synthetic": "synthetic",  # Phase 6.4: Purple Team augmented data
     }
 
     all_samples = []
+    processor = process_dataset_session if args.session_ir else process_dataset
 
     for dataset_name, dataset_type in dataset_types.items():
         if args.dataset and dataset_name != args.dataset:
@@ -530,15 +858,19 @@ def main():
         dataset_dir = raw_data_dir / dataset_name
         if dataset_dir.exists():
             print(f"\nProcessing {dataset_name}...")
-            # We filter in process_dataset or just slice here
-            samples = process_dataset(str(dataset_dir), dataset_type, limit=args.limit)
+            samples = processor(dataset_dir, dataset_type, base_dir, limit=args.limit)
             if args.limit:
                 samples = samples[:args.limit]
             
             all_samples.extend(samples)
             print(f"  Processed {len(samples)} samples")
 
-    print(f"\n✓ Finished processing. Dataset is at data/processed/processed_samples_v5.jsonl")
+    output_name = "processed_samples_v6_session.jsonl" if args.session_ir else "processed_samples_v5.jsonl"
+    print(f"\n✓ Finished processing. Dataset is at {processed_dir}/{output_name}")
+    if args.session_ir:
+        total_flows = sum(s.get('session_flow_count', 0) for s in all_samples)
+        print(f"  Total session flows: {total_flows}")
+        print(f"  Avg flows/sample: {total_flows / max(len(all_samples), 1):.0f}")
 
 
 if __name__ == "__main__":

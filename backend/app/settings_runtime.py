@@ -29,6 +29,10 @@ class EffectiveSettings:
     file_storage_path: Path
     reports_path: Path
 
+    # Dataset Storage (Phase 6)
+    dataset_storage_path: Path
+    finetuning_backend: str
+
     # Security Onion
     security_onion_mode: str
     security_onion_base_pcap_path: Path
@@ -41,7 +45,7 @@ class EffectiveSettings:
     arkime_api_url: Optional[str]
     arkime_api_username: Optional[str]
     arkime_api_password: Optional[str]
-
+    
     # RAG / Embeddings (Phase 1 Chat)
     embedding_model_name: str
     embedding_model_path: Optional[Path]  # Local path for air-gapped environments
@@ -58,7 +62,7 @@ def _load_settings_row() -> dict:
 
 def get_effective_settings() -> EffectiveSettings:
     """Compute the effective runtime settings.
-
+    
     Resolution order per field:
     1. SettingsDB value (if present and non-empty)
     2. Environment variable
@@ -89,6 +93,14 @@ def get_effective_settings() -> EffectiveSettings:
     )
     file_storage_path = Path(file_storage_base)
     reports_path = Path(os.getenv("REPORTS_PATH") or (file_storage_path / "reports"))
+
+    # Dataset Storage
+    dataset_storage_base = raw.get("dataset_storage_path") or os.getenv(
+        "DATASET_STORAGE_PATH", str(Path(__file__).resolve().parents[2] / "finetuning/data")
+    )
+    dataset_storage_path = Path(dataset_storage_base)
+    
+    finetuning_backend = raw.get("finetuning_backend") or os.getenv("FINETUNING_BACKEND", "mlx")
 
     # Security Onion
     so_mode = raw.get("security_onion_mode") or os.getenv(
@@ -131,6 +143,8 @@ def get_effective_settings() -> EffectiveSettings:
         llm_timeout_seconds=llm_timeout_seconds,
         file_storage_path=file_storage_path,
         reports_path=reports_path,
+        dataset_storage_path=dataset_storage_path,
+        finetuning_backend=finetuning_backend,
         security_onion_mode=so_mode,
         security_onion_base_pcap_path=Path(so_base),
         security_onion_zeek_log_path=Path(so_zeek),

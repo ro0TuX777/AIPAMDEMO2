@@ -4,8 +4,9 @@ from datetime import datetime, timezone
 import json
 from typing import Any, Dict
 
-from fastapi.testclient import TestClient
-
+import httpx
+import pytest
+import pytest_asyncio
 from fastapi import FastAPI
 
 from app.main import app as real_app
@@ -31,7 +32,11 @@ def _create_test_app(file_storage_path: str, reports_path: str) -> FastAPI:
     return test_app
 
 
-client = TestClient(real_app)
+@pytest_asyncio.fixture
+async def client():
+    transport = httpx.ASGITransport(app=real_app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:
+        yield client
 
 
 def _get_job(job_id: str) -> JobDB | None:
@@ -48,7 +53,8 @@ def _get_steps(job_id: str) -> list[JobStepDB]:
         return session.exec(select(JobStepDB).where(JobStepDB.job_id == job_id)).all()
 
 
-def test_create_upload_job_triggers_pipeline(monkeypatch, tmp_path):
+@pytest.mark.asyncio
+async def test_create_upload_job_triggers_pipeline(monkeypatch, tmp_path, client):
     # Avoid touching the real DB file by pointing DATABASE_URL at a tmp sqlite DB
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path}/test_api_jobs.db")
 
@@ -80,7 +86,7 @@ def test_create_upload_job_triggers_pipeline(monkeypatch, tmp_path):
         "metadata": json.dumps({"exercise_id": "ex-upload-1"}),
     }
 
-    resp = client.post("/api/v1/jobs", data=data, files=files)
+    resp = await client.post("/api/v1/jobs", data=data, files=files)
     assert resp.status_code == 201, resp.text
     body = resp.json()
     job_id = body["job_id"]
@@ -100,7 +106,8 @@ def test_create_upload_job_triggers_pipeline(monkeypatch, tmp_path):
     assert step_names == {"ingest", "parse", "aggregate", "llm_analysis", "report"}
 
 
-def test_create_security_onion_job_triggers_pipeline(monkeypatch, tmp_path):
+@pytest.mark.asyncio
+async def test_create_security_onion_job_triggers_pipeline(monkeypatch, tmp_path, client):
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path}/test_api_jobs_so.db")
 
     from sqlmodel import SQLModel, create_engine
@@ -127,7 +134,7 @@ def test_create_security_onion_job_triggers_pipeline(monkeypatch, tmp_path):
         "metadata": {"exercise_id": "ex-so-1"},
     }
 
-    resp = client.post("/api/v1/jobs/from_security_onion", json=payload)
+    resp = await client.post("/api/v1/jobs/from_security_onion", json=payload)
     assert resp.status_code == 201, resp.text
     body = resp.json()
     job_id = body["job_id"]
@@ -142,7 +149,8 @@ def test_create_security_onion_job_triggers_pipeline(monkeypatch, tmp_path):
     assert job.job_metadata["metadata"].get("exercise_id") == "ex-so-1"
 
 
-def test_get_job_status_returns_steps(monkeypatch, tmp_path):
+@pytest.mark.asyncio
+async def test_get_job_status_returns_steps(monkeypatch, tmp_path, client):
     """Job status endpoint returns overall status and per-step statuses."""
 
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path}/test_api_jobs_status.db")
@@ -171,7 +179,7 @@ def test_get_job_status_returns_steps(monkeypatch, tmp_path):
     }
 
     # Create job via API
-    resp = client.post("/api/v1/jobs/from_arkime", json=payload)
+    resp = await client.post("/api/v1/jobs/from_arkime", json=payload)
     assert resp.status_code == 201, resp.text
     job_id = resp.json()["job_id"]
 
@@ -195,7 +203,7 @@ def test_get_job_status_returns_steps(monkeypatch, tmp_path):
         session.commit()
 
     # Call status endpoint
-    status_resp = client.get(f"/api/v1/jobs/{job_id}")
+    status_resp = await client.get(f"/api/v1/jobs/{job_id}")
     assert status_resp.status_code == 200, status_resp.text
     body = status_resp.json()
     assert body["job_id"] == job_id
@@ -207,7 +215,8 @@ def test_get_job_status_returns_steps(monkeypatch, tmp_path):
     assert steps["parse"]["status"] == JobStepStatus.RUNNING
 
 
-def test_get_job_result_requires_completed_status(monkeypatch, tmp_path):
+@pytest.mark.asyncio
+async def test_get_job_result_requires_completed_status(monkeypatch, tmp_path, client):
     """Result endpoint returns 409 if job is not completed and 200 when it is."""
 
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path}/test_api_jobs_result.db")
@@ -236,12 +245,12 @@ def test_get_job_result_requires_completed_status(monkeypatch, tmp_path):
     }
 
     # Create job via API (QUEUED initially)
-    resp = client.post("/api/v1/jobs/from_arkime", json=payload)
+    resp = await client.post("/api/v1/jobs/from_arkime", json=payload)
     assert resp.status_code == 201, resp.text
     job_id = resp.json()["job_id"]
 
     # Not completed yet -> expect 409
-    resp_early = client.get(f"/api/v1/jobs/{job_id}/result")
+    resp_early = await client.get(f"/api/v1/jobs/{job_id}/result")
     assert resp_early.status_code == 409
 
     # Now mark job as COMPLETED and insert a JobResultDB row
@@ -282,7 +291,7 @@ def test_get_job_result_requires_completed_status(monkeypatch, tmp_path):
         session.commit()
 
     # Now result should be available
-    resp_ok = client.get(f"/api/v1/jobs/{job_id}/result")
+    resp_ok = await client.get(f"/api/v1/jobs/{job_id}/result")
     assert resp_ok.status_code == 200, resp_ok.text
     body = resp_ok.json()
     assert body["job_id"] == job_id
@@ -293,7 +302,8 @@ def test_get_job_result_requires_completed_status(monkeypatch, tmp_path):
     assert body["raw"]["llm_analysis_raw"]["summary"] == body["summary"]
 
 
-def test_create_arkime_job_triggers_pipeline(monkeypatch, tmp_path):
+@pytest.mark.asyncio
+async def test_create_arkime_job_triggers_pipeline(monkeypatch, tmp_path, client):
     monkeypatch.setenv("DATABASE_URL", f"sqlite:///{tmp_path}/test_api_jobs_arkime.db")
 
     from sqlmodel import SQLModel, create_engine
@@ -320,7 +330,7 @@ def test_create_arkime_job_triggers_pipeline(monkeypatch, tmp_path):
         "metadata": {"exercise_id": "ex-arkime-1"},
     }
 
-    resp = client.post("/api/v1/jobs/from_arkime", json=payload)
+    resp = await client.post("/api/v1/jobs/from_arkime", json=payload)
     assert resp.status_code == 201, resp.text
     body = resp.json()
     job_id = body["job_id"]
@@ -333,4 +343,3 @@ def test_create_arkime_job_triggers_pipeline(monkeypatch, tmp_path):
     assert job.mode == "single_window"
     assert job.job_metadata["source"] == "arkime"
     assert job.job_metadata["metadata"].get("exercise_id") == "ex-arkime-1"
-

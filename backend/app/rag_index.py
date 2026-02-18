@@ -2,7 +2,7 @@
 RAG indexing module for PCAP analysis chat.
 
 This module provides vector embeddings and semantic search over normalized
-analysis summaries (hosts, host-pairs, alerts, time windows) using ChromaDB
+analysis summaries (hosts, host-pairs, alerts, time windows) using LanceDB
 and sentence-transformers.
 """
 
@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional
 from dataclasses import dataclass
 
 from .settings_runtime import get_effective_settings
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 
 # Lazy-loaded globals to avoid import overhead when RAG not needed
 _embedding_model = None
-_chroma_client = None
+_lance_db = None
 
 
 @dataclass
@@ -65,44 +65,39 @@ def _get_embedding_model():
     return _embedding_model
 
 
-def _get_chroma_client():
-    """Lazy-load the ChromaDB client with persistent storage."""
-    global _chroma_client
-    if _chroma_client is None:
+def _get_lance_db():
+    """Lazy-load the LanceDB connection with persistent storage."""
+    global _lance_db
+    if _lance_db is None:
         try:
-            import chromadb
-            from chromadb.config import Settings as ChromaSettings
-            
+            import lancedb
+
             settings = get_effective_settings()
             vector_store_path = getattr(settings, 'vector_store_path', None)
             if not vector_store_path:
                 vector_store_path = settings.file_storage_path / "vector_store"
-            
+
             vector_store_path = Path(vector_store_path)
             vector_store_path.mkdir(parents=True, exist_ok=True)
-            
-            _chroma_client = chromadb.PersistentClient(
-                path=str(vector_store_path),
-                settings=ChromaSettings(anonymized_telemetry=False)
-            )
-            logger.info(f"Initialized ChromaDB at: {vector_store_path}")
+
+            _lance_db = lancedb.connect(str(vector_store_path))
+            logger.info(f"Initialized LanceDB at: {vector_store_path}")
         except Exception as e:
-            logger.error(f"Failed to initialize ChromaDB: {e}")
+            logger.error(f"Failed to initialize LanceDB: {e}")
             raise
-    return _chroma_client
+    return _lance_db
 
 
-def _get_collection_name(job_id: str) -> str:
-    """Get the ChromaDB collection name for a job."""
-    # ChromaDB collection names must be 3-63 chars, alphanumeric with underscores/hyphens
+def _get_table_name(job_id: str) -> str:
+    """Get the LanceDB table name for a job."""
     safe_id = job_id.replace("-", "_")[:50]
-    return f"job_{safe_id}"
+    return f"rag_{safe_id}"
 
 
 def _calculate_anomaly_score(doc_type: str, metadata: Dict[str, Any]) -> float:
     """Calculate anomaly score for ranking (higher = more interesting)."""
     score = 0.0
-    
+
     if doc_type == "alert":
         severity = metadata.get("severity", "").lower()
         if severity == "critical":
@@ -116,7 +111,7 @@ def _calculate_anomaly_score(doc_type: str, metadata: Dict[str, Any]) -> float:
         # Boost TrafficLLM alerts
         if metadata.get("source") == "TRAFFICLLM":
             score = min(1.0, score + 0.2)
-    
+
     elif doc_type == "host":
         # Score based on role and alert count
         role = metadata.get("role", "").lower()
@@ -131,39 +126,39 @@ def _calculate_anomaly_score(doc_type: str, metadata: Dict[str, Any]) -> float:
         # Boost by alert count
         alert_count = metadata.get("alert_count", 0)
         score = min(1.0, score + (alert_count * 0.05))
-    
+
     elif doc_type == "finding":
         score = 0.8  # Key findings are important
-    
+
     elif doc_type == "change":
         # Changes from baseline are interesting
         score = 0.6
-    
+
     return score
 
 
 def build_documents_from_job_result(job_id: str, job_result: Dict[str, Any]) -> List[RAGDocument]:
     """Build RAG documents from a job result for indexing."""
     documents: List[RAGDocument] = []
-    
+
     # 1. Index host findings
     hosts = job_result.get("hosts", [])
     for i, host in enumerate(hosts):
         ip = host.get("ip", f"unknown_{i}")
         role = host.get("role", "unknown")
         findings = host.get("findings", [])
-        
+
         content = f"Host: {ip}\nRole: {role}\n"
         if findings:
             content += "Findings:\n" + "\n".join(f"- {f}" for f in findings)
-        
+
         metadata = {
             "ip": ip,
             "role": role,
             "finding_count": len(findings),
             "job_id": job_id,
         }
-        
+
         doc = RAGDocument(
             id=f"{job_id}_host_{ip}",
             content=content,
@@ -265,7 +260,7 @@ def build_documents_from_job_result(job_id: str, job_result: Dict[str, Any]) -> 
 
 
 def index_job_result(job_id: str, job_result: Dict[str, Any]) -> int:
-    """Index a job result into ChromaDB for RAG retrieval.
+    """Index a job result into LanceDB for RAG retrieval.
 
     Returns the number of documents indexed.
     """
@@ -275,44 +270,40 @@ def index_job_result(job_id: str, job_result: Dict[str, Any]) -> int:
         return 0
 
     try:
-        client = _get_chroma_client()
+        db = _get_lance_db()
         model = _get_embedding_model()
 
-        collection_name = _get_collection_name(job_id)
+        table_name = _get_table_name(job_id)
 
-        # Delete existing collection if it exists (for reindexing)
+        # Delete existing table if it exists (for reindexing)
         try:
-            client.delete_collection(collection_name)
+            db.drop_table(table_name)
         except Exception:
-            pass  # Collection doesn't exist, which is fine
+            pass  # Table doesn't exist, which is fine
 
-        collection = client.create_collection(
-            name=collection_name,
-            metadata={"job_id": job_id, "hnsw:space": "cosine"}
-        )
-
-        # Prepare data for ChromaDB
-        ids = [doc.id for doc in documents]
+        # Prepare data
         contents = [doc.content for doc in documents]
-        metadatas = [
-            {
-                **doc.metadata,
-                "doc_type": doc.doc_type,
-                "anomaly_score": doc.anomaly_score,
-            }
-            for doc in documents
-        ]
 
         # Generate embeddings
         embeddings = model.encode(contents, show_progress_bar=False).tolist()
 
-        # Add to collection
-        collection.add(
-            ids=ids,
-            embeddings=embeddings,
-            documents=contents,
-            metadatas=metadatas,
-        )
+        # Build rows for LanceDB
+        rows = []
+        for doc, vec in zip(documents, embeddings):
+            row: Dict[str, Any] = {
+                "id": doc.id,
+                "vector": vec,
+                "content": doc.content,
+                "doc_type": doc.doc_type,
+                "anomaly_score": doc.anomaly_score,
+            }
+            # Flatten metadata into columns (LanceDB supports typed columns)
+            for k, v in doc.metadata.items():
+                # Prefix metadata keys to avoid collisions
+                row[f"meta_{k}"] = str(v) if not isinstance(v, (int, float)) else v
+            rows.append(row)
+
+        db.create_table(table_name, data=rows)
 
         logger.info(f"Indexed {len(documents)} documents for job {job_id}")
         return len(documents)
@@ -342,13 +333,13 @@ def search_job_index(
         List of search results, ranked by relevance (and optionally anomaly score)
     """
     try:
-        client = _get_chroma_client()
+        db = _get_lance_db()
         model = _get_embedding_model()
 
-        collection_name = _get_collection_name(job_id)
+        table_name = _get_table_name(job_id)
 
         try:
-            collection = client.get_collection(collection_name)
+            table = db.open_table(table_name)
         except Exception:
             logger.warning(f"No index found for job {job_id}")
             return []
@@ -356,45 +347,44 @@ def search_job_index(
         # Generate query embedding
         query_embedding = model.encode([query], show_progress_bar=False).tolist()[0]
 
-        # Build filter if doc_types specified
-        where_filter = None
-        if doc_types:
-            where_filter = {"doc_type": {"$in": doc_types}}
-
-        # Query ChromaDB - get more results than needed for re-ranking
+        # Build search with optional doc_type filter
         fetch_k = top_k * 2 if rerank_by_anomaly else top_k
-        results = collection.query(
-            query_embeddings=[query_embedding],
-            n_results=min(fetch_k, collection.count()),
-            where=where_filter,
-            include=["documents", "metadatas", "distances"],
-        )
+        search = table.search(query_embedding).limit(fetch_k)
+
+        if doc_types:
+            # LanceDB uses SQL-like WHERE clauses
+            type_conditions = " OR ".join(f"doc_type = '{dt}'" for dt in doc_types)
+            search = search.where(f"({type_conditions})")
+
+        results_df = search.to_pandas()
 
         # Build result objects
         search_results: List[RAGSearchResult] = []
 
-        if results["ids"] and results["ids"][0]:
-            for i, doc_id in enumerate(results["ids"][0]):
-                content = results["documents"][0][i] if results["documents"] else ""
-                metadata = results["metadatas"][0][i] if results["metadatas"] else {}
-                distance = results["distances"][0][i] if results["distances"] else 1.0
+        for i, row in results_df.iterrows():
+            # Reconstruct metadata from prefixed columns
+            metadata: Dict[str, Any] = {}
+            for col in results_df.columns:
+                if col.startswith("meta_"):
+                    metadata[col[5:]] = row[col]
 
-                # Convert distance to similarity score (ChromaDB uses L2 or cosine distance)
-                similarity = 1.0 - (distance / 2.0)  # Normalize cosine distance
+            # LanceDB returns _distance (L2) — convert to similarity
+            distance = row.get("_distance", 1.0)
+            similarity = 1.0 / (1.0 + distance)
 
-                doc = RAGDocument(
-                    id=doc_id,
-                    content=content,
-                    doc_type=metadata.get("doc_type", "unknown"),
-                    metadata=metadata,
-                    anomaly_score=metadata.get("anomaly_score", 0.0),
-                )
+            doc = RAGDocument(
+                id=row.get("id", f"unknown_{i}"),
+                content=row.get("content", ""),
+                doc_type=row.get("doc_type", "unknown"),
+                metadata=metadata,
+                anomaly_score=row.get("anomaly_score", 0.0),
+            )
 
-                search_results.append(RAGSearchResult(
-                    document=doc,
-                    score=similarity,
-                    rank=i + 1,
-                ))
+            search_results.append(RAGSearchResult(
+                document=doc,
+                score=similarity,
+                rank=int(i) + 1,
+            ))
 
         # Re-rank by combining similarity and anomaly score
         if rerank_by_anomaly and search_results:
@@ -418,9 +408,9 @@ def search_job_index(
 def delete_job_index(job_id: str) -> bool:
     """Delete the RAG index for a job."""
     try:
-        client = _get_chroma_client()
-        collection_name = _get_collection_name(job_id)
-        client.delete_collection(collection_name)
+        db = _get_lance_db()
+        table_name = _get_table_name(job_id)
+        db.drop_table(table_name)
         logger.info(f"Deleted index for job {job_id}")
         return True
     except Exception as e:
@@ -431,10 +421,9 @@ def delete_job_index(job_id: str) -> bool:
 def job_has_index(job_id: str) -> bool:
     """Check if a job has an existing RAG index."""
     try:
-        client = _get_chroma_client()
-        collection_name = _get_collection_name(job_id)
-        client.get_collection(collection_name)
+        db = _get_lance_db()
+        table_name = _get_table_name(job_id)
+        db.open_table(table_name)
         return True
     except Exception:
         return False
-

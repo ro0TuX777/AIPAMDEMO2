@@ -63,6 +63,8 @@ export interface SettingsPayload {
     llm_model_name?: string | null;
     llm_max_tokens?: number | null;
     llm_temperature?: number | null;
+    forensic_model_name?: string | null;
+    general_model_name?: string | null;
     security_onion_mode?: string | null;
     security_onion_base_pcap_path?: string | null;
     security_onion_zeek_log_path?: string | null;
@@ -73,6 +75,28 @@ export interface SettingsPayload {
     arkime_api_username?: string | null;
     arkime_api_password?: string | null;
     file_storage_path?: string | null;
+    // Fine-tuning configuration
+    finetune_base_model?: string | null;
+    finetune_dataset_url?: string | null;
+    finetune_lora_rank?: number | null;
+    finetune_learning_rate?: number | null;
+    finetune_max_seq_length?: number | null;
+    dataset_storage_path?: string | null;
+    finetuning_backend?: string | null;
+    model_configured?: boolean | null;
+}
+
+export interface SetupStatusResponse {
+    model_configured: boolean;
+    llm_model_name: string | null;
+}
+
+export interface OllamaModelInfo {
+    name: string;
+    size: number;
+    family: string;
+    parameter_size: string;
+    quantization: string;
 }
 
 export interface EffectiveSettingsResponse {
@@ -80,6 +104,8 @@ export interface EffectiveSettingsResponse {
     llm_model_name: string;
     llm_max_tokens: number;
     llm_temperature: number;
+    forensic_model_name?: string | null;
+    general_model_name?: string | null;
 
     file_storage_path: string;
     reports_path: string;
@@ -138,6 +164,15 @@ export interface ConversationHistory {
     messages: ChatMessage[];
     created_at: string;
     updated_at: string;
+}
+
+export interface PartialResultResponse {
+    flow_count: number;
+    alert_count: number;
+    top_alerts: any[];
+    host_summaries: any[];
+    anomaly_detection: AnomalyReport | null;
+    trafficllm: any | null;
 }
 
 
@@ -215,9 +250,29 @@ export const api = {
         return res.json();
     },
 
+    async getPartialResult(jobId: string): Promise<PartialResultResponse | null> {
+        const res = await fetch(`${API_BASE}/jobs/${jobId}/partial_result`);
+        if (res.status === 404) return null;
+        if (!res.ok) throw new Error("Failed to fetch partial result");
+        return res.json();
+    },
+
     async getSettings(): Promise<SettingsPayload> {
         const res = await fetch(`${API_BASE}/settings`);
         if (!res.ok) throw new Error("Failed to fetch settings");
+        return res.json();
+    },
+
+    async getAvailableModels(): Promise<OllamaModelInfo[]> {
+        const res = await fetch(`${API_BASE}/models/available`);
+        if (!res.ok) return [];
+        const data = await res.json();
+        return data.models ?? [];
+    },
+
+    async getSetupStatus(): Promise<SetupStatusResponse> {
+        const res = await fetch(`${API_BASE}/settings/setup_status`);
+        if (!res.ok) return { model_configured: false, llm_model_name: null };
         return res.json();
     },
 
@@ -278,4 +333,162 @@ export const api = {
             throw new Error(error.detail || "Failed to delete job");
         }
     },
+
+    async generateSimulation(jobId: string): Promise<{ status: string; script: string; filename: string; simulations: number }> {
+        const res = await fetch(`${API_BASE}/jobs/${jobId}/simulation`, {
+            method: "POST",
+        });
+        if (!res.ok) {
+            const error = await res.json().catch(() => ({ detail: "Failed to generate simulation" }));
+            throw new Error(error.detail || "Failed to generate simulation");
+        }
+        return res.json();
+    },
+
+    // -- Training Intelligence (Phase 6 Dashboard) --
+
+    async getTrainingLedger(): Promise<TrainingLedgerResponse> {
+        const res = await fetch(`${API_BASE}/training/ledger`);
+        if (!res.ok) throw new Error("Failed to fetch training ledger");
+        return res.json();
+    },
+
+    async getTrainingSummary(): Promise<TrainingSummary> {
+        const res = await fetch(`${API_BASE}/training/summary`);
+        if (!res.ok) throw new Error("Failed to fetch training summary");
+        return res.json();
+    },
+
+    async getTrainingConfig(): Promise<TrainingConfig> {
+        const res = await fetch(`${API_BASE}/training/config`);
+        if (!res.ok) throw new Error("Failed to fetch training config");
+        return res.json();
+    },
+
+    async getTrainingStatus(): Promise<TrainingStatus> {
+        const res = await fetch(`${API_BASE}/training/status`);
+        if (!res.ok) throw new Error("Failed to fetch training status");
+        return res.json();
+    },
+
+    async startTrainingJob(): Promise<{ status: string; task_id: string; message: string }> {
+        const res = await fetch(`${API_BASE}/training/jobs`, {
+            method: "POST",
+        });
+        if (!res.ok) {
+            const body = await res.json().catch(() => ({}));
+            throw new Error(body.message || `Failed to start training job (${res.status})`);
+        }
+        return res.json();
+    },
+
+    async validateStoragePath(path: string): Promise<{ valid: boolean; message: string; exists?: boolean; writable?: boolean }> {
+        const res = await fetch(`${API_BASE}/training/validate_path`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ path }),
+        });
+        if (!res.ok) throw new Error("Failed to validate path");
+        return res.json();
+    },
+
+    async stopTraining(): Promise<{ status: string; job_id?: string; error?: string }> {
+        const res = await fetch(`${API_BASE}/training/stop`, { method: "POST" });
+        return res.json();
+    },
+
+    async pauseTraining(): Promise<{ status: string; job_id?: string; error?: string }> {
+        const res = await fetch(`${API_BASE}/training/pause`, { method: "POST" });
+        return res.json();
+    },
 };
+
+export interface TrainingConfig {
+    base_model: string | null;
+    dataset_url: string | null;
+    lora_rank: number | null;
+    learning_rate: number | null;
+    max_seq_length: number | null;
+    configured: boolean;
+}
+
+export interface TrainingStatus {
+    trainer_online: boolean;
+    job_id: string | null;
+    status: string;
+    current_iter: number;
+    total_iters: number;
+    percent: number;
+    last_loss: number;
+    it_per_sec: number;
+    elapsed_seconds: number | null;
+    eta_seconds: number | null;
+}
+
+// -- Training Intelligence Types --
+
+export interface TrainingLedgerEntry {
+    timestamp: string;
+    event_type: string;
+    phase_label: string;
+    status: string;
+    config_hash?: string;
+    random_seed?: number;
+    base_model?: string;
+    dataset_path?: string;
+    dataset_samples?: number;
+    lora_r?: number;
+    lora_alpha?: number;
+    epochs?: number;
+    learning_rate?: number;
+    batch_size?: number;
+    max_seq_length?: number;
+    trainer_type?: string;
+    beta?: number;
+    metrics?: Record<string, any>;
+}
+
+export interface TrainingLedgerResponse {
+    entries: TrainingLedgerEntry[];
+    total: number;
+    ledger_path: string;
+    ledger_exists: boolean;
+}
+
+export interface PhaseStats {
+    total_events: number;
+    completed: number;
+    failed: number;
+    latest_timestamp: string | null;
+    latest_loss: number | null;
+}
+
+export interface ActiveModel {
+    name: string;
+    phase: string;
+    config_hash?: string;
+    context_window?: number;
+    lora_r?: number;
+    lora_alpha?: number;
+    trained_at?: string;
+    loss?: number;
+    dawn_seed?: number;
+}
+
+export interface SelfHealingStats {
+    runs: number;
+    total_synthetic_pcaps: number;
+    families_augmented: string[];
+    latest_timestamp: string | null;
+}
+
+export interface TrainingSummary {
+    has_data: boolean;
+    latest_run: TrainingLedgerEntry | null;
+    active_model: ActiveModel | null;
+    phase_counts: Record<string, PhaseStats>;
+    models: string[];
+    peak_vram_gb: number | null;
+    self_healing: SelfHealingStats | null;
+    total_events: number;
+}

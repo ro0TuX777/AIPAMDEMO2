@@ -1,6 +1,6 @@
 import React, { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { api, JobStatusResponse, JobResultResponse, AnomalyReport } from "../api";
+import { api, JobStatusResponse, JobResultResponse, AnomalyReport, PartialResultResponse } from "../api";
 import { ChatPanel } from "../components/ChatPanel";
 import { AttackChainVisualization } from "../components/AttackChainVisualization";
 import { AnomalyFindings } from "../components/AnomalyFindings";
@@ -15,11 +15,36 @@ export const JobDetailPage: React.FC = () => {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<JobDetailTabId>("overview");
   const [chatContext, setChatContext] = useState<string | undefined>();
+  const [partialResult, setPartialResult] = useState<PartialResultResponse | null>(null);
 
   // Helper to open chat with a specific context
   const askAbout = (context: string) => {
     setChatContext(context);
     setActiveTab("chat");
+  };
+
+  // Purple Team: Download Simulation Script
+  const [simLoading, setSimLoading] = useState(false);
+  const downloadSimulation = async () => {
+    if (!jobId) return;
+    setSimLoading(true);
+    try {
+      const data = await api.generateSimulation(jobId);
+      const blob = new Blob([data.script], { type: "text/x-python" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = data.filename;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Simulation generation failed:", err);
+      alert("Failed to generate simulation script. Ensure findings are available.");
+    } finally {
+      setSimLoading(false);
+    }
   };
 
   useEffect(() => {
@@ -35,8 +60,23 @@ export const JobDetailPage: React.FC = () => {
         if (jobData.status === "completed" && !result) {
           const resultData = await api.getJobResult(jobId);
           setResult(resultData);
+          setPartialResult(null); // Full result available, clear partial
         } else if (jobData.status === "failed") {
           setError(jobData.error_message || "Job failed");
+        } else if (jobData.status === "running" && !result) {
+          // Fetch partial results while pipeline is running
+          const hasProgressedPastParse = jobData.steps.some(
+            (s) => (s.name === "aggregate" || s.name === "llm_analysis") &&
+              (s.status === "completed" || s.status === "running")
+          );
+          if (hasProgressedPastParse) {
+            try {
+              const partial = await api.getPartialResult(jobId);
+              if (partial) setPartialResult(partial);
+            } catch {
+              // Partial result not yet available, that's fine
+            }
+          }
         }
       } catch (err) {
         console.error(err);
@@ -81,9 +121,27 @@ export const JobDetailPage: React.FC = () => {
           </div>
           <div className="text-sm text-slate-400 font-mono">ID: {job.job_id}</div>
         </div>
-        <Link to="/" className="text-sm text-slate-400 hover:text-white transition-colors">
-          ← Back to Dashboard
-        </Link>
+        <div className="flex items-center gap-3">
+          {job.status === "completed" && (
+            <button
+              type="button"
+              onClick={downloadSimulation}
+              disabled={simLoading}
+              className="px-4 py-1.5 rounded bg-purple-600/20 border border-purple-500/40 text-purple-300 text-sm hover:bg-purple-600/30 hover:border-purple-400/60 transition-all disabled:opacity-50 disabled:cursor-wait flex items-center gap-2"
+              data-testid="btn-download-simulation"
+              title="Generate a Scapy-based adversary emulation script from findings"
+            >
+              {simLoading ? (
+                <><span className="w-3 h-3 border-2 border-purple-400 border-t-transparent rounded-full animate-spin" /> Generating...</>
+              ) : (
+                <>🟣 Download Simulation Script</>
+              )}
+            </button>
+          )}
+          <Link to="/" className="text-sm text-slate-400 hover:text-white transition-colors">
+            ← Back to Dashboard
+          </Link>
+        </div>
       </div>
 
       {/* Progress Steps */}
@@ -100,6 +158,111 @@ export const JobDetailPage: React.FC = () => {
           </div>
         ))}
       </div>
+
+      {/* Early Insights (shown while pipeline is still running) */}
+      {!result && partialResult && (
+        <div className="space-y-6 animate-in fade-in duration-500">
+          <div className="flex items-center gap-3 p-3 bg-blue-500/10 border border-blue-500/30 rounded-lg">
+            <div className="w-2 h-2 rounded-full bg-blue-400 animate-pulse" />
+            <span className="text-sm text-blue-300">LLM analysis in progress — showing preliminary results</span>
+          </div>
+
+          {/* Stats Overview */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-4">
+              <div className="text-xs text-slate-500 uppercase tracking-wider">Flows Parsed</div>
+              <div className="text-2xl font-bold text-slate-100 mt-1">{partialResult.flow_count.toLocaleString()}</div>
+            </div>
+            <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-4">
+              <div className="text-xs text-slate-500 uppercase tracking-wider">Alerts Detected</div>
+              <div className="text-2xl font-bold text-red-400 mt-1">{partialResult.alert_count.toLocaleString()}</div>
+            </div>
+            {partialResult.anomaly_detection && (
+              <>
+                <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-4">
+                  <div className="text-xs text-slate-500 uppercase tracking-wider">Anomaly Score</div>
+                  <div className="text-2xl font-bold text-orange-400 mt-1">
+                    {(partialResult.anomaly_detection.overall_anomaly_score * 100).toFixed(0)}%
+                  </div>
+                </div>
+                <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-4">
+                  <div className="text-xs text-slate-500 uppercase tracking-wider">Zero-Day Likelihood</div>
+                  <div className={`text-lg font-bold mt-1 capitalize ${partialResult.anomaly_detection.zero_day_likelihood === 'high' ? 'text-red-400' :
+                    partialResult.anomaly_detection.zero_day_likelihood === 'medium' ? 'text-orange-400' :
+                      'text-emerald-400'
+                    }`}>
+                    {partialResult.anomaly_detection.zero_day_likelihood}
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
+          {/* Top Alerts */}
+          {partialResult.top_alerts.length > 0 && (
+            <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-6">
+              <h2 className="text-lg font-semibold text-slate-100 mb-4">Top Alerts (Pre-LLM)</h2>
+              <div className="space-y-2">
+                {partialResult.top_alerts.slice(0, 10).map((alert: any, i: number) => (
+                  <div key={i} className="flex items-center gap-3 p-2 bg-slate-950/50 rounded border border-slate-800/50">
+                    <span className={`px-1.5 py-0.5 text-[10px] font-semibold rounded uppercase ${alert.severity === 'high' || alert.severity === 'critical'
+                      ? 'bg-red-500/20 text-red-400'
+                      : alert.severity === 'medium'
+                        ? 'bg-orange-500/20 text-orange-400'
+                        : 'bg-slate-700 text-slate-300'
+                      }`}>
+                      {alert.severity}
+                    </span>
+                    <span className="text-sm text-slate-300 truncate flex-1" title={alert.signature_name}>
+                      {alert.signature_name}
+                    </span>
+                    <span className="text-xs text-slate-500 font-mono">
+                      {alert.src_ip} → {alert.dst_ip}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Anomaly Findings */}
+          {partialResult.anomaly_detection && partialResult.anomaly_detection.findings.length > 0 && (
+            <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-6">
+              <h2 className="text-lg font-semibold text-slate-100 mb-4 flex items-center gap-2">
+                <span className="text-xl">🔬</span>
+                Behavioral Anomaly Detection
+                <span className="text-xs text-slate-500 font-normal ml-2">(Available Early)</span>
+              </h2>
+              <AnomalyFindings
+                anomalyReport={partialResult.anomaly_detection}
+                onAskAbout={() => { }}
+              />
+            </div>
+          )}
+
+          {/* Host Summaries Preview */}
+          {partialResult.host_summaries.length > 0 && (
+            <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-6">
+              <h2 className="text-lg font-semibold text-slate-100 mb-4">Host Activity (Pre-LLM)</h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                {partialResult.host_summaries.slice(0, 9).map((host: any, i: number) => (
+                  <div key={i} className="p-3 bg-slate-950/50 rounded border border-slate-800/50">
+                    <div className="font-mono text-sm text-emerald-400">{host.ip}</div>
+                    <div className="text-xs text-slate-400 mt-1">
+                      {host.total_flows ?? 0} flows • {host.alert_count ?? 0} alerts
+                    </div>
+                    {host.top_ports && host.top_ports.length > 0 && (
+                      <div className="text-xs text-slate-500 mt-1">
+                        Ports: {host.top_ports.slice(0, 5).join(", ")}
+                      </div>
+                    )}
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Results Tabs */}
       {result && (

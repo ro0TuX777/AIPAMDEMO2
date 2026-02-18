@@ -77,29 +77,30 @@ DATASETS = {
 TRAFFICLLM_REPO = "https://github.com/ZGC-LLM-Safety/TrafficLLM.git"
 
 
-def create_directories():
+def create_directories(base_dir: Path):
     """Create necessary directories for data storage."""
     dirs = [
-        "data/raw",
-        "data/processed",
-        "data/training",
-        "data/validation",
-        "data/trafficllm_datasets",
+        base_dir / "raw",
+        base_dir / "processed",
+        base_dir / "training",
+        base_dir / "validation",
+        base_dir / "trafficllm_datasets",
     ]
     for d in dirs:
-        Path(d).mkdir(parents=True, exist_ok=True)
-    print("✓ Created data directories")
+        d.mkdir(parents=True, exist_ok=True)
+    print(f"✓ Created data directories in {base_dir}")
 
 
-def clone_trafficllm_repo():
+def clone_trafficllm_repo(base_dir: Path):
     """Clone TrafficLLM repo for reference data and scripts."""
-    if Path("data/trafficllm").exists():
+    target_dir = base_dir / "trafficllm"
+    if target_dir.exists():
         print("✓ TrafficLLM repo already exists")
         return
 
     print("Cloning TrafficLLM repository...")
     subprocess.run(
-        ["git", "clone", "--depth", "1", TRAFFICLLM_REPO, "data/trafficllm"],
+        ["git", "clone", "--depth", "1", TRAFFICLLM_REPO, str(target_dir)],
         check=True,
     )
     print("✓ Cloned TrafficLLM repository")
@@ -121,14 +122,14 @@ def install_gdown():
     print("✓ Installed gdown")
 
 
-def download_trafficllm_datasets():
+def download_trafficllm_datasets(base_dir: Path):
     """Download pre-processed datasets from TrafficLLM Google Drive."""
     if not check_gdown():
         install_gdown()
 
     import gdown
 
-    output_dir = Path("data/trafficllm_datasets")
+    output_dir = base_dir / "trafficllm_datasets"
 
     print("\nDownloading TrafficLLM datasets from Google Drive...")
     print(f"Source: {GOOGLE_DRIVE_DATASETS}")
@@ -152,10 +153,10 @@ def download_trafficllm_datasets():
         return False
 
 
-def convert_trafficllm_to_aipam_format():
+def convert_trafficllm_to_aipam_format(base_dir: Path):
     """Convert TrafficLLM JSONL format to AIPAM training format."""
-    input_dir = Path("data/trafficllm_datasets")
-    output_dir = Path("data/processed")
+    input_dir = base_dir / "trafficllm_datasets"
+    output_dir = base_dir / "processed"
 
     if not input_dir.exists():
         print("⚠ TrafficLLM datasets not found. Run download first.")
@@ -206,12 +207,30 @@ def convert_trafficllm_to_aipam_format():
 
 
 def main():
+    import argparse
+    parser = argparse.ArgumentParser(description="Download and prepare TrafficLLM training data.")
+    parser.add_argument("--download", action="store_true", help="Download datasets from Google Drive")
+    parser.add_argument("--convert", action="store_true", help="Convert datasets to AIPAM format")
+    parser.add_argument("--data-dir", type=str, default="data", help="Base directory for data storage (default: ./data)")
+    
+    args = parser.parse_args()
+    
+    # Resolve absolute path for data directory
+    if args.data_dir == "data":
+        # Default behavior: relative to script location if not specified
+        # But for backward compatibility with existing "data" folder in cwd, 
+        # let's map it to cwd/data like before.
+        base_dir = Path("data")
+    else:
+        base_dir = Path(args.data_dir)
+        
     print("=" * 60)
     print("TrafficLLM Training Data Download & Preparation")
+    print(f"Data Directory: {base_dir.resolve()}")
     print("=" * 60)
 
-    create_directories()
-    clone_trafficllm_repo()
+    create_directories(base_dir)
+    clone_trafficllm_repo(base_dir)
 
     print("\n" + "=" * 60)
     print("Available Datasets (from TrafficLLM)")
@@ -222,38 +241,28 @@ def main():
     for dataset_id, info in DATASETS.items():
         print(f"| {info['name']} | {info['task']} | {info['samples']} | {info['description']} |")
 
-    print("\n" + "=" * 60)
-    print("Download Options")
-    print("=" * 60)
+    # If no action arguments provided, show help
+    if not (args.download or args.convert):
+        print("\n" + "=" * 60)
+        print("Download Options")
+        print("=" * 60)
 
-    print("""
+        print(f"""
 Option 1: Automatic Download (Recommended)
-  Run: python download_training_data.py --download
+  Run: python download_training_data.py --download --data-dir {base_dir}
 
 Option 2: Manual Download
-  1. Go to: """ + GOOGLE_DRIVE_DATASETS + """
+  1. Go to: {GOOGLE_DRIVE_DATASETS}
   2. Download the datasets you need
-  3. Place in: data/trafficllm_datasets/
-  4. Run: python download_training_data.py --convert
+  3. Place in: {base_dir}/trafficllm_datasets/
+  4. Run: python download_training_data.py --convert --data-dir {base_dir}
 """)
 
-    # Check command line arguments
-    if len(sys.argv) > 1:
-        if "--download" in sys.argv:
-            if download_trafficllm_datasets():
-                convert_trafficllm_to_aipam_format()
-        elif "--convert" in sys.argv:
-            convert_trafficllm_to_aipam_format()
-
-    print("\n" + "=" * 60)
-    print("Next Steps")
-    print("=" * 60)
-    print("""
-After downloading:
-1. Run: python download_training_data.py --convert
-2. Run: python create_finetuning_dataset.py
-3. Run: python finetune_mlx.py  (for Mac M1/M2/M3)
-""")
+    if args.download:
+        if download_trafficllm_datasets(base_dir):
+            convert_trafficllm_to_aipam_format(base_dir)
+    elif args.convert:
+        convert_trafficllm_to_aipam_format(base_dir)
 
 
 if __name__ == "__main__":

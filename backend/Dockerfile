@@ -7,18 +7,18 @@ ENV PYTHONUNBUFFERED=1 \
 # Zeek is installed from the official OBS repository for Debian 12.
 RUN apt-get update && \
     apt-get install -y --no-install-recommends \
-        ca-certificates \
-        curl \
-        gnupg \
-        build-essential && \
+    ca-certificates \
+    curl \
+    gnupg \
+    build-essential && \
     echo 'deb http://download.opensuse.org/repositories/security:/zeek/Debian_12/ /' > /etc/apt/sources.list.d/security:zeek.list && \
     curl -fsSL https://download.opensuse.org/repositories/security:zeek/Debian_12/Release.key | \
-        gpg --dearmor > /etc/apt/trusted.gpg.d/security_zeek.gpg && \
+    gpg --dearmor > /etc/apt/trusted.gpg.d/security_zeek.gpg && \
     apt-get update && \
     apt-get install -y --no-install-recommends \
-        zeek \
-        suricata \
-        suricata-update && \
+    zeek \
+    suricata \
+    suricata-update && \
     rm -rf /var/lib/apt/lists/*
 
 # Ensure Zeek binary is discoverable via PATH for shutil.which("zeek")
@@ -39,16 +39,20 @@ COPY app ./app
 # Install Python dependencies directly (runtime-only)
 RUN pip install --upgrade pip && \
     pip install \
-        fastapi \
-        uvicorn \
-        sqlmodel \
-        celery \
-        redis \
-        httpx \
-        python-multipart \
-        scapy \
-        chromadb \
-        sentence-transformers
+    fastapi \
+    uvicorn \
+    sqlmodel \
+    celery \
+    redis \
+    httpx \
+    python-multipart \
+    scapy \
+    jinja2 \
+    numpy \
+    pydantic \
+    lancedb>=0.6.0 \
+    pyarrow>=14.0 \
+    sentence-transformers>=2.2.0
 
 # Default runtime configuration (can be overridden by docker-compose)
 ENV FILE_STORAGE_PATH=/data/storage \

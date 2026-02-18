@@ -96,16 +96,26 @@ def main():
     parser.add_argument("--val-data", default="models/aipam-llama-balanced/valid.jsonl", help="Validation data")
     parser.add_argument("--output", default="models/aipam-llama", help="Output model path")
     parser.add_argument("--base-model", default="unsloth/llama-3.1-8b-bnb-4bit", help="Base model")
-    parser.add_argument("--epochs", type=int, default=3, help="Training epochs")
+    parser.add_argument("--epochs", type=int, default=1, help="Training epochs")
+    parser.add_argument("--iters", type=int, default=None, help="Max training steps (overrides epochs)")
     parser.add_argument("--batch-size", type=int, default=2, help="Batch size per device")
     parser.add_argument("--learning-rate", type=float, default=5e-5, help="Learning rate")
-    parser.add_argument("--lora-r", type=int, default=128, help="LoRA rank")
-    parser.add_argument("--lora-alpha", type=int, default=128, help="LoRA alpha")
-    parser.add_argument("--max-seq-length", type=int, default=8192, help="Max sequence length")
+    parser.add_argument("--lora-r", type=int, default=16, help="LoRA rank")
+    parser.add_argument("--lora-rank", type=int, default=None, help="Alias for lora-r")
+    parser.add_argument("--lora-alpha", type=int, default=16, help="LoRA alpha")
+    parser.add_argument("--max-seq-length", type=int, default=2048, help="Max sequence length (32768 for Phase 6.2)")
+    parser.add_argument("--num-layers", type=int, default=None, help="Ignored (for compatibility)")
     parser.add_argument("--export-gguf", action="store_true", help="Export to GGUF for Ollama")
     parser.add_argument("--validate-data", action="store_true", help="Validate data loading without training")
     parser.add_argument("--resume-from", type=str, default=None, help="Path to existing adapter/model to continue training")
     args = parser.parse_args()
+
+    # Normalize aliases
+    if args.lora_rank:
+        args.lora_r = args.lora_rank
+    if args.iters:
+        # If iters is specified, we set max_steps in training args
+        pass
 
     # Basic data check
     train_path = Path(args.data)
@@ -181,11 +191,17 @@ def main():
     print(f"Training samples: {len(train_dataset)}")
 
     # Training arguments
+    # Training arguments
+    # If iters is set, use max_steps and ignore num_train_epochs
+    max_steps = args.iters if args.iters else -1
+    num_train_epochs = args.epochs if not args.iters else 3.0 # Default fallback if steps used
+
     training_args = TrainingArguments(
         per_device_train_batch_size=args.batch_size,
         gradient_accumulation_steps=4,
-        warmup_steps=5,
-        num_train_epochs=args.epochs,
+        warmup_steps=10,
+        max_steps=max_steps,
+        num_train_epochs=num_train_epochs if max_steps == -1 else 1.0, 
         learning_rate=args.learning_rate,
         fp16=False,
         bf16=True,
@@ -195,7 +211,8 @@ def main():
         lr_scheduler_type="linear",
         seed=42,
         output_dir=args.output,
-        save_strategy="epoch",
+        save_strategy="steps" if max_steps > 0 else "epoch",
+        save_steps=100 if max_steps > 0 else None,
     )
 
     # Initialize trainer

@@ -1,0 +1,36 @@
+You are performing the TRIAGE stage of forensic network analysis for job {{ job_id }}.
+
+Below are summaries of {{ flow_count }} network flows and {{ alert_count }} IDS alerts from this capture.
+
+## Flow Summaries
+{% for flow in flow_summaries %}
+- **{{ flow.id }}**: {{ flow.src_ip }}:{{ flow.src_port }} → {{ flow.dst_ip }}:{{ flow.dst_port }} ({{ flow.transport_proto }}/{{ flow.app_proto }}) duration={{ flow.duration_sec }}s bytes_out={{ flow.bytes_from_src }} bytes_in={{ flow.bytes_from_dst }}{% if flow.state %} state={{ flow.state }}{% endif %}
+
+{% endfor %}
+
+{% if alert_summaries %}
+## IDS Alerts
+{% for alert in alert_summaries %}
+- **{{ alert.signature_name }}** ({{ alert.severity }}): {{ alert.src_ip }} → {{ alert.dst_ip }}:{{ alert.dst_port }} [{{ alert.category }}]
+{% endfor %}
+{% endif %}
+
+## Your Task
+
+Identify the **{{ top_n }} most suspicious flows** from the list above. For each, explain:
+1. WHY it is suspicious (specific technical indicators, not generic reasons)
+2. What malware family or attack technique it might represent
+
+Respond in JSON format:
+{
+  "suspicious_flows": [
+    {
+      "flow_id": "EXACT_FLOW_ID_FROM_LIST",
+      "suspicion_score": 0.95,
+      "reason": "Specific technical reason...",
+      "likely_technique": "T1071.001"
+    }
+  ]
+}
+
+CRITICAL: You MUST use the EXACT flow IDs from the list above. Do NOT invent or modify flow IDs.

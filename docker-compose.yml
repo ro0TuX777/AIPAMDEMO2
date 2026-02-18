@@ -9,7 +9,7 @@ services:
       - FILE_STORAGE_PATH=/data/storage
       - REDIS_URL=redis://redis:6379/0
       - LLM_ENDPOINT=http://host.docker.internal:11434/v1/chat/completions
-      - LLM_MODEL_NAME=aipam-trafficllm-v4
+      - LLM_MODEL_NAME=aipam-pcaplog
       - LLM_PROVIDER=ollama
       - LLM_MAX_TOKENS=8000
       # TrafficLLM integration (connects to host-running TrafficLLM)
@@ -17,6 +17,8 @@ services:
       - USE_TRAFFICLLM_FOR_DETECTION=true
     volumes:
       - aipam_data:/data
+      - ./finetuning:/data/finetuning:ro
+      - ${EXTERNAL_DATA_PATH:-/Volumes}:/external_data # Configurable external drive mount
     depends_on:
       - redis
     ports:
@@ -33,15 +35,19 @@ services:
       - FILE_STORAGE_PATH=/data/storage
       - REDIS_URL=redis://redis:6379/0
       - LLM_ENDPOINT=http://host.docker.internal:11434/v1/chat/completions
-      - LLM_MODEL_NAME=aipam-trafficllm-v4
+      - LLM_MODEL_NAME=aipam-pcaplog
       - LLM_PROVIDER=ollama
       - LLM_MAX_TOKENS=8000
       - C_FORCE_ROOT=true
       # TrafficLLM integration (connects to host-running TrafficLLM)
       - TRAFFICLLM_ENDPOINT=http://host.docker.internal:8001/v1/chat/completions
       - USE_TRAFFICLLM_FOR_DETECTION=true
+      # Host-native fine-tuning (MLX on Apple Silicon)
+      - HOST_TRAINER_URL=http://host.docker.internal:8002
     volumes:
       - aipam_data:/data
+      - ./finetuning:/data/finetuning:ro
+      - ${EXTERNAL_DATA_PATH:-/Volumes}:/external_data # Configurable external drive mount
     depends_on:
       - redis
 
@@ -103,4 +109,3 @@ volumes:
   redis_data:
   ollama_data:
   trafficllm_models:
-

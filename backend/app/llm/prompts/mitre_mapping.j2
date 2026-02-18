@@ -1,0 +1,55 @@
+You are performing DEEP FORENSIC ANALYSIS on {{ flow_count }} suspicious flows for job {{ job_id }}.
+
+These flows were selected during triage as the most suspicious in the capture.
+
+{% for flow in flows %}
+## Flow {{ loop.index }}: {{ flow.id }}
+- **Source**: {{ flow.src_ip }}:{{ flow.src_port }}
+- **Destination**: {{ flow.dst_ip }}:{{ flow.dst_port }}
+- **Protocol**: {{ flow.transport_proto }}/{{ flow.app_proto }}
+- **Duration**: {{ flow.duration_sec }}s
+- **Bytes sent**: {{ flow.bytes_from_src }}
+- **Bytes received**: {{ flow.bytes_from_dst }}
+- **Packets sent**: {{ flow.packets_from_src }}
+- **Packets received**: {{ flow.packets_from_dst }}
+{% if flow.tcp_flags_summary %}- **TCP Flags**: {{ flow.tcp_flags_summary }}{% endif %}
+{% if flow.state %}- **State**: {{ flow.state }}{% endif %}
+
+{% if flow.triage_reason %}**Triage Reason**: {{ flow.triage_reason }}{% endif %}
+
+{% endfor %}
+
+{% if related_alerts %}
+## Related IDS Alerts
+{% for alert in related_alerts %}
+- **{{ alert.signature_name }}** ({{ alert.severity }}): {{ alert.src_ip }} → {{ alert.dst_ip }} [{{ alert.category }}]
+{% endfor %}
+{% endif %}
+
+## Your Task
+
+For EACH flow, determine:
+1. The **MITRE ATT&CK technique** being used (provide the technique ID and name)
+2. Your **confidence score** (0.0–1.0)
+3. The **raw evidence** from the flow data that supports your conclusion
+4. Your **forensic rationale** explaining the chain of reasoning
+
+Respond in JSON format:
+{
+  "findings": [
+    {
+      "flow_id": "EXACT_FLOW_ID",
+      "mitre_technique_id": "T1071.001",
+      "mitre_technique_name": "Web Protocols",
+      "confidence_score": 0.92,
+      "raw_evidence": "TCP 192.168.1.100:49152 → 185.70.40.20:443 TLS duration=120.5s bytes_in=250000",
+      "rationale": "Long-duration TLS connection with periodic beaconing...",
+      "severity": "critical",
+      "classification": "IcedID",
+      "attack_chain_stage": "Command and Control",
+      "affected_hosts": ["192.168.1.100"]
+    }
+  ]
+}
+
+CRITICAL: Use EXACT flow IDs from the data above. Do NOT invent IDs. Every finding MUST cite specific technical values (IPs, ports, byte counts) from the flow data.

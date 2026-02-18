@@ -1,13 +1,39 @@
-import React from "react";
-import { Link, Route, Routes, useNavigate } from "react-router-dom";
+import React, { useEffect, useState } from "react";
+import { Link, Route, Routes } from "react-router-dom";
 import { DashboardPage } from "./pages/DashboardPage";
 import { NewAnalysisPage } from "./pages/NewAnalysisPage";
 import { JobDetailPage } from "./pages/JobDetailPage";
 import { SettingsPage } from "./pages/SettingsPage";
+import { TrainingPage } from "./pages/TrainingPage";
+import { ModelSetupModal } from "./components/ModelSetupModal";
+import { api } from "./api";
 
 export const App: React.FC = () => {
+  const [showSetup, setShowSetup] = useState(false);
+  const [checkingSetup, setCheckingSetup] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const status = await api.getSetupStatus();
+        if (!status.model_configured) {
+          setShowSetup(true);
+        }
+      } catch {
+        // If backend is unreachable, don't block the UI
+      } finally {
+        setCheckingSetup(false);
+      }
+    })();
+  }, []);
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100" data-testid="app-root">
+      {/* Model setup modal (first-boot) */}
+      {showSetup && !checkingSetup && (
+        <ModelSetupModal onComplete={() => setShowSetup(false)} />
+      )}
+
       <header
         className="border-b border-slate-800 px-6 py-3 flex items-center justify-between"
         data-testid="header"
@@ -26,6 +52,9 @@ export const App: React.FC = () => {
             <Link to="/settings" data-testid="nav-settings">
               Settings
             </Link>
+            <Link to="/training" data-testid="nav-training">
+              Training
+            </Link>
           </nav>
         </div>
       </header>
@@ -35,6 +64,7 @@ export const App: React.FC = () => {
           <Route path="/new" element={<NewAnalysisPage />} />
           <Route path="/jobs/:jobId" element={<JobDetailPage />} />
           <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/training" element={<TrainingPage />} />
         </Routes>
       </main>
     </div>

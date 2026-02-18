@@ -69,7 +69,15 @@ finetuning/aipam_gpu_training/malware-traffic-indicators/
 finetuning/trafficllm_datasets/
 finetuning/trafficllm_training/pcaps/
 finetuning/trafficllm_training/cache/
+finetuning/trafficllm_training/training_data/
 finetuning/trafficllm_training/*.gif
+
+# Training ledger files (generated at runtime)
+finetuning/*_ledger.jsonl
+finetuning/*_ledger_host.jsonl
+
+# PID files (runtime)
+*.pid
 
 # Duplicate/cloned TrafficLLM repos (external dependencies)
 TrafficLLM/
@@ -114,3 +122,15 @@ finetuning/trafficllm_training/training_data_batches/
 zero_day_training_data/
 finetuning/custom_v5_lessons.jsonl
 
+# Root-level package-lock (real one lives in frontend/)
+/package-lock.json
+
+# Dev artifacts (local notes, not application code)
+Augment_Status.md
+HANDOFF.md
+AIPAM_Dev_Package
+AIPAM_ROM.docx
+Playwright Testing Bootstrap.md
+
+# Test fixture exception (45B stub, not a real capture)
+!frontend/tests/fixtures/dummy.pcap

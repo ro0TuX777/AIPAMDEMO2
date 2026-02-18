@@ -21,7 +21,7 @@ Enable analysts to ask natural-language questions about analyzed PCAPs and recei
   - `HostPairSummary` - communication patterns between hosts
   - `AlertRecord` - Suricata/TrafficLLM alerts
   - `FlowRecord` (aggregated) - connection metadata
-- **Storage**: Use ChromaDB or Qdrant for vector embeddings
+- **Storage**: Use LanceDB for vector embeddings (embedded, serverless)
 - **Embedding model**: `sentence-transformers/all-MiniLM-L6-v2` (local, air-gap compatible)
 
 #### 1.2 Chunking & Ranking Strategy
@@ -82,7 +82,7 @@ Response:
 ```
 
 ### Deliverables
-- [ ] Vector database integration (ChromaDB)
+- [x] Vector database integration (LanceDB)
 - [ ] Embedding pipeline for normalized summaries
 - [ ] RAG retrieval with anomaly-ranked chunking
 - [ ] Chat API endpoint
@@ -282,7 +282,7 @@ ws.onmessage = (event) => {
 
 | Component | Library | Purpose |
 |-----------|---------|---------|
-| Vector DB | `chromadb` | RAG embeddings storage |
+| Vector DB | `lancedb` + `pyarrow` | RAG embeddings storage |
 | Embeddings | `sentence-transformers` | Local text embeddings |
 | WebSockets | `fastapi[websockets]` | Real-time streaming |
 | Async | `asyncio`, `aioredis` | Parallel TrafficLLM calls |

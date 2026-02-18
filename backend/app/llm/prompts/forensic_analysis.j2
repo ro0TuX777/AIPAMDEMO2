@@ -1,0 +1,46 @@
+Conduct a detailed FORENSIC ANALYSIS on the following traffic data <packet>.
+Identify if this traffic is Benign or Malicious.
+
+If malicious:
+1. FIRST, check if the traffic matches ANY known malware family from this list: '{{ malware_categories }}'.
+2. Known malware families often have HIGH behavioral anomaly scores because they use evasive C2 techniques - this does NOT make them "zero-day".
+3. Classify as 'Anomalous/Zero-Day' ONLY if the traffic is clearly malicious but does NOT match ANY known malware family patterns above.
+
+<packet>: {{ packet_data }}
+{% if trafficllm_context %}{{ trafficllm_context }}{% endif %}
+{% if anomaly_context %}{{ anomaly_context }}{% endif %}
+Network hosts: {{ hosts_info }}
+{% if alert_context %}{{ alert_context }}{% endif %}
+
+Provide your findings in a structured JSON format with this exact structure:
+{
+  "classification": "MALWARE_NAME or Anomalous/Zero-Day",
+  "overall_severity": "low|medium|high|critical",
+  "attack_chain": [
+    {
+      "stage": "stage_name",
+      "description": "deep analysis of what happened",
+      "evidence": ["Session-Specific Indicator: [Technical Detail from Packet Data]", "observed [IP/Port/Bytes/Offset/String]"],
+      "mitre_techniques": [{"id": "T1XXX", "name": "..."}]
+    }
+  ],
+  "host_findings": [
+    {
+      "ip": "IP_ADDRESS",
+      "role_in_attack": "attacker|victim",
+      "summary": "finding summary",
+      "suspicious_behaviors": ["behavior1"]
+    }
+  ],
+  "anomalies": [
+    {
+      "description": "anomaly description",
+      "related_hosts": ["IP1"],
+      "confidence": 0.9,
+      "reason": "specific forensic reason for this anomaly"
+    }
+  ],
+  "mitre_techniques_overall": [
+    {"id": "T1XXX", "name": "..."}
+  ]
+}

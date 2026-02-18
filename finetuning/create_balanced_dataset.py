@@ -1,5 +1,8 @@
+import argparse
+import copy
 import json
 import random
+import re
 import os
 from pathlib import Path
 from collections import defaultdict
@@ -59,6 +62,14 @@ DATASETS = [
         "samples_per_class": 100,
     },
 ]
+
+# Session-Level IR dataset (Phase 6.2) — replaces v5 modern dataset
+SESSION_IR_DATASET = {
+    "path": BASE_DIR / "data/processed/processed_samples_v6_session.jsonl",
+    "task": "Session-Level Modern Malware Detection",
+    "type": "modern",
+    "samples_per_class": 5000,
+}
 
 
 
@@ -211,6 +222,132 @@ def create_assistant_response(sample: Dict) -> str:
     return json.dumps(response, indent=2)
 
 
+# =============================================================================
+# Phase 6.1 — ORPO Preference-Pair Generation (Contrastive Evidentiary Training)
+# =============================================================================
+
+def _random_ip() -> str:
+    """Generate a random non-routable IP address for evidence corruption."""
+    return f"{random.randint(198, 203)}.{random.randint(0,255)}.{random.randint(0,255)}.{random.randint(1,254)}"
+
+
+def _random_mitre_id() -> str:
+    """Generate a plausible but invalid MITRE technique ID."""
+    return f"T{random.randint(9000, 9999)}"
+
+
+def corrupt_evidence(response_json_str: str) -> str:
+    """Corrupt evidentiary fields in a forensic response while preserving classification.
+
+    This creates the 'rejected' half of an ORPO preference pair. The malware
+    classification stays correct, but the supporting evidence (IPs, MITRE IDs,
+    evidence chains) is randomized — teaching the model that
+    'Right Answer + Wrong Evidence = Failure'.
+
+    Args:
+        response_json_str: Valid JSON string of an assistant forensic response.
+
+    Returns:
+        Corrupted JSON string with hallucinated evidence fields.
+    """
+    try:
+        response = json.loads(response_json_str)
+    except json.JSONDecodeError:
+        # For non-JSON legacy responses, do simple IP corruption
+        corrupted = re.sub(
+            r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b',
+            lambda m: _random_ip(),
+            response_json_str,
+        )
+        return corrupted
+
+    corrupted = copy.deepcopy(response)
+
+    # 1. Corrupt MITRE technique IDs (keep names to look plausible)
+    for tech in corrupted.get("mitre_techniques_overall", []):
+        tech["id"] = _random_mitre_id()
+
+    # 2. Corrupt attack_chain evidence
+    for chain_step in corrupted.get("attack_chain", []):
+        # Corrupt MITRE IDs in chain
+        for tech in chain_step.get("mitre_techniques", []):
+            tech["id"] = _random_mitre_id()
+
+        # Shuffle evidence strings to break logical reasoning chain
+        evidence = chain_step.get("evidence", [])
+        if len(evidence) > 1:
+            shuffled = evidence.copy()
+            random.shuffle(shuffled)
+            # Also corrupt any IPs in evidence strings
+            chain_step["evidence"] = [
+                re.sub(r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b',
+                       lambda m: _random_ip(), e)
+                for e in shuffled
+            ]
+
+    # 3. Corrupt anomaly related_hosts IPs
+    for anomaly in corrupted.get("anomalies", []):
+        if "related_hosts" in anomaly:
+            anomaly["related_hosts"] = [_random_ip() for _ in anomaly["related_hosts"]]
+        # Corrupt reason text IPs
+        if "reason" in anomaly:
+            anomaly["reason"] = re.sub(
+                r'\b\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}\b',
+                lambda m: _random_ip(),
+                anomaly["reason"],
+            )
+
+    # 4. Corrupt host_findings IPs
+    for finding in corrupted.get("host_findings", []):
+        if "ip" in finding:
+            finding["ip"] = _random_ip()
+
+    return json.dumps(corrupted, indent=2)
+
+
+def create_preference_pairs(samples: List[Dict]) -> List[Dict]:
+    """Convert balanced samples into ORPO preference pairs.
+
+    For each sample, produces:
+        {
+            "prompt":   "<system + user as ChatML>",
+            "chosen":   "<valid forensic response>",
+            "rejected": "<same response with corrupted evidence>"
+        }
+
+    Args:
+        samples: List of {"instruction": ..., "output": ...} dicts.
+
+    Returns:
+        List of preference-pair dicts ready for ORPOTrainer.
+    """
+    pairs = []
+    for sample in samples:
+        instruction = sample.get("instruction", "")
+        chosen_response = sample.get("output", "")
+
+        if not instruction or not chosen_response:
+            continue
+
+        # Build the prompt (system + user) in ChatML format
+        prompt = (
+            f"<|start_header_id|>system<|end_header_id|>\n\n{SYSTEM_PROMPT}<|eot_id|>"
+            f"<|start_header_id|>user<|end_header_id|>\n\n{instruction}<|eot_id|>"
+            f"<|start_header_id|>assistant<|end_header_id|>\n\n"
+        )
+
+        # Create the rejected version with corrupted evidence
+        rejected_response = corrupt_evidence(chosen_response)
+
+        pairs.append({
+            "prompt": prompt,
+            "chosen": chosen_response,
+            "rejected": rejected_response,
+        })
+
+    return pairs
+
+
 def load_and_balance_dataset(ds_config):
     """Load dataset, convert if needed, and balance by class."""
     filepath = Path(ds_config["path"])
@@ -226,7 +363,7 @@ def load_and_balance_dataset(ds_config):
     print(f"  Loading {filepath.name} ({ds_type})...")
     
     with open(filepath) as f:
-        # Check explicit legacy list format (some ISCX files are big JSON lists)
+        # Check explicit legacy list format (some ISCX files are big JSON list)
         first_char = f.read(1)
         f.seek(0)
         
@@ -293,13 +430,44 @@ def convert_to_chatml(samples):
 
 
 def main():
+    parser = argparse.ArgumentParser(
+        description="Create balanced training datasets for AIPAM (SFT or ORPO)"
+    )
+    parser.add_argument(
+        "--orpo", action="store_true",
+        help="Generate ORPO preference pairs instead of SFT ChatML"
+    )
+    parser.add_argument(
+        "--session-ir", action="store_true",
+        help="Phase 6.2: Use session-level IR data (v6_session) for 32k context"
+    )
+    parser.add_argument(
+        "--dry-run", action="store_true",
+        help="Validate dataset generation without writing files"
+    )
+    args = parser.parse_args()
+
+    mode = "ORPO Preference Pairs" if args.orpo else "SFT ChatML"
+    if args.session_ir:
+        mode += " (Session-Level IR)"
     print("=" * 60)
-    print("Creating Balanced Training Dataset (Hybrid Legacy + Modern)")
+    print(f"Creating Balanced Training Dataset — {mode}")
     print("=" * 60)
+    
+    # Determine which datasets to use
+    active_datasets = list(DATASETS)
+    if args.session_ir:
+        # Replace the v5 modern dataset with v6 session-level IR
+        active_datasets = [
+            ds for ds in active_datasets
+            if "processed_samples_v5" not in str(ds.get("path", ""))
+        ]
+        active_datasets.append(SESSION_IR_DATASET)
+        print(f"  [Phase 6.2] Using session-level IR source: {SESSION_IR_DATASET['path']}")
     
     all_samples = []
     
-    for ds in DATASETS:
+    for ds in active_datasets:
         print(f"\nProcessing {ds['task']}...")
         samples = load_and_balance_dataset(ds)
         all_samples.extend(samples)
@@ -320,26 +488,79 @@ def main():
     print(f"Total Combined Samples: {len(all_samples)}")
     print(f"Training: {len(train_samples)}")
     print(f"Validation: {len(val_samples)}")
-    
-    # Convert to training format
-    train_data = convert_to_chatml(train_samples)
-    val_data = convert_to_chatml(val_samples)
-    
-    # Save to balanced dataset directory
-    output_dir = BASE_DIR / "data/v5-balanced"
-    output_dir.mkdir(parents=True, exist_ok=True)
-    
-    with open(output_dir / "train.jsonl", "w") as f:
-        for item in train_data:
-            f.write(json.dumps(item) + "\n")
-    
-    with open(output_dir / "valid.jsonl", "w") as f:
-        for item in val_data:
-            f.write(json.dumps(item) + "\n")
-    
-    print(f"\nDataset saved to: {output_dir}")
-    print(f"  - train.jsonl: {len(train_data)} samples")
-    print(f"  - valid.jsonl: {len(val_data)} samples")
+
+    if args.orpo:
+        # ── ORPO Mode: Generate preference pairs ──
+        print(f"\n[Phase 6.1] Generating ORPO preference pairs...")
+        train_data = create_preference_pairs(train_samples)
+        val_data = create_preference_pairs(val_samples)
+
+        print(f"  Training pairs: {len(train_data)}")
+        print(f"  Validation pairs: {len(val_data)}")
+
+        # Validate a sample pair
+        if train_data:
+            sample = train_data[0]
+            assert "prompt" in sample, "Missing 'prompt' key"
+            assert "chosen" in sample, "Missing 'chosen' key"
+            assert "rejected" in sample, "Missing 'rejected' key"
+            assert sample["chosen"] != sample["rejected"], "Chosen and rejected should differ"
+            print(f"  ✓ Sample pair validated (prompt={len(sample['prompt'])} chars)")
+
+        # Phase 6.2: Token budget warning for 32k context
+        MAX_TOKEN_BUDGET = 32768 * 4  # ~4 chars per token
+        oversized = sum(
+            1 for p in train_data
+            if len(p['prompt']) + len(p['chosen']) > MAX_TOKEN_BUDGET
+        )
+        if oversized > 0:
+            print(f"  ⚠️  {oversized}/{len(train_data)} pairs exceed estimated 32k token budget")
+            print(f"     These may be truncated during training.")
+        else:
+            print(f"  ✓ All pairs within 32k token budget")
+
+        if args.dry_run:
+            print("\n[Dry Run] Validation passed. No files written.")
+            return
+
+        output_dir = BASE_DIR / "data/v6-orpo"
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        with open(output_dir / "train.jsonl", "w") as f:
+            for item in train_data:
+                f.write(json.dumps(item) + "\n")
+
+        with open(output_dir / "valid.jsonl", "w") as f:
+            for item in val_data:
+                f.write(json.dumps(item) + "\n")
+
+        print(f"\nORPO dataset saved to: {output_dir}")
+        print(f"  - train.jsonl: {len(train_data)} preference pairs")
+        print(f"  - valid.jsonl: {len(val_data)} preference pairs")
+
+    else:
+        # ── SFT Mode: Original ChatML format (unchanged) ──
+        train_data = convert_to_chatml(train_samples)
+        val_data = convert_to_chatml(val_samples)
+
+        if args.dry_run:
+            print("\n[Dry Run] Validation passed. No files written.")
+            return
+
+        output_dir = BASE_DIR / "data/v5-balanced"
+        output_dir.mkdir(parents=True, exist_ok=True)
+
+        with open(output_dir / "train.jsonl", "w") as f:
+            for item in train_data:
+                f.write(json.dumps(item) + "\n")
+
+        with open(output_dir / "valid.jsonl", "w") as f:
+            for item in val_data:
+                f.write(json.dumps(item) + "\n")
+
+        print(f"\nDataset saved to: {output_dir}")
+        print(f"  - train.jsonl: {len(train_data)} samples")
+        print(f"  - valid.jsonl: {len(val_data)} samples")
 
 if __name__ == "__main__":
     main()
