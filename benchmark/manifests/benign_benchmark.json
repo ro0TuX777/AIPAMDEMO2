@@ -1,0 +1,171 @@
+{
+  "description": "Benign traffic benchmark - measures false positive rate",
+  "created": "2026-02-19T22:33:44.521893",
+  "composition": {
+    "benign_samples": 27
+  },
+  "samples": [
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/benign/chargen_tcp.pcap",
+      "label": "Benign",
+      "date": "2026-02-19",
+      "set": "benchmark_benign"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/benign/chargen_udp.pcap",
+      "label": "Benign",
+      "date": "2026-02-19",
+      "set": "benchmark_benign"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/benign/dhcp_dyndns.pcap",
+      "label": "Benign",
+      "date": "2026-02-19",
+      "set": "benchmark_benign"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/benign/dhcp_session.pcap",
+      "label": "Benign",
+      "date": "2026-02-19",
+      "set": "benchmark_benign"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/benign/dns_lookups.cap",
+      "label": "Benign",
+      "date": "2026-02-19",
+      "set": "benchmark_benign"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/benign/http_v6.cap",
+      "label": "Benign",
+      "date": "2026-02-19",
+      "set": "benchmark_benign"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/benign/imap_session.cap",
+      "label": "Benign",
+      "date": "2026-02-19",
+      "set": "benchmark_benign"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/benign/ipp_printing.pcap",
+      "label": "Benign",
+      "date": "2026-02-19",
+      "set": "benchmark_benign"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/benign/ipv6_icmpv6.pcap",
+      "label": "Benign",
+      "date": "2026-02-19",
+      "set": "benchmark_benign"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/benign/isp_http.pcap",
+      "label": "Benign",
+      "date": "2026-02-19",
+      "set": "benchmark_benign"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/benign/isp_startup.pcap",
+      "label": "Benign",
+      "date": "2026-02-19",
+      "set": "benchmark_benign"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/benign/isp_telephone.pcap",
+      "label": "Benign",
+      "date": "2026-02-19",
+      "set": "benchmark_benign"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/benign/netbench.cap",
+      "label": "Benign",
+      "date": "2026-02-19",
+      "set": "benchmark_benign"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/benign/nfs_v2.pcap",
+      "label": "Benign",
+      "date": "2026-02-19",
+      "set": "benchmark_benign"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/benign/nfs_v3.pcap",
+      "label": "Benign",
+      "date": "2026-02-19",
+      "set": "benchmark_benign"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/benign/ntp_packets.pcap",
+      "label": "Benign",
+      "date": "2026-02-19",
+      "set": "benchmark_benign"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/benign/radius_auth.pcapng",
+      "label": "Benign",
+      "date": "2026-02-19",
+      "set": "benchmark_benign"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/benign/rsync_sync.cap",
+      "label": "Benign",
+      "date": "2026-02-19",
+      "set": "benchmark_benign"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/benign/sip_rtp_call.cap",
+      "label": "Benign",
+      "date": "2026-02-19",
+      "set": "benchmark_benign"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/benign/skype_irc.cap",
+      "label": "Benign",
+      "date": "2026-02-19",
+      "set": "benchmark_benign"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/benign/smb_session.pcapng",
+      "label": "Benign",
+      "date": "2026-02-19",
+      "set": "benchmark_benign"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/benign/smtp_imf_email.pcap",
+      "label": "Benign",
+      "date": "2026-02-19",
+      "set": "benchmark_benign"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/benign/smtp_simple.pcap",
+      "label": "Benign",
+      "date": "2026-02-19",
+      "set": "benchmark_benign"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/benign/telnet_session.pcap",
+      "label": "Benign",
+      "date": "2026-02-19",
+      "set": "benchmark_benign"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/benign/vlan_mixed.cap",
+      "label": "Benign",
+      "date": "2026-02-19",
+      "set": "benchmark_benign"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/benign/vnc_session.pcap",
+      "label": "Benign",
+      "date": "2026-02-19",
+      "set": "benchmark_benign"
+    },
+    {
+      "pcap": "/home/bc/Documents/AIPAM/benchmark/benchmark_pcaps/benign/voip_h323_rtp.raw",
+      "label": "Benign",
+      "date": "2026-02-19",
+      "set": "benchmark_benign"
+    }
+  ]
+}

@@ -296,15 +296,28 @@ MALWARE_NAME_ALIASES = {
 }
 
 # System prompt for backend - zero-day & forensic focus
-SYSTEM_PROMPT = """You are an expert cybersecurity analyst specialized in forensic network traffic analysis and malware family identification.
-Your goal is to identify both known malware families and novel, anomalous malicious activities with high precision.
+SYSTEM_PROMPT = """You are an expert cybersecurity analyst specialized in forensic network traffic analysis.
+Your goal is to accurately distinguish between benign and malicious traffic, and identify malware families when traffic is malicious.
+
+CRITICAL: Not all network traffic is malicious. Enterprise networks routinely generate:
+- Low-severity IDS alerts from protocol anomalies (TCP retransmits, RST packets, invalid checksums)
+- Generic protocol decode warnings (these are NOT indicators of compromise)
+- Corporate policy alerts (Dropbox, Flash, streaming) — these are policy violations, NOT malware
+- Informational alerts about normal services (DNS, DHCP, NTP, HTTP browsing)
+
+You MUST classify traffic as "Benign" when:
+- Alerts are predominantly low-severity generic protocol warnings
+- No specific malware signatures are detected in alerts
+- Traffic patterns match normal enterprise/corporate network behavior
+- Alert categories are "Generic Protocol Command Decode", "Not Suspicious Traffic", or "Misc activity"
+
 For every analysis:
-1. **Classification**: Identify the likely malware family. You MUST prioritize technical fingerprints over generic naming associations or "general knowledge" biases. For example, if you see SMB reuse or TLS 0x000a, classify as Pikabot. If you see port 1158 or NetSupport client strings, classify as NetSupport_RAT. DO NOT default to "IcedID" or "Qakbot" unless their specific, exclusive forensic signatures are present.
-2. **Technical Forensic Evidence**: Detail **Session-Specific Indicators (SSIs)** found in the data. DEMAND technical values: specify IPs, ports, packet sizes, byte counts, protocol offsets, or specific observed strings.
-3. **Boilerplate Avoidance**: DO NOT use generic phrases like 'observed unusual pattern'. If you see a TLS anomaly, specify which extension or handshake state was affected. Avoid "pre-baked" descriptions of malware families; focus only on what is in the provided data.
-4. **Name Consistency**: If you identify a malware family in your thinking process, ENSURE that name is used consistently in 'classification', 'attack_chain', and 'host_findings'. Do NOT mention biased names (like 'IcedID' or 'Formbook') in the host findings or attack chain if the technical evidence points to a different family (like 'Pikabot').
-5. **MITRE ATT&CK**: Map techniques accurately to the observed data.
-Return your findings in the requested JSON format. technical specificity and accurate family identification are mandatory."""
+1. **Classification**: FIRST determine if the traffic is Benign or Malicious. Only if malicious, identify the likely malware family using technical fingerprints. DO NOT default to malware classification without strong evidence.
+2. **Technical Forensic Evidence**: Detail **Session-Specific Indicators (SSIs)** found in the data. Specify IPs, ports, packet sizes, byte counts, protocol offsets, or specific observed strings.
+3. **Boilerplate Avoidance**: DO NOT use generic phrases like 'observed unusual pattern'. Focus only on what is in the provided data.
+4. **Name Consistency**: If you identify a malware family, ENSURE that name is used consistently across all output fields.
+5. **MITRE ATT&CK**: Map techniques accurately to the observed data. For benign traffic, return an empty list.
+Return your findings in the requested JSON format."""
 
 
 class LLMClient:
@@ -870,22 +883,32 @@ Use the chain-of-thought reasoning above to inform your analysis.""")
             "BitTorrent, FTP, Facetime, Gmail, MySQL, Outlook, SMB, Skype, Weibo, WorldOfWarcraft"
         )
 
-        # This prompt format matches the training instruction template exactly
-        # Include alert context to help with classification
+        # Include alert context — but do NOT bias toward malicious classification.
+        # Let the model evaluate alert severity and categories objectively.
         alert_context = ""
         if alerts_info and alerts_info != "None":
-            alert_context = f"\n\nSECURITY ALERTS DETECTED: {alerts_info}\nThese alerts indicate malicious activity - classify accordingly."
+            alert_context = (
+                f"\n\nSECURITY ALERTS OBSERVED: {alerts_info}\n"
+                "NOTE: Low-severity alerts like 'Generic Protocol Command Decode', 'Not Suspicious Traffic', "
+                "and protocol warnings are common in normal enterprise networks and do NOT necessarily indicate "
+                "malicious activity. Evaluate alert severity, category, and specificity before concluding malicious intent."
+            )
 
-        # Refined user prompt for training alignment
+        # Refined user prompt — emphasizes benign as a valid, primary classification
         user_prompt = f"""Conduct a detailed FORENSIC ANALYSIS on the following traffic data <packet>.
-Identify if this traffic is Benign or Malicious.
+Determine if this traffic is **Benign** or **Malicious**.
 
-If malicious:
-1. FIRST, check if the traffic matches ANY known malware family from this list: '{malware_categories}'.
-2. Known malware families (Cobalt Strike, Remcos, etc.) often have HIGH behavioral anomaly scores
-   because they use evasive C2 techniques - this does NOT make them "zero-day".
+IMPORTANT CLASSIFICATION RULES:
+1. If the traffic shows normal enterprise patterns (web browsing, email, file sharing, DNS, DHCP, etc.)
+   with only low-severity generic IDS alerts, classify as "Benign".
+2. If malicious, check if the traffic matches a known malware family from: '{malware_categories}'.
 3. Classify as 'Anomalous/Zero-Day' ONLY if the traffic is clearly malicious but does NOT match
-   ANY known malware family patterns above.
+   any known malware family patterns.
+4. Do NOT classify as malicious solely because of:
+   - Generic protocol decode warnings
+   - TCP retransmits or RST packets
+   - Corporate policy violations (Dropbox, Flash, streaming services)
+   - High volume of low-severity alerts
 
 <packet>: {packet_data}
 {trafficllm_context}{anomaly_context}
@@ -893,7 +916,7 @@ Network hosts: {hosts_info}{alert_context}
 
 Provide your findings in a structured JSON format with this exact structure:
 {{
-  "classification": "MALWARE_NAME or Anomalous/Zero-Day",
+  "classification": "Benign or MALWARE_NAME or Anomalous/Zero-Day",
   "overall_severity": "low|medium|high|critical",
   "attack_chain": [
     {{
@@ -906,7 +929,7 @@ Provide your findings in a structured JSON format with this exact structure:
   "host_findings": [
     {{
       "ip": "IP_ADDRESS",
-      "role_in_attack": "attacker|victim",
+      "role_in_attack": "attacker|victim|normal",
       "summary": "finding summary",
       "suspicious_behaviors": ["behavior1"]
     }}
@@ -1091,38 +1114,48 @@ Provide your findings in a structured JSON format with this exact structure:
             # Get classification (malware family)
             classification = partial_json.get("classification", "")
             if classification:
-                # Normalize the malware name and get its info
-                malware_info = self._get_malware_info(classification)
-                detected_malware = malware_info["name"]
-                severity = malware_info["severity"]
-                malware_type = malware_info["type"]
+                # Check if model explicitly classified as "Benign"
+                is_benign = classification.strip().lower() in [
+                    "benign", "normal", "legitimate", "clean"
+                ]
 
-                # Check if this is a benign application classification
-                is_benign = malware_type.startswith("Benign")
                 if is_benign:
-                    print(f"[DEBUG] Classified as benign application: {detected_malware} (type: {malware_type})")
-                    # Before treating as benign, check if bundle hints suggest malware
-                    # This handles cases where model misclassifies malware as benign
-                    if bundle:
-                        refined = self._refine_classification(detected_malware, bundle)
-                        if refined != detected_malware:
-                            print(f"[DEBUG] Overriding benign classification with {refined} based on bundle hints")
-                            malware_info = self._get_malware_info(refined)
-                            detected_malware = malware_info["name"]
-                            severity = malware_info["severity"]
-                            is_benign = False
-                    if is_benign:
-                        # Still benign after refinement check
-                        detected_malware = None
-                        severity = "low"
-                if not is_benign:
-                    print(f"[DEBUG] Detected malware from classification: {detected_malware} (type: {malware_type}, severity: {severity})")
-                
-                # Check for zero-day flag
-                if classification.lower() in ["anomalous/zero-day", "zero-day", "anomalous"]:
-                    detected_malware = "Anomalous/Zero-Day"
-                    severity = "high"
-                    print(f"[DEBUG] Model explicitly flagged a Zero-Day/Anomaly")
+                    print(f"[DEBUG] Model explicitly classified traffic as benign: '{classification}'")
+                    detected_malware = None
+                    severity = "low"
+                else:
+                    # Normalize the malware name and get its info
+                    malware_info = self._get_malware_info(classification)
+                    detected_malware = malware_info["name"]
+                    severity = malware_info["severity"]
+                    malware_type = malware_info["type"]
+
+                    # Check if this is a benign application classification
+                    if malware_type.startswith("Benign"):
+                        is_benign = True
+                        print(f"[DEBUG] Classified as benign application: {detected_malware} (type: {malware_type})")
+                        # Before treating as benign, check if bundle hints suggest malware
+                        if bundle:
+                            refined = self._refine_classification(detected_malware, bundle)
+                            if refined != detected_malware:
+                                print(f"[DEBUG] Overriding benign classification with {refined} based on bundle hints")
+                                malware_info = self._get_malware_info(refined)
+                                detected_malware = malware_info["name"]
+                                severity = malware_info["severity"]
+                                is_benign = False
+                        if is_benign:
+                            # Still benign after refinement check
+                            detected_malware = None
+                            severity = "low"
+
+                    if not is_benign:
+                        print(f"[DEBUG] Detected malware from classification: {detected_malware} (type: {malware_type}, severity: {severity})")
+
+                        # Check for zero-day flag
+                        if classification.lower() in ["anomalous/zero-day", "zero-day", "anomalous"]:
+                            detected_malware = "Anomalous/Zero-Day"
+                            severity = "high"
+                            print(f"[DEBUG] Model explicitly flagged a Zero-Day/Anomaly")
 
             # Get severity if present (but only if higher than what we determined)
             if "overall_severity" in partial_json:

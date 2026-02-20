@@ -35,6 +35,10 @@ configure_logging(component="worker")
 logger = get_logger(__name__)
 import shutil
 
+# DAWN high-value concepts: immutable ledger + artifact provenance
+from .ledger import get_ledger
+from .artifact_registry import get_registry, sha256_file
+
 
 CELERY_BROKER_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
 CELERY_BACKEND_URL = os.getenv("REDIS_URL", "redis://localhost:6379/0")
@@ -71,6 +75,17 @@ def _update_step(session: Session, job_id: str, name: str, status: JobStepStatus
             step.finished_at = now
     session.commit()
 
+    # --- DAWN: append to immutable ledger ---
+    try:
+        get_ledger().log_event(
+            job_id=job_id,
+            step=name,
+            status=status.value if hasattr(status, "value") else str(status),
+            error=message if status == JobStepStatus.FAILED else None,
+        )
+    except Exception:
+        logger.debug("ledger write skipped for %s/%s", job_id, name, exc_info=True)
+
 
 def _set_job_status(session: Session, job: JobDB, status: JobStatus, error: str | None = None) -> None:
     job.status = status
@@ -78,6 +93,17 @@ def _set_job_status(session: Session, job: JobDB, status: JobStatus, error: str 
     job.error_message = error
     session.add(job)
     session.commit()
+
+    # --- DAWN: append to immutable ledger ---
+    try:
+        get_ledger().log_event(
+            job_id=job.id,
+            step="job_status",
+            status=status.value if hasattr(status, "value") else str(status),
+            error=error,
+        )
+    except Exception:
+        logger.debug("ledger write skipped for job %s", job.id, exc_info=True)
 
 
 # ---------------------------------------------------------------------------
@@ -524,6 +550,22 @@ def run_pipeline(job_id: str) -> None:
 
             if not pcap_paths:
                 raise ValueError("No PCAP files available for ingest")
+
+            # --- DAWN: register ingested PCAP artifacts ---
+            try:
+                registry = get_registry()
+                for pp in pcap_paths:
+                    digest = sha256_file(pp)
+                    registry.register(
+                        key=f"pcap:{job_id}:{Path(pp).name}",
+                        digest=digest,
+                        path=pp,
+                        artifact_type="pcap",
+                        producer_job_id=job_id,
+                        producer_step="ingest",
+                    )
+            except Exception:
+                logger.debug("artifact registration skipped (ingest)", exc_info=True)
 
             _update_step(session, job_id, "ingest", JobStepStatus.COMPLETED)
             _save_checkpoint(session, job_id, "ingest", {
@@ -1091,6 +1133,24 @@ def run_pipeline(job_id: str) -> None:
                 "markdown": f"/reports/job-{job.id}.md",
                 "html": f"/reports/job-{job.id}.html",
             }
+
+            # --- DAWN: register report artifacts ---
+            try:
+                registry = get_registry()
+                for rpath in (md_path, html_path):
+                    digest = sha256_file(rpath)
+                    registry.register(
+                        key=f"report:{job_id}:{rpath.name}",
+                        digest=digest,
+                        path=str(rpath),
+                        artifact_type="report",
+                        producer_job_id=job_id,
+                        producer_step="report",
+                        parent_keys=[f"pcap:{job_id}:{Path(p).name}" for p in pcap_paths],
+                    )
+            except Exception:
+                logger.debug("artifact registration skipped (report)", exc_info=True)
+
             _update_step(session, job_id, "report", JobStepStatus.COMPLETED)
             _save_checkpoint(session, job_id, "report", {
                 "report_urls": job_result.report_urls,

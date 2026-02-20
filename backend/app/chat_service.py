@@ -24,7 +24,7 @@ from .models import AnalysisSummary, HostFinding, JobResult
 from .schemas import ChatCitation, ChatResponse
 from .llm_client import LLMClient, LLMConfig
 from .settings_runtime import get_effective_settings
-from .database import engine
+from . import database
 from .db_models import ConversationDB, ChatMessageDB
 
 logger = logging.getLogger(__name__)
@@ -45,11 +45,16 @@ def build_context_from_job_result(
     # 1. Include overall summary
     summary = job_result.get("summary", {})
     if summary:
+        classification = summary.get("classification")
         severity = summary.get("severity", "unknown")
         key_findings = summary.get("key_findings", [])
         mitre = summary.get("mitre_techniques", [])
 
-        context_parts.append(f"## Analysis Summary\n- Severity: {severity}")
+        header = "## Analysis Summary"
+        context_parts.append(header)
+        if classification:
+            context_parts.append(f"- Classification: {classification}")
+        context_parts.append(f"- Severity: {severity}")
 
         if key_findings:
             context_parts.append("### Key Findings:")
@@ -149,6 +154,59 @@ def build_context_from_job_result(
                     ))
 
     return "\n".join(context_parts), citations
+
+
+def build_context_from_job_metadata(
+    job_id: str,
+    job_source: Optional[str] = None,
+    job_mode: Optional[str] = None,
+    exercise_id: Optional[str] = None,
+    job_metadata: Optional[Dict[str, Any]] = None,
+) -> tuple[str, List[ChatCitation]]:
+    """Build a small, always-present context header so the model knows this chat
+    is anchored to a completed analysis job (and usually one or more PCAPs).
+
+    This is the main guardrail against the model claiming no file was uploaded.
+    """
+
+    md = job_metadata or {}
+    citations: List[ChatCitation] = []
+
+    lines: List[str] = []
+    lines.append("## Job / PCAP Metadata")
+    lines.append(f"- Job ID: {job_id}")
+
+    if job_source:
+        lines.append(f"- Source: {job_source}")
+    if job_mode:
+        lines.append(f"- Mode: {job_mode}")
+    if exercise_id:
+        lines.append(f"- Exercise ID: {exercise_id}")
+
+    pcap_paths = md.get("pcap_paths")
+    if isinstance(pcap_paths, list) and pcap_paths:
+        # Prefer basenames so we don't leak full filesystem paths into prompts.
+        try:
+            from pathlib import Path
+
+            names = [Path(str(p)).name for p in pcap_paths if p]
+        except Exception:
+            names = [str(p) for p in pcap_paths if p]
+
+        names = [n for n in names if n]
+        if names:
+            shown = names[:10]
+            more = "" if len(names) <= 10 else f" (+{len(names) - 10} more)"
+            lines.append(f"- PCAP(s): {', '.join(shown)}{more}")
+            citations.append(
+                ChatCitation(
+                    type="job_metadata",
+                    id=job_id,
+                    snippet=("PCAP(s): " + ", ".join(shown))[:200],
+                )
+            )
+
+    return "\n".join(lines), citations
 
 
 def build_context_from_rag(
@@ -311,7 +369,7 @@ def get_or_create_conversation(
     conversation_id: Optional[str] = None,
 ) -> str:
     """Get existing conversation or create a new one."""
-    with Session(engine) as session:
+    with Session(database.engine) as session:
         if conversation_id:
             conv = session.get(ConversationDB, conversation_id)
             if conv and conv.job_id == job_id:
@@ -338,7 +396,7 @@ def save_chat_message(
     citations: Optional[List[ChatCitation]] = None,
 ) -> str:
     """Save a chat message to the database."""
-    with Session(engine) as session:
+    with Session(database.engine) as session:
         msg_id = str(uuid4())
         msg = ChatMessageDB(
             id=msg_id,
@@ -365,7 +423,7 @@ def get_conversation_history(
     limit: int = 10,
 ) -> List[Dict[str, str]]:
     """Get conversation history as a list of messages for the LLM."""
-    with Session(engine) as session:
+    with Session(database.engine) as session:
         messages = session.exec(
             select(ChatMessageDB)
             .where(ChatMessageDB.conversation_id == conversation_id)
@@ -412,6 +470,10 @@ async def generate_chat_response(
     context_hint: Optional[str] = None,
     conversation_id: Optional[str] = None,
     use_rag: bool = True,
+    job_metadata: Optional[Dict[str, Any]] = None,
+    job_source: Optional[str] = None,
+    job_mode: Optional[str] = None,
+    exercise_id: Optional[str] = None,
 ) -> ChatResponse:
     """
     Generate a chat response about the analysis findings.
@@ -514,6 +576,18 @@ When answering, reference specific items from the context above. Label your sour
 
     # Get LLM configuration
     effective = get_effective_settings()
+    # Tiny debug log to confirm where chat is actually being routed.
+    # NOTE: Uvicorn's default log config doesn't necessarily emit non-uvicorn loggers,
+    # so log via `uvicorn.error` to ensure it shows up in container logs.
+    # Emit a tiny routing marker in container logs.
+    # In some docker/uvicorn configurations only access logs are visible; `print()` is
+    # the most reliable way to get a line into `docker logs`.
+    routing_msg = (
+        f"Chat LLM routing: endpoint={effective.llm_endpoint} model={effective.llm_model_name} "
+        f"(job_id={job_id})"
+    )
+    logger.info(routing_msg)
+    print(routing_msg, flush=True)
     config = LLMConfig(
         endpoint=effective.llm_endpoint,
         model=effective.llm_model_name,

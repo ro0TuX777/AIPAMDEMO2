@@ -58,29 +58,13 @@ EXTRA_CATEGORIES_FOR_PARSING = [
     "NeutrinoEK", "Nymaim", "Pony", "Dridex", "XWorm", "XLoader", "Vawtrak"
 ]
 
-# System prompt for inference - zero-day & forensic focus
-SYSTEM_PROMPT = """You are an expert cybersecurity analyst specialized in forensic network traffic analysis and zero-day threat hunting.
-Your goal is to identify both known malware families and novel, anomalous malicious activities.
-For every packet or flow analyzed, provide:
-1. **Classification**: The likely malware family, benign category, or 'Anomalous/Zero-Day' if it shows malicious intent without matching a known signature.
-2. **Confidence**: Your level of certainty.
-3. **Forensic Evidence**: Specific indicators (e.g., non-standard protocol state, high-entropy fields, unusual TLS extensions, novel obfuscation).
-4. **Zero-Day Indicators**: Explicitly flag any behavior that suggests a novel exploit or unreported C2 pattern.
-5. **MITRE ATT&CK Mapping**: Relevant techniques and tactics.
-6. **Contextual Analysis**: Its place in the attack chain (e.g., Initial Access, C2)."""
+# System prompt for inference — MUST match the training data format exactly
+SYSTEM_PROMPT = """You are an expert cybersecurity analyst specializing in network traffic analysis.
+You analyze packet data to detect malware, identify attack patterns, and provide security insights.
+When given traffic data, classify it and explain your reasoning with MITRE ATT&CK mappings."""
 
-# Instruction template for zero-day investigation
-INSTRUCTION_TEMPLATE = """Conduct a detailed ZERO-DAY FORENSIC ANALYSIS on the following traffic data <packet>.
-Determine if this traffic is Benign or Malicious. 
-
-If malicious:
-1. Check if it matches any known category: '{categories}'.
-2. If it displays malicious intent (e.g., exploit patterns, C2 behavior) but does NOT match a known category, classify it as 'Anomalous/Zero-Day'.
-
-Provide your findings in a structured format:
-- CLASSIFICATION: [Category Name or 'Anomalous/Zero-Day']
-- REASONING: [Detailed forensic evidence, anomaly justification, and MITRE mappings]
-
+# Instruction template — MUST match the training data format exactly
+INSTRUCTION_TEMPLATE = """Given the following traffic data <packet> that contains protocol fields, traffic features, and payloads. Please conduct the ENCRYPTED MALWARE DETECTION TASK to determine which application category the encrypted benign or malicious traffic belongs to. The categories include '{categories}'.
 <packet>: {packet_data}"""
 
 # Build a set of known categories for extraction (case-insensitive)
@@ -117,9 +101,12 @@ def extract_classification(content: str) -> str:
 
     Handles various response formats:
     - Single word: "Emotet"
+    - Structured: "CLASSIFICATION: Emotet\nREASONING: ..."
     - Verbose: "This might be a Malware traffic packet. The category is likely to be recognized as Pikabot."
     - Sentence: "The traffic appears to be Emotet malware."
     """
+    import re
+
     if not content:
         return "unknown"
 
@@ -130,14 +117,40 @@ def extract_classification(content: str) -> str:
     if content_clean.lower() in KNOWN_CATEGORIES_LOWER:
         return KNOWN_CATEGORIES_LOWER[content_clean.lower()]
 
-    # Look for known categories in the response
+    # Parse "CLASSIFICATION: <value>" structured format (V7+ model output)
+    cls_match = re.search(r'classification:\s*(.+?)(?:\n|$)', content_lower)
+    if cls_match:
+        cls_value = cls_match.group(1).strip().strip('."\',:;*')
+        # Remove parenthetical notes like "(HTTPS)" or "(encrypted)"
+        cls_value_clean = re.sub(r'\s*\(.*?\)', '', cls_value).strip()
+
+        # Try exact match on cleaned value
+        if cls_value_clean in KNOWN_CATEGORIES_LOWER:
+            return KNOWN_CATEGORIES_LOWER[cls_value_clean]
+
+        # Try to find a known category within the classification value
+        for cat_lower, cat_original in KNOWN_CATEGORIES_LOWER.items():
+            if cat_lower in ["unknown"]:
+                continue
+            pattern = r'\b' + re.escape(cat_lower) + r'\b'
+            if re.search(pattern, cls_value):
+                return cat_original
+
+        # Handle "Benign" explicitly (may appear as "Benign (HTTPS)", etc.)
+        if "benign" in cls_value_clean:
+            return "Benign"
+
+        # Handle "Anomalous/Zero-Day" from the prompt template
+        if "anomalous" in cls_value or "zero-day" in cls_value or "zero_day" in cls_value:
+            return "Anomalous"
+
+    # Look for known categories in the full response
     found_categories = []
     for cat_lower, cat_original in KNOWN_CATEGORIES_LOWER.items():
         # Skip generic terms when looking for specific families
         if cat_lower in ["botnet", "ransomware", "trojan", "malware", "benign", "unknown"]:
             continue
         # Check for word boundary matches
-        import re
         pattern = r'\b' + re.escape(cat_lower) + r'\b'
         if re.search(pattern, content_lower):
             found_categories.append(cat_original)
@@ -147,20 +160,26 @@ def extract_classification(content: str) -> str:
         return found_categories[0]
 
     # Check for generic categories as fallback
-    for generic in ["botnet", "ransomware", "trojan", "malware"]:
+    for generic in ["benign", "botnet", "ransomware", "trojan", "malware"]:
         if generic in content_lower:
-            return KNOWN_CATEGORIES_LOWER[generic]
+            return KNOWN_CATEGORIES_LOWER.get(generic, generic.capitalize())
 
     # Check for error/invalid responses
     error_phrases = ["not a valid", "cannot", "unable", "error", "invalid", "i'm afraid"]
     if any(phrase in content_lower for phrase in error_phrases):
         return "unknown"
 
-    # Last resort: return first word if it looks like a category
-    first_word = content.split()[0].strip('."\',:;') if content.split() else "unknown"
-    # Only return first word if it's capitalized (likely a category name)
-    if first_word and first_word[0].isupper() and len(first_word) > 2:
-        return first_word
+    # Last resort: return first non-label word if it looks like a category
+    # Skip leading labels like "CLASSIFICATION:", "**CLASSIFICATION**:", etc.
+    words = content.split()
+    for word in words:
+        cleaned = word.strip('."\',:;*[](){}')
+        if cleaned.upper() in ("CLASSIFICATION", "REASONING", "CONFIDENCE"):
+            continue
+        if cleaned and cleaned[0].isupper() and len(cleaned) > 2:
+            if cleaned.lower() in KNOWN_CATEGORIES_LOWER:
+                return KNOWN_CATEGORIES_LOWER[cleaned.lower()]
+            return cleaned
     return "unknown"
 
 

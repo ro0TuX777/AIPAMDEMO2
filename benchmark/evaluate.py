@@ -118,7 +118,7 @@ def get_malware_type(family: str) -> str:
 
 # Known benign categories
 BENIGN_CATEGORIES = {
-    "BitTorrent", "FTP", "Facetime", "Gmail", "MySQL", "Outlook", "SMB",
+    "Benign", "BitTorrent", "FTP", "Facetime", "Gmail", "MySQL", "Outlook", "SMB",
     "Skype", "Weibo", "WorldOfWarcraft", "aim", "bittorrent", "email",
     "facebook", "ftps", "hangout", "icq", "netflix", "sftp", "skype",
     "spotify", "vimeo", "voipbuster", "youtube"

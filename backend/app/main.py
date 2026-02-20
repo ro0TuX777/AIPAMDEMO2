@@ -787,6 +787,10 @@ async def chat_about_job(job_id: str, body: ChatRequest) -> ChatResponse:
         context_hint=body.context_hint,
         conversation_id=body.conversation_id,
         use_rag=True,
+        job_metadata=job.job_metadata,
+        job_source=job.source,
+        job_mode=job.mode,
+        exercise_id=job.exercise_id,
     )
 
     logger.info(

@@ -76,7 +76,7 @@ def get_effective_settings() -> EffectiveSettings:
         "LLM_ENDPOINT", "http://localhost:11434/v1/chat/completions"
     )
     # Default to the latest recommended local model; override via env or SettingsDB as needed.
-    llm_model_name = raw.get("llm_model_name") or os.getenv("LLM_MODEL_NAME", "aipam-trafficllm-v4")
+    llm_model_name = raw.get("llm_model_name") or os.getenv("LLM_MODEL_NAME", "aipam-trafficllm-v8")
     llm_max_tokens = int(
         raw.get("llm_max_tokens") or os.getenv("LLM_MAX_TOKENS", "2000")
     )

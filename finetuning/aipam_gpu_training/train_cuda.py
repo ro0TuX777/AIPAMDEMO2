@@ -13,6 +13,8 @@ Requirements:
 """
 
 import os
+import argparse
+from pathlib import Path
 import torch
 from datasets import load_dataset
 from transformers import (
@@ -24,20 +26,61 @@ from transformers import (
 from peft import LoraConfig, get_peft_model, prepare_model_for_kbit_training
 from trl import SFTTrainer, SFTConfig
 
-# Configuration
+SCRIPT_DIR = Path(__file__).resolve().parent
+
+# Defaults (can be overridden via CLI)
 MODEL_NAME = "meta-llama/Llama-3.1-8B-Instruct"
-OUTPUT_DIR = "./aipam-llama-lora"
-MERGED_DIR = "./aipam-llama-merged"
 
 # Training hyperparameters
-NUM_EPOCHS = 1  # 1 epoch for 500K+ samples is sufficient
-BATCH_SIZE = 1  # Minimal for limited VRAM
-GRADIENT_ACCUMULATION = 16  # Effective batch size = 16
-LEARNING_RATE = 2e-5
-MAX_SEQ_LENGTH = 512  # Reduced for memory
+DEFAULT_NUM_EPOCHS = 1  # 1 epoch for 500K+ samples is sufficient
+DEFAULT_BATCH_SIZE = 1  # Minimal for limited VRAM
+DEFAULT_GRADIENT_ACCUMULATION = 16  # Effective batch size = 16
+DEFAULT_LEARNING_RATE = 2e-5
+DEFAULT_MAX_SEQ_LENGTH = 512  # Reduced for memory
+
+
+def _resolve_path(p: str) -> str:
+    """Resolve a potentially-relative path against this script directory."""
+    path = Path(p)
+    if not path.is_absolute():
+        path = (SCRIPT_DIR / path).resolve()
+    return str(path)
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="AIPAM Traffic Analysis Model - CUDA Training")
+    parser.add_argument(
+        "--train-file",
+        default="data/unified_train.jsonl",
+        help="Training JSONL path (relative to this script dir unless absolute)",
+    )
+    parser.add_argument(
+        "--valid-file",
+        default="data/unified_valid.jsonl",
+        help="Validation JSONL path (relative to this script dir unless absolute)",
+    )
+    parser.add_argument(
+        "--output-dir",
+        default="./aipam-llama-lora",
+        help="Output directory for checkpoints/adapters (relative to this script dir unless absolute)",
+    )
+    parser.add_argument("--model-name", default=MODEL_NAME, help="Base model id")
+    parser.add_argument("--epochs", type=int, default=DEFAULT_NUM_EPOCHS)
+    parser.add_argument("--batch-size", type=int, default=DEFAULT_BATCH_SIZE)
+    parser.add_argument("--grad-accum", type=int, default=DEFAULT_GRADIENT_ACCUMULATION)
+    parser.add_argument("--learning-rate", type=float, default=DEFAULT_LEARNING_RATE)
+    parser.add_argument("--max-seq-length", type=int, default=DEFAULT_MAX_SEQ_LENGTH)
+    parser.add_argument(
+        "--resume",
+        action="store_true",
+        help="Resume from latest checkpoint in output dir if present",
+    )
+    return parser.parse_args()
 
 
 def main():
+    args = parse_args()
+
     print("=" * 60)
     print("AIPAM Traffic Analysis Model - CUDA Training")
     print("=" * 60)
@@ -50,9 +93,14 @@ def main():
     print(f"CUDA Device: {torch.cuda.get_device_name(0)}")
     print(f"VRAM: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB")
     
+    # Resolve paths
+    train_file = _resolve_path(args.train_file)
+    valid_file = _resolve_path(args.valid_file)
+    output_dir = _resolve_path(args.output_dir)
+
     # Load tokenizer
-    print(f"\nLoading tokenizer from {MODEL_NAME}...")
-    tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
+    print(f"\nLoading tokenizer from {args.model_name}...")
+    tokenizer = AutoTokenizer.from_pretrained(args.model_name)
     tokenizer.pad_token = tokenizer.eos_token
     tokenizer.padding_side = "right"
     
@@ -65,12 +113,12 @@ def main():
     )
 
     # Load model with memory optimization
-    print(f"Loading model {MODEL_NAME}...")
+    print(f"Loading model {args.model_name}...")
     # Clear GPU cache before loading
     torch.cuda.empty_cache()
 
     model = AutoModelForCausalLM.from_pretrained(
-        MODEL_NAME,
+        args.model_name,
         quantization_config=bnb_config,
         device_map="auto",
         trust_remote_code=True,
@@ -90,11 +138,11 @@ def main():
     model = get_peft_model(model, lora_config)
     model.print_trainable_parameters()
     
-    # Load dataset - unified: cybersec reasoning + IOCs + malware PCAP traffic data
+    # Load dataset
     print("\nLoading training data...")
     dataset = load_dataset("json", data_files={
-        "train": "data/unified_train.jsonl",
-        "validation": "data/unified_valid.jsonl"
+        "train": train_file,
+        "validation": valid_file,
     })
     print(f"Training samples: {len(dataset['train'])}")
     print(f"Validation samples: {len(dataset['validation'])}")
@@ -114,12 +162,12 @@ def main():
 
     # SFT Config (combines TrainingArguments + SFT-specific settings)
     sft_config = SFTConfig(
-        output_dir=OUTPUT_DIR,
-        num_train_epochs=NUM_EPOCHS,
-        per_device_train_batch_size=BATCH_SIZE,
-        per_device_eval_batch_size=BATCH_SIZE,
-        gradient_accumulation_steps=GRADIENT_ACCUMULATION,
-        learning_rate=LEARNING_RATE,
+        output_dir=output_dir,
+        num_train_epochs=args.epochs,
+        per_device_train_batch_size=args.batch_size,
+        per_device_eval_batch_size=args.batch_size,
+        gradient_accumulation_steps=args.grad_accum,
+        learning_rate=args.learning_rate,
         weight_decay=0.01,
         warmup_ratio=0.03,
         lr_scheduler_type="cosine",
@@ -131,7 +179,7 @@ def main():
         bf16=True,
         gradient_checkpointing=True,
         report_to="none",
-        max_seq_length=MAX_SEQ_LENGTH,
+        max_length=args.max_seq_length,
         dataset_text_field="text",
     )
 
@@ -140,29 +188,38 @@ def main():
         model=model,
         train_dataset=dataset["train"],
         eval_dataset=dataset["validation"],
-        tokenizer=tokenizer,
+        processing_class=tokenizer,
         args=sft_config,
     )
     
-    # Train (resume from checkpoint if available)
+    # Train (optionally resume from latest checkpoint)
     print("\n" + "=" * 60)
-    resume_checkpoint = os.path.join(OUTPUT_DIR, "checkpoint-18000")
-    if os.path.exists(resume_checkpoint):
-        print(f"Resuming training from {resume_checkpoint}...")
-    else:
+    resume_checkpoint = None
+    if args.resume and os.path.isdir(output_dir):
+        # pick numerically largest checkpoint-XXXXX if any
+        ckpts = []
+        for name in os.listdir(output_dir):
+            if name.startswith("checkpoint-"):
+                suffix = name.split("checkpoint-", 1)[-1]
+                if suffix.isdigit():
+                    ckpts.append((int(suffix), os.path.join(output_dir, name)))
+        if ckpts:
+            ckpts.sort(key=lambda x: x[0])
+            resume_checkpoint = ckpts[-1][1]
+            print(f"Resuming training from {resume_checkpoint}...")
+    if resume_checkpoint is None:
         print("Starting training from scratch...")
-        resume_checkpoint = None
     print("=" * 60)
     trainer.train(resume_from_checkpoint=resume_checkpoint)
     
     # Save LoRA adapter
-    print(f"\nSaving LoRA adapter to {OUTPUT_DIR}...")
-    trainer.save_model(OUTPUT_DIR)
-    tokenizer.save_pretrained(OUTPUT_DIR)
+    print(f"\nSaving LoRA adapter to {output_dir}...")
+    trainer.save_model(output_dir)
+    tokenizer.save_pretrained(output_dir)
     
     print("\n" + "=" * 60)
     print("Training complete!")
-    print(f"LoRA adapter saved to: {OUTPUT_DIR}")
+    print(f"LoRA adapter saved to: {output_dir}")
     print("\nTo merge and convert to GGUF, run:")
     print("  python merge_and_convert.py")
     print("=" * 60)

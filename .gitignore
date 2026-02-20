@@ -96,6 +96,11 @@ benchmark_results/
 benchmark_results_*/
 benchmark/benchmark_results*/
 benchmark/benchmark_results_*/
+benchmark/pipeline_benign_results*/
+benchmark/pipeline_malware_results*/
+
+# Benchmark PCAPs (can be re-downloaded)
+benchmark/benchmark_pcaps/
 
 # Local logs / misc
 frontend/nohup.out
@@ -106,12 +111,8 @@ finetuning/aipam_gpu_training/venv_unsloth/
 finetuning/trafficllm_training/unsloth_compiled_cache/
 
 # Fine-tuning outputs (generated)
-finetuning/aipam_gpu_training/aipam-llama-lora-v3/
-finetuning/aipam_gpu_training/aipam-llama-lora-v4/
-finetuning/aipam_gpu_training/aipam-llama-lora-v5/
-finetuning/aipam_gpu_training/aipam-llama-merged-v3/
-finetuning/aipam_gpu_training/aipam-llama-merged-v4/
-finetuning/aipam_gpu_training/aipam-llama-merged-v5/
+finetuning/aipam_gpu_training/aipam-llama-lora-v*/
+finetuning/aipam_gpu_training/aipam-llama-merged-v*/
 finetuning/trafficllm_training/averaged_adapter/
 finetuning/trafficllm_training/merged_model/
 finetuning/trafficllm_training/merged_model_averaged/
@@ -134,3 +135,9 @@ Playwright Testing Bootstrap.md
 
 # Test fixture exception (45B stub, not a real capture)
 !frontend/tests/fixtures/dummy.pcap
+
+# PDF papers
+*.pdf
+
+# DAWN framework (external repo)
+DAWN/

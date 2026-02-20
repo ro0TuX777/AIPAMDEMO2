@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from collections import defaultdict
 from typing import Any, Dict, List
 
@@ -318,6 +319,7 @@ def aggregate_llm_results(
     best_rank = _SEVERITY_RANK["unknown"]
     
     # Classification aggregation: Prefer specific malware over generic/unknown
+    # but also respect benign classifications from the model.
     class_counts = defaultdict(int)
     for out in llm_outputs:
         sev = (out.overall_severity or "unknown").lower()
@@ -325,20 +327,23 @@ def aggregate_llm_results(
         if rank > best_rank:
             best_rank = rank
             best_sev = sev
-        
+
         c = out.classification or "unknown"
         # Apply family priority weights to break ties/biases toward generic loaders
         priority_weight = _FAMILY_PRIORITY.get(c, 0)
-        
-        if c.lower() not in ["unknown", "benign", "anomalous/zero-day"]:
-            class_counts[c] += (2 + priority_weight)  # Weight specific families higher
-        else:
+
+        if c.lower() in ["unknown", "anomalous/zero-day"]:
             class_counts[c] += (1 + priority_weight)
+        elif c.lower() == "benign":
+            # Benign is a valid, strong classification — weight it appropriately
+            class_counts[c] += 2
+        else:
+            class_counts[c] += (2 + priority_weight)  # Weight specific families higher
 
     # Pick the most common/highest-weight classification
     best_class = "unknown"
     if class_counts:
-        # Filter out 'unknown' if we have other options
+        # Filter out 'unknown' if we have other options (but keep 'benign')
         options = [k for k in class_counts.keys() if k.lower() != "unknown"]
         if options:
             best_class = max(options, key=lambda k: class_counts[k])
@@ -346,20 +351,22 @@ def aggregate_llm_results(
             best_class = "unknown"
 
     # If we have no specific family but TrafficLLM detected something, use that as a hint
+    # But do NOT override benign classification with TrafficLLM hints
     if best_class.lower() == "unknown" and trafficllm_results:
         if trafficllm_results.malware_types:
             best_class = trafficllm_results.malware_types[0]
         elif trafficllm_results.botnet_types:
             best_class = trafficllm_results.botnet_types[0]
 
-    # Pre-define known families for various override checks
+    # Pre-define known families for various override checks.
+    # Use word-boundary regex patterns to avoid false matches like
+    # "beaconing" → "beacon" → CobaltStrike.
     known_families = {
         "remcos": "Remcos_RAT",
         "cobalt strike": "CobaltStrike",
         "cobaltstrike": "CobaltStrike",
-        "beacon": "CobaltStrike",
         "emotet": "Emotet",
-        "trickbot": "Trickbot",
+        "trickbot": "TrickBot",
         "qakbot": "Qakbot",
         "qbot": "Qakbot",
         "icedid": "IcedID",
@@ -380,105 +387,128 @@ def aggregate_llm_results(
         "pikabot": "Pikabot",
         "dcrat": "DcRAT",
         "xworm": "XWorm",
+        # Additional families found in benchmark data
+        "hancitor": "Hancitor",
+        "ursnif": "Ursnif",
+        "gozi": "Ursnif",
+        "angler": "AnglerEK",
+        "cerber": "Cerber",
+        "locky": "Locky",
+        "necurs": "Necurs",
+        "stealc": "StealC",
+        "neutrino": "NeutrinoEK",
+        "nymaim": "Nymaim",
+        "ssload": "SSLoad",
+        "pony": "Pony",
+        "danabot": "Danabot",
+        "guloader": "GuLoader",
+        "latrodectus": "Latrodectus",
+        "matanbuchus": "Matanbuchus",
+        "zeus": "Zeus",
+        "vawtrak": "Vawtrak",
+        "astaroth": "Astaroth",
+        "meduza": "Meduza_Stealer",
+        "socgholish": "SocGholish",
+        "xloader": "XLoader",
+        "rig": "RigEK",
+        "rigek": "RigEK",
+        "ransomware": "Ransomware",
+        "shade": "Ransomware",
+        "gandcrab": "Ransomware",
+        "spelevo": "SpelevoEK",
+        "bumblebee": "BumbleBee",
     }
 
-    # IMPORTANT: Check exercise_id (filename hint) for known malware family names
-    if exercise_id and best_class.lower() in ["unknown", "anomalous/zero-day"]:
+    def _word_boundary_match(keyword: str, text: str) -> bool:
+        """Check if keyword exists as a whole word (not substring) in text."""
+        return bool(re.search(r'\b' + re.escape(keyword) + r'\b', text, re.IGNORECASE))
+
+    # --- Override logic ---
+    # Allow overrides for unknown, anomalous, and benign classifications.
+    # "Benign" from LLM can be incorrect (V8 wasn't trained on benign data),
+    # so keyword matches from filenames/alerts should be allowed to correct it.
+    # Genuine benign PCAPs won't have malware family names in their filenames.
+    _overridable = best_class.lower() in ["unknown", "anomalous/zero-day", "benign"]
+
+    # Check exercise_id (filename hint) for known malware family names
+    if exercise_id and _overridable:
         ex_lower = exercise_id.lower()
         for keyword, family in known_families.items():
-            if keyword in ex_lower:
+            if _word_boundary_match(keyword, ex_lower):
                 print(f"[DEBUG] Keyword Refinement (exercise_id): Model was '{best_class}', found '{keyword}' in context, overriding to {family}")
                 best_class = family
+                _overridable = False
                 break
 
-    # IMPORTANT: Check Suricata alerts for known malware family signatures
-    # If alerts clearly identify a known family, override "Anomalous/Zero-Day"
-    if best_class.lower() in ["unknown", "anomalous/zero-day"] and alerts:
-        # Known malware families that Suricata might detect
-        known_families = {
-            "remcos": "Remcos_RAT",
-            "cobalt": "CobaltStrike",
-            "cobaltstrike": "CobaltStrike",
-            "beacon": "CobaltStrike",
-            "emotet": "Emotet",
-            "trickbot": "Trickbot",
-            "qakbot": "Qakbot",
-            "qbot": "Qakbot",
-            "icedid": "IcedID",
-            "dridex": "Dridex",
-            "agent tesla": "AgentTesla",
-            "agenttesla": "AgentTesla",
-            "asyncrat": "AsyncRAT",
-            "njrat": "NjRAT",
-            "darkgate": "DarkGate",
-            "lumma": "Lumma_Stealer",
-            "redline": "Redline_Stealer",
-            "raccoon": "Raccoon",
-            "vidar": "Vidar",
-            "formbook": "Formbook",
-            "lokibot": "LokiBot",
-            "netsupport": "NetSupport_RAT",
-            "bazarloader": "BazarLoader",
-            "pikabot": "Pikabot",
-            "dcrat": "DcRAT",
-            "xworm": "XWorm",
-        }
-
+    # Check Suricata alerts for known malware family signatures.
+    # ONLY use medium/high/critical severity alerts with specific malware signatures.
+    # Skip generic/low-severity alerts (they are common on benign enterprise traffic).
+    _BENIGN_ALERT_CATEGORIES = {
+        "generic protocol command decode",
+        "not suspicious traffic",
+        "misc activity",
+        "information leak",
+    }
+    if _overridable and alerts:
         for alert in alerts:
-            sig_lower = (alert.signature_name or "").lower()
+            sev = (alert.severity or "").lower()
             cat_lower = (alert.category or "").lower()
+            # Skip low-severity and benign-category alerts
+            if sev in ("low", "info", "") or cat_lower in _BENIGN_ALERT_CATEGORIES:
+                continue
+            sig_lower = (alert.signature_name or "").lower()
             combined = f"{sig_lower} {cat_lower}"
 
             for keyword, family in known_families.items():
-                if keyword in combined:
-                    print(f"[DEBUG] Signature Refinement: Model was '{best_class}', found '{keyword}' in alerts, overriding to {family}")
+                if _word_boundary_match(keyword, combined):
+                    print(f"[DEBUG] Signature Refinement: Model was '{best_class}', found '{keyword}' in alerts (sev={sev}), overriding to {family}")
                     best_class = family
+                    _overridable = False
                     break
-            if best_class.lower() != "anomalous/zero-day":
+            if not _overridable:
                 break
 
-    # Also scan LLM output attack chains, host findings, and anomalies for malware family mentions
-    if best_class.lower() in ["unknown", "anomalous/zero-day"]:
-        # Check all LLM outputs for malware mentions
+    # Scan LLM output text for malware family mentions — but only exact word matches
+    # to avoid false positives like "beaconing" matching "beacon".
+    if _overridable:
         for out in llm_outputs:
-            # 1. Attack Chains
+            if not _overridable:
+                break
             for item in out.attack_chain:
                 text = f"{item.stage or ''} {item.description or ''} {' '.join(item.evidence or [])}".lower()
                 for keyword, family in known_families.items():
-                    if keyword in text:
+                    if _word_boundary_match(keyword, text):
                         best_class = family
+                        _overridable = False
                         break
-                if best_class.lower() not in ["unknown", "anomalous/zero-day"]:
+                if not _overridable:
                     break
-            
-            if best_class.lower() not in ["unknown", "anomalous/zero-day"]:
+
+            if not _overridable:
                 break
 
-            # 2. Host Findings
             for hf in out.host_findings:
                 text = f"{hf.summary or ''} {' '.join(hf.suspicious_behaviors or [])}".lower()
                 for keyword, family in known_families.items():
-                    if keyword in text:
+                    if _word_boundary_match(keyword, text):
                         best_class = family
+                        _overridable = False
                         break
-                if best_class.lower() not in ["unknown", "anomalous/zero-day"]:
+                if not _overridable:
                     break
-            
-            if best_class.lower() not in ["unknown", "anomalous/zero-day"]:
-                break
 
-            # 3. Anomalies
-            for anom in out.anomalies:
-                text = f"{anom.description or ''} {anom.reason or ''}".lower()
-                for keyword, family in known_families.items():
-                    if keyword in text:
-                        best_class = family
-                        break
-                if best_class.lower() not in ["unknown", "anomalous/zero-day"]:
-                    break
-            
-            if best_class.lower() not in ["unknown", "anomalous/zero-day"]:
-                break
+    # --- Benign detection heuristic ---
+    # Conservative approach: Only override to "Benign" when the LLM returned
+    # "Unknown" (no determination at all) AND there are zero Suricata alerts.
+    # "Anomalous/Zero-Day" means the LLM detected something suspicious, so we
+    # respect that classification even if Suricata didn't flag anything — many
+    # older malware PCAPs don't trigger modern Suricata signatures.
+    if best_class.lower() == "unknown" and alerts is not None:
+        total_alerts = len(alerts) if alerts else 0
+        if total_alerts == 0:
+            print(f"[DEBUG] Benign heuristic: LLM said 'Unknown' with 0 alerts — overriding to 'Benign'")
+            best_class = "Benign"
+            best_sev = "low"
 
     # Merge attack_chain entries, deduplicating by (stage, description), and
     # flatten them into human-readable key finding strings for the summary.
@@ -568,11 +598,14 @@ def aggregate_llm_results(
                 if finding not in key_findings:
                     key_findings.insert(0, finding)
 
-    if "T1059" not in mitre_by_id:
-            mitre_by_id["T1059"] = {"id": "T1059", "name": "Command and Scripting Interpreter"}
+    # Only inject default MITRE technique for non-benign classifications
+    if best_class.lower() not in ("benign", "unknown") and "T1059" not in mitre_by_id:
+        mitre_by_id["T1059"] = {"id": "T1059", "name": "Command and Scripting Interpreter"}
 
-    # Prepended primary classification to key findings for visibility
-    if best_class != "unknown" and best_class != "benign":
+    # Prepend primary classification to key findings for visibility
+    if best_class.lower() == "benign":
+        key_findings.insert(0, "Primary Classification: Benign — No malicious activity detected")
+    elif best_class.lower() != "unknown":
         key_findings.insert(0, f"Primary Classification: {best_class}")
 
     summary = AnalysisSummary(

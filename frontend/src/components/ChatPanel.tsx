@@ -66,13 +66,13 @@ export function ChatPanel({ jobId, initialContext, onClose }: ChatPanelProps) {
         }
     };
 
-    // If initialContext is provided, send it as the first message (only once)
+    // If initialContext is provided, send it as a message (only once per mount)
     useEffect(() => {
-        if (initialContext && !isLoadingHistory && messages.length === 0 && !initialContextHandled.current) {
+        if (initialContext && !isLoadingHistory && !initialContextHandled.current) {
             initialContextHandled.current = true;
             handleSend(initialContext);
         }
-    }, [initialContext, isLoadingHistory, messages.length]);
+    }, [initialContext, isLoadingHistory]);
 
     const handleSend = async (messageText?: string) => {
         const text = messageText || input.trim();

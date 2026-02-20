@@ -28,8 +28,26 @@ OUTPUT_DIR = "training_data"
 MAX_PACKET_LENGTH = 1024
 
 # Instruction template (matching TrafficLLM's EMD task)
-INSTRUCTION_TEMPLATE = """Given the following traffic data <packet> that contains protocol fields, traffic features, and payloads. Please conduct the ENCRYPTED MALWARE DETECTION TASK to determine which application category the encrypted benign or malicious traffic belongs to. The categories include 'BitTorrent, FTP, Facetime, Gmail, MySQL, Outlook, SMB, Skype, Weibo, WorldOfWarcraft, Cridex, Geodo, Htbot, Miuref, Neris, Nsis-ay, Shifu, Tinba, Virut, Zeus, IcedID, Qakbot, Emotet, TrickBot, Formbook, CobaltStrike, BazarLoader, DarkGate, Ursnif, Pikabot, BumbleBee, Matanbuchus, Astaroth, AgentTesla, Lumma_Stealer, Danabot, SSLoad, Remcos_RAT, Sliver, Latrodectus, NetSupport_RAT, Redline_Stealer, SocGholish, Raccoon, Meduza_Stealer, GuLoader, AsyncRAT'.
-<packet>: {packet_data}"""
+CATEGORIES = (
+    "AZORult, AgentTesla, AnglerEK, Astaroth, AsyncRAT, BazarLoader, "
+    "BitTorrent, BumbleBee, Cerber, CobaltStrike, Cridex, Danabot, DarkGate, "
+    "Dridex, Emotet, FTP, Facetime, Formbook, Geodo, Gmail, GootLoader, "
+    "GuLoader, Hancitor, Htbot, IcedID, Latrodectus, Locky, LokiBot, "
+    "Lumma_Stealer, Matanbuchus, Meduza_Stealer, Miuref, MySQL, Necurs, "
+    "Neris, NetSupport_RAT, NeutrinoEK, Nsis-ay, Nymaim, Outlook, Pikabot, "
+    "Pony, Qakbot, Raccoon, Ransomware, Redline_Stealer, Remcos_RAT, "
+    "Rhadamanthys, RigEK, SMB, SSLoad, Shifu, Skype, Sliver, SmokeLoader, "
+    "SnakeKeylogger, SocGholish, StealC, Tinba, TrickBot, Ursnif, Vawtrak, "
+    "Virut, Weibo, WorldOfWarcraft, XLoader, XWorm, ZLoader, Zeus"
+)
+
+INSTRUCTION_TEMPLATE = (
+    "Given the following traffic data <packet> that contains protocol fields, "
+    "traffic features, and payloads. Please conduct the ENCRYPTED MALWARE "
+    "DETECTION TASK to determine which application category the encrypted "
+    "benign or malicious traffic belongs to. The categories include "
+    "'{categories}'.\n<packet>: {packet_data}"
+)
 
 OUTPUT_TEMPLATE = "This might be a Malware traffic packet. The category is likely to be recognized as {malware_label}."
 
@@ -102,7 +120,9 @@ def extract_packets_scapy(pcap_file: str, max_packets: int = 300) -> List[str]:
 def create_training_sample(packet_data: str, malware_label: str) -> Dict:
     """Create a training sample in TrafficLLM format."""
     return {
-        "instruction": INSTRUCTION_TEMPLATE.format(packet_data=packet_data),
+        "instruction": INSTRUCTION_TEMPLATE.format(
+            categories=CATEGORIES, packet_data=packet_data
+        ),
         "output": OUTPUT_TEMPLATE.format(malware_label=malware_label)
     }
 
