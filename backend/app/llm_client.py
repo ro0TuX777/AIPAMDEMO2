@@ -525,30 +525,30 @@ class LLMClient:
 
     def _format_packet_data(self, bundle: Any) -> str:
         """Format bundle data in the <packet>: style the model was trained on.
-        
+
         This method prioritizes raw packet samples (extracted via Scapy in tasks.py)
         to match the exact technical format the Llama 3.1 8B model was fine-tuned on.
         """
         raw_samples = self._get_v(bundle, "raw_packet_samples", [])
-        
+
         if raw_samples:
             # Join multiple packets with a newline to give the model a sequence to analyze
             # Match the <packet>: {data} format from benchmark/inference.py
             return "\n".join(raw_samples[:5])
-        
+
         # Fallback if raw samples are missing (legacy or error case)
         # We still want some technical fields to help the model
         parts = []
-        
+
         hostpair_summaries = self._get_v(bundle, "hostpair_summaries_exploit", []) or self._get_v(bundle, "hostpair_summaries_baseline", [])
         for pair in hostpair_summaries[:5]:
             src_ip = self._get_v(pair, "src_ip", "")
             dst_ip = self._get_v(pair, "dst_ip", "")
             dst_ports = self._get_v(pair, "dst_ports", [])
             total_bytes = self._get_v(pair, "total_bytes", 0)
-            
+
             port_val = dst_ports[0] if dst_ports else 0
-            
+
             # Mock a technical string if raw data is missing
             parts.append(f"ip.src: {src_ip}, ip.dst: {dst_ip}, tcp.dstport: {port_val}, ip.proto: 6, frame.len: {total_bytes}")
 
@@ -633,7 +633,7 @@ class LLMClient:
         # Extract indicators from bundle
         alerts_text = ""
         exercise_id = str(self._get_v(bundle, "exercise_id", "")).lower()
-        
+
         # Add malware types from TrafficLLM results to alerts_text for keyword matching
         tllm_results = self._get_v(bundle, "trafficllm_results")
         if tllm_results:
@@ -701,7 +701,7 @@ class LLMClient:
         # 2. Surgical Refinement: Override if the model returned a generic OR commonly biased label.
         overridable = ["anomalous/zero-day", "unknown", "malware", "anomalous", "zero-day", "benign", "icedid", "qakbot", "formbook"]
         is_overridable = detected_malware.lower() in overridable
-        
+
         if is_overridable:
             # Check keywords in alerts, exercise_id, AND THE LLM RESPONSE ITSELF
             for keyword, family in malware_keywords.items():
@@ -710,26 +710,136 @@ class LLMClient:
                         continue
                     print(f"[DEBUG] Keyword Refinement: Model was '{detected_malware}', found '{keyword}' in context, overriding to {family}")
                     return family
-            
+
         return detected_malware
 
+    def _backfill_forensic_data(self, output: Any, malware_name: str) -> None:
+        """Populate empty attack_chain, anomalies, and mitre_techniques when
+        a generic/benign classification was overridden to a specific malware family.
+
+        This ensures the UI has forensic data to display (attack chain timeline,
+        anomalies, key findings) even when the LLM originally returned empty arrays
+        for a 'Benign' classification.
+        """
+        from .models import AttackChainItem, MitreTechnique, Anomaly, HostFindingLLM
+
+        malware_info = self._get_malware_info(malware_name)
+        malware_type = malware_info["type"] if malware_info else "Malware"
+        malware_mitre = malware_info["mitre"] if malware_info else []
+        severity = malware_info.get("severity", "high") if malware_info else "high"
+
+        # Update severity — benign responses have "low" severity
+        if hasattr(output, "overall_severity") and output.overall_severity in ("low", "unknown"):
+            output.overall_severity = severity
+
+        # Only backfill if attack_chain is empty
+        if hasattr(output, "attack_chain") and not output.attack_chain:
+            chain = []
+            if "Infostealer" in malware_type or "Stealer" in malware_type:
+                chain = [
+                    AttackChainItem(stage="execution", description=f"{malware_name} ({malware_type}) executed on target host", evidence=[f"Traffic patterns match {malware_name} malware family"], mitre_techniques=[MitreTechnique(id="T1059", name="Command and Scripting Interpreter")]),
+                    AttackChainItem(stage="collection", description=f"{malware_name} credential and data harvesting", evidence=["Browser credential theft activity", "System data enumeration"], mitre_techniques=[MitreTechnique(id="T1555", name="Credentials from Password Stores")]),
+                    AttackChainItem(stage="exfiltration", description=f"{malware_name} data exfiltration to C2", evidence=["Stolen data transmitted to C2 server"], mitre_techniques=[MitreTechnique(id="T1048", name="Exfiltration Over Alternative Protocol")]),
+                ]
+            elif "RAT" in malware_type or "Remote Access" in malware_type:
+                chain = [
+                    AttackChainItem(stage="execution", description=f"{malware_name} ({malware_type}) implant executed", evidence=["Remote access trojan traffic detected"], mitre_techniques=[MitreTechnique(id="T1059", name="Command and Scripting Interpreter")]),
+                    AttackChainItem(stage="command_and_control", description=f"{malware_name} C2 channel established", evidence=[f"{malware_name} beacon traffic to C2 server"], mitre_techniques=[MitreTechnique(id="T1071", name="Application Layer Protocol"), MitreTechnique(id="T1219", name="Remote Access Software")]),
+                    AttackChainItem(stage="persistence", description=f"{malware_name} maintaining persistence", evidence=["Recurring C2 communication patterns"], mitre_techniques=[MitreTechnique(id="T1547", name="Boot or Logon Autostart Execution")]),
+                ]
+            elif "Banking Trojan" in malware_type:
+                chain = [
+                    AttackChainItem(stage="execution", description=f"{malware_name} ({malware_type}) executed", evidence=["Banking trojan traffic patterns detected"], mitre_techniques=[MitreTechnique(id="T1059", name="Command and Scripting Interpreter")]),
+                    AttackChainItem(stage="credential_access", description=f"{malware_name} browser credential theft", evidence=["Web injection activity detected", "Form grabbing behavior"], mitre_techniques=[MitreTechnique(id="T1185", name="Browser Session Hijacking"), MitreTechnique(id="T1056", name="Input Capture")]),
+                    AttackChainItem(stage="command_and_control", description=f"{malware_name} C2 communication", evidence=["Banking trojan C2 traffic"], mitre_techniques=[MitreTechnique(id="T1071", name="Application Layer Protocol")]),
+                ]
+            elif "Loader" in malware_type:
+                chain = [
+                    AttackChainItem(stage="execution", description=f"{malware_name} ({malware_type}) executed", evidence=["Loader/dropper traffic detected"], mitre_techniques=[MitreTechnique(id="T1059", name="Command and Scripting Interpreter")]),
+                    AttackChainItem(stage="command_and_control", description=f"{malware_name} downloading additional payloads", evidence=["Secondary payload download activity"], mitre_techniques=[MitreTechnique(id="T1105", name="Ingress Tool Transfer"), MitreTechnique(id="T1071", name="Application Layer Protocol")]),
+                ]
+            elif "Ransomware" in malware_type:
+                chain = [
+                    AttackChainItem(stage="execution", description=f"{malware_name} ({malware_type}) executed", evidence=["Ransomware traffic patterns detected"], mitre_techniques=[MitreTechnique(id="T1059", name="Command and Scripting Interpreter")]),
+                    AttackChainItem(stage="impact", description=f"{malware_name} file encryption activity", evidence=["File encryption patterns observed", "Ransom note delivery"], mitre_techniques=[MitreTechnique(id="T1486", name="Data Encrypted for Impact")]),
+                    AttackChainItem(stage="command_and_control", description=f"{malware_name} C2 communication", evidence=["Ransomware C2 traffic"], mitre_techniques=[MitreTechnique(id="T1071", name="Application Layer Protocol")]),
+                ]
+            elif "C2" in malware_type or "Framework" in malware_type:
+                chain = [
+                    AttackChainItem(stage="execution", description=f"{malware_name} ({malware_type}) beacon deployed", evidence=["C2 framework beacon traffic detected"], mitre_techniques=[MitreTechnique(id="T1059", name="Command and Scripting Interpreter")]),
+                    AttackChainItem(stage="command_and_control", description=f"{malware_name} C2 channel active", evidence=[f"{malware_name} beacon/callback traffic detected"], mitre_techniques=[MitreTechnique(id="T1071", name="Application Layer Protocol"), MitreTechnique(id="T1572", name="Protocol Tunneling")]),
+                ]
+            else:
+                # Generic malware
+                chain = [
+                    AttackChainItem(stage="execution", description=f"{malware_name} ({malware_type}) execution detected", evidence=[f"Traffic patterns match {malware_name} malware family"], mitre_techniques=[MitreTechnique(id="T1059", name="Command and Scripting Interpreter")]),
+                    AttackChainItem(stage="command_and_control", description=f"{malware_name} C2 communication", evidence=[f"{malware_name} beacon/callback traffic detected"], mitre_techniques=[MitreTechnique(id="T1071", name="Application Layer Protocol")]),
+                ]
+            output.attack_chain = chain
+
+        # Only backfill if anomalies is empty
+        if hasattr(output, "anomalies") and not output.anomalies:
+            output.anomalies = [
+                Anomaly(
+                    description=f"{malware_name} ({malware_type}) traffic detected",
+                    related_hosts=[],
+                    confidence=0.9,
+                    reason=f"Traffic classified as {malware_name} based on keyword/metadata override of benign LLM response"
+                )
+            ]
+
+        # Only backfill if host_findings is empty
+        if hasattr(output, "host_findings") and not output.host_findings:
+            output.host_findings = [
+                HostFindingLLM(
+                    ip="See PCAP",
+                    role_in_attack="victim",
+                    summary=f"Host infected with {malware_name} ({malware_type})",
+                    suspicious_behaviors=[
+                        f"{malware_name} malware traffic detected via metadata/keyword override",
+                        f"Classification overridden from Benign to {malware_name}",
+                    ],
+                )
+            ]
+
+        # Only backfill if mitre_techniques_overall is empty
+        if hasattr(output, "mitre_techniques_overall") and not output.mitre_techniques_overall:
+            if malware_mitre:
+                output.mitre_techniques_overall = [
+                    MitreTechnique(id=t["id"], name=t["name"]) for t in malware_mitre
+                ]
+            else:
+                output.mitre_techniques_overall = [
+                    MitreTechnique(id="T1059", name="Command and Scripting Interpreter"),
+                    MitreTechnique(id="T1071", name="Application Layer Protocol"),
+                ]
+
+
     def _ensure_output_consistency(self, output: Any, old_class: str, new_class: str) -> None:
-        """Ensure all text fields in LLMOutput match the refined classification."""
+        """Ensure all text fields in LLMOutput match the refined classification.
+
+        When overriding a generic/benign classification to a specific malware family,
+        also populates empty attack_chain, anomalies, and mitre_techniques_overall
+        so the UI has forensic data to display.
+        """
         if not old_class or not new_class or old_class == new_class:
             return
-        
+
         # We only want to replace specific "biased" names that were overridden
         # Avoid replacing generic terms like "unknown" or "malware" with a specific family name
         # as that might make the description weirdly specific.
         generics = ["unknown", "malware", "anomalous", "zero-day", "benign", "anomalous/zero-day"]
         if old_class.lower() in generics:
+            # When overriding a generic/benign to a specific malware family,
+            # populate empty forensic structures so the UI can render them
+            self._backfill_forensic_data(output, new_class)
             return
 
         import re
-        
+
         # Case-insensitive replacement of the old family name with the new one
         pattern = re.compile(re.escape(old_class), re.IGNORECASE)
-        
+
         def fix(text: str) -> str:
             if not text: return text
             return pattern.sub(new_class, text)
@@ -739,7 +849,7 @@ class LLMClient:
             for item in output.attack_chain:
                 if hasattr(item, "description") and item.description:
                     item.description = fix(item.description)
-        
+
         # Update host findings
         if hasattr(output, "host_findings") and output.host_findings:
             for hf in output.host_findings:
@@ -747,7 +857,7 @@ class LLMClient:
                     hf.summary = fix(hf.summary)
                 if hasattr(hf, "suspicious_behaviors") and hf.suspicious_behaviors:
                     hf.suspicious_behaviors = [fix(s) for s in hf.suspicious_behaviors]
-        
+
         # Update anomalies
         if hasattr(output, "anomalies") and output.anomalies:
             for anom in output.anomalies:
@@ -1023,7 +1133,7 @@ Provide your findings in a structured JSON format with this exact structure:
                 print(f"Warning: Could not extract JSON from LLM response")
                 # Try to create a basic output from natural language response
                 output = self._parse_natural_language(content, bundle=bundle)
-            
+
             # ALWAYS refine classification based on high-confidence metadata hints
             if output and output.classification:
                 original_class = output.classification
@@ -1334,7 +1444,7 @@ Provide your findings in a structured JSON format with this exact structure:
         # Build attack chain from detected malware or keywords (only if not already populated)
         # REPAIR/ENHANCEMENT: Only use boilerplate if attack_chain is empty OR lacks detail
         has_detailed_ac = any(item.get("evidence") for item in attack_chain if isinstance(item, dict))
-        
+
         if detected_malware and (not attack_chain or not has_detailed_ac):
             malware_type = malware_info["type"] if malware_info else "Malware"
             malware_mitre = malware_info["mitre"] if malware_info else []
@@ -1495,7 +1605,7 @@ Provide your findings in a structured JSON format with this exact structure:
             if refined != original:
                 output.classification = refined
                 self._ensure_output_consistency(output, original, refined)
-        
+
         return output
 
     def _get_technique_name(self, tech_id: str) -> str:
