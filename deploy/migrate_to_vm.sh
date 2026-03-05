@@ -162,12 +162,23 @@ chmod +x "$OUTPUT_DIR/install.sh"
 cat >> "$OUTPUT_DIR/install.sh" << 'INSTALL_EOF2'
 
 # Configure Ollama to listen on all interfaces (needed for Docker containers)
+# We patch the main service file directly because systemd drop-in overrides
+# can be silently ignored or wiped by Ollama updates.
 echo -e "  Configuring Ollama to listen on 0.0.0.0 (required for Docker)..."
-sudo mkdir -p /etc/systemd/system/ollama.service.d
-cat << 'OLLAMA_CONF' | sudo tee /etc/systemd/system/ollama.service.d/override.conf > /dev/null
-[Service]
-Environment="OLLAMA_HOST=0.0.0.0"
-OLLAMA_CONF
+OLLAMA_SERVICE=$(systemctl show ollama --property=FragmentPath 2>/dev/null | cut -d= -f2)
+if [ -z "$OLLAMA_SERVICE" ]; then
+    OLLAMA_SERVICE="/etc/systemd/system/ollama.service"
+fi
+if [ -f "$OLLAMA_SERVICE" ]; then
+    if grep -q 'Environment="OLLAMA_HOST=' "$OLLAMA_SERVICE"; then
+        sudo sed -i 's|Environment="OLLAMA_HOST=.*"|Environment="OLLAMA_HOST=0.0.0.0"|' "$OLLAMA_SERVICE"
+    else
+        sudo sed -i '/^\[Service\]/a Environment="OLLAMA_HOST=0.0.0.0"' "$OLLAMA_SERVICE"
+    fi
+    echo -e "  ${GREEN}✓${NC} Patched $OLLAMA_SERVICE"
+else
+    echo -e "  ${YELLOW}⚠${NC}  Could not find ollama.service — set OLLAMA_HOST=0.0.0.0 manually"
+fi
 sudo systemctl daemon-reload
 
 # Make sure Ollama service is running
