@@ -161,11 +161,23 @@ chmod +x "$OUTPUT_DIR/install.sh"
 # Continue the install script (second half)
 cat >> "$OUTPUT_DIR/install.sh" << 'INSTALL_EOF2'
 
+# Configure Ollama to listen on all interfaces (needed for Docker containers)
+echo -e "  Configuring Ollama to listen on 0.0.0.0 (required for Docker)..."
+sudo mkdir -p /etc/systemd/system/ollama.service.d
+cat << 'OLLAMA_CONF' | sudo tee /etc/systemd/system/ollama.service.d/override.conf > /dev/null
+[Service]
+Environment="OLLAMA_HOST=0.0.0.0"
+OLLAMA_CONF
+sudo systemctl daemon-reload
+
 # Make sure Ollama service is running
 if ! systemctl is-active --quiet ollama 2>/dev/null; then
     sudo systemctl start ollama 2>/dev/null || ollama serve &>/dev/null &
-    sleep 3
+else
+    sudo systemctl restart ollama
 fi
+sleep 3
+echo -e "  ${GREEN}✓${NC} Ollama listening on 0.0.0.0:11434"
 
 # ── 4. Extract repo ──
 echo -e "${YELLOW}[4/6]${NC} Extracting AIPAM source code..."
