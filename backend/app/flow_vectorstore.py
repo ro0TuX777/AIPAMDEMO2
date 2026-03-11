@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional
 import pyarrow as pa
 import lancedb
 
-from .models import FlowRecord, AlertRecord
+from .domain_models import FlowRecord, AlertRecord
 from .settings_runtime import get_effective_settings
 
 logger = logging.getLogger(__name__)

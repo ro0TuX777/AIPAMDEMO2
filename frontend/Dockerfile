@@ -12,6 +12,10 @@ COPY . .
 # the same origin, using a relative API base.
 ENV VITE_API_BASE_URL=/api/v1
 
+# API token baked into the frontend build for authenticated requests
+ARG VITE_API_TOKEN
+ENV VITE_API_TOKEN=${VITE_API_TOKEN}
+
 RUN npm run build
 
 # Runtime stage: serve static assets with Nginx

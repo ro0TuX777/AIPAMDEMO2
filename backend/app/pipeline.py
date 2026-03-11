@@ -240,6 +240,12 @@ def extract_features(job_id: str) -> str:
                 zeek_dir.mkdir(parents=True, exist_ok=True)
                 try:
                     zeek_cmd = ["zeek", "-r", str(pcap), "LogAscii::use_json=T"]
+
+                    # Enable file extraction
+                    extract_script = Path("/opt/zeek/share/zeek/policy/frameworks/files/extract-all-files.zeek")
+                    if extract_script.exists():
+                        zeek_cmd.append(str(extract_script))
+
                     bzar_script = os.getenv("BZAR_ZEEK_SCRIPT")
                     if bzar_script:
                         script_path = Path(bzar_script)
@@ -305,6 +311,21 @@ def extract_features(job_id: str) -> str:
                         raw_alerts = [json.loads(line) for line in f if line.strip()]
                     alerts = parse_suricata_eve(raw_alerts)
                     all_alerts.extend(alerts)
+
+                # File triage on Zeek-extracted files
+                extract_files_dir = zeek_dir / "extract_files"
+                if extract_files_dir.exists():
+                    import hashlib as _hashlib
+                    from .pipeline.sensor_handlers import _detect_file_type
+                    for fpath in extract_files_dir.iterdir():
+                        if fpath.is_file():
+                            file_bytes = fpath.read_bytes()
+                            ftype = _detect_file_type(file_bytes)
+                            sha = _hashlib.sha256(file_bytes).hexdigest()
+                            logger.info(
+                                "[EXTRACT] Extracted file: %s type=%s size=%d sha256=%s",
+                                fpath.name, ftype, len(file_bytes), sha,
+                            )
 
             # Persist to Evidence Store
             flow_count = persist_flows(session, job_id, all_flows)
@@ -385,7 +406,7 @@ def analyze_traffic(job_id: str) -> str:
             ).all()
 
             # Convert DB rows back to Pydantic models for existing pipeline
-            from .models import FlowRecord, AlertRecord
+            from .domain_models import FlowRecord, AlertRecord
 
             flows = [
                 FlowRecord(
@@ -597,15 +618,41 @@ def generate_report(job_id: str) -> str:
             from .cti.lookup import enrich_findings
             finding_dicts = enrich_findings(session, finding_rows)
 
+            # Query extracted files from V2 File table
+            extracted_file_rows: list[dict] = []
+            try:
+                from sqlalchemy.orm import Session as SASession
+                from sqlalchemy import text as sa_text
+                sa_session = SASession(bind=session.connection())
+                rows = sa_session.execute(
+                    sa_text("SELECT file_id, filename, sha256, size_bytes, mime, yara_matches_json FROM files WHERE job_id = :jid"),
+                    {"jid": job_id},
+                ).fetchall()
+                for r in rows:
+                    import json as _json
+                    yara_matches = []
+                    if r[5]:
+                        try:
+                            yara_matches = _json.loads(r[5])
+                        except Exception:
+                            pass
+                    extracted_file_rows.append({
+                        "file_id": r[0], "filename": r[1], "sha256": r[2],
+                        "size_bytes": r[3], "mime": r[4], "yara_matches": yara_matches,
+                    })
+                logger.info("[REPORT] Found %d extracted files for report", len(extracted_file_rows))
+            except Exception as exc:
+                logger.warning("[REPORT] Could not query files table: %s", exc)
+
             # Generate reports
             reports_root = effective.reports_path
             reports_root.mkdir(parents=True, exist_ok=True)
 
-            md_text = jobresult_to_markdown(job_result, finding_dicts, evidence_rows)
+            md_text = jobresult_to_markdown(job_result, finding_dicts, evidence_rows, extracted_file_rows)
             md_path = reports_root / f"job-{job_id}.md"
             md_path.write_text(md_text, encoding="utf-8")
 
-            html_text = jobresult_to_html(job_result, finding_dicts, evidence_rows)
+            html_text = jobresult_to_html(job_result, finding_dicts, evidence_rows, extracted_file_rows)
             html_path = reports_root / f"job-{job_id}.html"
             html_path.write_text(html_text, encoding="utf-8")
 

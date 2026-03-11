@@ -1,14 +1,36 @@
-import React, { useState } from "react";
+import React, { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
-import { api } from "../api";
+import { api, type ExecutionProfile, type PcapUploadItem } from "../api";
+
+type Step = "select" | "uploading" | "creating" | "error";
+
+const LABEL_PRESETS = ["", "before", "during", "after", "baseline", "exploit"];
+const MAX_PCAPS = 10;
+const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024; // 2 GB
+
+interface PcapEntry {
+  file: File;
+  label: string;
+}
 
 export const NewAnalysisPage: React.FC = () => {
   const navigate = useNavigate();
-  const [mode, setMode] = useState<"upload" | "security_onion" | "arkime">("upload");
-  const [files, setFiles] = useState<FileList | null>(null);
-  const [analysisMode, setAnalysisMode] = useState("single_window");
-  const [isSubmitting, setIsSubmitting] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+
+  // Upload tab state (multi-file)
+  const [entries, setEntries] = useState<PcapEntry[]>([]);
+  const [profile, setProfile] = useState<ExecutionProfile>("standard");
+  const [jobName, setJobName] = useState("");
+  const [notes, setNotes] = useState("");
+
+  // Flow state
+  const [step, setStep] = useState<Step>("select");
   const [error, setError] = useState<string | null>(null);
+  const [progress, setProgress] = useState("");
+  const [currentFilePct, setCurrentFilePct] = useState(0);
+
+  // Source tab
+  const [mode, setMode] = useState<"upload" | "security_onion" | "arkime">("upload");
 
   // Security Onion form state
   const [soStartTime, setSoStartTime] = useState("");
@@ -16,6 +38,7 @@ export const NewAnalysisPage: React.FC = () => {
   const [soSensors, setSoSensors] = useState("");
   const [soExerciseId, setSoExerciseId] = useState("");
   const [soNotes, setSoNotes] = useState("");
+  const [analysisMode, setAnalysisMode] = useState("single_window");
 
   // Arkime form state
   const [arkimeStartTime, setArkimeStartTime] = useState("");
@@ -23,72 +46,104 @@ export const NewAnalysisPage: React.FC = () => {
   const [arkimeFilter, setArkimeFilter] = useState("");
   const [arkimeExerciseId, setArkimeExerciseId] = useState("");
   const [arkimeNotes, setArkimeNotes] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
+  // ── Multi-file helpers ──────────────────────────────────────────────────
+  const addFiles = (files: FileList | File[]) => {
+    const arr = Array.from(files).filter(f => /\.(pcap|pcapng|cap)$/i.test(f.name));
+    setEntries(prev => {
+      const next = [...prev];
+      for (const f of arr) {
+        if (next.length >= MAX_PCAPS) break;
+        if (f.size > MAX_FILE_SIZE) continue;
+        if (!next.some(e => e.file.name === f.name && e.file.size === f.size)) {
+          next.push({ file: f, label: "" });
+        }
+      }
+      return next;
+    });
+  };
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const removeEntry = (idx: number) => setEntries(prev => prev.filter((_, i) => i !== idx));
+
+  const setLabel = (idx: number, label: string) => setEntries(prev =>
+    prev.map((e, i) => i === idx ? { ...e, label } : e)
+  );
+
+  const moveEntry = (idx: number, dir: -1 | 1) => setEntries(prev => {
+    const next = [...prev];
+    const target = idx + dir;
+    if (target < 0 || target >= next.length) return prev;
+    [next[idx], next[target]] = [next[target], next[idx]];
+    return next;
+  });
+
+  const totalSize = entries.reduce((s, e) => s + e.file.size, 0);
+
+  const reset = () => { setEntries([]); setStep("select"); setError(null); setProgress(""); setCurrentFilePct(0); };
+
+  // ── V2 Upload Flow (multi-PCAP) ──────────────────────────────────────────
+  const handleSubmit = async () => {
+    if (entries.length === 0) return;
+    setError(null);
+    try {
+      setStep("uploading");
+      const uploads: PcapUploadItem[] = [];
+
+      for (let i = 0; i < entries.length; i++) {
+        const e = entries[i];
+        setProgress(`Uploading ${i + 1}/${entries.length}: ${e.file.name}…`);
+        setCurrentFilePct(0);
+        const upload = await api.uploadPcap(e.file, (pct) => setCurrentFilePct(pct));
+        const validation = await api.validateUpload(upload.upload_id);
+        if (!validation.is_valid) {
+          setError(`${e.file.name}: ${validation.warnings?.join(", ") ?? "Validation failed"}`);
+          setStep("error");
+          return;
+        }
+        uploads.push({ upload_id: upload.upload_id, label: e.label || undefined });
+      }
+
+      setStep("creating");
+      setProgress("Creating job…");
+      const job = await api.createJob({
+        uploads,
+        execution_profile: profile,
+        ...(jobName ? { job_name: jobName } : {}),
+        ...(notes ? { notes } : {}),
+      });
+      reset();
+      navigate(`/jobs/${job.job_id}`);
+    } catch (err: any) {
+      setError(err.message ?? "Upload failed");
+      setStep("error");
+    }
+  };
+
+  // ── Legacy source handlers ──────────────────────────────────────────────
+  const handleLegacySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-
     setIsSubmitting(true);
     setError(null);
-
     try {
-      if (mode === "upload") {
-        if (!files || files.length === 0) {
-          setError("Please select at least one PCAP file.");
-          return;
-        }
-        const res = await api.createJobUpload(files, analysisMode, {
-          exercise_id: "manual-upload",
-          notes: "Created via web UI",
+      if (mode === "security_onion") {
+        if (!soStartTime || !soEndTime) { setError("Please provide a start and end time."); return; }
+        const sensors = soSensors.split(",").map((s) => s.trim()).filter(Boolean);
+        const res = await api.createJobFromSecurityOnion({
+          source: "security_onion",
+          time_range: { start: new Date(soStartTime).toISOString(), end: new Date(soEndTime).toISOString() },
+          sensors, mode: analysisMode,
+          metadata: { exercise_id: soExerciseId || "so-ui", notes: soNotes || "Created via Security Onion UI tab" },
         });
         navigate(`/jobs/${res.job_id}`);
-      } else if (mode === "security_onion") {
-        if (!soStartTime || !soEndTime) {
-          setError("Please provide a start and end time.");
-          return;
-        }
-        const sensors = soSensors
-          .split(",")
-          .map((s) => s.trim())
-          .filter(Boolean);
-
-        const payload = {
-          source: "security_onion",
-          time_range: {
-            start: new Date(soStartTime).toISOString(),
-            end: new Date(soEndTime).toISOString(),
-          },
-          sensors,
-          mode: analysisMode,
-          metadata: {
-            exercise_id: soExerciseId || "so-ui",
-            notes: soNotes || "Created via Security Onion UI tab",
-          },
-        };
-
-        const res = await api.createJobFromSecurityOnion(payload);
-        navigate(`/jobs/${res.job_id}`);
       } else if (mode === "arkime") {
-        if (!arkimeStartTime || !arkimeEndTime || !arkimeFilter) {
-          setError("Please provide start/end time and a filter.");
-          return;
-        }
-
-        const payload = {
-          source: "arkime",
-          filter: arkimeFilter,
-          time_range: {
-            start: new Date(arkimeStartTime).toISOString(),
-            end: new Date(arkimeEndTime).toISOString(),
-          },
+        if (!arkimeStartTime || !arkimeEndTime || !arkimeFilter) { setError("Please provide start/end time and a filter."); return; }
+        const res = await api.createJobFromArkime({
+          source: "arkime", filter: arkimeFilter,
+          time_range: { start: new Date(arkimeStartTime).toISOString(), end: new Date(arkimeEndTime).toISOString() },
           mode: analysisMode,
-          metadata: {
-            exercise_id: arkimeExerciseId || "arkime-ui",
-            notes: arkimeNotes || "Created via Arkime UI tab",
-          },
-        };
-
-        const res = await api.createJobFromArkime(payload);
+          metadata: { exercise_id: arkimeExerciseId || "arkime-ui", notes: arkimeNotes || "Created via Arkime UI tab" },
+        });
         navigate(`/jobs/${res.job_id}`);
       }
     } catch (err) {
@@ -128,46 +183,141 @@ export const NewAnalysisPage: React.FC = () => {
         </div>
 
         {mode === "upload" && (
-          <form className="space-y-4" onSubmit={handleSubmit} data-testid="form-upload">
-            <div>
-              <label className="block mb-1 text-slate-300">PCAP Files</label>
-              <input
-                type="file"
-                multiple
-                data-testid="input-pcap-files"
-                className="text-sm text-slate-300 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-slate-700 file:text-slate-200 hover:file:bg-slate-600"
-                onChange={(e) => setFiles(e.target.files)}
-                required
-              />
-            </div>
-            <div>
-              <label className="block mb-1 text-slate-300">Mode</label>
-              <select
-                data-testid="select-analysis-mode"
-                className="bg-slate-900 border border-slate-700 rounded px-2 py-1 w-full text-slate-200"
-                value={analysisMode}
-                onChange={(e) => setAnalysisMode(e.target.value)}
-              >
-                <option value="single_window">Single Window</option>
-                <option value="baseline_vs_exploit">Baseline vs Exploit</option>
-              </select>
-            </div>
+          <div className="space-y-4" data-testid="form-upload">
+            <p className="text-xs text-slate-500">Upload one or more PCAP files. Optional labels help compare snapshots (e.g. before/during/after).</p>
 
-            {error && <div className="text-red-400 text-sm">{error}</div>}
+            {step === "error" && (
+              <div className="text-red-400 text-sm bg-red-400/10 rounded p-2">{error}
+                <button className="ml-2 underline" onClick={reset}>Retry</button>
+              </div>
+            )}
 
-            <button
-              type="submit"
-              data-testid="btn-start-analysis"
-              disabled={isSubmitting || !files}
-              className="rounded bg-emerald-600 px-4 py-2 text-sm font-medium hover:bg-emerald-500 disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              {isSubmitting ? "Submitting..." : "Start Analysis"}
-            </button>
-          </form>
+            {(step === "select" || step === "error") && (
+              <>
+                {/* Drop zone */}
+                <div className="border-2 border-dashed border-slate-600 rounded-lg p-6 text-center cursor-pointer hover:border-slate-400 transition-colors"
+                  onClick={() => inputRef.current?.click()}
+                  onDragOver={e => { e.preventDefault(); e.stopPropagation(); }}
+                  onDrop={e => { e.preventDefault(); addFiles(e.dataTransfer.files); }}>
+                  <input ref={inputRef} type="file" accept=".pcap,.pcapng,.cap" multiple className="hidden"
+                    data-testid="input-pcap-files"
+                    onChange={e => { if (e.target.files) { addFiles(e.target.files); e.target.value = ""; } }} />
+                  <span className="text-slate-400 text-sm">
+                    {entries.length === 0 ? "Drop PCAP file(s) here or click to browse" : `+ Add more PCAPs (${entries.length}/${MAX_PCAPS})`}
+                  </span>
+                </div>
+
+                {/* File list */}
+                {entries.length > 0 && (
+                  <div className="max-h-48 overflow-y-auto space-y-1">
+                    {entries.map((e, i) => (
+                      <div key={i} className="flex items-center gap-2 bg-slate-800/60 rounded px-2 py-1.5 text-sm">
+                        <span className="text-slate-500 w-5 text-center text-xs">{i + 1}</span>
+                        <div className="flex gap-0.5">
+                          <button onClick={() => moveEntry(i, -1)} disabled={i === 0}
+                            className="text-slate-500 hover:text-slate-300 disabled:opacity-20 text-xs px-0.5">▲</button>
+                          <button onClick={() => moveEntry(i, 1)} disabled={i === entries.length - 1}
+                            className="text-slate-500 hover:text-slate-300 disabled:opacity-20 text-xs px-0.5">▼</button>
+                        </div>
+                        <span className="flex-1 truncate text-slate-200" title={e.file.name}>
+                          {e.file.name} <span className="text-slate-500">({(e.file.size / 1e6).toFixed(1)} MB)</span>
+                        </span>
+                        <select value={e.label} onChange={ev => setLabel(i, ev.target.value)}
+                          className="bg-slate-700 border border-slate-600 rounded px-1.5 py-0.5 text-xs text-slate-300 w-24">
+                          <option value="">No label</option>
+                          {LABEL_PRESETS.filter(l => l).map(l => <option key={l} value={l}>{l}</option>)}
+                        </select>
+                        <input
+                          type="text"
+                          value={!LABEL_PRESETS.includes(e.label) ? e.label : ""}
+                          onChange={ev => setLabel(i, ev.target.value)}
+                          placeholder="Custom…"
+                          className="bg-slate-700 border border-slate-600 rounded px-1.5 py-0.5 text-xs text-slate-300 w-20"
+                        />
+                        <button onClick={() => removeEntry(i)} className="text-red-400 hover:text-red-300 text-xs">✕</button>
+                      </div>
+                    ))}
+                    <div className="text-xs text-slate-500 text-right">
+                      Total: {(totalSize / 1e6).toFixed(1)} MB across {entries.length} file{entries.length !== 1 ? "s" : ""}
+                    </div>
+                  </div>
+                )}
+
+                {/* Profile + Job Name + Notes */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block mb-1 text-slate-300">Execution Profile</label>
+                    <select
+                      data-testid="select-profile"
+                      className="bg-slate-900 border border-slate-700 rounded px-2 py-1 w-full text-slate-200"
+                      value={profile}
+                      onChange={(e) => setProfile(e.target.value as ExecutionProfile)}
+                    >
+                      <option value="triage">Triage (fast)</option>
+                      <option value="standard">Standard</option>
+                      <option value="deep">Deep (thorough)</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block mb-1 text-slate-300">Job Name (optional)</label>
+                    <input
+                      type="text"
+                      className="bg-slate-900 border border-slate-700 rounded px-2 py-1 w-full text-slate-200 text-sm"
+                      placeholder="My analysis"
+                      value={jobName}
+                      onChange={(e) => setJobName(e.target.value)}
+                      data-testid="input-job-name"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block mb-1 text-slate-300">Notes (optional)</label>
+                  <textarea
+                    className="bg-slate-900 border border-slate-700 rounded px-2 py-1 w-full text-slate-200 text-sm min-h-[60px]"
+                    value={notes}
+                    onChange={(e) => setNotes(e.target.value)}
+                    data-testid="input-notes"
+                  />
+                </div>
+
+                {/* Actions */}
+                <div className="flex justify-end gap-2">
+                  <button onClick={handleSubmit} disabled={entries.length === 0}
+                    data-testid="btn-start-analysis"
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded text-sm font-medium disabled:opacity-40">
+                    Upload &amp; Analyze{entries.length > 1 ? ` (${entries.length} files)` : ""}
+                  </button>
+                </div>
+              </>
+            )}
+
+            {(step === "uploading" || step === "creating") && (
+              <div className="py-6 space-y-4">
+                <div className="text-slate-300 text-center text-sm font-medium">{progress}</div>
+                {step === "uploading" && (
+                  <div className="space-y-1.5">
+                    <div className="flex justify-between text-[10px] uppercase tracking-wider text-slate-500 font-bold">
+                      <span>Transfer Progress</span>
+                      <span>{currentFilePct}%</span>
+                    </div>
+                    <div className="h-1.5 bg-slate-900 rounded-full overflow-hidden border border-slate-800">
+                      <div className="h-full bg-emerald-500 transition-all duration-300 ease-out"
+                        style={{ width: `${currentFilePct}%` }} />
+                    </div>
+                  </div>
+                )}
+                {step === "creating" && (
+                  <div className="flex justify-center">
+                    <div className="w-4 h-4 border-2 border-blue-400 border-t-transparent rounded-full animate-spin" />
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
         )}
 
         {mode === "security_onion" && (
-          <form className="space-y-4" onSubmit={handleSubmit} data-testid="form-security-onion">
+          <form className="space-y-4" onSubmit={handleLegacySubmit} data-testid="form-security-onion">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block mb-1 text-slate-300">Start Time (local)</label>
@@ -255,7 +405,7 @@ export const NewAnalysisPage: React.FC = () => {
         )}
 
         {mode === "arkime" && (
-          <form className="space-y-4" onSubmit={handleSubmit} data-testid="form-arkime">
+          <form className="space-y-4" onSubmit={handleLegacySubmit} data-testid="form-arkime">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block mb-1 text-slate-300">Start Time (local)</label>

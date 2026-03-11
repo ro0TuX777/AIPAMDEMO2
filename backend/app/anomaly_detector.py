@@ -27,7 +27,7 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
-from .models import FlowRecord, AlertRecord
+from .domain_models import FlowRecord, AlertRecord
 
 
 @dataclass
@@ -208,26 +208,33 @@ class AnomalyDetector:
             if len(intervals) < 3:
                 continue
 
-            # Calculate jitter (coefficient of variation)
-            mean_interval = statistics.mean(intervals)
-            if mean_interval > 0:
-                try:
-                    stdev = statistics.stdev(intervals)
-                    jitter = stdev / mean_interval  # CV = coefficient of variation
-                except statistics.StatisticsError:
-                    continue
+            # Calculate jitter using MAD (Median Absolute Deviation)
+            median_interval = statistics.median(intervals)
+            if median_interval > 0:
+                mad_interval = self._calculate_mad(intervals)
+                # Robust CV-like measure: MAD / Median
+                jitter = mad_interval / median_interval
+                
+                # Calculate Bowley Skewness (close to 0 = symmetric/regular)
+                skewness = self._calculate_bowley_skewness(intervals)
 
                 # Low jitter + regular interval = beacon
-                if jitter < self.BEACON_JITTER_THRESHOLD and mean_interval < 3600:  # < 1hr interval
+                # Skewness between -0.5 and 0.5 is considered fairly symmetric
+                if jitter < self.BEACON_JITTER_THRESHOLD and median_interval < 3600:  # < 1hr interval
                     src_ip = sorted_flows[0].src_ip
                     dst = f"{sorted_flows[0].dst_ip}:{sorted_flows[0].dst_port}"
 
-                    # Check packet size consistency
+                    # Check packet size consistency using MAD
                     sizes = [f.bytes_from_src for f in sorted_flows]
-                    size_cv = statistics.stdev(sizes) / statistics.mean(sizes) if statistics.mean(sizes) > 0 else 1
+                    median_size = statistics.median(sizes)
+                    if median_size > 0:
+                        size_mad = self._calculate_mad(sizes)
+                        size_dispersion = size_mad / median_size
+                    else:
+                        size_dispersion = 1.0
 
                     confidence = 0.7 if jitter < 0.1 else 0.5
-                    if size_cv < 0.2:  # Consistent packet sizes
+                    if size_dispersion < 0.2 and abs(skewness) < 0.3:  # Consistent packet sizes and symmetric
                         confidence += 0.2
 
                     severity = "high" if confidence > 0.8 else "medium"
@@ -238,20 +245,22 @@ class AnomalyDetector:
                         description=f"Periodic beacon pattern detected: {conn_key}",
                         evidence=[
                             f"Connection count: {len(sorted_flows)}",
-                            f"Mean interval: {mean_interval:.1f}s",
-                            f"Jitter (CV): {jitter:.2%}",
-                            f"Packet size variance: {size_cv:.2%}",
+                            f"Median interval: {median_interval:.1f}s",
+                            f"Jitter (MAD/Median): {jitter:.2%}",
+                            f"Bowley Skewness: {skewness:.3f}",
+                            f"Packet size dispersion: {size_dispersion:.2%}",
                         ],
                         affected_hosts=[src_ip],
                         confidence=confidence,
                         chain_of_thought=f"""FORENSIC ANALYSIS - Potential C2 Beacon:
-I've detected a suspicious periodic communication pattern that warrants investigation.
+I've detected a suspicious periodic communication pattern using RITA (Real Intelligence Threat Analytics) mathematics.
 
 OBSERVATION: Host {src_ip} is making regular connections to {dst}
 - {len(sorted_flows)} connections over the analysis period
-- Average interval: {mean_interval:.1f} seconds between connections
-- Very low timing variance (jitter): {jitter:.2%} - this is unusually consistent
-- Packet sizes are {'highly consistent' if size_cv < 0.2 else 'somewhat variable'}
+- Median interval: {median_interval:.1f} seconds between connections
+- Very low timing variance (MAD/Median jitter): {jitter:.2%} - highly robust to outliers
+- Bowley Skewness: {skewness:.3f} - indicates highly symmetrical, machine-generated timing
+- Packet size distribution is {'highly consistent' if size_dispersion < 0.2 else 'somewhat variable'}
 
 WHY THIS IS SUSPICIOUS:
 Normal user traffic has high variance in timing (browsing, clicking, etc.)
@@ -735,38 +744,39 @@ RECOMMENDED ACTIONS:
             if not intervals:
                 continue
 
-            mean_interval = statistics.mean(intervals)
-            if mean_interval < 1:  # Too fast, likely burst traffic
+            median_interval = statistics.median(intervals)
+            if median_interval < 1:  # Too fast, likely burst traffic
                 continue
 
-            # Calculate coefficient of variation (lower = more periodic)
-            if len(intervals) >= 2:
-                stdev = statistics.stdev(intervals)
-                cv = (stdev / mean_interval) * 100 if mean_interval > 0 else 100
-            else:
-                cv = 100  # Not enough data
+            # Calculate robust jitter using MAD
+            mad_interval = self._calculate_mad(intervals)
+            jitter = (mad_interval / median_interval) * 100 if median_interval > 0 else 100
+                
+            skewness = self._calculate_bowley_skewness(intervals)
 
             # DNS beaconing typically has very regular intervals
-            if cv < 20 and mean_interval > 5:  # <20% variance, >5 second intervals
+            if jitter < 20 and median_interval > 5:  # <20% variance (MAD/Median), >5 second intervals
                 self.findings.append(AnomalyFinding(
                     category="dns_beacon",
                     severity="high",
                     description=f"Periodic DNS beaconing detected: {src_ip} -> {domain}",
                     evidence=[
                         f"Query count: {len(timestamps)}",
-                        f"Mean interval: {mean_interval:.1f}s",
-                        f"Jitter (CV): {cv:.2f}%",
+                        f"Median interval: {median_interval:.1f}s",
+                        f"Jitter (MAD/Median): {jitter:.2f}%",
+                        f"Bowley Skewness: {skewness:.3f}",
                         f"Duration: {timestamps[-1] - timestamps[0]:.1f}s",
                     ],
                     affected_hosts=[src_ip],
-                    confidence=0.85 if cv < 10 else 0.7,
+                    confidence=0.85 if jitter < 10 else 0.7,
                     chain_of_thought=f"""FORENSIC ANALYSIS - DNS C2 Beaconing:
-Detected periodic DNS queries that may indicate command-and-control communication.
+Detected periodic DNS queries that may indicate command-and-control communication using robust RITA metrics.
 
 OBSERVATION: {src_ip} is making regular DNS queries to {domain}
 - {len(timestamps)} queries over {timestamps[-1] - timestamps[0]:.1f} seconds
-- Average interval: {mean_interval:.1f} seconds between queries
-- Very low timing variance: {cv:.2f}% - machine-like precision
+- Median interval: {median_interval:.1f} seconds between queries
+- Very low timing variance (MAD/Median jitter): {jitter:.2f}%
+- Skewness: {skewness:.3f} - machine-like precision
 
 WHY THIS IS SUSPICIOUS:
 DNS beaconing is a covert C2 technique because:
@@ -953,6 +963,29 @@ RECOMMENDED ACTIONS:
 2. Look for encrypted traffic on non-standard ports
 3. Correlate with beacon detection findings"""
             ))
+
+    @staticmethod
+    def _calculate_mad(data: List[float]) -> float:
+        """Calculate Median Absolute Deviation (MAD)."""
+        if not data:
+            return 0.0
+        median = statistics.median(data)
+        deviations = [abs(x - median) for x in data]
+        return statistics.median(deviations)
+
+    @staticmethod
+    def _calculate_bowley_skewness(data: List[float]) -> float:
+        """Calculate Bowley Skewness."""
+        if len(data) < 4:
+            return 0.0
+        try:
+            # statistics.quantiles returns [Q1, Q2, Q3] for n=4
+            q1, q2, q3 = statistics.quantiles(data, n=4)
+            if q3 == q1:
+                return 0.0
+            return (q3 + q1 - 2 * q2) / (q3 - q1)
+        except statistics.StatisticsError:
+            return 0.0
 
     @staticmethod
     def _calculate_entropy(data: bytes) -> float:

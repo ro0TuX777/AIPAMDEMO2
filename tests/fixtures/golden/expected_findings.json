@@ -1,0 +1,37 @@
+{
+  "small_benign.pcap": {
+    "is_valid": true,
+    "format": "pcap",
+    "min_hosts": 0,
+    "max_findings": 0,
+    "description": "Benign TCP SYN baseline \u2014 zero findings expected"
+  },
+  "dns_queries.pcap": {
+    "is_valid": true,
+    "format": "pcap",
+    "min_hosts": 0,
+    "max_findings": 5,
+    "description": "DNS queries \u2014 may produce low-severity findings"
+  },
+  "mixed_traffic.pcap": {
+    "is_valid": true,
+    "format": "pcap",
+    "min_hosts": 0,
+    "max_findings": 5,
+    "description": "Mixed TCP+DNS \u2014 tests multi-protocol handling"
+  },
+  "empty_valid.pcap": {
+    "is_valid": true,
+    "format": "pcap",
+    "min_hosts": 0,
+    "max_findings": 0,
+    "description": "Valid header, no packets \u2014 edge case"
+  },
+  "large_synthetic.pcap": {
+    "is_valid": true,
+    "format": "pcap",
+    "min_hosts": 0,
+    "max_findings": 10,
+    "description": "200-packet synthetic \u2014 pagination/performance test"
+  }
+}

@@ -239,12 +239,17 @@ async def get_training_summary():
 @router.get("/config")
 async def get_training_config():
     """Return the current fine-tuning configuration from settings."""
-    from .database import get_session
-    from .db_models import SettingsDB
+    vals: dict = {}
+    try:
+        from .database import get_session
+        from .db_models import SettingsDB
 
-    with get_session() as session:
-        settings = session.get(SettingsDB, 1)
-        vals = settings.values if settings else {}
+        with get_session() as session:
+            settings = session.get(SettingsDB, 1)
+            vals = settings.values if settings else {}
+    except Exception:
+        # V1 database may not be available in V2 deployments
+        pass
 
     return JSONResponse(content={
         "base_model": vals.get("finetune_base_model"),
@@ -256,68 +261,77 @@ async def get_training_config():
     })
 
 
+@router.post("/start")
 @router.post("/jobs")
 async def start_training_job():
     """Trigger a new fine-tuning job using current settings."""
-    from .tasks import run_finetuning_pipeline
-    from .settings_runtime import get_effective_settings
     import urllib.request
     import urllib.error
-    
-    effective = get_effective_settings()
-    backend = getattr(effective, "finetuning_backend", "mlx").lower()
-    in_docker = os.path.exists("/.dockerenv")
-    
-    # Pre-flight: if MLX in Docker, verify host trainer is reachable
-    if backend == "mlx" and in_docker:
-        host_trainer_url = os.environ.get("HOST_TRAINER_URL", "http://host.docker.internal:8002")
-        launcher_url = os.environ.get("HOST_LAUNCHER_URL", "http://host.docker.internal:8003")
 
-        # Check if host trainer is already running
-        trainer_ok = False
+    in_docker = os.path.exists("/.dockerenv")
+
+    # Pre-flight: verify host trainer is reachable
+    host_trainer_url = os.environ.get("HOST_TRAINER_URL", "http://host.docker.internal:8002")
+    launcher_url = os.environ.get("HOST_LAUNCHER_URL", "http://host.docker.internal:8003")
+
+    trainer_ok = False
+    try:
+        req = urllib.request.Request(f"{host_trainer_url}/health", method="GET")
+        urllib.request.urlopen(req, timeout=3)
+        trainer_ok = True
+    except Exception:
+        pass
+
+    # If not running, try to auto-start via the launcher daemon
+    if not trainer_ok:
         try:
-            req = urllib.request.Request(f"{host_trainer_url}/health", method="GET")
-            urllib.request.urlopen(req, timeout=3)
+            req = urllib.request.Request(
+                f"{launcher_url}/start", method="POST",
+                data=b"{}",
+                headers={"Content-Type": "application/json"},
+            )
+            resp = urllib.request.urlopen(req, timeout=15)
+            launch_result = json.loads(resp.read())
+            import time
+            time.sleep(1)
+            req2 = urllib.request.Request(f"{host_trainer_url}/health", method="GET")
+            urllib.request.urlopen(req2, timeout=3)
             trainer_ok = True
         except Exception:
             pass
 
-        # If not running, try to auto-start via the launcher daemon
-        if not trainer_ok:
-            try:
-                req = urllib.request.Request(
-                    f"{launcher_url}/start", method="POST",
-                    data=b"{}",
-                    headers={"Content-Type": "application/json"},
-                )
-                resp = urllib.request.urlopen(req, timeout=15)
-                launch_result = json.loads(resp.read())
-                # Verify trainer is now reachable
-                import time
-                time.sleep(1)
-                req2 = urllib.request.Request(f"{host_trainer_url}/health", method="GET")
-                urllib.request.urlopen(req2, timeout=3)
-                trainer_ok = True
-            except Exception:
-                pass
+    if not trainer_ok:
+        return JSONResponse(content={
+            "status": "error",
+            "message": (
+                "Host trainer is not running and could not be auto-started. "
+                "Run: ./start.sh  (or manually: python finetuning/host_trainer.py)"
+            )
+        }, status_code=503)
 
-        if not trainer_ok:
-            return JSONResponse(content={
-                "status": "error",
-                "message": (
-                    "Host trainer is not running and could not be auto-started. "
-                    "Run: ./start.sh  (or manually: python finetuning/host_trainer.py)"
-                )
-            }, status_code=503)
-    
-    # Fire and forget (Celery handles the rest)
-    task = run_finetuning_pipeline.delay()
-    
-    return JSONResponse(content={
-        "status": "queued",
-        "task_id": str(task.id),
-        "message": "Fine-tuning job started in background."
-    }, status_code=202)
+    # Try to dispatch via Celery
+    try:
+        from .tasks import run_finetuning_pipeline
+        task = run_finetuning_pipeline.delay()
+        return JSONResponse(content={
+            "status": "queued",
+            "task_id": str(task.id),
+            "message": "Fine-tuning job started in background."
+        }, status_code=202)
+    except ImportError:
+        # V1 tasks module not compatible with V2 model layout
+        return JSONResponse(content={
+            "status": "error",
+            "message": (
+                "Training pipeline is not available in V2 yet. "
+                "Use the V1 backend or the standalone finetuning scripts."
+            )
+        }, status_code=501)
+    except Exception as e:
+        return JSONResponse(content={
+            "status": "error",
+            "message": f"Failed to start training: {e}"
+        }, status_code=500)
 
 
 @router.post("/validate_path")

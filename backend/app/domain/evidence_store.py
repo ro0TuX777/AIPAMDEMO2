@@ -13,7 +13,7 @@ from uuid import uuid4
 from sqlmodel import Session
 
 from ..db_models import AlertDB, EvidenceDB, FlowDB
-from ..models import AlertRecord, FlowRecord
+from ..domain_models import AlertRecord, FlowRecord
 
 logger = logging.getLogger(__name__)
 

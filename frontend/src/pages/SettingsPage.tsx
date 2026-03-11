@@ -34,7 +34,6 @@ export const SettingsPage: React.FC = () => {
   const [modelsLoading, setModelsLoading] = useState(false);
   // Help guide
   const [activeHelpField, setActiveHelpField] = useState<string | null>(null);
-
   const toggleHelp = (field: string) => {
     setActiveHelpField((prev) => (prev === field ? null : field));
   };

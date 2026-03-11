@@ -1,0 +1,47 @@
+"""AIPAM V2 SQLAlchemy ORM models."""
+
+# Re-export ALL domain/Pydantic models so `from .models import X` works
+# (the old models.py was replaced by this models/ package)
+from backend.app.domain_models import *  # noqa: F401,F403
+
+from backend.app.models.job import Job
+from backend.app.models.sensor import JobSensor
+from backend.app.models.finding import Finding
+from backend.app.models.host import Host
+from backend.app.models.global_host import GlobalHost
+from backend.app.models.connection import Connection
+from backend.app.models.dns import DnsQuery
+from backend.app.models.tls import TlsSession
+from backend.app.models.alert import Alert
+from backend.app.models.file import File
+from backend.app.models.ioc import Ioc
+from backend.app.models.timeline import TimelineEvent
+from backend.app.models.artifact import Artifact
+from backend.app.models.upload import Upload
+from backend.app.models.chat import ChatConversation, ChatMessage
+from backend.app.models.knowledge_base import KBDocument
+from backend.app.models.job_pcap import JobPcap
+
+__all__ = [
+    "JobStatus",
+    "JobStepStatus",
+    "Job",
+    "JobSensor",
+    "JobPcap",
+    "Finding",
+    "Host",
+    "GlobalHost",
+    "Connection",
+    "DnsQuery",
+    "TlsSession",
+    "Alert",
+    "File",
+    "Ioc",
+    "TimelineEvent",
+    "Artifact",
+    "Upload",
+    "ChatConversation",
+    "ChatMessage",
+    "KBDocument",
+]
+

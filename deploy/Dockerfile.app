@@ -1,108 +1,81 @@
-# AIPAM Application Container
-# Combines React frontend + FastAPI backend in a single container
+# AIPAM V2 Application Container
+# Backend only — API server and Celery worker share this image.
+# Frontend is served by a separate nginx container (frontend/Dockerfile).
+#
 # Build: docker build -t aipam-app:latest -f deploy/Dockerfile.app .
+# Usage (API):    docker run ... aipam-app:latest uvicorn backend.app.main_v2:create_app --factory --host 0.0.0.0 --port 8000
+# Usage (Worker): docker run ... aipam-app:latest celery -A backend.app.worker worker --loglevel=info
 
-FROM node:20-slim AS frontend-builder
+FROM python:3.12-slim
 
-WORKDIR /app/frontend
-COPY frontend/package*.json ./
-RUN npm ci
-COPY frontend/ ./
-RUN npm run build
+ARG CAPA_VERSION=9.3.1
 
-# ============================================
-FROM python:3.11-slim AS backend
+ENV AIPAM_CAPA_RULES_DIR=/opt/aipam/rules/capa \
+    AIPAM_CAPA_SIGNATURES_DIR=/opt/aipam/signatures/capa
 
 WORKDIR /app
 
-# Install system dependencies
+# System deps: curl for healthcheck, gnupg/ca-certs for Zeek repo,
+# zeek + suricata for the pipeline stages.
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
     curl \
-    nginx \
-    supervisor \
+    gnupg \
+    && echo 'deb http://download.opensuse.org/repositories/security:/zeek/Debian_12/ /' \
+       > /etc/apt/sources.list.d/security:zeek.list \
+    && curl -fsSL https://download.opensuse.org/repositories/security:zeek/Debian_12/Release.key \
+       | gpg --dearmor > /etc/apt/trusted.gpg.d/security_zeek.gpg \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends \
+       zeek \
+       suricata \
+       suricata-update \
     && rm -rf /var/lib/apt/lists/*
 
-# Install Python dependencies
-COPY backend/requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt
+# Ensure zeek is on PATH
+RUN ln -sf /opt/zeek/bin/zeek /usr/local/bin/zeek 2>/dev/null || true
 
-# Copy backend code
-COPY backend/app ./app
+# Download Suricata rules (ET Open ruleset)
+RUN suricata-update --no-test \
+    && suricata-update update-sources \
+    && suricata-update enable-source et/open || true
 
-# Copy built frontend from builder stage
-COPY --from=frontend-builder /app/frontend/dist /app/static
+# Python dependencies
+COPY backend/requirements.txt /tmp/requirements.txt
+RUN pip install --no-cache-dir -r /tmp/requirements.txt \
+    && pip install --no-cache-dir "flare-capa==${CAPA_VERSION}" \
+    && mkdir -p "${AIPAM_CAPA_RULES_DIR}" "${AIPAM_CAPA_SIGNATURES_DIR}" \
+    && curl -fsSL "https://github.com/mandiant/capa-rules/archive/refs/tags/v${CAPA_VERSION}.tar.gz" \
+       | tar -xz -C "${AIPAM_CAPA_RULES_DIR}" --strip-components=1 \
+    && for sig in 1_flare_msvc_rtf_32_64.sig 2_flare_msvc_atlmfc_32_64.sig 3_flare_common_libs.sig; do \
+         curl -fsSL "https://raw.githubusercontent.com/mandiant/capa/v${CAPA_VERSION}/sigs/${sig}" \
+           -o "${AIPAM_CAPA_SIGNATURES_DIR}/${sig}"; \
+       done \
+    && rm /tmp/requirements.txt
 
-# Create nginx config for serving frontend + proxying API
-RUN cat > /etc/nginx/sites-available/default << 'EOF'
-server {
-    listen 80;
-    server_name _;
-    
-    # Serve frontend static files
-    location / {
-        root /app/static;
-        try_files $uri $uri/ /index.html;
-    }
-    
-    # Proxy API requests to FastAPI
-    location /api/ {
-        proxy_pass http://127.0.0.1:8000/api/;
-        proxy_http_version 1.1;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-        proxy_read_timeout 300s;
-        proxy_connect_timeout 75s;
-    }
-    
-    # WebSocket support for real-time updates
-    location /ws {
-        proxy_pass http://127.0.0.1:8000/ws;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-    }
-}
-EOF
+# Copy backend as a proper Python package (imports use "backend.app.*")
+COPY backend/ /app/backend/
 
-# Create supervisord config
-RUN cat > /etc/supervisor/conf.d/aipam.conf << 'EOF'
-[supervisord]
-nodaemon=true
-logfile=/var/log/supervisor/supervisord.log
-pidfile=/var/run/supervisord.pid
+# Alembic config at repo root (env.py references backend.app.*)
+COPY alembic.ini /app/alembic.ini
 
-[program:nginx]
-command=/usr/sbin/nginx -g "daemon off;"
-autostart=true
-autorestart=true
-stdout_logfile=/var/log/nginx/access.log
-stderr_logfile=/var/log/nginx/error.log
+# Create required directories
+RUN mkdir -p /data /jobs /uploads /opt/aipam/logs /opt/aipam/sensor-config /opt/aipam/rules/suricata
 
-[program:fastapi]
-command=uvicorn app.main:app --host 127.0.0.1 --port 8000
-directory=/app
-autostart=true
-autorestart=true
-stdout_logfile=/var/log/fastapi.log
-stderr_logfile=/var/log/fastapi_error.log
-environment=OLLAMA_HOST="http://ollama:11434"
-EOF
+# Non-root user for API; worker overrides to root for Docker socket access
+RUN groupadd -r aipam && useradd -r -g aipam -d /app aipam \
+    && chown -R aipam:aipam /app /data /jobs /uploads /opt/aipam
 
-# Create log directories
-RUN mkdir -p /var/log/supervisor /var/log/nginx
+# Default environment
+ENV PYTHONPATH=/app \
+    PYTHONUNBUFFERED=1
 
-# Create data directory for SQLite
-RUN mkdir -p /app/data
-VOLUME /app/data
+EXPOSE 8000
 
-EXPOSE 80
+# Health check (for API mode — worker has no HTTP port)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
+    CMD curl -sf http://localhost:8000/api/v1/health || exit 1
 
-# Health check
-HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
-    CMD curl -f http://localhost/api/health || exit 1
-
-CMD ["/usr/bin/supervisord", "-c", "/etc/supervisor/supervisord.conf"]
+# Default command — API server (override in docker-compose for worker)
+CMD ["uvicorn", "backend.app.main_v2:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
 

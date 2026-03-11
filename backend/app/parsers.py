@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from typing import Iterable, List
 
-from .models import AlertRecord, EventRecord, FlowRecord
+from .domain_models import AlertRecord, EventRecord, FlowRecord
 
 
 def _parse_timestamp(ts: str) -> datetime:

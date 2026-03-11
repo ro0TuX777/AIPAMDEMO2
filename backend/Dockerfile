@@ -1,7 +1,11 @@
 FROM python:3.11-slim
 
+ARG CAPA_VERSION=9.3.1
+
 ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1
+    PYTHONDONTWRITEBYTECODE=1 \
+    AIPAM_CAPA_RULES_DIR=/opt/aipam/rules/capa \
+    AIPAM_CAPA_SIGNATURES_DIR=/opt/aipam/signatures/capa
 
 # Install system dependencies including Zeek and Suricata.
 # Zeek is installed from the official OBS repository for Debian 12.
@@ -36,23 +40,25 @@ WORKDIR /app
 # Copy backend source
 COPY app ./app
 
-# Install Python dependencies directly (runtime-only)
+# Create 'backend' package alias so "from backend.app.X" imports work
+# (code uses absolute imports like "from backend.app.models.job import Job")
+COPY __init__.py ./backend/__init__.py
+RUN ln -s /app/app /app/backend/app
+
+ENV PYTHONPATH=/app
+
+# Install Python dependencies from requirements.txt
+COPY requirements.txt ./requirements.txt
 RUN pip install --upgrade pip && \
-    pip install \
-    fastapi \
-    uvicorn \
-    sqlmodel \
-    celery \
-    redis \
-    httpx \
-    python-multipart \
-    scapy \
-    jinja2 \
-    numpy \
-    pydantic \
-    lancedb>=0.6.0 \
-    pyarrow>=14.0 \
-    sentence-transformers>=2.2.0
+    pip install -r requirements.txt && \
+    pip install "flare-capa==${CAPA_VERSION}" && \
+    mkdir -p "${AIPAM_CAPA_RULES_DIR}" "${AIPAM_CAPA_SIGNATURES_DIR}" /opt/aipam/rules/suricata && \
+    curl -fsSL "https://github.com/mandiant/capa-rules/archive/refs/tags/v${CAPA_VERSION}.tar.gz" | \
+      tar -xz -C "${AIPAM_CAPA_RULES_DIR}" --strip-components=1 && \
+    for sig in 1_flare_msvc_rtf_32_64.sig 2_flare_msvc_atlmfc_32_64.sig 3_flare_common_libs.sig; do \
+      curl -fsSL "https://raw.githubusercontent.com/mandiant/capa/v${CAPA_VERSION}/sigs/${sig}" \
+        -o "${AIPAM_CAPA_SIGNATURES_DIR}/${sig}"; \
+    done
 
 # Default runtime configuration (can be overridden by docker-compose)
 ENV FILE_STORAGE_PATH=/data/storage \
@@ -65,5 +71,5 @@ VOLUME ["/data"]
 
 EXPOSE 8000
 
-CMD ["uvicorn", "app.main:app", "--host", "0.0.0.0", "--port", "8000"]
+CMD ["uvicorn", "app.main_v2:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
 

@@ -1,18 +1,41 @@
-# AIPAM Backend — Python dependencies
-# Generated from pyproject.toml and actual imports
+# AIPAM V2 Backend — Python dependencies
 # Install with: pip install -r requirements.txt
 
-fastapi
-uvicorn
+# --- Core API ---
+fastapi>=0.110
+uvicorn[standard]>=0.29
+pydantic>=2.6
+pydantic-settings>=2.2
+python-multipart>=0.0.9
+
+# --- Database ---
+sqlalchemy>=2.0
+alembic>=1.13
+
+# --- Task queue ---
+celery>=5.3
+redis>=5.0
+
+# --- HTTP client ---
+httpx>=0.27
+
+# --- Network analysis ---
+scapy>=2.5
+
+# --- Templates / rendering ---
+jinja2>=3.1
+
+# --- Numeric ---
+numpy>=1.26
+
+# --- Docker SDK (sensor containers) ---
+docker>=7.0
+
+# --- RAG / Vector Store ---
+chromadb>=0.4
+
+# --- V1 compatibility (training, embeddings) ---
 sqlmodel
-celery
-redis
-httpx
-python-multipart
-scapy
-jinja2
-numpy
-pydantic
 lancedb>=0.6.0
 pyarrow>=14.0
 sentence-transformers>=2.2.0

@@ -213,7 +213,7 @@ async def _classify_flows_with_trafficllm(
     Returns:
         Dict with classification results and statistics.
     """
-    from .models import AlertRecord
+    from .domain_models import AlertRecord
     import uuid
 
     if not flows:
@@ -1120,8 +1120,33 @@ def run_pipeline(job_id: str) -> None:
                     select(EvidenceDB).where(EvidenceDB.finding_id.in_(finding_ids))
                 ).all()
 
-            md = jobresult_to_markdown(job_result, finding_dicts, evidence_rows)
-            html = jobresult_to_html(job_result, finding_dicts, evidence_rows)
+            # Query extracted files from V2 File table
+            extracted_file_rows: list[dict] = []
+            try:
+                from sqlalchemy.orm import Session as SASession
+                from sqlalchemy import text as sa_text
+                sa_session = SASession(bind=session.connection())
+                rows = sa_session.execute(
+                    sa_text("SELECT file_id, filename, sha256, size_bytes, mime, yara_matches_json FROM files WHERE job_id = :jid"),
+                    {"jid": job.id},
+                ).fetchall()
+                for r in rows:
+                    yara_m = []
+                    if r[5]:
+                        try:
+                            yara_m = json.loads(r[5])
+                        except Exception:
+                            pass
+                    extracted_file_rows.append({
+                        "file_id": r[0], "filename": r[1], "sha256": r[2],
+                        "size_bytes": r[3], "mime": r[4], "yara_matches": yara_m,
+                    })
+                logger.info("[REPORT] Found %d extracted files for report", len(extracted_file_rows))
+            except Exception as exc:
+                logger.warning("[REPORT] Could not query files table: %s", exc)
+
+            md = jobresult_to_markdown(job_result, finding_dicts, evidence_rows, extracted_file_rows)
+            html = jobresult_to_html(job_result, finding_dicts, evidence_rows, extracted_file_rows)
             reports_dir = effective.reports_path
             reports_dir.mkdir(parents=True, exist_ok=True)
             md_path = reports_dir / f"job-{job.id}.md"
