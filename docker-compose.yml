@@ -15,8 +15,16 @@ services:
       # TrafficLLM integration (connects to host-running TrafficLLM)
       - TRAFFICLLM_ENDPOINT=http://host.docker.internal:8001/v1/chat/completions
       - USE_TRAFFICLLM_FOR_DETECTION=true
+      # V2 API auth token
+      - AIPAM_API_TOKEN=test-token-v2
+      - AIPAM_DB_PATH=/data/aipam.db
+      - AIPAM_UPLOAD_ROOT=/data/uploads
+      - AIPAM_JOB_ROOT=/data/jobs
+      - AIPAM_OLLAMA_URL=http://host.docker.internal:11434
+      - AIPAM_REDIS_URL=redis://redis:6379/0
     volumes:
       - aipam_data:/data
+      - aipam_rules:/opt/aipam/rules
       - ./finetuning:/data/finetuning:ro
       - ${EXTERNAL_DATA_PATH:-/Volumes}:/external_data # Configurable external drive mount
     depends_on:
@@ -29,7 +37,7 @@ services:
     container_name: aipam-worker
     extra_hosts:
       - "host.docker.internal:host-gateway"
-    command: ["celery", "-A", "app.tasks.celery_app", "worker", "-l", "info"]
+    command: ["celery", "-A", "backend.app.worker", "worker", "-l", "info", "--concurrency=1"]
     environment:
       - DATABASE_URL=sqlite:////data/aipam.db
       - FILE_STORAGE_PATH=/data/storage
@@ -44,20 +52,31 @@ services:
       - USE_TRAFFICLLM_FOR_DETECTION=true
       # Host-native fine-tuning (MLX on Apple Silicon)
       - HOST_TRAINER_URL=http://host.docker.internal:8002
+      # V2 API auth token
+      - AIPAM_API_TOKEN=test-token-v2
+      - AIPAM_DB_PATH=/data/aipam.db
+      - AIPAM_UPLOAD_ROOT=/data/uploads
+      - AIPAM_JOB_ROOT=/data/jobs
+      - AIPAM_OLLAMA_URL=http://host.docker.internal:11434
+      - AIPAM_REDIS_URL=redis://redis:6379/0
     volumes:
       - aipam_data:/data
+      - aipam_rules:/opt/aipam/rules
       - ./finetuning:/data/finetuning:ro
       - ${EXTERNAL_DATA_PATH:-/Volumes}:/external_data # Configurable external drive mount
     depends_on:
       - redis
 
   frontend:
-    build: ./frontend
+    build:
+      context: ./frontend
+      args:
+        VITE_API_TOKEN: test-token-v2
     container_name: aipam-frontend
     depends_on:
       - backend
     ports:
-      - "5173:80"
+      - "80:80"
 
   redis:
     image: redis:7-alpine
@@ -106,6 +125,7 @@ services:
 
 volumes:
   aipam_data:
+  aipam_rules:
   redis_data:
   ollama_data:
   trafficllm_models:

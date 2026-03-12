@@ -1,0 +1,290 @@
+"""
+Pipeline Orchestrator (§7) — sequences stages and sensors for a job.
+
+Execution order (mandatory):
+  1. Validate inputs + compute PCAP hash
+  2. Run Zeek stage
+  3. Run Suricata stage
+  4. File Extraction stage
+  5. Run sensors in deterministic order based on profile
+  6. Normalize/merge results
+  7. Score + summarize (LLM)
+  8. Persist to DB
+"""
+
+from __future__ import annotations
+
+import json
+import logging
+from datetime import datetime, timezone
+from pathlib import Path
+from typing import Any
+
+from sqlalchemy.orm import Session
+
+from backend.app.models.job import Job
+from backend.app.models.job_pcap import JobPcap
+from backend.app.models.sensor import JobSensor
+from backend.app.pipeline.job_dir import (
+    create_job_directory,
+    create_sensor_output_dir,
+    link_pcap,
+    link_pcap_labeled,
+    read_input_meta,
+    write_input_meta,
+)
+from backend.app.pipeline.preflight import check_disk_space, check_job_quota
+from backend.app.pipeline.sensor_runner import SensorResult, run_sensor
+from backend.app.sensors.registry import (
+    Profile,
+    SensorDef,
+    get_all_for_profile,
+    get_sensors_for_profile,
+    get_stages_for_profile,
+)
+
+logger = logging.getLogger("aipam.orchestrator")
+
+
+def _now_iso() -> str:
+    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+def _update_job_status(db: Session, job: Job, status: str, error: str | None = None) -> None:
+    """Update job status in DB."""
+    job.status = status
+    if error:
+        job.error_summary = error
+    if status in ("completed", "completed_with_errors", "failed", "canceled"):
+        job.completed_at = _now_iso()
+    db.commit()
+
+
+def _record_sensor_result(db: Session, job_id: str, result: SensorResult) -> None:
+    """Persist a SensorResult into the job_sensors table."""
+    sensor_row = JobSensor(
+        job_id=job_id,
+        sensor=result.sensor,
+        status=result.status,
+        started_at=result.started_at,
+        completed_at=result.completed_at,
+        duration_ms=result.duration_ms,
+        error=result.error,
+        error_code=result.error_code,
+    )
+    db.add(sensor_row)
+    db.commit()
+
+
+def run_pipeline(
+    job_id: str,
+    db: Session,
+    *,
+    docker_client: Any,
+    job_root: Path,
+    upload_root: Path,
+    sensor_config_dir: Path | None = None,
+    max_job_disk_bytes: int = 53_687_091_200,
+    preflight_multiplier: int = 4,
+) -> str:
+    """Execute the full analysis pipeline for a job.
+
+    Args:
+        job_id: The job to process.
+        db: SQLAlchemy session.
+        docker_client: Docker SDK client.
+        job_root: Root path for job directories.
+        upload_root: Root path for uploaded PCAPs.
+        sensor_config_dir: Sensor-specific config directory.
+        max_job_disk_bytes: Per-job disk quota.
+        preflight_multiplier: Multiplier for preflight disk check.
+
+    Returns:
+        Final job status string.
+    """
+    job: Job | None = db.get(Job, job_id)
+    if job is None:
+        raise ValueError(f"Job {job_id} not found")
+
+    logger.info("Starting pipeline for job %s (profile=%s)", job_id, job.execution_profile)
+    _update_job_status(db, job, "running")
+    job.started_at = _now_iso()
+    db.commit()
+
+    profile: Profile = job.execution_profile  # type: ignore[assignment]
+
+    # --- Step 1: Setup job directory ---
+    try:
+        job_dir = create_job_directory(job_root, job_id)
+
+        from sqlalchemy import select as sa_select
+        from backend.app.pipeline.job_dir import compute_pcap_sha256
+
+        # Look up JobPcap records for multi-PCAP support
+        pcap_records = db.execute(
+            sa_select(JobPcap).where(JobPcap.job_id == job_id).order_by(JobPcap.ordinal)
+        ).scalars().all()
+
+        total_pcap_size = 0
+
+        if pcap_records:
+            # Multi-PCAP path: link each PCAP with its label
+            for rec in pcap_records:
+                upload_dir = upload_root / rec.upload_id
+                found = list(upload_dir.glob("*.pcap")) + list(upload_dir.glob("*.pcapng"))
+                if not found:
+                    raise FileNotFoundError(f"No PCAP found in {upload_dir} for upload {rec.upload_id}")
+                pcap_source = found[0]
+                total_pcap_size += pcap_source.stat().st_size
+                label = rec.label or rec.filename.rsplit(".", 1)[0] or f"pcap_{rec.ordinal}"
+                link_pcap_labeled(job_dir, pcap_source, label)
+            logger.info("Linked %d PCAPs for job %s", len(pcap_records), job_id)
+        else:
+            # Fallback: single-PCAP legacy path
+            upload_dir = upload_root / (job.upload_id or "")
+            pcap_files = list(upload_dir.glob("*.pcap")) + list(upload_dir.glob("*.pcapng"))
+            if not pcap_files:
+                raise FileNotFoundError(f"No PCAP found in {upload_dir}")
+            pcap_source = pcap_files[0]
+            total_pcap_size = pcap_source.stat().st_size
+            link_pcap(job_dir, pcap_source)
+
+        # Preflight disk check
+        preflight = check_disk_space(
+            pcap_size_bytes=total_pcap_size,
+            job_root=job_root,
+            preflight_multiplier=preflight_multiplier,
+        )
+        if not preflight.ok:
+            _update_job_status(db, job, "failed", preflight.message)
+            return "failed"
+
+        # Compute SHA of the first PCAP for backward compat
+        first_pcap = list((job_dir / "input").glob("*.pcap")) + list((job_dir / "input").glob("*.pcapng"))
+        if first_pcap:
+            pcap_sha = compute_pcap_sha256(first_pcap[0])
+            job.pcap_sha256 = pcap_sha
+            db.commit()
+
+            write_input_meta(
+                job_dir,
+                job_id=job_id,
+                pcap_filename=job.pcap_filename or first_pcap[0].name,
+                pcap_sha256=pcap_sha,
+                execution_profile=profile,
+            )
+
+    except Exception as exc:
+        logger.error("Pipeline setup failed for job %s: %s", job_id, exc)
+        _update_job_status(db, job, "failed", str(exc))
+        return "failed"
+
+    # --- Step 2-3: Run stages (Zeek, Suricata) ---
+    stages = get_stages_for_profile(profile)
+    for stage_def in stages:
+        logger.info("Running stage %s for job %s", stage_def.name, job_id)
+        create_sensor_output_dir(job_dir, stage_def.name)
+
+        # Stages are run as Docker containers just like sensors
+        result = run_sensor(
+            sensor_def=stage_def,
+            job_dir=job_dir,
+            job_id=job_id,
+            execution_profile=profile,
+            docker_client=docker_client,
+            sensor_config_dir=sensor_config_dir,
+        )
+        _record_sensor_result(db, job_id, result)
+
+        if result.status == "failed":
+            logger.error("Stage %s failed for job %s: %s", stage_def.name, job_id, result.error)
+            _update_job_status(db, job, "failed", f"Stage {stage_def.name} failed: {result.error}")
+            return "failed"
+
+    # --- Step 4: File extraction placeholder ---
+    # (Will be implemented in a later phase — extracted_files/manifest.json)
+
+    # --- Step 5: Run sensors in deterministic order ---
+    sensors = get_sensors_for_profile(profile)
+    sensor_results: list[SensorResult] = []
+    has_errors = False
+
+    for sensor_def in sensors:
+        # Check skip conditions — resolve required inputs to sensor output dirs
+        if sensor_def.skip_if_missing_inputs:
+            missing = False
+            for req in sensor_def.inputs_required:
+                # Requirements refer to a previously-run sensor whose output lives
+                # under  job_dir / "sensors" / <req>  (e.g. "zeek", "suricata").
+                req_dir = job_dir / "sensors" / req
+                if not req_dir.exists():
+                    missing = True
+                    break
+            if missing:
+                skip_result = SensorResult(
+                    sensor=sensor_def.name, status="skipped",
+                    error="Required inputs missing",
+                    started_at=_now_iso(),
+                )
+                _record_sensor_result(db, job_id, skip_result)
+                sensor_results.append(skip_result)
+                continue
+
+        logger.info("Running sensor %s for job %s", sensor_def.name, job_id)
+        create_sensor_output_dir(job_dir, sensor_def.name)
+
+        result = run_sensor(
+            sensor_def=sensor_def,
+            job_dir=job_dir,
+            job_id=job_id,
+            execution_profile=profile,
+            docker_client=docker_client,
+            sensor_config_dir=sensor_config_dir,
+        )
+        _record_sensor_result(db, job_id, result)
+        sensor_results.append(result)
+
+        if result.status in ("failed", "timeout"):
+            has_errors = True
+            logger.warning(
+                "Sensor %s %s for job %s: %s",
+                sensor_def.name, result.status, job_id, result.error,
+            )
+
+        # Check job disk quota
+        if check_job_quota(job_dir, max_job_disk_bytes):
+            logger.warning("Job %s exceeded disk quota", job_id)
+            has_errors = True
+            break
+
+    # --- Step 6-8: Normalize, Correlate, Persist ---
+    try:
+        from backend.app.normalize.correlate import correlate_job
+
+        corr_counts = correlate_job(job_id, job_dir, db)
+        logger.info("Correlation results for job %s: %s", job_id, corr_counts)
+
+        # Update global host registry for cross-job forensics
+        from backend.app.normalize.post_process import update_global_host_stats
+        update_global_host_stats(db, job_id)
+    except Exception as exc:
+        logger.error("Correlation failed for job %s: %s", job_id, exc, exc_info=True)
+        has_errors = True
+
+    # --- Final status ---
+    final_status = "completed_with_errors" if has_errors else "completed"
+    _update_job_status(db, job, final_status)
+
+    # Store metrics
+    metrics = {
+        "total_sensors": len(sensor_results),
+        "completed": sum(1 for r in sensor_results if r.status == "completed"),
+        "failed": sum(1 for r in sensor_results if r.status == "failed"),
+        "timeout": sum(1 for r in sensor_results if r.status == "timeout"),
+        "skipped": sum(1 for r in sensor_results if r.status == "skipped"),
+    }
+    job.metrics_json = json.dumps(metrics)
+    db.commit()
+
+    logger.info("Pipeline completed for job %s: status=%s, metrics=%s", job_id, final_status, metrics)
+    return final_status

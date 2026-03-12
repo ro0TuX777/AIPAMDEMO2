@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { api, ChatResponse, ChatCitation, ConversationSummary } from "../api";
+import { api, ChatResponse, ChatCitation, ConversationSummary, setApiToken } from "../api";
 
 interface ChatMessage {
     role: "user" | "assistant";
@@ -21,6 +21,8 @@ export function ChatPanel({ jobId, initialContext, onClose }: ChatPanelProps) {
     const [isLoadingHistory, setIsLoadingHistory] = useState(true);
     const [conversationId, setConversationId] = useState<string | undefined>();
     const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+    const [isEditingTitle, setIsEditingTitle] = useState(false);
+    const [newTitle, setNewTitle] = useState("");
     const messagesEndRef = useRef<HTMLDivElement>(null);
     const initialContextHandled = useRef(false);
 
@@ -32,7 +34,7 @@ export function ChatPanel({ jobId, initialContext, onClose }: ChatPanelProps) {
     useEffect(() => {
         const loadConversations = async () => {
             try {
-                const convs = await api.getJobConversations(jobId);
+                const convs = await api.listConversations(jobId);
                 setConversations(convs);
 
                 // If there's a recent conversation, load it
@@ -51,10 +53,10 @@ export function ChatPanel({ jobId, initialContext, onClose }: ChatPanelProps) {
 
     const loadConversation = async (convId: string) => {
         try {
-            const history = await api.getConversationHistory(jobId, convId);
+            const history = await api.getConversation(jobId, convId);
             setConversationId(history.id);
             setMessages(
-                history.messages.map((m) => ({
+                history.messages.map((m: any) => ({
                     role: m.role as "user" | "assistant",
                     content: m.content,
                     citations: m.citations,
@@ -63,6 +65,38 @@ export function ChatPanel({ jobId, initialContext, onClose }: ChatPanelProps) {
             );
         } catch (error) {
             console.error("Failed to load conversation:", error);
+        }
+    };
+
+    const refreshConversations = async () => {
+        try {
+            const convs = await api.listConversations(jobId);
+            setConversations(convs);
+        } catch (error) {
+            console.error("Failed to refresh conversations:", error);
+        }
+    };
+
+    const handleRenameConv = async () => {
+        if (!conversationId || !newTitle.trim()) return;
+        try {
+            await api.renameConversation(jobId, conversationId, newTitle.trim());
+            setIsEditingTitle(false);
+            await refreshConversations();
+        } catch (error) {
+            console.error("Failed to rename conversation:", error);
+        }
+    };
+
+    const handleDeleteConv = async () => {
+        if (!conversationId) return;
+        if (!confirm("Are you sure you want to delete this conversation?")) return;
+        try {
+            await api.deleteConversation(jobId, conversationId);
+            startNewConversation();
+            await refreshConversations();
+        } catch (error) {
+            console.error("Failed to delete conversation:", error);
         }
     };
 
@@ -87,29 +121,137 @@ export function ChatPanel({ jobId, initialContext, onClose }: ChatPanelProps) {
         setInput("");
         setIsLoading(true);
 
+        // Add a placeholder assistant message that we'll update with streamed tokens
+        const placeholderMsg: ChatMessage = {
+            role: "assistant",
+            content: "",
+            timestamp: new Date(),
+        };
+        setMessages((prev) => [...prev, placeholderMsg]);
+
         try {
-            const response: ChatResponse = await api.chatWithJob(jobId, {
-                message: text,
-                conversation_id: conversationId,
-                context_hint: initialContext,
+            const API_BASE =
+                (import.meta as any).env?.VITE_API_BASE_URL?.replace(/\/$/, "") ||
+                "http://localhost:8000/api/v1";
+            const token = localStorage.getItem("aipam_token") || "";
+
+            const resp = await fetch(`${API_BASE}/jobs/${jobId}/chat/stream`, {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+                },
+                body: JSON.stringify({
+                    message: text,
+                    conversation_id: conversationId,
+                    context_hint: initialContext,
+                }),
             });
 
-            setConversationId(response.conversation_id);
+            if (!resp.ok) {
+                throw new Error(`HTTP ${resp.status}`);
+            }
 
-            const assistantMessage: ChatMessage = {
-                role: "assistant",
-                content: response.response,
-                citations: response.citations,
-                timestamp: new Date(),
-            };
-            setMessages((prev) => [...prev, assistantMessage]);
+            const reader = resp.body?.getReader();
+            if (!reader) throw new Error("No readable stream");
+
+            const decoder = new TextDecoder();
+            let accumulated = "";
+            let buffer = "";
+
+            while (true) {
+                const { done, value } = await reader.read();
+                if (done) break;
+
+                buffer += decoder.decode(value, { stream: true });
+                const parts = buffer.split("\n\n");
+                buffer = parts.pop() || "";
+
+                for (const eventStr of parts) {
+                    const lines = eventStr.split("\n");
+                    for (const line of lines) {
+                        if (!line.startsWith("data: ")) continue;
+                        const payload = line.slice(6).trim();
+                        if (payload === "[DONE]") continue;
+
+                        try {
+                            const evt = JSON.parse(payload);
+                            if (evt.type === "meta" || evt.conversation_id) {
+                                setConversationId(evt.conversation_id);
+                                if (evt.citations) {
+                                    setMessages((prev) => {
+                                        const updated = [...prev];
+                                        const last = updated[updated.length - 1];
+                                        if (last && last.role === "assistant") {
+                                            updated[updated.length - 1] = { ...last, citations: evt.citations };
+                                        }
+                                        return updated;
+                                    });
+                                }
+                            } else if (evt.type === "token") {
+                                accumulated += evt.content || "";
+                                const current = accumulated;
+                                setMessages((prev) => {
+                                    const updated = [...prev];
+                                    const last = updated[updated.length - 1];
+                                    if (last && last.role === "assistant") {
+                                        updated[updated.length - 1] = { ...last, content: current };
+                                    }
+                                    return updated;
+                                });
+                            } else if (evt.type === "error") {
+                                accumulated += "\n\nError: " + (evt.content || evt.error || "Unknown error");
+                                const current = accumulated;
+                                setMessages((prev) => {
+                                    const updated = [...prev];
+                                    const last = updated[updated.length - 1];
+                                    if (last && last.role === "assistant") {
+                                        updated[updated.length - 1] = { ...last, content: current };
+                                    }
+                                    return updated;
+                                });
+                            }
+                        } catch (e) {
+                            // skip unparseable lines
+                            console.warn("Failed to parse SSE payload", payload, e);
+                        }
+                    }
+                }
+            }
         } catch (error) {
-            const errorMessage: ChatMessage = {
-                role: "assistant",
-                content: `Error: ${error instanceof Error ? error.message : "Failed to get response"}`,
-                timestamp: new Date(),
-            };
-            setMessages((prev) => [...prev, errorMessage]);
+            // If streaming fails entirely, fall back to non-streaming
+            try {
+                const response: ChatResponse = await api.chatWithJob(jobId, {
+                    message: text,
+                    conversation_id: conversationId,
+                    context_hint: initialContext,
+                });
+                setConversationId(response.conversation_id);
+                setMessages((prev) => {
+                    const updated = [...prev];
+                    const last = updated[updated.length - 1];
+                    if (last && last.role === "assistant") {
+                        updated[updated.length - 1] = {
+                            ...last,
+                            content: response.response,
+                            citations: response.citations,
+                        };
+                    }
+                    return updated;
+                });
+            } catch (fallbackError) {
+                setMessages((prev) => {
+                    const updated = [...prev];
+                    const last = updated[updated.length - 1];
+                    if (last && last.role === "assistant") {
+                        updated[updated.length - 1] = {
+                            ...last,
+                            content: `Error: ${fallbackError instanceof Error ? fallbackError.message : "Failed to get response"}`,
+                        };
+                    }
+                    return updated;
+                });
+            }
         } finally {
             setIsLoading(false);
         }
@@ -180,7 +322,62 @@ export function ChatPanel({ jobId, initialContext, onClose }: ChatPanelProps) {
         <div className="flex flex-col h-full bg-gray-900 rounded-lg border border-gray-700">
             {/* Header */}
             <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
-                <h3 className="text-lg font-semibold text-white">Ask about findings</h3>
+                <div className="flex-1 flex items-center gap-2">
+                    {isEditingTitle ? (
+                        <div className="flex items-center gap-2 flex-1">
+                            <input
+                                type="text"
+                                value={newTitle}
+                                onChange={(e) => setNewTitle(e.target.value)}
+                                className="bg-gray-800 text-white text-sm rounded px-2 py-1 outline-none ring-1 ring-blue-500 flex-1"
+                                autoFocus
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter") handleRenameConv();
+                                    if (e.key === "Escape") setIsEditingTitle(false);
+                                }}
+                            />
+                            <button onClick={handleRenameConv} className="text-emerald-400 hover:text-emerald-300">✓</button>
+                            <button onClick={() => setIsEditingTitle(false)} className="text-red-400 hover:text-red-300">✕</button>
+                        </div>
+                    ) : (
+                        <div className="flex items-center gap-2 flex-1 min-w-0">
+                            <select
+                                value={conversationId || ""}
+                                onChange={(e) => e.target.value ? loadConversation(e.target.value) : startNewConversation()}
+                                className="bg-transparent text-gray-100 font-semibold focus:outline-none cursor-pointer max-w-full truncate"
+                            >
+                                <option value="" className="bg-gray-900 text-gray-400">New Conversation</option>
+                                {conversations.map(c => (
+                                    <option key={c.id} value={c.id} className="bg-gray-900">
+                                        {c.title || `Chat ${c.id.slice(0, 4)}...`}
+                                    </option>
+                                ))}
+                            </select>
+                            {conversationId && (
+                                <>
+                                    <button
+                                        onClick={() => {
+                                            const current = conversations.find(c => c.id === conversationId);
+                                            setNewTitle(current?.title || "");
+                                            setIsEditingTitle(true);
+                                        }}
+                                        className="text-gray-500 hover:text-gray-300 transition-colors"
+                                        title="Rename conversation"
+                                    >
+                                        ✎
+                                    </button>
+                                    <button
+                                        onClick={handleDeleteConv}
+                                        className="text-gray-500 hover:text-red-400 transition-colors"
+                                        title="Delete conversation"
+                                    >
+                                        🗑
+                                    </button>
+                                </>
+                            )}
+                        </div>
+                    )}
+                </div>
                 <div className="flex items-center gap-2">
                     {messages.length > 0 && (
                         <>
@@ -231,27 +428,40 @@ export function ChatPanel({ jobId, initialContext, onClose }: ChatPanelProps) {
                         className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}
                     >
                         <div
-                            className={`max-w-[80%] rounded-lg px-4 py-2 ${
-                                msg.role === "user"
-                                    ? "bg-blue-600 text-white"
-                                    : "bg-gray-800 text-gray-100"
-                            }`}
+                            className={`max-w-[80%] rounded-lg px-4 py-2 ${msg.role === "user"
+                                ? "bg-blue-600 text-white"
+                                : "bg-gray-800 text-gray-100"
+                                }`}
                         >
                             <p className="whitespace-pre-wrap">{msg.content}</p>
                             {msg.citations && msg.citations.length > 0 && (
-                                <div className="mt-2 pt-2 border-t border-gray-600">
-                                    <p className="text-xs text-gray-400 mb-1">Sources:</p>
-                                    {msg.citations.slice(0, 3).map((c, i) => (
-                                        <p key={i} className="text-xs text-gray-400">
-                                            • [{c.type}] {c.snippet.slice(0, 60)}...
-                                        </p>
-                                    ))}
+                                <div className="mt-3 pt-2 border-t border-gray-600">
+                                    <details className="group">
+                                        <summary className="flex cursor-pointer list-none items-center gap-2 text-xs text-gray-300 hover:text-white">
+                                            <span className="font-medium">Sources</span>
+                                            <span className="text-gray-500">({msg.citations.length})</span>
+                                            <span className="text-gray-500 group-open:hidden">Show</span>
+                                            <span className="hidden text-gray-500 group-open:inline">Hide</span>
+                                        </summary>
+                                        <div className="mt-2 max-h-48 space-y-2 overflow-y-auto pr-1">
+                                            {msg.citations.map((c, i) => (
+                                                <div key={`${c.type}-${c.id ?? i}-${i}`} className="rounded-md border border-gray-700 bg-gray-900/60 px-2 py-2">
+                                                    <p className="text-[11px] uppercase tracking-wide text-gray-500">
+                                                        {c.type.replace(/_/g, " ")}
+                                                    </p>
+                                                    <p className="mt-1 whitespace-pre-wrap break-words text-xs text-gray-300">
+                                                        {c.snippet}
+                                                    </p>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </details>
                                 </div>
                             )}
                         </div>
                     </div>
                 ))}
-                {isLoading && (
+                {isLoading && messages.length > 0 && messages[messages.length - 1].content === "" && (
                     <div className="flex justify-start">
                         <div className="bg-gray-800 rounded-lg px-4 py-2 text-gray-400">
                             <span className="animate-pulse">Thinking...</span>

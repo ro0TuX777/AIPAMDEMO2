@@ -1,0 +1,1818 @@
+openapi: 3.0.3
+info:
+  title: AIPAM API
+  version: "2.0.0"
+  description: |
+    Air-gapped single-VM API for PCAP upload, job orchestration, sensor findings, and report/artifact access.
+servers:
+  - url: /api/v1
+
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Uploads
+  - name: Jobs
+  - name: Hosts
+  - name: Findings
+  - name: Artifacts
+  - name: System
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: API_TOKEN
+
+  parameters:
+    RequestIdHeader:
+      name: X-Request-Id
+      in: header
+      required: false
+      schema:
+        type: string
+      description: Optional correlation ID. If provided, echoed back. If absent, server generates.
+
+    JobIdPath:
+      name: jobId
+      in: path
+      required: true
+      schema: { type: string }
+
+    FindingIdPath:
+      name: findingId
+      in: path
+      required: true
+      schema: { type: string }
+
+    ArtifactIdPath:
+      name: artifactId
+      in: path
+      required: true
+      schema: { type: string }
+
+    HostIpPath:
+      name: ip
+      in: path
+      required: true
+      schema: { type: string }
+      description: IP address string as stored/derived from job outputs.
+
+    CursorQuery:
+      name: cursor
+      in: query
+      required: false
+      schema: { type: string }
+      description: >
+        Opaque pagination cursor. Stable only for the same filter/sort combination.
+        If an old cursor is reused after filter/sort changes, returns 400 with code INVALID_CURSOR.
+
+    LimitQuery:
+      name: limit
+      in: query
+      required: false
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 200
+        default: 50
+
+    SortQuery:
+      name: sort
+      in: query
+      required: false
+      schema: { type: string }
+      description: Sort field identifier for endpoint-specific list.
+
+    OrderQuery:
+      name: order
+      in: query
+      required: false
+      schema:
+        type: string
+        enum: [asc, desc]
+        default: desc
+
+    # ---- Endpoint-specific query filters ----
+    StatusFilter:
+      name: status
+      in: query
+      required: false
+      schema: { $ref: "#/components/schemas/JobStatus" }
+    ProfileFilter:
+      name: profile
+      in: query
+      required: false
+      schema: { $ref: "#/components/schemas/ExecutionProfile" }
+    SearchQuery:
+      name: q
+      in: query
+      required: false
+      schema: { type: string }
+      description: Free-text search / substring match.
+    RoleFilter:
+      name: role
+      in: query
+      required: false
+      schema: { type: string, enum: [internal, external, unknown] }
+    SeverityFilter:
+      name: severity
+      in: query
+      required: false
+      schema: { $ref: "#/components/schemas/Severity" }
+    IocTypeFilter:
+      name: type
+      in: query
+      required: false
+      schema: { $ref: "#/components/schemas/IocType" }
+    DirectionFilter:
+      name: direction
+      in: query
+      required: false
+      schema: { type: string, enum: [inbound, outbound, any], default: any }
+    ProtoFilter:
+      name: proto
+      in: query
+      required: false
+      schema: { type: string, enum: [tcp, udp, icmp, any], default: any }
+    DestIpFilter:
+      name: dest_ip
+      in: query
+      required: false
+      schema: { type: string }
+    DestPortFilter:
+      name: dest_port
+      in: query
+      required: false
+      schema: { type: integer }
+    ServiceFilter:
+      name: service
+      in: query
+      required: false
+      schema: { type: string }
+    CommunityIdFilter:
+      name: community_id
+      in: query
+      required: false
+      schema: { type: string }
+    StartTsFilter:
+      name: start_ts
+      in: query
+      required: false
+      schema: { type: string, format: date-time }
+    EndTsFilter:
+      name: end_ts
+      in: query
+      required: false
+      schema: { type: string, format: date-time }
+    RcodeFilter:
+      name: rcode
+      in: query
+      required: false
+      schema: { type: string }
+    QtypeFilter:
+      name: qtype
+      in: query
+      required: false
+      schema: { type: string }
+    SniFilter:
+      name: sni
+      in: query
+      required: false
+      schema: { type: string }
+      description: SNI substring match.
+    Ja3Filter:
+      name: ja3
+      in: query
+      required: false
+      schema: { type: string }
+    IssuerFilter:
+      name: issuer
+      in: query
+      required: false
+      schema: { type: string }
+      description: Certificate issuer substring match.
+    CategoryFilter:
+      name: category
+      in: query
+      required: false
+      schema: { type: string }
+    SidFilter:
+      name: sid
+      in: query
+      required: false
+      schema: { type: string }
+    MimeFilter:
+      name: mime
+      in: query
+      required: false
+      schema: { type: string }
+    Sha256Filter:
+      name: sha256
+      in: query
+      required: false
+      schema: { type: string }
+    YaraRuleFilter:
+      name: yara_rule
+      in: query
+      required: false
+      schema: { type: string }
+    TimelineTypeFilter:
+      name: type
+      in: query
+      required: false
+      schema: { type: string }
+      description: Timeline event type filter.
+
+  responses:
+    Unauthorized:
+      description: Unauthorized (missing/invalid token)
+      headers:
+        X-Request-Id:
+          schema: { type: string }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+    NotFound:
+      description: Not found
+      headers:
+        X-Request-Id:
+          schema: { type: string }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+    BadRequest:
+      description: |
+        Bad request (invalid input, cursor, limit, etc.).
+        - If cursor is invalid or stale (e.g. reused after filter/sort change), returns code=INVALID_CURSOR.
+        - If limit exceeds max (200), returns code=INVALID_LIMIT.
+      headers:
+        X-Request-Id:
+          schema: { type: string }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+          examples:
+            invalid_cursor:
+              summary: Stale or invalid cursor
+              value: { code: "INVALID_CURSOR", message: "Cursor is invalid for current filter/sort combination.", details: { cursor: "abc123" } }
+            invalid_limit:
+              summary: Limit exceeds maximum
+              value: { code: "INVALID_LIMIT", message: "Limit must be between 1 and 200.", details: { limit: 500, max: 200 } }
+
+    Conflict:
+      description: Conflict (resource state prevents action)
+      headers:
+        X-Request-Id:
+          schema: { type: string }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  schemas:
+    SchemaVersion:
+      type: string
+      enum: ["1.0"]
+      description: API schema version included in all responses.
+
+    ErrorResponse:
+      type: object
+      required: [schema_version, code, message]
+      properties:
+        schema_version: { $ref: "#/components/schemas/SchemaVersion" }
+        code: { type: string }
+        message: { type: string }
+        details:
+          type: object
+          additionalProperties: true
+
+    ExecutionProfile:
+      type: string
+      enum: [triage, standard, deep]
+
+    Priority:
+      type: string
+      enum: [low, normal, high]
+
+    JobStatus:
+      type: string
+      enum:
+        - queued
+        - running
+        - completed
+        - completed_with_errors
+        - failed
+        - canceled
+        - deleting
+        - deleted
+
+    SensorStatus:
+      type: string
+      enum:
+        - pending
+        - running
+        - completed
+        - failed
+        - skipped
+        - timeout
+        - canceled
+
+    Severity:
+      type: string
+      enum: [info, low, medium, high, critical]
+
+    IocType:
+      type: string
+      enum: [ip, domain, url, hash, ja3, ja3s, sni, email, mutex, registry]
+
+    UploadCreateResponse:
+      type: object
+      required: [schema_version, upload_id, filename, size_bytes, sha256]
+      properties:
+        schema_version: { $ref: "#/components/schemas/SchemaVersion" }
+        upload_id: { type: string }
+        filename: { type: string }
+        size_bytes: { type: integer }
+        sha256: { type: string }
+
+    UploadValidateResponse:
+      type: object
+      required: [schema_version, is_valid]
+      properties:
+        schema_version: { $ref: "#/components/schemas/SchemaVersion" }
+        is_valid: { type: boolean }
+        format: { type: string, nullable: true }
+        linktype: { type: string, nullable: true }
+        packet_count: { type: integer, nullable: true }
+        capture_duration_seconds: { type: number, nullable: true }
+        estimated_runtime:
+          type: object
+          description: Estimated runtime in seconds per profile.
+          properties:
+            triage: { type: number, nullable: true }
+            standard: { type: number, nullable: true }
+            deep: { type: number, nullable: true }
+        warnings:
+          type: array
+          items: { type: string }
+
+    JobCreateRequest:
+      type: object
+      required: [upload_id, execution_profile]
+      properties:
+        upload_id: { type: string }
+        job_name: { type: string }
+        notes: { type: string }
+        execution_profile: { $ref: "#/components/schemas/ExecutionProfile" }
+        priority: { $ref: "#/components/schemas/Priority" }
+
+    JobCreateResponse:
+      type: object
+      required: [schema_version, job_id]
+      properties:
+        schema_version: { $ref: "#/components/schemas/SchemaVersion" }
+        job_id: { type: string }
+
+    PageInfo:
+      type: object
+      required: [next_cursor, has_more]
+      properties:
+        next_cursor:
+          type: string
+          nullable: true
+        has_more: { type: boolean }
+
+    JobListItem:
+      type: object
+      required:
+        [job_id, created_at, status, execution_profile, priority]
+      properties:
+        job_id: { type: string }
+        job_name: { type: string }
+        notes: { type: string }
+        created_at: { type: string, format: date-time }
+        started_at: { type: string, format: date-time, nullable: true }
+        completed_at: { type: string, format: date-time, nullable: true }
+        status: { $ref: "#/components/schemas/JobStatus" }
+        execution_profile: { $ref: "#/components/schemas/ExecutionProfile" }
+        priority: { $ref: "#/components/schemas/Priority" }
+        pcap_filename: { type: string }
+        pcap_size_bytes: { type: integer }
+        error_summary: { type: string, nullable: true }
+
+    JobGetResponse:
+      type: object
+      required: [schema_version, job]
+      properties:
+        schema_version: { $ref: "#/components/schemas/SchemaVersion" }
+        job:
+          allOf:
+            - $ref: "#/components/schemas/JobListItem"
+            - type: object
+              properties:
+                metrics:
+                  $ref: "#/components/schemas/JobMetrics"
+                stages:
+                  type: array
+                  items: { $ref: "#/components/schemas/StageItem" }
+                sensors:
+                  type: array
+                  items: { $ref: "#/components/schemas/SensorItem" }
+
+    JobSummaryResponse:
+      type: object
+      required: [schema_version, job_id, headline]
+      properties:
+        schema_version: { $ref: "#/components/schemas/SchemaVersion" }
+        job_id: { type: string }
+        headline: { type: string }
+        top_signals:
+          type: array
+          items: { type: string }
+        top_hosts:
+          type: array
+          items: { $ref: "#/components/schemas/HostListItem" }
+        top_iocs:
+          type: array
+          items: { $ref: "#/components/schemas/IocItem" }
+        recommendations:
+          type: array
+          items: { type: string }
+        alert_count: { type: integer }
+        finding_count: { type: integer }
+        ioc_count: { type: integer }
+        host_count: { type: integer }
+
+    SensorListResponse:
+      type: object
+      required: [schema_version, items]
+      properties:
+        schema_version: { $ref: "#/components/schemas/SchemaVersion" }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/SensorItem" }
+
+    JobMetrics:
+      type: object
+      required: [durations]
+      properties:
+        pcap_stats:
+          type: object
+          properties:
+            packet_count: { type: integer, nullable: true }
+            capture_duration_seconds: { type: number, nullable: true }
+        durations:
+          type: object
+          additionalProperties:
+            type: number
+
+    StageItem:
+      type: object
+      required: [stage, status]
+      properties:
+        stage: { type: string }
+        status: { type: string }
+        started_at: { type: string, format: date-time, nullable: true }
+        completed_at: { type: string, format: date-time, nullable: true }
+        error: { type: string, nullable: true }
+
+    SensorProvenance:
+      type: object
+      required: [sensor_name]
+      properties:
+        sensor_name: { type: string }
+        sensor_version: { type: string, nullable: true }
+        image_digest: { type: string, nullable: true }
+        host_hostname: { type: string, nullable: true }
+        aipam_version: { type: string, nullable: true }
+        tool_versions:
+          type: object
+          additionalProperties: { type: string }
+
+    SensorStats:
+      type: object
+      properties:
+        runtime_seconds: { type: number, nullable: true }
+        output_bytes: { type: integer, nullable: true }
+        findings_count: { type: integer, nullable: true }
+
+    SensorItem:
+      type: object
+      required: [sensor, status, meta]
+      properties:
+        sensor: { type: string }
+        status: { $ref: "#/components/schemas/SensorStatus" }
+        meta: { $ref: "#/components/schemas/SensorProvenance" }
+        stats: { $ref: "#/components/schemas/SensorStats" }
+        started_at: { type: string, format: date-time, nullable: true }
+        completed_at: { type: string, format: date-time, nullable: true }
+        timeout_seconds: { type: integer, nullable: true }
+        error: { type: string, nullable: true }
+
+    HostListItem:
+      type: object
+      required: [ip, role, conn_count, alert_count]
+      properties:
+        ip: { type: string }
+        role:
+          type: string
+          enum: [internal, external, unknown]
+        conn_count: { type: integer }
+        bytes_sent: { type: integer, nullable: true }
+        bytes_recv: { type: integer, nullable: true }
+        alert_count: { type: integer }
+        top_domains:
+          type: array
+          items: { type: string }
+
+    HostDetail:
+      allOf:
+        - $ref: "#/components/schemas/HostListItem"
+        - type: object
+          properties:
+            first_seen: { type: string, format: date-time, nullable: true }
+            last_seen: { type: string, format: date-time, nullable: true }
+            alerts_by_severity:
+              type: object
+              additionalProperties:
+                type: integer
+            top_services:
+              type: array
+              items: { type: string }
+            dns_summary:
+              type: object
+              properties:
+                query_count: { type: integer, nullable: true }
+                top_qnames:
+                  type: array
+                  items: { type: string }
+            tls_summary:
+              type: object
+              properties:
+                session_count: { type: integer, nullable: true }
+                top_sni:
+                  type: array
+                  items: { type: string }
+                top_ja3:
+                  type: array
+                  items: { type: string }
+
+    HostListResponse:
+      type: object
+      required: [schema_version, items, page]
+      properties:
+        schema_version: { $ref: "#/components/schemas/SchemaVersion" }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/HostListItem" }
+        page: { $ref: "#/components/schemas/PageInfo" }
+
+    HostGetResponse:
+      type: object
+      required: [schema_version, host]
+      properties:
+        schema_version: { $ref: "#/components/schemas/SchemaVersion" }
+        host: { $ref: "#/components/schemas/HostDetail" }
+
+    ConnectionItem:
+      type: object
+      required: [connection_id, ts, src_ip, dest_ip, proto]
+      properties:
+        connection_id: { type: string }
+        community_id: { type: string, nullable: true }
+        ts: { type: string, format: date-time }
+        src_ip: { type: string }
+        src_port: { type: integer, nullable: true }
+        dest_ip: { type: string }
+        dest_port: { type: integer, nullable: true }
+        proto: { type: string }
+        duration_seconds: { type: number, nullable: true }
+        bytes_sent: { type: integer, nullable: true }
+        bytes_recv: { type: integer, nullable: true }
+        service: { type: string, nullable: true }
+        alerts:
+          type: array
+          items: { type: string }
+        iocs:
+          type: array
+          items: { type: string }
+
+    ConnectionListResponse:
+      type: object
+      required: [schema_version, items, page]
+      properties:
+        schema_version: { $ref: "#/components/schemas/SchemaVersion" }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/ConnectionItem" }
+        page: { $ref: "#/components/schemas/PageInfo" }
+
+    DnsQueryItem:
+      type: object
+      required: [dns_id, ts, src_ip, query]
+      properties:
+        dns_id: { type: string }
+        ts: { type: string, format: date-time }
+        src_ip: { type: string }
+        query: { type: string }
+        qtype: { type: string, nullable: true }
+        answers:
+          type: array
+          items: { type: string }
+        rcode: { type: string, nullable: true }
+        ttl_seconds: { type: integer, nullable: true }
+        dest_ip: { type: string, nullable: true }
+        community_id: { type: string, nullable: true }
+        iocs:
+          type: array
+          items: { type: string }
+        related_community_ids:
+          type: array
+          items: { type: string }
+
+    DnsQueryListResponse:
+      type: object
+      required: [schema_version, items, page]
+      properties:
+        schema_version: { $ref: "#/components/schemas/SchemaVersion" }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/DnsQueryItem" }
+        page: { $ref: "#/components/schemas/PageInfo" }
+
+    TlsSessionItem:
+      type: object
+      required: [tls_id, ts, src_ip, dest_ip]
+      properties:
+        tls_id: { type: string }
+        ts: { type: string, format: date-time }
+        src_ip: { type: string }
+        dest_ip: { type: string }
+        dest_port: { type: integer, nullable: true }
+        sni: { type: string, nullable: true }
+        ja3: { type: string, nullable: true }
+        ja3s: { type: string, nullable: true }
+        alpn: { type: string, nullable: true }
+        version: { type: string, nullable: true }
+        cert_subject: { type: string, nullable: true }
+        cert_issuer: { type: string, nullable: true }
+        cert_fingerprint_sha1: { type: string, nullable: true }
+        community_id: { type: string, nullable: true }
+        iocs:
+          type: array
+          items: { type: string }
+
+    TlsSessionListResponse:
+      type: object
+      required: [schema_version, items, page]
+      properties:
+        schema_version: { $ref: "#/components/schemas/SchemaVersion" }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/TlsSessionItem" }
+        page: { $ref: "#/components/schemas/PageInfo" }
+
+    AlertItem:
+      type: object
+      required: [alert_id, ts, severity, signature]
+      properties:
+        alert_id: { type: string }
+        ts: { type: string, format: date-time }
+        severity: { $ref: "#/components/schemas/Severity" }
+        engine: { type: string, nullable: true }
+        signature: { type: string }
+        category: { type: string, nullable: true }
+        sid: { type: string, nullable: true }
+        src_ip: { type: string, nullable: true }
+        src_port: { type: integer, nullable: true }
+        dest_ip: { type: string, nullable: true }
+        dest_port: { type: integer, nullable: true }
+        proto: { type: string, nullable: true }
+        community_id: { type: string, nullable: true }
+        refs:
+          type: array
+          items: { type: string }
+        tags:
+          type: array
+          items: { type: string }
+
+    AlertListResponse:
+      type: object
+      required: [schema_version, items, page]
+      properties:
+        schema_version: { $ref: "#/components/schemas/SchemaVersion" }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/AlertItem" }
+        page: { $ref: "#/components/schemas/PageInfo" }
+
+    FileItem:
+      type: object
+      required: [file_id, sha256, size_bytes]
+      properties:
+        file_id: { type: string }
+        ts: { type: string, format: date-time, nullable: true }
+        sha256: { type: string }
+        md5: { type: string, nullable: true }
+        ssdeep: { type: string, nullable: true }
+        size_bytes: { type: integer }
+        mime: { type: string, nullable: true }
+        entropy: { type: number, nullable: true }
+        source: { type: string, nullable: true }
+        extracted_path: { type: string, nullable: true }
+        yara_matches:
+          type: array
+          items: { type: string }
+        download_artifact_id: { type: string, nullable: true }
+        related_community_ids:
+          type: array
+          items: { type: string }
+
+    FileListResponse:
+      type: object
+      required: [schema_version, items, page]
+      properties:
+        schema_version: { $ref: "#/components/schemas/SchemaVersion" }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/FileItem" }
+        page: { $ref: "#/components/schemas/PageInfo" }
+
+    IocItem:
+      type: object
+      required: [ioc_id, type, value]
+      properties:
+        ioc_id: { type: string }
+        type: { $ref: "#/components/schemas/IocType" }
+        value: { type: string }
+        confidence:
+          type: number
+          minimum: 0
+          maximum: 1
+          nullable: true
+        sources:
+          type: array
+          items: { type: string }
+
+    IocListResponse:
+      type: object
+      required: [schema_version, items, page]
+      properties:
+        schema_version: { $ref: "#/components/schemas/SchemaVersion" }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/IocItem" }
+        page: { $ref: "#/components/schemas/PageInfo" }
+
+    FindingItem:
+      type: object
+      required: [finding_id, title, severity]
+      properties:
+        finding_id: { type: string }
+        title: { type: string }
+        severity: { $ref: "#/components/schemas/Severity" }
+        summary: { type: string }
+        evidence:
+          type: object
+          additionalProperties: true
+
+    FindingListResponse:
+      type: object
+      required: [schema_version, items, page]
+      properties:
+        schema_version: { $ref: "#/components/schemas/SchemaVersion" }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/FindingItem" }
+        page: { $ref: "#/components/schemas/PageInfo" }
+
+    FindingExplainRequest:
+      type: object
+      required: [format]
+      properties:
+        format:
+          type: string
+          enum: [markdown, text]
+
+    FindingExplainResponse:
+      type: object
+      required: [schema_version, format, content]
+      properties:
+        schema_version: { $ref: "#/components/schemas/SchemaVersion" }
+        format:
+          type: string
+          enum: [markdown, text]
+        content:
+          type: string
+
+    ArtifactItem:
+      type: object
+      required: [artifact_id, type, status, created_at]
+      properties:
+        artifact_id: { type: string }
+        type: { type: string }
+        status:
+          type: string
+          enum: [available, generating, failed, purged]
+        created_at: { type: string, format: date-time }
+        filename: { type: string, nullable: true }
+        sha256: { type: string, nullable: true }
+        size_bytes: { type: integer, nullable: true }
+        error: { type: string, nullable: true }
+
+    ArtifactListResponse:
+      type: object
+      required: [schema_version, items]
+      properties:
+        schema_version: { $ref: "#/components/schemas/SchemaVersion" }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/ArtifactItem" }
+
+    EvidencePackageCreateResponse:
+      type: object
+      required: [schema_version, artifact_id, status]
+      properties:
+        schema_version: { $ref: "#/components/schemas/SchemaVersion" }
+        artifact_id: { type: string }
+        status:
+          type: string
+          enum: [generating]
+
+    BatchJobsRequest:
+      type: object
+      required: [action, job_ids]
+      properties:
+        action:
+          type: string
+          enum: [cancel, delete, export_iocs]
+        job_ids:
+          type: array
+          items: { type: string }
+
+    BatchJobsResponse:
+      type: object
+      required: [schema_version, accepted, rejected]
+      properties:
+        schema_version: { $ref: "#/components/schemas/SchemaVersion" }
+        accepted:
+          type: array
+          items: { type: string }
+        rejected:
+          type: array
+          items:
+            type: object
+            required: [job_id, reason]
+            properties:
+              job_id: { type: string }
+              reason: { type: string }
+        export_iocs:
+          $ref: "#/components/schemas/IocListResponse"
+
+    SystemConfigResponse:
+      type: object
+      required: [schema_version, aipam_version, max_upload_bytes, profiles_enabled, default_limits]
+      properties:
+        schema_version: { $ref: "#/components/schemas/SchemaVersion" }
+        aipam_version: { type: string }
+        max_upload_bytes: { type: integer }
+        profiles_enabled:
+          type: array
+          items: { $ref: "#/components/schemas/ExecutionProfile" }
+        default_limits:
+          type: object
+          properties:
+            sensor_timeout_seconds: { type: integer }
+            max_extracted_bytes: { type: integer }
+            max_job_disk_bytes: { type: integer }
+
+    HealthResponse:
+      type: object
+      required: [schema_version, status, uptime_seconds, docker_ok, disk_ok, ollama_ok]
+      properties:
+        schema_version: { $ref: "#/components/schemas/SchemaVersion" }
+        status: { type: string, enum: [ok, degraded] }
+        uptime_seconds: { type: integer }
+        docker_ok: { type: boolean }
+        disk_ok: { type: boolean }
+        ollama_ok: { type: boolean }
+        current_job_id: { type: string, nullable: true }
+        last_job_id: { type: string, nullable: true }
+        last_job_status: { $ref: "#/components/schemas/JobStatus" }
+
+    TimelineEntityFields:
+      type: object
+      properties:
+        src_ip: { type: string, nullable: true }
+        dest_ip: { type: string, nullable: true }
+        src_port: { type: integer, nullable: true }
+        dest_port: { type: integer, nullable: true }
+        community_id: { type: string, nullable: true }
+        domain: { type: string, nullable: true }
+
+    TimelineRefs:
+      type: object
+      properties:
+        alert_id: { type: string, nullable: true }
+        finding_id: { type: string, nullable: true }
+        ioc_id: { type: string, nullable: true }
+
+    TimelineItem:
+      type: object
+      required: [ts, type, title]
+      properties:
+        ts: { type: string, format: date-time }
+        type: { type: string }
+        title: { type: string }
+        description: { type: string, nullable: true }
+        severity: { $ref: "#/components/schemas/Severity" }
+        entities: { $ref: "#/components/schemas/TimelineEntityFields" }
+        refs: { $ref: "#/components/schemas/TimelineRefs" }
+
+    TimelineListResponse:
+      type: object
+      required: [schema_version, items, page]
+      properties:
+        schema_version: { $ref: "#/components/schemas/SchemaVersion" }
+        items:
+          type: array
+          items: { $ref: "#/components/schemas/TimelineItem" }
+        page: { $ref: "#/components/schemas/PageInfo" }
+
+    # ---- SSE event payload schemas (typed) ----
+    SseEnvelope:
+      type: object
+      required: [id, type, ts, data]
+      properties:
+        id:
+          type: integer
+          description: Monotonic event id for replay via Last-Event-ID.
+        type:
+          type: string
+          enum:
+            - job.status
+            - job.complete
+            - stage.status
+            - sensor.status
+            - sensor.log
+            - sensor.finding
+            - artifact.created
+            - quota.hit
+            - disk.warning
+            - heartbeat
+            - reset
+        ts: { type: string, format: date-time }
+        data:
+          oneOf:
+            - $ref: "#/components/schemas/SseJobStatusData"
+            - $ref: "#/components/schemas/SseJobCompleteData"
+            - $ref: "#/components/schemas/SseStageStatusData"
+            - $ref: "#/components/schemas/SseSensorStatusData"
+            - $ref: "#/components/schemas/SseSensorLogData"
+            - $ref: "#/components/schemas/SseSensorFindingData"
+            - $ref: "#/components/schemas/SseArtifactCreatedData"
+            - $ref: "#/components/schemas/SseQuotaHitData"
+            - $ref: "#/components/schemas/SseDiskWarningData"
+            - $ref: "#/components/schemas/SseHeartbeatData"
+            - $ref: "#/components/schemas/SseResetData"
+
+    SseJobStatusData:
+      type: object
+      required: [job_id, status]
+      properties:
+        job_id: { type: string }
+        status: { $ref: "#/components/schemas/JobStatus" }
+        message: { type: string, nullable: true }
+
+    SseStageStatusData:
+      type: object
+      required: [job_id, stage, status]
+      properties:
+        job_id: { type: string }
+        stage: { type: string }
+        status: { type: string }
+        message: { type: string, nullable: true }
+
+    SseSensorStatusData:
+      type: object
+      required: [job_id, sensor, status]
+      properties:
+        job_id: { type: string }
+        sensor: { type: string }
+        status: { $ref: "#/components/schemas/SensorStatus" }
+        message: { type: string, nullable: true }
+
+    SseSensorLogData:
+      type: object
+      required: [job_id, sensor, stream, line]
+      properties:
+        job_id: { type: string }
+        sensor: { type: string }
+        stream: { type: string, enum: [stdout, stderr] }
+        line: { type: string }
+
+    SseArtifactCreatedData:
+      type: object
+      required: [job_id, artifact_id, type]
+      properties:
+        job_id: { type: string }
+        artifact_id: { type: string }
+        type: { type: string }
+
+    SseQuotaHitData:
+      type: object
+      required: [job_id, quota_type]
+      properties:
+        job_id: { type: string }
+        quota_type: { type: string, enum: [disk, extracted_bytes] }
+        message: { type: string, nullable: true }
+
+    SseHeartbeatData:
+      type: object
+      required: [job_id]
+      properties:
+        job_id: { type: string }
+
+    SseJobCompleteData:
+      type: object
+      required: [job_id, status]
+      description: Final event for a job. Always the last event emitted.
+      properties:
+        job_id: { type: string }
+        status: { $ref: "#/components/schemas/JobStatus" }
+        summary:
+          type: object
+          description: Quick summary stats for the completed job.
+          properties:
+            finding_count: { type: integer }
+            alert_count: { type: integer }
+            host_count: { type: integer }
+            ioc_count: { type: integer }
+            duration_sec: { type: number }
+
+    SseSensorFindingData:
+      type: object
+      required: [job_id, sensor, finding_id, severity]
+      description: Real-time finding notification as sensors produce results.
+      properties:
+        job_id: { type: string }
+        sensor: { type: string }
+        finding_id: { type: string }
+        severity: { type: string, enum: [info, low, medium, high, critical] }
+        title: { type: string, nullable: true }
+
+    SseDiskWarningData:
+      type: object
+      required: [usage_pct, free_bytes, threshold_pct]
+      description: Emitted when disk usage exceeds warning threshold (default 80%).
+      properties:
+        usage_pct:
+          type: number
+          description: Current disk usage percentage.
+        free_bytes:
+          type: integer
+          format: int64
+          description: Remaining free bytes on the jobs volume.
+        threshold_pct:
+          type: number
+          description: The threshold that triggered this warning.
+        message: { type: string, nullable: true }
+
+    SseResetData:
+      type: object
+      required: [reason]
+      properties:
+        reason:
+          type: string
+          enum: [event_id_expired]
+
+paths:
+  /uploads:
+    post:
+      tags: [Uploads]
+      summary: Upload a PCAP
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/RequestIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "201":
+          description: Created
+          headers:
+            X-Request-Id: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadCreateResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "413":
+          description: Upload too large
+          headers:
+            X-Request-Id: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /uploads/{uploadId}/validate:
+    post:
+      tags: [Uploads]
+      summary: Validate an uploaded PCAP
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/RequestIdHeader"
+        - name: uploadId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-Id: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/UploadValidateResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /jobs:
+    get:
+      tags: [Jobs]
+      summary: List jobs
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/RequestIdHeader"
+        - $ref: "#/components/parameters/CursorQuery"
+        - $ref: "#/components/parameters/LimitQuery"
+        - $ref: "#/components/parameters/SortQuery"
+        - $ref: "#/components/parameters/OrderQuery"
+        - $ref: "#/components/parameters/StatusFilter"
+        - $ref: "#/components/parameters/ProfileFilter"
+        - $ref: "#/components/parameters/SearchQuery"
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-Id: { schema: { type: string } }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [schema_version, items, page]
+                properties:
+                  schema_version: { $ref: "#/components/schemas/SchemaVersion" }
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/JobListItem" }
+                  page: { $ref: "#/components/schemas/PageInfo" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+    post:
+      tags: [Jobs]
+      summary: Create a job from an upload
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/RequestIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/JobCreateRequest" }
+      responses:
+        "201":
+          description: Created
+          headers:
+            X-Request-Id: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JobCreateResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /jobs/batch:
+    post:
+      tags: [Jobs]
+      summary: Batch operations on jobs
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/RequestIdHeader"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/BatchJobsRequest" }
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-Id: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/BatchJobsResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /jobs/{jobId}:
+    get:
+      tags: [Jobs]
+      summary: Get job detail
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/RequestIdHeader"
+        - $ref: "#/components/parameters/JobIdPath"
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-Id: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JobGetResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+    delete:
+      tags: [Jobs]
+      summary: Delete a job (hard delete)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/RequestIdHeader"
+        - $ref: "#/components/parameters/JobIdPath"
+      responses:
+        "204":
+          description: No Content
+          headers:
+            X-Request-Id: { schema: { type: string } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /jobs/{jobId}/cancel:
+    post:
+      tags: [Jobs]
+      summary: Cancel a running job
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/RequestIdHeader"
+        - $ref: "#/components/parameters/JobIdPath"
+      responses:
+        "202":
+          description: Accepted
+          headers:
+            X-Request-Id: { schema: { type: string } }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /jobs/{jobId}/rerun:
+    post:
+      tags: [Jobs]
+      summary: Rerun a job (new job referencing same PCAP) with different profile/limits
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/RequestIdHeader"
+        - $ref: "#/components/parameters/JobIdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [execution_profile]
+              properties:
+                execution_profile: { $ref: "#/components/schemas/ExecutionProfile" }
+                priority: { $ref: "#/components/schemas/Priority" }
+      responses:
+        "201":
+          description: Created
+          headers:
+            X-Request-Id: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JobCreateResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409":
+          description: |
+            Conflict — PCAP has been purged by retention policy.
+            Response body: `{code: "PCAP_PURGED", message: "...", details: {action: "Re-upload the PCAP"}}`.
+          headers:
+            X-Request-Id: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /jobs/{jobId}/summary:
+    get:
+      tags: [Jobs]
+      summary: View-ready dashboard summary for a job
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/RequestIdHeader"
+        - $ref: "#/components/parameters/JobIdPath"
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-Id: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/JobSummaryResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /jobs/{jobId}/sensors:
+    get:
+      tags: [Jobs]
+      summary: List sensors and their statuses for a job
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/RequestIdHeader"
+        - $ref: "#/components/parameters/JobIdPath"
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-Id: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SensorListResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /jobs/{jobId}/events:
+    get:
+      tags: [Jobs]
+      summary: Server-Sent Events stream for job progress (supports Last-Event-ID replay)
+      description: |
+        SSE stream. On reconnect, clients may send Last-Event-ID (EventSource does automatically).
+        Replay window: last 10K events or since job started, whichever is smaller.
+        If Last-Event-ID is stale, server emits a `reset` event with reason=event_id_expired.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/JobIdPath"
+      responses:
+        "200":
+          description: SSE stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+              examples:
+                example:
+                  value: |
+                    id: 101
+                    event: sensor.status
+                    data: {"id":101,"type":"sensor.status","ts":"2026-01-01T00:00:00Z","data":{"job_id":"job123","sensor":"zeek","status":"running"}}
+
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /jobs/{jobId}/hosts:
+    get:
+      tags: [Hosts]
+      summary: List hosts in a job
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/RequestIdHeader"
+        - $ref: "#/components/parameters/JobIdPath"
+        - $ref: "#/components/parameters/CursorQuery"
+        - $ref: "#/components/parameters/LimitQuery"
+        - $ref: "#/components/parameters/SortQuery"
+        - $ref: "#/components/parameters/OrderQuery"
+        - $ref: "#/components/parameters/RoleFilter"
+        - $ref: "#/components/parameters/SearchQuery"
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-Id: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HostListResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /jobs/{jobId}/hosts/{ip}:
+    get:
+      tags: [Hosts]
+      summary: Host detail
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/RequestIdHeader"
+        - $ref: "#/components/parameters/JobIdPath"
+        - $ref: "#/components/parameters/HostIpPath"
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-Id: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HostGetResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /jobs/{jobId}/hosts/{ip}/connections:
+    get:
+      tags: [Hosts]
+      summary: Host connections
+      description: |
+        Returns connections where the host IP ({ip}) appears as either source or destination.
+        Use `direction=outbound` to match only connections where the host is the source,
+        or `direction=inbound` where the host is the destination. Default (`any`) matches both.
+        Default sort: `ts desc`.
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/RequestIdHeader"
+        - $ref: "#/components/parameters/JobIdPath"
+        - $ref: "#/components/parameters/HostIpPath"
+        - $ref: "#/components/parameters/CursorQuery"
+        - $ref: "#/components/parameters/LimitQuery"
+        - $ref: "#/components/parameters/SortQuery"
+        - $ref: "#/components/parameters/OrderQuery"
+        - $ref: "#/components/parameters/DirectionFilter"
+        - $ref: "#/components/parameters/ProtoFilter"
+        - $ref: "#/components/parameters/DestIpFilter"
+        - $ref: "#/components/parameters/DestPortFilter"
+        - $ref: "#/components/parameters/ServiceFilter"
+        - $ref: "#/components/parameters/CommunityIdFilter"
+        - $ref: "#/components/parameters/StartTsFilter"
+        - $ref: "#/components/parameters/EndTsFilter"
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-Id: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ConnectionListResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /jobs/{jobId}/hosts/{ip}/dns:
+    get:
+      tags: [Hosts]
+      summary: Host DNS activity
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/RequestIdHeader"
+        - $ref: "#/components/parameters/JobIdPath"
+        - $ref: "#/components/parameters/HostIpPath"
+        - $ref: "#/components/parameters/CursorQuery"
+        - $ref: "#/components/parameters/LimitQuery"
+        - $ref: "#/components/parameters/SortQuery"
+        - $ref: "#/components/parameters/OrderQuery"
+        - $ref: "#/components/parameters/SearchQuery"
+        - $ref: "#/components/parameters/RcodeFilter"
+        - $ref: "#/components/parameters/QtypeFilter"
+        - $ref: "#/components/parameters/CommunityIdFilter"
+        - $ref: "#/components/parameters/StartTsFilter"
+        - $ref: "#/components/parameters/EndTsFilter"
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-Id: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/DnsQueryListResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /jobs/{jobId}/hosts/{ip}/tls:
+    get:
+      tags: [Hosts]
+      summary: Host TLS sessions
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/RequestIdHeader"
+        - $ref: "#/components/parameters/JobIdPath"
+        - $ref: "#/components/parameters/HostIpPath"
+        - $ref: "#/components/parameters/CursorQuery"
+        - $ref: "#/components/parameters/LimitQuery"
+        - $ref: "#/components/parameters/SortQuery"
+        - $ref: "#/components/parameters/OrderQuery"
+        - $ref: "#/components/parameters/SniFilter"
+        - $ref: "#/components/parameters/Ja3Filter"
+        - $ref: "#/components/parameters/IssuerFilter"
+        - $ref: "#/components/parameters/CommunityIdFilter"
+        - $ref: "#/components/parameters/StartTsFilter"
+        - $ref: "#/components/parameters/EndTsFilter"
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-Id: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TlsSessionListResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /jobs/{jobId}/hosts/{ip}/alerts:
+    get:
+      tags: [Hosts]
+      summary: Alerts associated with host
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/RequestIdHeader"
+        - $ref: "#/components/parameters/JobIdPath"
+        - $ref: "#/components/parameters/HostIpPath"
+        - $ref: "#/components/parameters/CursorQuery"
+        - $ref: "#/components/parameters/LimitQuery"
+        - $ref: "#/components/parameters/SortQuery"
+        - $ref: "#/components/parameters/OrderQuery"
+        - $ref: "#/components/parameters/SeverityFilter"
+        - $ref: "#/components/parameters/CategoryFilter"
+        - $ref: "#/components/parameters/SidFilter"
+        - $ref: "#/components/parameters/CommunityIdFilter"
+        - $ref: "#/components/parameters/StartTsFilter"
+        - $ref: "#/components/parameters/EndTsFilter"
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-Id: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/AlertListResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /jobs/{jobId}/hosts/{ip}/files:
+    get:
+      tags: [Hosts]
+      summary: Files associated with host
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/RequestIdHeader"
+        - $ref: "#/components/parameters/JobIdPath"
+        - $ref: "#/components/parameters/HostIpPath"
+        - $ref: "#/components/parameters/CursorQuery"
+        - $ref: "#/components/parameters/LimitQuery"
+        - $ref: "#/components/parameters/SortQuery"
+        - $ref: "#/components/parameters/OrderQuery"
+        - $ref: "#/components/parameters/MimeFilter"
+        - $ref: "#/components/parameters/Sha256Filter"
+        - $ref: "#/components/parameters/YaraRuleFilter"
+        - $ref: "#/components/parameters/CommunityIdFilter"
+        - $ref: "#/components/parameters/StartTsFilter"
+        - $ref: "#/components/parameters/EndTsFilter"
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-Id: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FileListResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /jobs/{jobId}/findings:
+    get:
+      tags: [Findings]
+      summary: List findings
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/RequestIdHeader"
+        - $ref: "#/components/parameters/JobIdPath"
+        - $ref: "#/components/parameters/CursorQuery"
+        - $ref: "#/components/parameters/LimitQuery"
+        - $ref: "#/components/parameters/SortQuery"
+        - $ref: "#/components/parameters/OrderQuery"
+        - $ref: "#/components/parameters/SeverityFilter"
+        - $ref: "#/components/parameters/CategoryFilter"
+        - $ref: "#/components/parameters/SearchQuery"
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-Id: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FindingListResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /jobs/{jobId}/findings/{findingId}/explain:
+    post:
+      tags: [Findings]
+      summary: Explain a finding (LLM-backed)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/RequestIdHeader"
+        - $ref: "#/components/parameters/JobIdPath"
+        - $ref: "#/components/parameters/FindingIdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FindingExplainRequest" }
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-Id: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FindingExplainResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429":
+          description: Too many requests / queue full
+          headers:
+            X-Request-Id: { schema: { type: string } }
+            Retry-After: { schema: { type: integer } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+        "503":
+          description: LLM busy (e.g., analyzing job)
+          headers:
+            X-Request-Id: { schema: { type: string } }
+            Retry-After: { schema: { type: integer } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /jobs/{jobId}/timeline:
+    get:
+      tags: [Jobs]
+      summary: Timeline events (static list)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/RequestIdHeader"
+        - $ref: "#/components/parameters/JobIdPath"
+        - $ref: "#/components/parameters/CursorQuery"
+        - $ref: "#/components/parameters/LimitQuery"
+        - $ref: "#/components/parameters/SortQuery"
+        - $ref: "#/components/parameters/OrderQuery"
+        - $ref: "#/components/parameters/SeverityFilter"
+        - $ref: "#/components/parameters/StartTsFilter"
+        - $ref: "#/components/parameters/EndTsFilter"
+        - name: type
+          in: query
+          schema: { type: string }
+          description: Filter by timeline event type
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-Id: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/TimelineListResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /jobs/{jobId}/iocs:
+    get:
+      tags: [Jobs]
+      summary: List IOCs
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/RequestIdHeader"
+        - $ref: "#/components/parameters/JobIdPath"
+        - $ref: "#/components/parameters/CursorQuery"
+        - $ref: "#/components/parameters/LimitQuery"
+        - $ref: "#/components/parameters/SortQuery"
+        - $ref: "#/components/parameters/OrderQuery"
+        - name: ioc_type
+          in: query
+          schema: { $ref: "#/components/schemas/IocType" }
+          description: Filter by IOC type
+        - $ref: "#/components/parameters/SeverityFilter"
+        - $ref: "#/components/parameters/SearchQuery"
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-Id: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/IocListResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /jobs/{jobId}/artifacts:
+    get:
+      tags: [Artifacts]
+      summary: List job artifacts
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/RequestIdHeader"
+        - $ref: "#/components/parameters/JobIdPath"
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-Id: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ArtifactListResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /jobs/{jobId}/artifacts/evidence-package:
+    post:
+      tags: [Artifacts]
+      summary: Generate evidence package artifact on-demand
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/RequestIdHeader"
+        - $ref: "#/components/parameters/JobIdPath"
+      responses:
+        "202":
+          description: Accepted (generation started)
+          headers:
+            X-Request-Id: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/EvidencePackageCreateResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+
+  /artifacts/{artifactId}/download:
+    get:
+      tags: [Artifacts]
+      summary: Download an artifact
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/RequestIdHeader"
+        - $ref: "#/components/parameters/ArtifactIdPath"
+      responses:
+        "200":
+          description: File download
+          headers:
+            X-Request-Id: { schema: { type: string } }
+            Content-Disposition:
+              schema: { type: string }
+              description: attachment; filename="..."
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "410":
+          description: Artifact was purged by retention policy
+          headers:
+            X-Request-Id: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
+
+  /health:
+    get:
+      tags: [System]
+      summary: Health check
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/RequestIdHeader"
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-Id: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/HealthResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+
+  /system/config:
+    get:
+      tags: [System]
+      summary: Static configuration (read-only)
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/RequestIdHeader"
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-Id: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/SystemConfigResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }

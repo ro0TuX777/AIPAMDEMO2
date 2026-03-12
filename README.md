@@ -1,21 +1,27 @@
 # AIPAM - AI-Powered Advanced Packet Analysis for Malware Detection
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-1.0-blue" alt="Version">
+  <img src="https://img.shields.io/badge/Version-2.0-blue" alt="Version">
   <img src="https://img.shields.io/badge/License-MIT-green" alt="License">
   <img src="https://img.shields.io/badge/AI%20Model-Llama%203.1%208B-orange" alt="AI Model">
+  <img src="https://img.shields.io/badge/API-V2%20(Sensors)-blueviolet" alt="API V2">
+  <img src="https://img.shields.io/badge/Tests-110%20passing-brightgreen" alt="Tests">
 </p>
 
 ## 📋 Table of Contents
 
 - [What is AIPAM?](#what-is-aipam)
 - [Key Features](#key-features)
+- [V2 Architecture](#v2-architecture)
 - [How It Works](#how-it-works)
 - [System Architecture](#system-architecture)
+- [Execution Profiles](#execution-profiles)
 - [Supported Malware Families](#supported-malware-families)
 - [Training Data](#training-data)
 - [Benchmark Results](#benchmark-results)
 - [Getting Started](#getting-started)
+- [Admin CLI (aipam-admin)](#admin-cli-aipam-admin)
+- [Environment Variables](#environment-variables)
 - [User Guide](#user-guide)
 - [Roadmap](#roadmap)
 - [FAQ](#faq)
@@ -45,11 +51,17 @@ Unlike traditional security tools that only match known signatures, AIPAM uses a
 
 ## ✨ Key Features
 
-### 🔍 Intelligent Traffic Analysis
-Upload any network capture file (PCAP), and AIPAM will automatically:
-- Parse and understand all network communications
-- Identify suspicious patterns and behaviors
-- Classify threats by malware family and type
+### 🔍 Modular Sensor Pipeline (V2)
+Upload any PCAP and AIPAM runs a **staged sensor pipeline** with Docker-isolated analysis:
+- **Zeek** + **Suricata** for protocol parsing and signature alerts
+- **Beaconing detector**, **TLS enrichment**, **YARA file triage**, **TI matcher**
+- Three **execution profiles**: triage (fast), standard, deep (comprehensive)
+
+### 📡 Real-Time Progress (SSE)
+Live updates via Server-Sent Events as each sensor completes:
+- Sensor status tracking with colored indicators
+- Pipeline stage progression
+- Auto-refreshing job detail view
 
 ### 💬 Interactive Chat Assistant
 Ask follow-up questions about the analysis in plain English:
@@ -59,73 +71,82 @@ Ask follow-up questions about the analysis in plain English:
 
 ### 📊 Detailed Reports
 Get comprehensive reports including:
-- Executive summary for management
-- Technical details for analysts
+- Executive summary with headline, top signals, and recommendations
+- Per-host findings with connection, DNS, TLS, and alert details
 - MITRE ATT&CK technique mapping
-- Recommended remediation steps
+- IOC extraction (IPs, domains, file hashes)
 
 ### 🔒 Air-Gapped Ready
 AIPAM runs completely offline—no data ever leaves your network. Perfect for sensitive environments.
+- Offline update bundles with SHA256 integrity verification
+- Support bundle export for offline debugging
+- All dependencies containerized
 
-### 🔗 Integration Ready
-Connect to your existing security stack:
-- **Security Onion** - Import captures directly
-- **Arkime** - Export sessions for analysis
-- **REST API** - Integrate with any system
+### 🛠️ Operational Tooling
+Built-in admin CLI (`aipam-admin`) for production maintenance:
+- **cleanup-jobs** — Automated retention policy enforcement
+- **support-bundle** — Diagnostic archive (excludes PCAPs and secrets)
+- **apply-update** — Air-gapped rule/TI updates with rollback
+- **smoke-test** / **parity-check** — Validation tools
 
 ---
 
 ## 🔄 How It Works
 
-AIPAM follows a simple 5-step process to analyze your network traffic:
+AIPAM V2 uses a **staged sensor pipeline** to analyze network traffic:
 
 ```
-┌─────────────────────────────────────────────────────────────────────────┐
-│                        AIPAM Analysis Pipeline                          │
-├─────────────────────────────────────────────────────────────────────────┤
-│                                                                         │
-│  ① UPLOAD        ② PARSE           ③ ANALYZE        ④ CLASSIFY         │
-│  ────────       ───────           ─────────        ──────────          │
-│  PCAP file  →   Zeek extracts  →  AI examines  →   Identifies          │
-│  dropped       network flows      patterns        malware type         │
-│                                                                         │
-│                              ⑤ REPORT                                   │
-│                              ────────                                   │
-│                         Generates findings,                             │
-│                      recommendations & chat                             │
-└─────────────────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────┐
+│                        AIPAM V2 Sensor Pipeline                            │
+├────────────────────────────────────────────────────────────────────────────┤
+│                                                                            │
+│  ① UPLOAD         ② VALIDATE         ③ PIPELINE          ④ CORRELATE     │
+│  ────────        ──────────         ──────────          ───────────       │
+│  PCAP file  →    Verify format  →   Sensor stages:  →   community_id    │
+│  uploaded        packet count       Zeek → Suricata      pivot, dedup,   │
+│                  est. runtime       → Sensors (||)       entity extract  │
+│                                                                            │
+│                              ⑤ REPORT + SSE                                │
+│                              ──────────────                                │
+│                        Findings, IOCs, timeline,                           │
+│                     host enrichment, live updates                          │
+└────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ### Step-by-Step Breakdown
 
-1. **Upload** - Drag and drop your PCAP file into the web interface
-2. **Parse** - Zeek and Suricata extract network flows and generate alerts
-3. **Analyze** - The AI model examines traffic patterns, timing, and behaviors
-4. **Classify** - Traffic is categorized as benign or malicious (with malware family)
-5. **Report** - A detailed report is generated with findings and next steps
+1. **Upload** — `POST /api/v1/uploads` — PCAP is uploaded and stored
+2. **Validate** — `POST /api/v1/uploads/{id}/validate` — Format, packet count, estimated runtime
+3. **Create Job** — `POST /api/v1/jobs` — Selects execution profile, queues pipeline
+4. **Sensor Pipeline** — Celery worker runs stages in order:
+   - **Stage 1**: Zeek (protocol parsing) → **Stage 2**: Suricata (signature alerts)
+   - **Stage 3**: Sensors run in parallel (beaconing, TLS enrich, file triage, TI match)
+   - **Stage 4**: Correlation + normalization → findings, IOCs, timeline
+5. **Results** — Query via REST API with SSE live updates during processing
 
 ---
 
 ## 🏗️ System Architecture
 
-AIPAM is built as a modern, containerized application with four main components:
+AIPAM V2 is built as a containerized application with five main services:
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
-│                           Your Computer                                   │
+│                          AIPAM V2 Stack                                   │
 ├──────────────────────────────────────────────────────────────────────────┤
 │                                                                          │
 │   ┌─────────────┐    ┌─────────────┐    ┌─────────────┐                 │
-│   │  Frontend   │    │   Backend   │    │   Worker    │                 │
-│   │   (React)   │◄──►│  (FastAPI)  │◄──►│  (Celery)   │                 │
-│   │  Port 5173  │    │  Port 8000  │    │ Zeek+Suri   │                 │
+│   │  Frontend   │    │  API Server │    │   Worker    │                 │
+│   │  (React)    │◄──►│  (FastAPI)  │◄──►│  (Celery)   │                 │
+│   │  Port 80    │    │  Port 8000  │    │  Sensors    │                 │
 │   └─────────────┘    └──────┬──────┘    └──────┬──────┘                 │
 │                             │                   │                        │
 │                      ┌──────▼──────┐     ┌──────▼──────┐                │
 │                      │    Redis    │     │   Ollama    │                │
-│                      │   (Queue)   │     │  (AI Model) │                │
+│                      │  Broker+SSE │     │  (AI Model) │                │
 │                      └─────────────┘     └─────────────┘                │
 │                                                                          │
+│   Storage: SQLite (aipam.db) + /jobs/<job_id>/ filesystem               │
 └──────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -133,11 +154,24 @@ AIPAM is built as a modern, containerized application with four main components:
 
 | Component | What It Does | Technology |
 |-----------|--------------|------------|
-| **Frontend** | Web interface you interact with | React + TypeScript |
-| **Backend** | Handles requests and coordinates analysis | Python FastAPI |
-| **Worker** | Processes PCAP files in the background | Celery + Zeek + Suricata |
-| **Redis** | Manages the job queue | Redis |
-| **Ollama** | Runs the AI model for classification | Ollama + TrafficLLM |
+| **Frontend** | Web interface — job list, detail, upload, findings | React + TypeScript + TanStack Query |
+| **API Server** | REST API (25+ endpoints) + SSE event stream | Python FastAPI (V2) |
+| **Worker** | Pipeline orchestrator — runs sensor containers | Celery + Docker |
+| **Redis** | Celery broker + SSE event buffer | Redis 7 |
+| **Ollama** | Local LLM inference for classification | Ollama + fine-tuned Llama 3.1 8B |
+| **SQLite** | Job, sensor, finding, host, IOC, timeline storage | SQLite with WAL mode |
+
+---
+
+## ⚡ Execution Profiles
+
+AIPAM V2 supports three analysis profiles that control which sensors run:
+
+| Profile | Sensors | Use Case | Est. Time |
+|---------|---------|----------|-----------|
+| **Triage** | Zeek, Suricata | Quick alert check | ~1 min |
+| **Standard** | + Beaconing, TLS Enrich, TI Matcher | Default analysis | ~5 min |
+| **Deep** | + File Triage (YARA), all sensors | Full forensic sweep | ~15 min |
 
 ---
 
@@ -281,10 +315,9 @@ We tested AIPAM on malware samples it had never seen during training:
 
 ### Prerequisites
 
-- **Docker** and **Docker Compose** installed
-- **8GB+ RAM** recommended
+- **Docker** and **Docker Compose v2** installed
+- **8GB+ RAM** recommended (16GB+ for deep profile)
 - **NVIDIA GPU** (optional, for faster AI inference)
-- **Ollama** installed on host machine
 
 ### Quick Installation
 
@@ -293,40 +326,124 @@ We tested AIPAM on malware samples it had never seen during training:
 git clone https://github.com/your-org/AIPAM.git
 cd AIPAM
 
-# 2. Start the application
-docker compose up -d
+# 2. Configure environment
+cp deploy/.env.example deploy/.env
+# Edit deploy/.env — set AIPAM_API_TOKEN to a secure value
 
-# 3. Import the AI model to Ollama
-ollama create aipam-trafficllm-v5 -f finetuning/aipam_gpu_training/Modelfile
+# 3. Start the full stack
+docker compose -f deploy/docker-compose.yml up -d
 
-# 4. Open the web interface
-open http://localhost:5173
+# 4. Import the AI model
+docker exec aipam-ollama ollama create aipam-trafficllm-v5 \
+  -f /models/Modelfile
+
+# 5. Open the web interface
+open http://localhost   # Frontend on port 80
+# API available at http://localhost:8000/api/v1/docs
 ```
 
 ### Verifying Installation
 
 ```bash
 # Check all containers are running
-docker compose ps
+docker compose -f deploy/docker-compose.yml ps
 
 # Expected output:
-# aipam-backend    Running
+# aipam-api        Running (healthy)
 # aipam-worker     Running
 # aipam-frontend   Running
-# aipam-redis      Running
+# aipam-redis      Running (healthy)
+# aipam-ollama     Running (healthy)
+
+# Run the smoke test
+AIPAM_API_TOKEN=your-token python -m backend.app.cli smoke-test
 ```
 
 ---
 
-## 📖 User Guide
+## �️ Admin CLI (`aipam-admin`)
 
-### Analyzing a PCAP File
+All admin commands are run via `python -m backend.app.cli <command>`.
 
-1. **Open the Dashboard** at `http://localhost:5173`
+### `smoke-test` — End-to-End Validation
+
+```bash
+aipam-admin smoke-test [--pcap PATH] [--base-url URL]
+```
+
+Runs a full pipeline pass: upload → validate → create job → poll until complete → verify response shapes. Exit code 0 on success, 1 on failure.
+
+### `parity-check` — V1/V2 Output Comparison
+
+```bash
+aipam-admin parity-check [--pcaps DIR] [--output DIR]
+```
+
+Compares V1 and V2 pipeline outputs on a corpus of PCAPs. Generates a report with tolerance checks for finding counts, severity distributions, and host coverage.
+
+### `cleanup-jobs` — Retention Policy Enforcement
+
+```bash
+aipam-admin cleanup-jobs --older-than 30d [--dry-run | --confirm]
+```
+
+Deletes expired jobs (DB rows + `/jobs/<id>/` directories). Running jobs are never deleted. `--dry-run` lists candidates without deleting. `--confirm` is required for actual deletion.
+
+### `support-bundle` — Diagnostic Archive
+
+```bash
+aipam-admin support-bundle [--job JOB_ID] [--all-recent] [--output PATH]
+```
+
+Generates a `.tar.gz` with job metadata, sensor status, system health, and configuration. **Excludes PCAPs and API tokens** for data privacy. Use `--all-recent` to include all jobs from the last 24 hours.
+
+### `apply-update` — Air-Gapped Rule/TI Updates
+
+```bash
+aipam-admin apply-update /path/to/update-bundle.zip
+```
+
+Verifies SHA256 checksums from the bundle's `manifest.json` before unpacking rules and threat intelligence updates. Rejects tampered bundles with exit code 1.
+
+---
+
+## ⚙️ Environment Variables
+
+All settings are loaded from environment variables (or a `.env` file). Defined in `backend/app/config_v2.py`.
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `AIPAM_API_TOKEN` | *(required)* | Bearer token for API authentication |
+| `AIPAM_MAX_CONCURRENT_JOBS` | `1` | Max simultaneous pipeline jobs |
+| `AIPAM_SENSOR_PARALLELISM` | `1` | Max sensors running in parallel within a job |
+| `AIPAM_MAX_JOB_DISK_BYTES` | `53687091200` (50 GB) | Hard disk limit per job |
+| `AIPAM_MAX_EXTRACTED_BYTES` | `10737418240` (10 GB) | Max extracted file bytes per job |
+| `AIPAM_PREFLIGHT_MULTIPLIER` | `4` | Disk space multiplier for preflight check |
+| `AIPAM_JOB_RETENTION_DAYS` | `30` | Auto-cleanup threshold for expired jobs |
+| `AIPAM_LOG_RETENTION_DAYS` | `30` | Log rotation threshold |
+| `AIPAM_LOG_MAX_MB` | `500` | Max log size before rotation |
+| `AIPAM_DISK_WARN_PCT` | `80` | Disk usage warning threshold (%) |
+| `AIPAM_DISK_CRITICAL_PCT` | `95` | Disk usage critical threshold (%) |
+| `AIPAM_OLLAMA_URL` | `http://ollama:11434` | Ollama service URL |
+| `AIPAM_REDIS_URL` | `redis://redis:6379/0` | Redis URL (Celery broker + SSE) |
+| `AIPAM_JOB_ROOT` | `/jobs` | Filesystem root for job artifacts |
+| `AIPAM_UPLOAD_ROOT` | `/uploads` | Filesystem root for PCAP uploads |
+| `AIPAM_DB_PATH` | `/data/aipam.db` | SQLite database file path |
+| `AIPAM_SENSOR_CONFIG_DIR` | `/opt/aipam/sensor-config` | Sensor configuration directory |
+
+---
+
+## �📖 User Guide
+
+### Analyzing a PCAP File (V2)
+
+1. **Open the Dashboard** at `http://localhost`
 2. **Click "New Analysis"** in the navigation
-3. **Drag and drop** your PCAP file (or click to browse)
-4. **Click "Start Analysis"** and wait for processing
-5. **View Results** - click on the job to see the full report
+3. **Select a PCAP file** (`.pcap`, `.pcapng`, `.cap`)
+4. **Validation step** — review packet count, duration, and estimated runtime
+5. **Choose a profile** — Triage, Standard, or Deep
+6. **Create the job** — watch live sensor progress via SSE
+7. **View Results** — findings, hosts, timeline, IOCs, artifacts
 
 ### Understanding the Results
 
@@ -372,8 +489,6 @@ AIPAM: "1. Isolate 192.168.1.105 from the network
 
 ## 🗺️ Roadmap
 
-This roadmap is organized into delivery phases from `AIPAM_ROM.docx`.
-
 ### Phase 1 — MVP Delivery (Completed ✅)
 
 - [x] Web UI for PCAP upload and results visualization
@@ -382,44 +497,47 @@ This roadmap is organized into delivery phases from `AIPAM_ROM.docx`.
 - [x] Fine-tuned Llama 3.1 8B cyber model
 - [x] Interactive chat interface tied to PCAP analysis
 - [x] MITRE ATT&CK-aware reasoning and mapping
-- [x] Initial integration hooks for CRO/CDAP/Elastic within the CEC Global Testing Environment (GTE)
 - [x] Unit + integration testing
-- [x] Phase 1 demo for customer approval
 
 ### Phase 2 — DAWN Pipeline + Specialist Pyramid (Completed ✅)
 
-- [x] **DAWN Deterministic Pipeline** — Immutable ledger, cryptographic binding, meaning gates
-- [x] **Source-Agnostic Ingest** — Unified Flow IR from PCAP, Security Onion, and Arkime
-- [x] **3-Tier Specialist Pyramid** — L1 (Generalist), L2 (Forensic COT), L3 (Mc4minta, HIGH sensitivity)
-- [x] **Chain-of-Thought Forensic Reasoning** — Two-stage triage → deep analysis with MITRE mapping
-- [x] **Anti-Hallucination System** — 6-layer defense (structured output, flow validation, HITL gate)
-- [x] **Heuristic–LLM Fusion** — 10+ anomaly detectors feeding into LLM context
-- [x] **Automated Report Generation** — LLM-synthesized forensic narratives (Markdown + HTML)
-- [x] **Dynamic Model Selection** — Frontend model configuration with Remember & Verify flow
-- [x] **Golden Scenario Test Harness** — 3 deterministic tests validating the full pyramid
+- [x] DAWN Deterministic Pipeline — Immutable ledger, cryptographic binding, meaning gates
+- [x] Source-Agnostic Ingest — Unified Flow IR from PCAP, Security Onion, and Arkime
+- [x] 3-Tier Specialist Pyramid — L1 (Generalist), L2 (Forensic COT), L3 (Mc4minta)
+- [x] Chain-of-Thought Forensic Reasoning — MITRE ATT&CK mapping
+- [x] Anti-Hallucination System — 6-layer defense
+- [x] Heuristic–LLM Fusion — 10+ anomaly detectors
+- [x] Automated Report Generation — Markdown + HTML
+- [x] Golden Scenario Test Harness
 
 ### Phase 3 — Proactive Defense + Forensic Memory (Completed ✅)
 
-- [x] **Forensic Memory** — Global ChromaDB vector store for cross-case institutional knowledge
-- [x] **3-Source RAG Chat** — Current case + campaign correlations + forensic memory
-- [x] **Cross-Job Campaign Detection** — Correlation engine for shared MITRE techniques across jobs
-- [x] **Detection-as-Code** — Ready-to-deploy Suricata and Sigma rules from confirmed findings
-- [x] **Purple Team Simulation** — Scapy-based adversary emulation scripts from findings
-- [x] **Closed-Loop Validation** — 100% detection match rate for self-generated simulation traffic
-- [x] **HITL Review Gate** — Analyst verification checkpoint with auto-confirm threshold
-- [x] **Trust Receipts** — Release verification and final audit for every pipeline run
+- [x] Forensic Memory — ChromaDB vector store for cross-case knowledge
+- [x] 3-Source RAG Chat — Current case + campaign correlations + forensic memory
+- [x] Cross-Job Campaign Detection
+- [x] Detection-as-Code — Suricata and Sigma rules from findings
+- [x] Purple Team Simulation — Scapy-based adversary emulation
+- [x] Closed-Loop Validation — 100% detection match rate
+- [x] HITL Review Gate + Trust Receipts
 
-### Phase 4 — Enterprise Features
+### Sensors V2 Migration (Completed ✅)
 
-- [ ] Multi-tenancy
-- [ ] RBAC (Role-Based Access Control)
+- [x] **Backend Foundation** — V2 models, schemas, database (SQLite + WAL), config
+- [x] **Sensor Pipeline** — Docker-based sensor runner, registry, orchestrator, preflight checks
+- [x] **API Expansion** — 25+ REST endpoints, SSE, correlation, batch operations
+- [x] **Frontend Adaptation** — React SPA with TanStack Query, SSE hooks, V2 upload flow
+- [x] **Integration Testing** — Golden PCAP corpus, smoke test CLI, parity check CLI
+- [x] **Ops Tooling** — cleanup-jobs, support-bundle, apply-update, Docker Compose
+- [x] **Documentation** — Updated README, env var reference, CLI docs
+- [x] 110 tests passing (unit + integration)
+
+### Phase 4 — Enterprise Features (Future)
+
+- [ ] Multi-tenancy and RBAC
 - [ ] SIEM outputs (Elastic, Splunk, QRadar)
 - [ ] Webhooks & integration APIs
-- [ ] Audit logs
-- [ ] Extended performance tuning
-- [ ] Security hardening
-
-> Note: Phase 2–4 items are future enhancements and typically begin after Phase 1 acceptance/approval.
+- [ ] Kubernetes deployment option
+- [ ] PDF report generation
 
 ---
 

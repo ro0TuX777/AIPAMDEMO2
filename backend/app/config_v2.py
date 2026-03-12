@@ -1,0 +1,66 @@
+"""
+AIPAM V2 configuration — consolidated environment variables (§1.6).
+
+All AIPAM_* env vars are defined here as a single Pydantic Settings class.
+Loaded once at startup; injected via FastAPI dependency or direct import.
+"""
+
+from functools import lru_cache
+from pathlib import Path
+
+from pydantic_settings import BaseSettings
+
+
+class Settings(BaseSettings):
+    """AIPAM V2 settings from environment variables."""
+
+    # --- Auth ---
+    aipam_api_token: str  # Required — no default
+
+    # --- Concurrency ---
+    aipam_max_concurrent_jobs: int = 1
+    aipam_sensor_parallelism: int = 1
+
+    # --- Disk Guardrails ---
+    aipam_max_job_disk_bytes: int = 53_687_091_200  # 50 GB
+    aipam_max_extracted_bytes: int = 10_737_418_240  # 10 GB
+    aipam_preflight_multiplier: int = 4
+
+    # --- Retention ---
+    aipam_job_retention_days: int = 30
+    aipam_log_retention_days: int = 30
+    aipam_log_max_mb: int = 500
+
+    # --- Disk Thresholds ---
+    aipam_disk_warn_pct: int = 80
+    aipam_disk_critical_pct: int = 95
+
+    # --- Service URLs ---
+    aipam_ollama_url: str = "http://ollama:11434"
+    aipam_redis_url: str = "redis://redis:6379/0"
+
+    # --- Paths ---
+    aipam_job_root: Path = Path("/jobs")
+    aipam_upload_root: Path = Path("/uploads")
+    aipam_db_path: Path = Path("/data/aipam.db")
+    aipam_sensor_config_dir: Path = Path("/opt/aipam/sensor-config")
+    aipam_suricata_rules_dir: Path = Path("/opt/aipam/rules/suricata")
+    aipam_yara_rules_dir: Path = Path("/opt/aipam/rules/yara")
+
+    model_config = {
+        "env_file": ".env",
+        "env_file_encoding": "utf-8",
+        "case_sensitive": False,
+    }
+
+    @property
+    def database_url(self) -> str:
+        """SQLAlchemy connection string for SQLite."""
+        return f"sqlite:///{self.aipam_db_path}"
+
+
+@lru_cache()
+def get_settings() -> Settings:
+    """Cached settings singleton. Call once at startup."""
+    return Settings()
+

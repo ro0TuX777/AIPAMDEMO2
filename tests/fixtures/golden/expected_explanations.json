@@ -1,0 +1,168 @@
+{
+  "cases": [
+    {
+      "name": "deterministic_markdown_with_evidence",
+      "request": {"format": "markdown"},
+      "finding": {
+        "title": "ET MALWARE AlphaCrypt CnC Beacon 5",
+        "summary": "Alert fired multiple times for suspicious outbound traffic.",
+        "category": "alert_group",
+        "pcap_label": "capture-a",
+        "evidence_json": "{\"alert_count\": 4, \"affected_hosts\": [\"192.168.122.249\", \"79.96.20.98\"], \"sample_ts\": \"2026-03-11T10:15:00Z\"}"
+      },
+      "expected": {
+        "source": "deterministic",
+        "warning_contains": null,
+        "sections": [
+          {
+            "id": "assessment",
+            "title": "Assessment",
+            "body": "This finding records a high severity observation from suricata in category alert_group. Stored summary: Alert fired multiple times for suspicious outbound traffic.",
+            "bullets": [],
+            "citations": ["finding.severity", "finding.sensor", "finding.category", "finding.summary"]
+          },
+          {
+            "id": "why_it_matters",
+            "title": "Why this matters",
+            "body": "The stored evidence supports triage of this item and currently shows: Alert count: 4. This explanation is limited to the saved finding metadata and evidence for this job.",
+            "bullets": [],
+            "citations": ["finding.evidence.alert_count", "finding.evidence.affected_hosts"]
+          },
+          {
+            "id": "recommended_next_steps",
+            "title": "Recommended next steps",
+            "body": null,
+            "bullets": [
+              "Review the underlying job timeline, alerts, and connections that align with this finding.",
+              "Compare this item with other findings from the same job before deciding whether to confirm it or mark it as a false positive.",
+              "Pivot into the listed affected hosts to confirm who initiated or received the activity.",
+              "Inspect surrounding packets, flows, and alerts near 2026-03-11T10:15:00Z for additional context."
+            ],
+            "citations": ["finding.evidence.affected_hosts", "finding.evidence.sample_ts", "finding.evidence.alert_count", "finding.pcap_label"]
+          }
+        ],
+        "evidence_items": [
+          {"label": "Alert count", "value": "4", "citation": "finding.evidence.alert_count"},
+          {"label": "Affected hosts", "value": "192.168.122.249, 79.96.20.98", "citation": "finding.evidence.affected_hosts"},
+          {"label": "Sample ts", "value": "2026-03-11T10:15:00Z", "citation": "finding.evidence.sample_ts"}
+        ],
+        "content_startswith": "# ET MALWARE AlphaCrypt CnC Beacon 5",
+        "content_contains": ["## Assessment", "## Supporting evidence", "capture-a"]
+      }
+    },
+    {
+      "name": "llm_markdown_with_valid_section_citations",
+      "request": {"format": "markdown"},
+      "finding": {
+        "title": "LLM-cited finding",
+        "pcap_label": "capture-llm",
+        "evidence_json": "{\"affected_hosts\": [\"10.10.10.10\"], \"sample_ts\": \"2026-03-12T12:00:00Z\"}"
+      },
+      "llm_response": {
+        "assessment": "This explanation stays within the stored finding bundle.",
+        "why_it_matters": "The recorded host and timestamp provide concrete pivot points.",
+        "recommended_next_steps": [
+          "Pivot into the affected host for surrounding activity.",
+          "Use the capture label and timestamp to inspect nearby traffic."
+        ],
+        "section_citations": {
+          "assessment": ["finding.summary", "finding.sensor"],
+          "why_it_matters": ["finding.evidence.affected_hosts"],
+          "recommended_next_steps": ["finding.pcap_label", "finding.evidence.sample_ts"]
+        }
+      },
+      "prompt_contains": ["Allowed citations:", "- finding.evidence.affected_hosts", "- finding.pcap_label"],
+      "expected": {
+        "source": "llm",
+        "warning_contains": null,
+        "sections": [
+          {
+            "id": "assessment",
+            "title": "Assessment",
+            "body": "This explanation stays within the stored finding bundle.",
+            "bullets": [],
+            "citations": ["finding.summary", "finding.sensor"]
+          },
+          {
+            "id": "why_it_matters",
+            "title": "Why this matters",
+            "body": "The recorded host and timestamp provide concrete pivot points.",
+            "bullets": [],
+            "citations": ["finding.evidence.affected_hosts"]
+          },
+          {
+            "id": "recommended_next_steps",
+            "title": "Recommended next steps",
+            "body": null,
+            "bullets": [
+              "Pivot into the affected host for surrounding activity.",
+              "Use the capture label and timestamp to inspect nearby traffic."
+            ],
+            "citations": ["finding.pcap_label", "finding.evidence.sample_ts"]
+          }
+        ],
+        "evidence_items": [
+          {"label": "Affected hosts", "value": "10.10.10.10", "citation": "finding.evidence.affected_hosts"},
+          {"label": "Sample ts", "value": "2026-03-12T12:00:00Z", "citation": "finding.evidence.sample_ts"}
+        ],
+        "content_startswith": "# LLM-cited finding",
+        "content_contains": ["## Assessment", "This explanation stays within the stored finding bundle.", "capture-llm"]
+      }
+    },
+    {
+      "name": "llm_invalid_citations_falls_back_to_deterministic",
+      "request": {"format": "markdown"},
+      "finding": {
+        "title": "Invalid citation finding",
+        "evidence_json": "{\"alert_count\": 2}"
+      },
+      "llm_response": {
+        "assessment": "Assessment from model.",
+        "why_it_matters": "Why this matters from model.",
+        "recommended_next_steps": ["Review the related alerts."],
+        "section_citations": {
+          "assessment": ["finding.summary"],
+          "why_it_matters": ["finding.evidence.nonexistent"],
+          "recommended_next_steps": ["finding.title"]
+        }
+      },
+      "prompt_contains": ["Allowed citations:", "- finding.evidence.alert_count"],
+      "expected": {
+        "source": "fallback",
+        "warning_contains": "invalid structured content",
+        "sections": [
+          {
+            "id": "assessment",
+            "title": "Assessment",
+            "body": "This finding records a high severity observation from suricata in category uncategorized activity. Stored summary: Test finding",
+            "bullets": [],
+            "citations": ["finding.severity", "finding.sensor", "finding.summary"]
+          },
+          {
+            "id": "why_it_matters",
+            "title": "Why this matters",
+            "body": "The stored evidence supports triage of this item and currently shows: Alert count: 2. This explanation is limited to the saved finding metadata and evidence for this job.",
+            "bullets": [],
+            "citations": ["finding.evidence.alert_count"]
+          },
+          {
+            "id": "recommended_next_steps",
+            "title": "Recommended next steps",
+            "body": null,
+            "bullets": [
+              "Review the underlying job timeline, alerts, and connections that align with this finding.",
+              "Compare this item with other findings from the same job before deciding whether to confirm it or mark it as a false positive.",
+              "Validate whether all 2 alert occurrences reflect the same behavior or multiple related events."
+            ],
+            "citations": ["finding.evidence.alert_count"]
+          }
+        ],
+        "evidence_items": [
+          {"label": "Alert count", "value": "2", "citation": "finding.evidence.alert_count"}
+        ],
+        "content_startswith": "# Invalid citation finding",
+        "content_contains": ["## Assessment", "## Supporting evidence", "Alert count: 2"]
+      }
+    }
+  ]
+}

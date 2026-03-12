@@ -7,7 +7,7 @@ from sqlmodel import Field, SQLModel
 from sqlalchemy import Column
 from sqlalchemy.types import JSON
 
-from .models import JobStatus, JobStepStatus
+from .domain_models import JobStatus, JobStepStatus
 
 
 class JobDB(SQLModel, table=True):

@@ -1,6 +1,13 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, SettingsPayload, EffectiveSettingsResponse, OllamaModelInfo } from "../api";
+import {
+  api,
+  SettingsPayload,
+  EffectiveSettingsResponse,
+  OllamaModelInfo,
+  ExplainTelemetryResponse,
+  SystemConfigResponse,
+} from "../api";
 import { HelpGuidePanel } from "../components/HelpGuidePanel";
 
 function formatBytes(bytes: number): string {
@@ -9,6 +16,10 @@ function formatBytes(bytes: number): string {
   const sizes = ["B", "KB", "MB", "GB", "TB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + " " + sizes[i];
+}
+
+function formatDurationMs(durationMs: number): string {
+  return `${durationMs.toLocaleString()} ms`;
 }
 
 /** Small helper — returns class names for a clickable label */
@@ -29,12 +40,18 @@ export const SettingsPage: React.FC = () => {
   const [effectiveSettings, setEffectiveSettings] = useState<EffectiveSettingsResponse | null>(null);
   const [effectiveLoading, setEffectiveLoading] = useState(false);
   const [effectiveError, setEffectiveError] = useState<string | null>(null);
+  const [systemConfig, setSystemConfig] = useState<SystemConfigResponse | null>(null);
+  const [systemConfigLoading, setSystemConfigLoading] = useState(false);
+  const [systemConfigError, setSystemConfigError] = useState<string | null>(null);
+  const [explainTelemetry, setExplainTelemetry] = useState<ExplainTelemetryResponse | null>(null);
+  const [telemetryLoading, setTelemetryLoading] = useState(false);
+  const [telemetryResetting, setTelemetryResetting] = useState(false);
+  const [telemetryError, setTelemetryError] = useState<string | null>(null);
   // Ollama models
   const [availableModels, setAvailableModels] = useState<OllamaModelInfo[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   // Help guide
   const [activeHelpField, setActiveHelpField] = useState<string | null>(null);
-
   const toggleHelp = (field: string) => {
     setActiveHelpField((prev) => (prev === field ? null : field));
   };
@@ -48,6 +65,48 @@ export const SettingsPage: React.FC = () => {
       console.error("Failed to fetch models:", err);
     } finally {
       setModelsLoading(false);
+    }
+  }, []);
+
+  const loadExplainTelemetry = useCallback(async () => {
+    setTelemetryLoading(true);
+    setTelemetryError(null);
+    try {
+      const telemetry = await api.getExplainTelemetry();
+      setExplainTelemetry(telemetry);
+    } catch (err) {
+      console.error("Failed to fetch explain telemetry:", err);
+      setTelemetryError("Failed to load explain telemetry");
+    } finally {
+      setTelemetryLoading(false);
+    }
+  }, []);
+
+  const loadSystemConfig = useCallback(async () => {
+    setSystemConfigLoading(true);
+    setSystemConfigError(null);
+    try {
+      const config = await api.getSystemConfig();
+      setSystemConfig(config);
+    } catch (err) {
+      console.error("Failed to fetch system config:", err);
+      setSystemConfigError("Failed to load explain configuration");
+    } finally {
+      setSystemConfigLoading(false);
+    }
+  }, []);
+
+  const handleResetExplainTelemetry = useCallback(async () => {
+    setTelemetryResetting(true);
+    setTelemetryError(null);
+    try {
+      const telemetry = await api.resetExplainTelemetry();
+      setExplainTelemetry(telemetry);
+    } catch (err) {
+      console.error("Failed to reset explain telemetry:", err);
+      setTelemetryError("Failed to reset explain telemetry");
+    } finally {
+      setTelemetryResetting(false);
     }
   }, []);
 
@@ -76,6 +135,22 @@ export const SettingsPage: React.FC = () => {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    void loadExplainTelemetry();
+  }, [loadExplainTelemetry]);
+
+  useEffect(() => {
+    void loadSystemConfig();
+  }, [loadSystemConfig]);
+
+  const explainMode = systemConfig?.explain_configuration.mode ?? "deterministic";
+  const explainModeLabel = explainMode === "llm" ? "LLM-enabled" : "Deterministic only";
+  const explainModeDescription = explainMode === "llm"
+    ? "Finding explanations will try the configured LLM first and fall back to deterministic grounded output on invalid or unavailable responses."
+    : "Finding explanations are currently generated using deterministic grounded output only.";
+  const explainModelName = systemConfig?.explain_configuration.llm_model_name ?? "Not configured";
+  const explainEndpoint = systemConfig?.explain_configuration.llm_endpoint ?? "Not configured";
 
   const handleChange = (key: keyof SettingsPayload, value: string) => {
     setValues((prev) => ({ ...prev, [key]: value }));
@@ -120,6 +195,17 @@ export const SettingsPage: React.FC = () => {
       setTesting(false);
     }
   };
+
+  const explainResponseCounts = explainTelemetry?.explain_response_counts ?? {};
+  const totalExplainResponses = Object.values(explainResponseCounts).reduce((sum, count) => sum + count, 0);
+  const deterministicExplainResponses = explainResponseCounts.deterministic ?? 0;
+  const llmExplainResponses = explainResponseCounts.llm ?? 0;
+  const fallbackExplainResponses = explainResponseCounts.fallback ?? 0;
+  const explainLatency = explainTelemetry?.explain_latency_ms;
+  const averageExplainLatencyMs = explainLatency?.average_ms ?? 0;
+  const minExplainLatencyMs = explainLatency?.min_ms ?? 0;
+  const maxExplainLatencyMs = explainLatency?.max_ms ?? 0;
+  const lastExplainLatencyMs = explainLatency?.last_ms ?? 0;
 
   if (loading) {
     return (
@@ -545,6 +631,133 @@ export const SettingsPage: React.FC = () => {
                 )}
               </div>
             )}
+          </section>
+
+          <section className="space-y-3 border border-slate-800 rounded-lg p-3" data-testid="section-explain-config">
+            <div className="space-y-1">
+              <h2 className="font-semibold text-slate-100">Explain Configuration</h2>
+              <p className="text-xs text-slate-400">
+                Current runtime mode for grounded finding explanations and the LLM configuration they will use when enabled.
+              </p>
+            </div>
+
+            {systemConfigError && (
+              <div className="text-red-400 text-xs" data-testid="text-explain-config-error">
+                {systemConfigError}
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+              <div className="rounded border border-slate-800 bg-slate-950/60 p-3">
+                <div className="text-xs uppercase tracking-wide text-slate-400">Mode</div>
+                <div className="mt-1 text-xl font-semibold text-slate-100" data-testid="text-explain-config-mode">
+                  {systemConfigLoading ? "Loading..." : explainModeLabel}
+                </div>
+                <div className="mt-2 text-xs text-slate-400" data-testid="text-explain-config-mode-description">
+                  {systemConfigLoading ? "Loading explain configuration..." : explainModeDescription}
+                </div>
+              </div>
+              <div className="rounded border border-slate-800 bg-slate-950/60 p-3">
+                <div className="text-xs uppercase tracking-wide text-slate-400">LLM model</div>
+                <div className="mt-1 text-sm font-medium text-slate-100 break-all" data-testid="text-explain-config-model">
+                  {systemConfigLoading ? "Loading..." : explainModelName}
+                </div>
+              </div>
+              <div className="rounded border border-slate-800 bg-slate-950/60 p-3">
+                <div className="text-xs uppercase tracking-wide text-slate-400">LLM endpoint</div>
+                <div className="mt-1 text-sm font-medium text-slate-100 break-all" data-testid="text-explain-config-endpoint">
+                  {systemConfigLoading ? "Loading..." : explainEndpoint}
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section className="space-y-3 border border-slate-800 rounded-lg p-3" data-testid="section-explain-telemetry">
+            <div className="flex items-start justify-between gap-3">
+              <div className="space-y-1">
+                <h2 className="font-semibold text-slate-100">Explain Telemetry</h2>
+                <p className="text-xs text-slate-400">
+                  Process-local counters and latency summaries for grounded explanation responses. These values reset when the API process restarts.
+                </p>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={loadExplainTelemetry}
+                  disabled={telemetryLoading || telemetryResetting}
+                  className="rounded bg-slate-700 px-3 py-1 text-xs font-medium hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                  data-testid="btn-refresh-explain-telemetry"
+                >
+                  {telemetryLoading ? "Refreshing..." : "Refresh Telemetry"}
+                </button>
+                <button
+                  type="button"
+                  onClick={handleResetExplainTelemetry}
+                  disabled={telemetryLoading || telemetryResetting}
+                  className="rounded border border-amber-700 bg-amber-950/40 px-3 py-1 text-xs font-medium text-amber-200 hover:bg-amber-900/40 disabled:opacity-50 disabled:cursor-not-allowed"
+                  data-testid="btn-reset-explain-telemetry"
+                >
+                  {telemetryResetting ? "Resetting..." : "Reset Counters"}
+                </button>
+              </div>
+            </div>
+
+            {telemetryError && (
+              <div className="text-red-400 text-xs" data-testid="text-explain-telemetry-error">
+                {telemetryError}
+              </div>
+            )}
+
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-sm">
+              <div className="rounded border border-slate-800 bg-slate-950/60 p-3">
+                <div className="text-xs uppercase tracking-wide text-slate-400">Total responses</div>
+                <div className="mt-1 text-xl font-semibold text-slate-100" data-testid="text-explain-telemetry-total">
+                  {totalExplainResponses}
+                </div>
+              </div>
+              <div className="rounded border border-slate-800 bg-slate-950/60 p-3">
+                <div className="text-xs uppercase tracking-wide text-slate-400">Deterministic</div>
+                <div className="mt-1 text-xl font-semibold text-slate-100" data-testid="text-explain-telemetry-deterministic">
+                  {deterministicExplainResponses}
+                </div>
+              </div>
+              <div className="rounded border border-slate-800 bg-slate-950/60 p-3">
+                <div className="text-xs uppercase tracking-wide text-slate-400">LLM</div>
+                <div className="mt-1 text-xl font-semibold text-slate-100" data-testid="text-explain-telemetry-llm">
+                  {llmExplainResponses}
+                </div>
+              </div>
+              <div className="rounded border border-slate-800 bg-slate-950/60 p-3">
+                <div className="text-xs uppercase tracking-wide text-slate-400">Fallback</div>
+                <div className="mt-1 text-xl font-semibold text-slate-100" data-testid="text-explain-telemetry-fallback">
+                  {fallbackExplainResponses}
+                </div>
+              </div>
+              <div className="rounded border border-slate-800 bg-slate-950/60 p-3">
+                <div className="text-xs uppercase tracking-wide text-slate-400">Average latency</div>
+                <div className="mt-1 text-xl font-semibold text-slate-100" data-testid="text-explain-telemetry-average-ms">
+                  {formatDurationMs(averageExplainLatencyMs)}
+                </div>
+              </div>
+              <div className="rounded border border-slate-800 bg-slate-950/60 p-3">
+                <div className="text-xs uppercase tracking-wide text-slate-400">Last response</div>
+                <div className="mt-1 text-xl font-semibold text-slate-100" data-testid="text-explain-telemetry-last-ms">
+                  {formatDurationMs(lastExplainLatencyMs)}
+                </div>
+              </div>
+              <div className="rounded border border-slate-800 bg-slate-950/60 p-3">
+                <div className="text-xs uppercase tracking-wide text-slate-400">Fastest response</div>
+                <div className="mt-1 text-xl font-semibold text-slate-100" data-testid="text-explain-telemetry-min-ms">
+                  {formatDurationMs(minExplainLatencyMs)}
+                </div>
+              </div>
+              <div className="rounded border border-slate-800 bg-slate-950/60 p-3">
+                <div className="text-xs uppercase tracking-wide text-slate-400">Slowest response</div>
+                <div className="mt-1 text-xl font-semibold text-slate-100" data-testid="text-explain-telemetry-max-ms">
+                  {formatDurationMs(maxExplainLatencyMs)}
+                </div>
+              </div>
+            </div>
           </section>
 
           {/* Security Onion Settings */}

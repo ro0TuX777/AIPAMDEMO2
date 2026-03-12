@@ -9,6 +9,7 @@ def jobresult_to_markdown(
     result: JobResult,
     findings: Optional[Sequence[Any]] = None,
     evidence: Optional[Sequence[Any]] = None,
+    extracted_files: Optional[Sequence[Any]] = None,
 ) -> str:
     lines: List[str] = []
     lines.append("# AIPAM Analysis Report")
@@ -141,6 +142,36 @@ def jobresult_to_markdown(
         lines.append(f"- **Notices**: {len(bzar_notices)}")
         lines.append("")
 
+    # File Triage section
+    file_list = [_as_dict(f) for f in (extracted_files or [])]
+    if file_list:
+        lines.append("## File Triage")
+        suspicious_files = [f for f in file_list if f.get("mime") in (
+            "application/x-dosexec", "application/x-elf", "application/x-mach-binary",
+            "application/x-ole-storage", "text/javascript",
+        ) or f.get("yara_matches")]
+        safe_files = [f for f in file_list if f not in suspicious_files]
+
+        if suspicious_files:
+            lines.append(f"### ⚠ Suspicious Files ({len(suspicious_files)})")
+            for f in suspicious_files:
+                sha = _safe_str(f.get("sha256", ""))[:16]
+                mime = _safe_str(f.get("mime", "unknown"))
+                size = f.get("size_bytes", 0)
+                yara = f.get("yara_matches") or []
+                lines.append(f"- **{_safe_str(f.get('filename', 'unknown'))}** — {mime}, {size:,} bytes, sha256=`{sha}...`")
+                if yara:
+                    lines.append(f"  - YARA matches: {', '.join(yara)}")
+            lines.append("")
+
+        lines.append(f"### All Extracted Files ({len(file_list)})")
+        for f in file_list:
+            sha = _safe_str(f.get("sha256", ""))[:16]
+            mime = _safe_str(f.get("mime", "unknown"))
+            size = f.get("size_bytes", 0)
+            lines.append(f"- `{_safe_str(f.get('filename', 'unknown'))}` — {mime}, {size:,} bytes, sha256=`{sha}...`")
+        lines.append("")
+
     if evidence_by_flow:
         lines.append("## Evidence Index (Flows)")
         for flow_id, items in evidence_by_flow.items():
@@ -160,6 +191,7 @@ def jobresult_to_html(
     result: JobResult,
     findings: Optional[Sequence[Any]] = None,
     evidence: Optional[Sequence[Any]] = None,
+    extracted_files: Optional[Sequence[Any]] = None,
 ) -> str:
     """Generate a styled HTML report from the JobResult."""
     bzar = result.raw.get("bzar") if isinstance(result.raw, dict) else None
@@ -529,6 +561,11 @@ def jobresult_to_html(
         </div>
 
         <div class="section">
+            <h2 class="section-title">File Triage</h2>
+            {_generate_file_triage_html(extracted_files)}
+        </div>
+
+        <div class="section">
             <h2 class="section-title">Forensic Evidence & Anomalies</h2>
             <ul class="findings-list">
                 {_generate_anomalies_html(result)}
@@ -555,6 +592,47 @@ def jobresult_to_html(
     </div>
 </body>
 </html>'''
+
+
+
+def _generate_file_triage_html(extracted_files: Optional[Sequence[Any]] = None) -> str:
+    """Generate HTML table for extracted file triage."""
+    file_list = [_as_dict(f) for f in (extracted_files or [])]
+    if not file_list:
+        return '<div class="empty">No extracted files found. Enable Zeek file extraction to populate this section.</div>'
+
+    _SUSPICIOUS_MIMES = {
+        "application/x-dosexec", "application/x-elf", "application/x-mach-binary",
+        "application/x-ole-storage", "text/javascript",
+    }
+
+    rows = ""
+    for f in file_list:
+        fname = _escape_html(_safe_str(f.get("filename", "unknown")))
+        mime = _escape_html(_safe_str(f.get("mime", "unknown")))
+        size = f.get("size_bytes", 0)
+        sha = _safe_str(f.get("sha256", ""))[:16]
+        yara = f.get("yara_matches") or []
+        is_suspicious = mime in _SUSPICIOUS_MIMES or bool(yara)
+        badge = '<span style="color:#ef4444;font-weight:600;">⚠ SUSPICIOUS</span>' if is_suspicious else '<span style="color:#22c55e;">clean</span>'
+        yara_str = _escape_html(", ".join(yara)) if yara else "—"
+        rows += f"""<tr style="{'background:rgba(239,68,68,0.08);' if is_suspicious else ''}">
+            <td>{fname}</td><td>{mime}</td><td>{size:,}</td>
+            <td><code>{sha}…</code></td><td>{yara_str}</td><td>{badge}</td>
+        </tr>\n"""
+
+    return f"""
+    <div style="overflow-x:auto;">
+        <table style="width:100%;border-collapse:collapse;font-size:0.85rem;">
+            <thead><tr style="border-bottom:1px solid #334155;text-align:left;">
+                <th style="padding:0.4rem;">Filename</th><th style="padding:0.4rem;">MIME Type</th>
+                <th style="padding:0.4rem;">Size</th><th style="padding:0.4rem;">SHA-256 (prefix)</th>
+                <th style="padding:0.4rem;">YARA</th><th style="padding:0.4rem;">Status</th>
+            </tr></thead>
+            <tbody>{rows}</tbody>
+        </table>
+    </div>
+    """
 
 
 def _generate_anomalies_html(result: JobResult) -> str:

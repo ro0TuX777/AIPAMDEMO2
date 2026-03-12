@@ -328,7 +328,7 @@ class LLMClient:
 
         if config is None:
             endpoint = os.getenv("LLM_ENDPOINT", "http://localhost:11434/v1/chat/completions")
-            model = os.getenv("LLM_MODEL_NAME", "aipam-cybersec-llm")
+            model = os.getenv("LLM_MODEL_NAME", "aipam-trafficllm-v8")
             temperature = float(os.getenv("LLM_TEMPERATURE", "0.1"))
             max_tokens = int(os.getenv("LLM_MAX_TOKENS", "2000"))
             timeout_seconds = float(os.getenv("LLM_TIMEOUT_SECONDS", "600"))
@@ -549,13 +549,24 @@ class LLMClient:
 
             port_val = dst_ports[0] if dst_ports else 0
 
-            # Mock a technical string if raw data is missing
+        # Mock a technical string if raw data is missing
             parts.append(f"ip.src: {src_ip}, ip.dst: {dst_ip}, tcp.dstport: {port_val}, ip.proto: 6, frame.len: {total_bytes}")
 
-        return "\n".join(parts)
+        # Extract info for behavior hints
+        all_ports = set()
+        all_domains = []
+        host_summaries = self._get_v(bundle, "host_summaries", [])
+        if isinstance(host_summaries, list):
+            for h in host_summaries:
+                ports = self._get_v(h, "dst_ports", [])
+                if isinstance(ports, list):
+                    all_ports.update(ports)
+                domains = self._get_v(h, "domains", [])
+                if isinstance(domains, list):
+                    all_domains.extend(domains)
 
         # Extract from trafficllm_results if available
-        trafficllm = bundle.get("trafficllm_results", {})
+        trafficllm = self._get_v(bundle, "trafficllm_results", {})
         if trafficllm and isinstance(trafficllm, dict):
             malware_types = trafficllm.get("malware_types", [])
             botnet_types = trafficllm.get("botnet_types", [])
@@ -566,7 +577,7 @@ class LLMClient:
                 parts.append(f"detected_botnet: {btype}")
 
         # Extract from change_summaries (behavioral changes)
-        changes = bundle.get("change_summaries", [])
+        changes = self._get_v(bundle, "change_summaries", [])
         for change in changes[:5]:
             if isinstance(change, dict):
                 host_ip = change.get("host_ip", "")
@@ -1756,6 +1767,8 @@ Provide your findings in a structured JSON format with this exact structure:
             "temperature": temperature if temperature is not None else self.config.temperature,
             "max_tokens": self.config.max_tokens,
             "messages": messages,
+            # Ollama-specific: shrink context window for faster inference
+            "options": {"num_ctx": 4096},
         }
 
         try:
@@ -1770,6 +1783,46 @@ Provide your findings in a structured JSON format with this exact structure:
             raise RuntimeError(f"LLM request failed: {e}")
         except (KeyError, IndexError) as e:
             raise RuntimeError(f"Unexpected LLM response format: {e}")
+
+    async def chat_completion_stream(
+        self, messages: List[Dict[str, str]], temperature: Optional[float] = None
+    ):
+        """Stream chat completion tokens from Ollama (OpenAI-compatible SSE).
+
+        Yields:
+            str: Individual token chunks as they are generated.
+        """
+        payload = {
+            "model": self.config.model,
+            "temperature": temperature if temperature is not None else self.config.temperature,
+            "max_tokens": self.config.max_tokens,
+            "messages": messages,
+            "stream": True,
+            "options": {"num_ctx": 4096},
+        }
+
+        try:
+            async with httpx.AsyncClient(timeout=self.config.timeout_seconds) as client:
+                async with client.stream(
+                    "POST", self.config.endpoint, json=payload
+                ) as resp:
+                    resp.raise_for_status()
+                    async for line in resp.aiter_lines():
+                        if not line.startswith("data: "):
+                            continue
+                        data_str = line[len("data: "):]
+                        if data_str.strip() == "[DONE]":
+                            break
+                        try:
+                            chunk = json.loads(data_str)
+                            delta = chunk.get("choices", [{}])[0].get("delta", {})
+                            token = delta.get("content", "")
+                            if token:
+                                yield token
+                        except (json.JSONDecodeError, KeyError, IndexError):
+                            continue
+        except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPStatusError) as e:
+            raise RuntimeError(f"LLM streaming request failed: {e}")
 
 
 async def analyze_chunks(
@@ -1869,7 +1922,7 @@ async def classify_traffic_with_trafficllm(
 
 def create_dual_llm_client(
     ollama_endpoint: str = "http://ollama:11434/v1/chat/completions",
-    ollama_model: str = "aipam-cybersec-llm",
+    ollama_model: str = "aipam-trafficllm-v8",
     trafficllm_endpoint: Optional[str] = "http://trafficllm:8001/v1/chat/completions",
     use_trafficllm_for_detection: bool = True,
 ) -> LLMClient:
