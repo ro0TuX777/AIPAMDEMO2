@@ -20,6 +20,7 @@ class Finding(Base):
     evidence_json = Column(Text, nullable=True)
     pcap_label = Column(String, nullable=True)  # which PCAP generated this finding
     feedback = Column(String, nullable=True)    # confirmed, false_positive, false_negative
+    explanation_feedback = Column(String, nullable=True)  # useful, not_useful
 
     __table_args__ = (
         UniqueConstraint("job_id", "finding_id"),

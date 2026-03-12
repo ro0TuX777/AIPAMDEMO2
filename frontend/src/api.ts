@@ -462,6 +462,8 @@ export interface FindingItem {
   feedback?: "confirmed" | "false_positive" | "false_negative" | null;
 }
 
+export type FindingExplainFeedback = "useful" | "not_useful";
+
 export interface FindingListResponse {
   schema_version: string;
   items: FindingItem[];
@@ -472,10 +474,35 @@ export interface FindingExplainRequest {
   format: "markdown" | "text";
 }
 
+export interface FindingExplainSection {
+  id: "assessment" | "why_it_matters" | "recommended_next_steps";
+  title: string;
+  body?: string | null;
+  bullets: string[];
+  citations: string[];
+}
+
+export interface FindingExplainEvidenceItem {
+  label: string;
+  value: string;
+  citation: string;
+}
+
 export interface FindingExplainResponse {
   schema_version: string;
   format: "markdown" | "text";
   content: string;
+  duration_ms: number;
+  source: "deterministic" | "llm" | "fallback";
+  warning?: string | null;
+  explanation_feedback?: FindingExplainFeedback | null;
+  sections: FindingExplainSection[];
+  evidence_items: FindingExplainEvidenceItem[];
+}
+
+export interface FindingExplainFeedbackResponse {
+  schema_version: string;
+  explanation_feedback: FindingExplainFeedback | null;
 }
 
 // ─── IOCs ───────────────────────────────────────────────────────────────────
@@ -581,6 +608,12 @@ export interface SystemConfigResponse {
     max_extracted_bytes?: number;
     max_job_disk_bytes?: number;
   };
+  explain_configuration: {
+    mode: "deterministic" | "llm";
+    llm_enabled: boolean;
+    llm_model_name?: string | null;
+    llm_endpoint?: string | null;
+  };
 }
 
 export interface HealthResponse {
@@ -593,6 +626,20 @@ export interface HealthResponse {
   current_job_id?: string | null;
   last_job_id?: string | null;
   last_job_status?: JobStatus;
+}
+
+export interface ExplainLatencySummary {
+  count: number;
+  average_ms: number;
+  min_ms: number;
+  max_ms: number;
+  last_ms: number;
+}
+
+export interface ExplainTelemetryResponse {
+  schema_version: string;
+  explain_response_counts: Record<string, number>;
+  explain_latency_ms: ExplainLatencySummary;
 }
 
 // ─── SSE Events ─────────────────────────────────────────────────────────────
@@ -834,6 +881,12 @@ export const api = {
   updateFindingFeedback(jobId: string, finding_id: string, feedback: string | null) {
     return patch<FindingItem>(`/jobs/${jobId}/findings/${finding_id}/feedback`, { feedback });
   },
+  updateFindingExplainFeedback(jobId: string, finding_id: string, explanation_feedback: FindingExplainFeedback | null) {
+    return patch<FindingExplainFeedbackResponse>(
+      `/jobs/${jobId}/findings/${finding_id}/explain/feedback`,
+      { explanation_feedback },
+    );
+  },
   validateUpload(uploadId: string): Promise<UploadValidateResponse> {
     return post<UploadValidateResponse>(`/uploads/${uploadId}/validate`);
   },
@@ -978,6 +1031,12 @@ export const api = {
   // ── System ─────────────────────────────────────────────────────────────
   getHealth(): Promise<HealthResponse> { return get<HealthResponse>("/health"); },
   getSystemConfig(): Promise<SystemConfigResponse> { return get<SystemConfigResponse>("/system/config"); },
+  getExplainTelemetry(): Promise<ExplainTelemetryResponse> {
+    return get<ExplainTelemetryResponse>("/system/explain-telemetry");
+  },
+  resetExplainTelemetry(): Promise<ExplainTelemetryResponse> {
+    return post<ExplainTelemetryResponse>("/system/explain-telemetry/reset");
+  },
 
   // ── SSE ────────────────────────────────────────────────────────────────
   /** Create an EventSource for job progress. Caller is responsible for closing it. */

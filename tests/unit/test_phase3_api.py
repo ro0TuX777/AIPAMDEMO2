@@ -12,10 +12,26 @@ Covers:
 import json
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 
 AUTH = {"Authorization": "Bearer test-token-v2"}
+_EXPLAIN_GOLDEN_FIXTURES_PATH = Path(__file__).parent.parent / "fixtures" / "golden" / "expected_explanations.json"
+
+
+def _load_explain_golden_cases():
+    return json.loads(_EXPLAIN_GOLDEN_FIXTURES_PATH.read_text())["cases"]
+
+
+def _section_snapshot(section: dict) -> dict:
+    return {
+        "id": section["id"],
+        "title": section["title"],
+        "body": section.get("body"),
+        "bullets": list(section.get("bullets", [])),
+        "citations": list(section.get("citations", [])),
+    }
 
 
 def _uuid():
@@ -385,6 +401,595 @@ class TestFindingsEndpoints:
         assert r.status_code == 200
         assert len(r.json()["items"]) == 1
         assert r.json()["items"][0]["pcap_label"] == "capture-b"
+
+    def test_explain_finding_returns_grounded_markdown_with_evidence(self, app_client):
+        client, db = app_client
+        job = _seed_job(db)
+        f = _seed_finding(
+            db,
+            job.job_id,
+            title="ET MALWARE AlphaCrypt CnC Beacon 5",
+            summary="Alert fired multiple times for suspicious outbound traffic.",
+            category="alert_group",
+            pcap_label="capture-a",
+            evidence_json=json.dumps({
+                "alert_count": 4,
+                "affected_hosts": ["192.168.122.249", "79.96.20.98"],
+                "sample_ts": "2026-03-11T10:15:00Z",
+            }),
+        )
+
+        r = client.post(
+            f"/api/v1/jobs/{job.job_id}/findings/{f.finding_id}/explain",
+            headers=AUTH, json={"format": "markdown"},
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["format"] == "markdown"
+        assert body["duration_ms"] >= 0
+        assert body["source"] == "deterministic"
+        assert body["warning"] is None
+        assert body["explanation_feedback"] is None
+        assert [section["id"] for section in body["sections"]] == [
+            "assessment",
+            "why_it_matters",
+            "recommended_next_steps",
+        ]
+        assert body["sections"][0]["title"] == "Assessment"
+        assert body["sections"][0]["citations"] == [
+            "finding.severity",
+            "finding.sensor",
+            "finding.category",
+            "finding.summary",
+        ]
+        assert body["sections"][1]["citations"] == [
+            "finding.evidence.alert_count",
+            "finding.evidence.affected_hosts",
+        ]
+        assert body["sections"][2]["citations"] == [
+            "finding.evidence.affected_hosts",
+            "finding.evidence.sample_ts",
+            "finding.evidence.alert_count",
+            "finding.pcap_label",
+        ]
+        assert body["sections"][2]["bullets"]
+        assert body["evidence_items"] == [
+            {
+                "label": "Alert count",
+                "value": "4",
+                "citation": "finding.evidence.alert_count",
+            },
+            {
+                "label": "Affected hosts",
+                "value": "192.168.122.249, 79.96.20.98",
+                "citation": "finding.evidence.affected_hosts",
+            },
+            {
+                "label": "Sample ts",
+                "value": "2026-03-11T10:15:00Z",
+                "citation": "finding.evidence.sample_ts",
+            },
+        ]
+        assert body["content"].startswith("# ET MALWARE AlphaCrypt CnC Beacon 5")
+        assert "## Assessment" in body["content"]
+        assert "## Supporting evidence" in body["content"]
+        assert "Alert count: 4" in body["content"]
+        assert "Affected hosts: 192.168.122.249, 79.96.20.98" in body["content"]
+        assert "capture-a" in body["content"]
+
+    def test_explain_finding_text_format(self, app_client):
+        client, db = app_client
+        job = _seed_job(db)
+        f = _seed_finding(
+            db,
+            job.job_id,
+            sensor="capa",
+            severity="medium",
+            title="Suspicious PE capability cluster",
+            summary="Capability overlap suggests staged execution behavior.",
+        )
+
+        r = client.post(
+            f"/api/v1/jobs/{job.job_id}/findings/{f.finding_id}/explain",
+            headers=AUTH, json={"format": "text"},
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["format"] == "text"
+        assert body["source"] == "deterministic"
+        assert len(body["sections"]) == 3
+        assert body["sections"][0]["citations"] == ["finding.severity", "finding.sensor", "finding.summary"]
+        assert body["sections"][1]["citations"] == ["finding.summary"]
+        assert body["sections"][2]["citations"] == ["finding.title"]
+        assert body["evidence_items"] == []
+        assert body["content"].startswith("Finding: Suspicious PE capability cluster")
+        assert "Assessment:" in body["content"]
+        assert "Supporting evidence:" in body["content"]
+
+    def test_explain_finding_uses_llm_when_enabled(self, app_client, monkeypatch):
+        from backend.app.api import findings as findings_api
+
+        client, db = app_client
+        job = _seed_job(db)
+        f = _seed_finding(db, job.job_id, title="LLM-backed finding")
+
+        class _FakeClient:
+            async def chat_completion(self, messages, temperature=None):
+                return json.dumps({
+                    "assessment": "This is an LLM-grounded assessment based on the saved finding bundle.",
+                    "why_it_matters": "The evidence suggests suspicious behavior that merits analyst review.",
+                    "recommended_next_steps": [
+                        "Review correlated job telemetry for the same time window.",
+                        "Inspect the hosts referenced by the finding for follow-on activity.",
+                    ],
+                })
+
+        monkeypatch.setenv("AIPAM_EXPLAIN_FINDING_USE_LLM", "1")
+        monkeypatch.setattr(findings_api, "_make_llm_client", lambda settings: _FakeClient())
+
+        r = client.post(
+            f"/api/v1/jobs/{job.job_id}/findings/{f.finding_id}/explain",
+            headers=AUTH, json={"format": "markdown"},
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["source"] == "llm"
+        assert body["warning"] is None
+        assert len(body["sections"]) == 3
+        assert body["evidence_items"] == []
+        assert body["sections"][0]["body"] == "This is an LLM-grounded assessment based on the saved finding bundle."
+        assert body["sections"][0]["citations"] == ["finding.severity", "finding.sensor", "finding.summary"]
+        assert body["sections"][1]["body"] == "The evidence suggests suspicious behavior that merits analyst review."
+        assert body["sections"][1]["citations"] == ["finding.summary"]
+        assert body["sections"][2]["bullets"] == [
+            "Review correlated job telemetry for the same time window.",
+            "Inspect the hosts referenced by the finding for follow-on activity.",
+        ]
+        assert body["sections"][2]["citations"] == ["finding.title"]
+        assert "## Assessment" in body["content"]
+        assert "This is an LLM-grounded assessment based on the saved finding bundle." in body["content"]
+
+    def test_explain_finding_uses_validated_llm_section_citations_when_provided(self, app_client, monkeypatch):
+        from backend.app.api import findings as findings_api
+
+        client, db = app_client
+        job = _seed_job(db)
+        f = _seed_finding(
+            db,
+            job.job_id,
+            title="LLM-cited finding",
+            pcap_label="capture-llm",
+            evidence_json=json.dumps({
+                "affected_hosts": ["10.10.10.10"],
+                "sample_ts": "2026-03-12T12:00:00Z",
+            }),
+        )
+
+        class _FakeClient:
+            async def chat_completion(self, messages, temperature=None):
+                return json.dumps({
+                    "assessment": "This explanation stays within the stored finding bundle.",
+                    "why_it_matters": "The recorded host and timestamp provide concrete pivot points.",
+                    "recommended_next_steps": [
+                        "Pivot into the affected host for surrounding activity.",
+                        "Use the capture label and timestamp to inspect nearby traffic.",
+                    ],
+                    "section_citations": {
+                        "assessment": ["finding.summary", "finding.sensor"],
+                        "why_it_matters": ["finding.evidence.affected_hosts"],
+                        "recommended_next_steps": ["finding.pcap_label", "finding.evidence.sample_ts"],
+                    },
+                })
+
+        monkeypatch.setenv("AIPAM_EXPLAIN_FINDING_USE_LLM", "1")
+        monkeypatch.setattr(findings_api, "_make_llm_client", lambda settings: _FakeClient())
+
+        r = client.post(
+            f"/api/v1/jobs/{job.job_id}/findings/{f.finding_id}/explain",
+            headers=AUTH, json={"format": "markdown"},
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["source"] == "llm"
+        assert body["warning"] is None
+        assert body["sections"][0]["citations"] == ["finding.summary", "finding.sensor"]
+        assert body["sections"][1]["citations"] == ["finding.evidence.affected_hosts"]
+        assert body["sections"][2]["citations"] == ["finding.pcap_label", "finding.evidence.sample_ts"]
+
+    def test_explain_finding_llm_prompt_budgets_large_evidence_payload(self, app_client, monkeypatch):
+        from backend.app.api import findings as findings_api
+
+        client, db = app_client
+        job = _seed_job(db)
+        finding = _seed_finding(
+            db,
+            job.job_id,
+            title="Budgeted prompt finding",
+            evidence_json=json.dumps({
+                "alpha": 1,
+                "bravo": 2,
+                "charlie": 3,
+                "delta": 4,
+                "echo": 5,
+                "foxtrot": 6,
+                "golf": 7,
+            }),
+        )
+        captured_prompt = {"text": None}
+
+        class _FakeClient:
+            async def chat_completion(self, messages, temperature=None):
+                captured_prompt["text"] = "\n\n".join(message["content"] for message in messages)
+                return json.dumps({
+                    "assessment": "Bounded prompt produced a valid explanation.",
+                    "why_it_matters": "The listed evidence preview is sufficient for a concise explanation.",
+                    "recommended_next_steps": ["Review the surfaced evidence preview."],
+                })
+
+        monkeypatch.setenv("AIPAM_EXPLAIN_FINDING_USE_LLM", "1")
+        monkeypatch.setattr(findings_api, "_make_llm_client", lambda settings: _FakeClient())
+
+        r = client.post(
+            f"/api/v1/jobs/{job.job_id}/findings/{finding.finding_id}/explain",
+            headers=AUTH,
+            json={"format": "markdown"},
+        )
+        assert r.status_code == 200
+        assert r.json()["source"] == "llm"
+        assert captured_prompt["text"] is not None
+        assert "- Alpha: 1 (citation: finding.evidence.alpha)" in captured_prompt["text"]
+        assert "- Echo: 5 (citation: finding.evidence.echo)" in captured_prompt["text"]
+        assert "Additional evidence fields omitted from prompt: 2" in captured_prompt["text"]
+        assert "Base the explanation only on the listed evidence and metadata." in captured_prompt["text"]
+        assert "- Foxtrot: 6 (citation: finding.evidence.foxtrot)" not in captured_prompt["text"]
+        assert "- Golf: 7 (citation: finding.evidence.golf)" not in captured_prompt["text"]
+
+    def test_explain_finding_falls_back_when_llm_returns_invalid_citations(self, app_client, monkeypatch):
+        from backend.app.api import findings as findings_api
+
+        client, db = app_client
+        job = _seed_job(db)
+        f = _seed_finding(
+            db,
+            job.job_id,
+            title="Invalid citation finding",
+            evidence_json=json.dumps({"alert_count": 2}),
+        )
+
+        class _FakeClient:
+            async def chat_completion(self, messages, temperature=None):
+                return json.dumps({
+                    "assessment": "Assessment from model.",
+                    "why_it_matters": "Why this matters from model.",
+                    "recommended_next_steps": ["Review the related alerts."],
+                    "section_citations": {
+                        "assessment": ["finding.summary"],
+                        "why_it_matters": ["finding.evidence.nonexistent"],
+                        "recommended_next_steps": ["finding.title"],
+                    },
+                })
+
+        monkeypatch.setenv("AIPAM_EXPLAIN_FINDING_USE_LLM", "1")
+        monkeypatch.setattr(findings_api, "_make_llm_client", lambda settings: _FakeClient())
+
+        r = client.post(
+            f"/api/v1/jobs/{job.job_id}/findings/{f.finding_id}/explain",
+            headers=AUTH, json={"format": "markdown"},
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["source"] == "fallback"
+        assert "invalid structured content" in body["warning"]
+        assert body["sections"][0]["citations"] == ["finding.severity", "finding.sensor", "finding.summary"]
+        assert body["sections"][1]["citations"] == ["finding.evidence.alert_count"]
+
+    def test_explain_finding_falls_back_when_llm_returns_invalid_structure(self, app_client, monkeypatch):
+        from backend.app.api import findings as findings_api
+
+        client, db = app_client
+        job = _seed_job(db)
+        f = _seed_finding(db, job.job_id, title="Invalid structured finding")
+
+        class _FakeClient:
+            async def chat_completion(self, messages, temperature=None):
+                return '{"assessment": "Only one field"}'
+
+        monkeypatch.setenv("AIPAM_EXPLAIN_FINDING_USE_LLM", "1")
+        monkeypatch.setattr(findings_api, "_make_llm_client", lambda settings: _FakeClient())
+
+        r = client.post(
+            f"/api/v1/jobs/{job.job_id}/findings/{f.finding_id}/explain",
+            headers=AUTH, json={"format": "markdown"},
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["source"] == "fallback"
+        assert "invalid structured content" in body["warning"]
+        assert body["sections"][0]["title"] == "Assessment"
+        assert body["sections"][0]["citations"] == ["finding.severity", "finding.sensor", "finding.summary"]
+        assert body["content"].startswith("# Invalid structured finding")
+
+    def test_explain_finding_falls_back_when_llm_errors(self, app_client, monkeypatch):
+        from backend.app.api import findings as findings_api
+
+        client, db = app_client
+        job = _seed_job(db)
+        f = _seed_finding(db, job.job_id, title="Fallback finding")
+
+        class _BrokenClient:
+            async def chat_completion(self, messages, temperature=None):
+                raise RuntimeError("backend unavailable")
+
+        monkeypatch.setenv("AIPAM_EXPLAIN_FINDING_USE_LLM", "1")
+        monkeypatch.setattr(findings_api, "_make_llm_client", lambda settings: _BrokenClient())
+
+        r = client.post(
+            f"/api/v1/jobs/{job.job_id}/findings/{f.finding_id}/explain",
+            headers=AUTH, json={"format": "markdown"},
+        )
+        assert r.status_code == 200
+        body = r.json()
+        assert body["source"] == "fallback"
+        assert "deterministic grounded explanation" in body["warning"]
+        assert len(body["sections"]) == 3
+        assert body["sections"][1]["citations"] == ["finding.summary"]
+        assert body["content"].startswith("# Fallback finding")
+
+    def test_explain_finding_not_found(self, app_client):
+        client, db = app_client
+        job = _seed_job(db)
+
+        r = client.post(
+            f"/api/v1/jobs/{job.job_id}/findings/{_uuid()}/explain",
+            headers=AUTH, json={"format": "markdown"},
+        )
+        assert r.status_code == 404
+
+    def test_update_explain_feedback_persists_for_explain_response(self, app_client):
+        client, db = app_client
+        job = _seed_job(db)
+        f = _seed_finding(db, job.job_id, title="Feedback-enabled finding")
+
+        r = client.patch(
+            f"/api/v1/jobs/{job.job_id}/findings/{f.finding_id}/explain/feedback",
+            headers=AUTH,
+            json={"explanation_feedback": "useful"},
+        )
+        assert r.status_code == 200
+        assert r.json()["explanation_feedback"] == "useful"
+
+        r = client.post(
+            f"/api/v1/jobs/{job.job_id}/findings/{f.finding_id}/explain",
+            headers=AUTH,
+            json={"format": "markdown"},
+        )
+        assert r.status_code == 200
+        assert r.json()["explanation_feedback"] == "useful"
+
+        r = client.patch(
+            f"/api/v1/jobs/{job.job_id}/findings/{f.finding_id}/explain/feedback",
+            headers=AUTH,
+            json={"explanation_feedback": None},
+        )
+        assert r.status_code == 200
+        assert r.json()["explanation_feedback"] is None
+
+    def test_update_explain_feedback_not_found(self, app_client):
+        client, db = app_client
+        job = _seed_job(db)
+
+        r = client.patch(
+            f"/api/v1/jobs/{job.job_id}/findings/{_uuid()}/explain/feedback",
+            headers=AUTH,
+            json={"explanation_feedback": "not_useful"},
+        )
+        assert r.status_code == 404
+
+    @pytest.mark.parametrize(
+        "case",
+        _load_explain_golden_cases(),
+        ids=lambda case: case["name"],
+    )
+    def test_explain_finding_matches_golden_fixture(self, app_client, monkeypatch, case):
+        from backend.app.api import findings as findings_api
+
+        client, db = app_client
+        job = _seed_job(db)
+        finding = _seed_finding(db, job.job_id, **case["finding"])
+        captured_prompt = {"text": None}
+
+        llm_response = case.get("llm_response")
+        if llm_response is not None:
+            class _FakeClient:
+                async def chat_completion(self, messages, temperature=None):
+                    captured_prompt["text"] = "\n\n".join(message["content"] for message in messages)
+                    return json.dumps(llm_response)
+
+            monkeypatch.setenv("AIPAM_EXPLAIN_FINDING_USE_LLM", "1")
+            monkeypatch.setattr(findings_api, "_make_llm_client", lambda settings: _FakeClient())
+        else:
+            monkeypatch.delenv("AIPAM_EXPLAIN_FINDING_USE_LLM", raising=False)
+
+        r = client.post(
+            f"/api/v1/jobs/{job.job_id}/findings/{finding.finding_id}/explain",
+            headers=AUTH,
+            json=case["request"],
+        )
+        assert r.status_code == 200
+
+        body = r.json()
+        expected = case["expected"]
+        assert body["format"] == case["request"]["format"]
+        assert body["source"] == expected["source"]
+        if expected["warning_contains"] is None:
+            assert body["warning"] is None
+        else:
+            assert expected["warning_contains"] in body["warning"]
+        assert [_section_snapshot(section) for section in body["sections"]] == expected["sections"]
+        assert body["evidence_items"] == expected["evidence_items"]
+        if expected.get("content_startswith"):
+            assert body["content"].startswith(expected["content_startswith"])
+        for snippet in expected.get("content_contains", []):
+            assert snippet in body["content"]
+        for snippet in case.get("prompt_contains", []):
+            assert captured_prompt["text"] is not None
+            assert snippet in captured_prompt["text"]
+
+
+class TestSystemTelemetry:
+    def test_system_config_includes_explain_configuration(self, app_client, monkeypatch):
+        client, db = app_client
+        monkeypatch.setenv("AIPAM_EXPLAIN_FINDING_USE_LLM", "1")
+        monkeypatch.setenv("LLM_MODEL_NAME", "demo-model:latest")
+        monkeypatch.setenv("LLM_ENDPOINT", "http://ollama.internal/v1/chat/completions")
+
+        r = client.get("/api/v1/system/config", headers=AUTH)
+        assert r.status_code == 200
+        assert r.json()["explain_configuration"] == {
+            "mode": "llm",
+            "llm_enabled": True,
+            "llm_model_name": "demo-model:latest",
+            "llm_endpoint": "http://ollama.internal/v1/chat/completions",
+        }
+
+    def test_explain_telemetry_endpoint_returns_counts(self, app_client):
+        from backend.app.api._state import reset_explain_response_counts
+
+        client, db = app_client
+        reset_explain_response_counts()
+
+        r = client.get("/api/v1/system/explain-telemetry", headers=AUTH)
+        assert r.status_code == 200
+        body = r.json()
+        assert body["explain_response_counts"] == {
+            "deterministic": 0,
+            "llm": 0,
+            "fallback": 0,
+        }
+        assert body["explain_latency_ms"] == {
+            "count": 0,
+            "average_ms": 0,
+            "min_ms": 0,
+            "max_ms": 0,
+            "last_ms": 0,
+        }
+
+    def test_explain_telemetry_counts_increment_by_source(self, app_client, monkeypatch):
+        from backend.app.api import findings as findings_api
+        from backend.app.api._state import reset_explain_response_counts
+
+        client, db = app_client
+        reset_explain_response_counts()
+
+        deterministic_job = _seed_job(db)
+        deterministic_finding = _seed_finding(db, deterministic_job.job_id, title="Deterministic telemetry")
+
+        class _FakeClient:
+            async def chat_completion(self, messages, temperature=None):
+                return json.dumps({
+                    "assessment": "LLM telemetry assessment.",
+                    "why_it_matters": "LLM telemetry why.",
+                    "recommended_next_steps": ["Review the related evidence."],
+                })
+
+        monkeypatch.setenv("AIPAM_EXPLAIN_FINDING_USE_LLM", "1")
+        monkeypatch.setattr(findings_api, "_make_llm_client", lambda settings: _FakeClient())
+        llm_job = _seed_job(db)
+        llm_finding = _seed_finding(db, llm_job.job_id, title="LLM telemetry")
+
+        class _BrokenClient:
+            async def chat_completion(self, messages, temperature=None):
+                raise RuntimeError("backend unavailable")
+
+        fallback_job = _seed_job(db)
+        fallback_finding = _seed_finding(db, fallback_job.job_id, title="Fallback telemetry")
+
+        perf_counter_values = iter([1.0, 1.010, 2.0, 2.020, 3.0, 3.030])
+        monkeypatch.setattr(findings_api, "perf_counter", lambda: next(perf_counter_values))
+
+        r = client.post(
+            f"/api/v1/jobs/{deterministic_job.job_id}/findings/{deterministic_finding.finding_id}/explain",
+            headers=AUTH,
+            json={"format": "markdown"},
+        )
+        assert r.status_code == 200
+        assert r.json()["source"] == "llm"
+
+        monkeypatch.delenv("AIPAM_EXPLAIN_FINDING_USE_LLM", raising=False)
+        r = client.post(
+            f"/api/v1/jobs/{llm_job.job_id}/findings/{llm_finding.finding_id}/explain",
+            headers=AUTH,
+            json={"format": "markdown"},
+        )
+        assert r.status_code == 200
+        assert r.json()["source"] == "deterministic"
+
+        monkeypatch.setenv("AIPAM_EXPLAIN_FINDING_USE_LLM", "1")
+        monkeypatch.setattr(findings_api, "_make_llm_client", lambda settings: _BrokenClient())
+        r = client.post(
+            f"/api/v1/jobs/{fallback_job.job_id}/findings/{fallback_finding.finding_id}/explain",
+            headers=AUTH,
+            json={"format": "markdown"},
+        )
+        assert r.status_code == 200
+        assert r.json()["source"] == "fallback"
+
+        r = client.get("/api/v1/system/explain-telemetry", headers=AUTH)
+        assert r.status_code == 200
+        body = r.json()
+        assert body["explain_response_counts"] == {
+            "deterministic": 1,
+            "llm": 1,
+            "fallback": 1,
+        }
+        assert body["explain_latency_ms"] == {
+            "count": 3,
+            "average_ms": 20,
+            "min_ms": 10,
+            "max_ms": 30,
+            "last_ms": 30,
+        }
+
+    def test_explain_telemetry_reset_endpoint_clears_counts(self, app_client):
+        from backend.app.api._state import increment_explain_response_count, reset_explain_response_counts
+
+        client, db = app_client
+        reset_explain_response_counts()
+        increment_explain_response_count("deterministic", duration_ms=11)
+        increment_explain_response_count("llm", duration_ms=22)
+        increment_explain_response_count("fallback", duration_ms=33)
+
+        r = client.post("/api/v1/system/explain-telemetry/reset", headers=AUTH)
+        assert r.status_code == 200
+        body = r.json()
+        assert body["explain_response_counts"] == {
+            "deterministic": 0,
+            "llm": 0,
+            "fallback": 0,
+        }
+        assert body["explain_latency_ms"] == {
+            "count": 0,
+            "average_ms": 0,
+            "min_ms": 0,
+            "max_ms": 0,
+            "last_ms": 0,
+        }
+
+        r = client.get("/api/v1/system/explain-telemetry", headers=AUTH)
+        assert r.status_code == 200
+        body = r.json()
+        assert body["explain_response_counts"] == {
+            "deterministic": 0,
+            "llm": 0,
+            "fallback": 0,
+        }
+        assert body["explain_latency_ms"] == {
+            "count": 0,
+            "average_ms": 0,
+            "min_ms": 0,
+            "max_ms": 0,
+            "last_ms": 0,
+        }
 
 
 # ===== Artifacts Endpoint Tests =====
