@@ -264,3 +264,175 @@ def extract_ips_from_context(context_json: str) -> list[str]:
     filtered = {ip for ip in ips if not ip.startswith("0.") and ip != "255.255.255.255"}
     return sorted(filtered)
 
+
+# ── Auto-indexing of pipeline outputs ────────────────────────────────────
+
+def _format_host_summary(host) -> str:
+    """Format a Host DB record into a rich text summary for vector indexing."""
+    import json as _json
+
+    parts = [
+        f"Host: {host.ip}",
+        f"Role: {host.role or 'unknown'}",
+        f"Active: {host.first_seen or '?'} – {host.last_seen or '?'}",
+        f"Connections: {host.conn_count or 0}",
+        f"Bytes sent: {host.bytes_sent or 0}, received: {host.bytes_recv or 0}",
+        f"Alerts: {host.alert_count or 0}, Findings: {host.finding_count or 0}",
+        f"DNS queries: {host.dns_query_count or 0}",
+    ]
+    if host.top_services_json:
+        try:
+            svcs = _json.loads(host.top_services_json)
+            if svcs:
+                parts.append(f"Services: {', '.join(svcs[:8])}")
+        except Exception:
+            pass
+    if host.alerts_by_severity_json:
+        try:
+            sev = _json.loads(host.alerts_by_severity_json)
+            if sev:
+                parts.append(f"Alert severity breakdown: {sev}")
+        except Exception:
+            pass
+    if host.top_domains_json:
+        try:
+            doms = _json.loads(host.top_domains_json)
+            if doms:
+                parts.append(f"Top domains: {', '.join(doms[:10])}")
+        except Exception:
+            pass
+    return "\n".join(parts)
+
+
+def _format_alert_summary(alert) -> str:
+    """Format an Alert DB record into text for vector indexing."""
+    parts = [
+        f"Alert: {alert.signature}",
+        f"Severity: {alert.severity}",
+        f"Source: {alert.src_ip}:{alert.src_port or '?'} → Dest: {alert.dest_ip}:{alert.dest_port or '?'}",
+        f"Protocol: {alert.proto or '?'}",
+        f"Time: {alert.ts}",
+    ]
+    if alert.category:
+        parts.append(f"Category: {alert.category}")
+    return "\n".join(parts)
+
+
+def _format_finding_summary(finding) -> str:
+    """Format a Finding DB record into text for vector indexing."""
+    parts = [
+        f"Finding: {finding.title}",
+        f"Severity: {finding.severity}",
+        f"Sensor: {finding.sensor}",
+    ]
+    if finding.category:
+        parts.append(f"Category: {finding.category}")
+    if finding.summary:
+        parts.append(f"Summary: {finding.summary[:500]}")
+    return "\n".join(parts)
+
+
+async def auto_index_job(
+    db_session,
+    job_id: str,
+    ollama_url: str = "http://ollama:11434",
+    persist_dir: str | Path | None = None,
+    embedding_model: str = "nomic-embed-text",
+) -> dict[str, int]:
+    """Auto-index all pipeline outputs for a job into the vector store.
+
+    Indexes host profiles, alerts, and findings so that RAG retrieval
+    can find them when an analyst asks questions about this job.
+
+    Returns a dict with counts: {hosts, alerts, findings, total_chunks}.
+    """
+    from sqlalchemy import select
+
+    from backend.app.models.alert import Alert
+    from backend.app.models.finding import Finding
+    from backend.app.models.host import Host
+
+    counts = {"hosts": 0, "alerts": 0, "findings": 0, "total_chunks": 0}
+
+    # ── Index host profiles ──────────────────────────────────────────
+    hosts = db_session.execute(
+        select(Host).where(Host.job_id == job_id)
+        .order_by(Host.alert_count.desc(), Host.conn_count.desc())
+    ).scalars().all()
+
+    for host in hosts:
+        content = _format_host_summary(host)
+        doc_id = f"job_{job_id}_host_{host.ip}"
+        n = await index_document(
+            doc_id=doc_id,
+            content=content,
+            doc_name=f"Host {host.ip}",
+            doc_type="host_profile",
+            job_id=job_id,
+            ollama_url=ollama_url,
+            embedding_model=embedding_model,
+            persist_dir=persist_dir,
+        )
+        counts["hosts"] += 1
+        counts["total_chunks"] += n
+
+    # ── Index alerts (high/medium severity prioritized) ──────────────
+    alerts = db_session.execute(
+        select(Alert).where(Alert.job_id == job_id)
+        .order_by(Alert.severity.asc())  # 1=high first
+        .limit(100)
+    ).scalars().all()
+
+    # Group alerts by signature to avoid redundant embeddings
+    sig_groups: dict[str, list] = {}
+    for alert in alerts:
+        sig = alert.signature or "unknown"
+        sig_groups.setdefault(sig, []).append(alert)
+
+    for sig, group in sig_groups.items():
+        # Combine alerts with the same signature into one document
+        parts = [f"Alert signature: {sig} (×{len(group)})"]
+        for a in group[:5]:  # max 5 examples per signature
+            parts.append(_format_alert_summary(a))
+        content = "\n---\n".join(parts)
+        doc_id = f"job_{job_id}_alert_{uuid.uuid4().hex[:12]}"
+        n = await index_document(
+            doc_id=doc_id,
+            content=content,
+            doc_name=f"Alert: {sig[:80]}",
+            doc_type="alert",
+            job_id=job_id,
+            ollama_url=ollama_url,
+            embedding_model=embedding_model,
+            persist_dir=persist_dir,
+        )
+        counts["alerts"] += len(group)
+        counts["total_chunks"] += n
+
+    # ── Index findings ───────────────────────────────────────────────
+    findings = db_session.execute(
+        select(Finding).where(Finding.job_id == job_id)
+    ).scalars().all()
+
+    for finding in findings:
+        content = _format_finding_summary(finding)
+        doc_id = f"job_{job_id}_finding_{finding.finding_id}"
+        n = await index_document(
+            doc_id=doc_id,
+            content=content,
+            doc_name=f"Finding: {finding.title[:80]}",
+            doc_type="finding",
+            job_id=job_id,
+            ollama_url=ollama_url,
+            embedding_model=embedding_model,
+            persist_dir=persist_dir,
+        )
+        counts["findings"] += 1
+        counts["total_chunks"] += n
+
+    logger.info(
+        "Auto-indexed job %s: %d hosts, %d alerts, %d findings → %d chunks",
+        job_id, counts["hosts"], counts["alerts"], counts["findings"], counts["total_chunks"],
+    )
+    return counts
+

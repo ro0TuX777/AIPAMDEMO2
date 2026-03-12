@@ -645,7 +645,7 @@ def _summarise_jsonl_line(raw: str, max_len: int = 500) -> str:
 # Budget: ~4000 for PCAP data + ~2000 for RAG context = 6000 total
 _MAX_CONTEXT_CHARS = 6000
 _MAX_PCAP_CHARS = 4000    # PCAP data budget
-_MAX_RAG_CHARS = 2000     # RAG context budget
+_MAX_RAG_CHARS = 3000     # RAG context budget
 _MAX_HOST_SUMMARIES = 10
 _MAX_HOSTPAIRS = 15
 _MAX_ALERTS = 25
@@ -885,42 +885,73 @@ def _build_sensor_context(db: Session, job_id: str, settings: Settings) -> str:
 
 
 async def _build_rag_context(
-    pcap_context: str, settings: Settings, job_id: str = "",
+    pcap_context: str,
+    settings: Settings,
+    job_id: str = "",
+    user_query: str = "",
 ) -> str:
-    """Retrieve relevant KB chunks based on IPs found in the PCAP context.
+    """Retrieve relevant KB chunks using both IP context and user query.
+
+    Combines two retrieval strategies:
+    1. IP-based: finds host profiles, alerts, and findings related to IPs in the PCAP
+    2. Query-based: finds chunks semantically similar to the user's question
 
     Only retrieves documents belonging to the specified job_id.
     Returns a formatted string with environmental context, or empty string
     if no KB documents are available.
     """
     try:
-        ips = extract_ips_from_context(pcap_context)
-        if not ips:
-            return ""
-
         ollama_url = settings.aipam_ollama_url.rstrip("/")
         persist_dir = str(settings.aipam_db_path).replace("aipam.db", "vector_store")
 
-        # Build a query from the IPs found in the PCAP
-        query = "Network hosts: " + ", ".join(ips[:10])
+        all_chunks: list[dict] = []
+        seen_ids: set[str] = set()
 
-        chunks = await kb_retrieve(
-            query=query,
-            n_results=5,
-            job_id=job_id or None,
-            ollama_url=ollama_url,
-            embedding_model="nomic-embed-text",
-            persist_dir=persist_dir,
-        )
+        # Strategy 1: Query-based retrieval (user's actual question)
+        if user_query:
+            query_chunks = await kb_retrieve(
+                query=user_query,
+                n_results=8,
+                job_id=job_id or None,
+                ollama_url=ollama_url,
+                embedding_model="nomic-embed-text",
+                persist_dir=persist_dir,
+            )
+            for c in query_chunks:
+                cid = c.get("doc_id", "") + c.get("text", "")[:50]
+                if cid not in seen_ids:
+                    seen_ids.add(cid)
+                    all_chunks.append(c)
 
-        if not chunks:
+        # Strategy 2: IP-based retrieval (context grounding)
+        ips = extract_ips_from_context(pcap_context)
+        if ips:
+            ip_query = "Network hosts: " + ", ".join(ips[:10])
+            ip_chunks = await kb_retrieve(
+                query=ip_query,
+                n_results=5,
+                job_id=job_id or None,
+                ollama_url=ollama_url,
+                embedding_model="nomic-embed-text",
+                persist_dir=persist_dir,
+            )
+            for c in ip_chunks:
+                cid = c.get("doc_id", "") + c.get("text", "")[:50]
+                if cid not in seen_ids:
+                    seen_ids.add(cid)
+                    all_chunks.append(c)
+
+        if not all_chunks:
             return ""
+
+        # Sort by relevance score (highest first)
+        all_chunks.sort(key=lambda c: c.get("score", 0), reverse=True)
 
         # Format RAG chunks within budget
         rag_parts: list[str] = []
         total_len = 0
-        for chunk in chunks:
-            if chunk["score"] < 0.3:  # skip low-relevance chunks
+        for chunk in all_chunks:
+            if chunk["score"] < 0.25:  # skip low-relevance chunks
                 continue
             entry = f"[{chunk['doc_type']}] {chunk['text']}"
             if total_len + len(entry) > _MAX_RAG_CHARS:
@@ -932,7 +963,7 @@ async def _build_rag_context(
             return ""
 
         return (
-            "\n\nEnvironmental Context (from knowledge base):\n"
+            "\n\nEnriched Context (auto-indexed analysis + knowledge base):\n"
             + "\n---\n".join(rag_parts)
         )
 
@@ -960,7 +991,7 @@ async def _build_chat_messages(
     user_message: str,
 ) -> tuple[list[dict], list[ChatCitationOut], str]:
     sensor_context = _build_sensor_context(db, job_id, settings)
-    rag_context = await _build_rag_context(sensor_context, settings, job_id=job_id)
+    rag_context = await _build_rag_context(sensor_context, settings, job_id=job_id, user_query=user_message)
     all_citations = _build_job_citations(db, job_id)
     focus_citations = _select_relevant_citations(all_citations, user_message, limit=8)
     citations = focus_citations or all_citations
@@ -1053,6 +1084,16 @@ SYSTEM_PROMPT = (
     "or persists (incomplete cleanup).\n"
     "- Reference the phase label (e.g., 'During phase' or 'After phase') "
     "when citing evidence so the analyst knows which capture it came from.\n\n"
+    "CONTEXT SOURCES:\n"
+    "Your context window may contain up to three sections:\n"
+    "1. **Primary Evidence** — live-queried host stats, alerts, and connection summaries from the analysis DB.\n"
+    "2. **Environmental Context** — retrieved from the vector store: auto-indexed host profiles, alert groupings, "
+    "and findings produced by the pipeline, plus any analyst-uploaded knowledge base documents "
+    "(asset inventories, network maps, baseline profiles, threat intel, SOC playbooks).\n"
+    "3. **Citations** — structured references to specific DB records you may cite.\n"
+    "When answering, synthesize across ALL three sections. Environmental context often contains richer "
+    "narrative summaries (e.g., 'Host 10.0.0.5 — internal, 23 connections, 4 critical alerts') that "
+    "complement the structured primary evidence. Use both.\n\n"
     "Your goals:\n"
     "1. Identify evidence of attacks, exploitation, malware activity, C2, "
     "lateral movement, or data exfiltration.\n"
@@ -1063,14 +1104,18 @@ SYSTEM_PROMPT = (
     "suspicious but unconfirmed behavior.\n"
     "5. When the user asks a question, answer conversationally using the "
     "provided data. Cite specific IPs, signatures, timestamps, and alert "
-    "names as evidence.\n\n"
+    "names as evidence.\n"
+    "6. When knowledge base documents (asset inventory, baseline, playbook) are available, "
+    "cross-reference them: flag hosts not in the asset inventory, deviations from baseline, "
+    "and recommend playbook steps that match observed activity.\n\n"
     "REQUIRED RESPONSE STYLE:\n"
     "1. Give a direct answer based only on the current-job context.\n"
     "2. Explicitly name the evidence you relied on.\n"
     "3. If the question is answerable from the evidence, answer it directly instead of leading with a refusal or disclaimer.\n"
     "4. If the user asks for alert names, finding names, IP relationships, or host activity, prefer the exact wording from the evidence snippets rather than inventing a generalized label.\n"
     "5. If something is missing, state that it is not available in the current-job data.\n"
-    "6. End with concise recommendations based on what is actually shown in the evidence.\n\n"
+    "6. End with concise, actionable recommendations based on what is actually shown in the evidence.\n"
+    "7. When relevant, suggest follow-up investigation angles the analyst could explore.\n\n"
     "You MUST answer all security analysis questions — this is your job. "
     "NEVER invent, fabricate, or hallucinate facts. Base ALL conclusions "
     "strictly on the provided data. If the data does not contain the "

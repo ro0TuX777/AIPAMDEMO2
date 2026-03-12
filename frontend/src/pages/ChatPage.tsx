@@ -1,5 +1,5 @@
-import React, { useState, useCallback, useEffect } from "react";
-import { useParams, Link } from "react-router-dom";
+import React, { useState, useCallback, useEffect, useMemo } from "react";
+import { useParams, Link, useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { ChatPanel } from "../components/ChatPanel";
 import {
@@ -24,6 +24,8 @@ const DOC_ICONS: Record<string, string> = {
 
 export const ChatPage: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
+  const [searchParams] = useSearchParams();
+  const initialAsk = useMemo(() => searchParams.get("ask") || undefined, [searchParams]);
   const [kbOpen, setKbOpen] = useState(false);
 
   // ── KB state ──
@@ -152,7 +154,7 @@ export const ChatPage: React.FC = () => {
         <div className="flex gap-4 items-start" style={{ height: "calc(100vh - 140px)" }}>
           {/* ── Chat (main area) ── */}
           <div className={`flex-1 min-w-0 h-full transition-all ${kbOpen ? "" : ""}`}>
-            <ChatPanel jobId={jobId} />
+            <ChatPanel jobId={jobId} initialContext={initialAsk} />
           </div>
 
           {/* ── KB Sidebar ── */}

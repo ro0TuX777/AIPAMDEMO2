@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api, type HostListItem, type HostRole } from "../api";
 
@@ -11,6 +11,7 @@ const ROLE_COLORS: Record<string, string> = {
 
 export const HostListPage: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
+  const navigate = useNavigate();
   const [roleFilter, setRoleFilter] = useState<HostRole | "">("");
 
   const { data, isLoading, error } = useQuery({
@@ -61,6 +62,7 @@ export const HostListPage: React.FC = () => {
                 <th className="px-3 py-2 text-right">Bytes Recv</th>
                 <th className="px-3 py-2 text-right">Alerts</th>
                 <th className="px-3 py-2">Top Domains</th>
+                <th className="px-3 py-2 text-center">AI</th>
               </tr>
             </thead>
             <tbody>
@@ -89,6 +91,15 @@ export const HostListPage: React.FC = () => {
                   </td>
                   <td className="px-3 py-2 text-slate-400 text-xs max-w-[200px] truncate">
                     {h.top_domains?.slice(0, 3).join(", ") || "—"}
+                  </td>
+                  <td className="px-3 py-2 text-center">
+                    <button
+                      onClick={() => navigate(`/jobs/${jobId}/chat?ask=${encodeURIComponent(`Analyze host ${h.ip}. What is its role, what suspicious activity is associated with it, and what are the key alerts and findings?`)}`)}
+                      className="text-emerald-400/60 hover:text-emerald-400 transition-colors text-sm"
+                      title={`Ask AI about ${h.ip}`}
+                    >
+                      🤖
+                    </button>
                   </td>
                 </tr>
               ))}

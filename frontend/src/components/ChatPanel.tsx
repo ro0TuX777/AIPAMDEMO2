@@ -416,10 +416,27 @@ export function ChatPanel({ jobId, initialContext, onClose }: ChatPanelProps) {
                     </div>
                 ) : messages.length === 0 ? (
                     <div className="text-gray-500 text-center py-8">
-                        <p>Ask questions about the analysis findings.</p>
-                        <p className="text-sm mt-2">
-                            Examples: "What malware was detected?" or "Explain the lateral movement"
-                        </p>
+                        <p className="text-base mb-4">Ask questions about this PCAP analysis</p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-w-xl mx-auto text-left">
+                            {[
+                                { icon: "🔍", text: "Summarize the key findings and their severity" },
+                                { icon: "🚨", text: "What are the highest-severity alerts and which hosts triggered them?" },
+                                { icon: "🔗", text: "Check for signs of lateral movement between internal hosts" },
+                                { icon: "📡", text: "Identify any command-and-control (C2) communication patterns" },
+                                { icon: "📤", text: "Is there evidence of data exfiltration?" },
+                                { icon: "🖥️", text: "Which hosts have the most suspicious activity?" },
+                            ].map((q) => (
+                                <button
+                                    key={q.text}
+                                    onClick={() => handleSend(q.text)}
+                                    disabled={isLoading}
+                                    className="flex items-start gap-2 px-3 py-2 rounded-lg border border-gray-700 bg-gray-800/50 hover:bg-gray-700/60 hover:border-gray-600 text-gray-300 hover:text-white text-xs transition-colors text-left disabled:opacity-50"
+                                >
+                                    <span className="shrink-0 mt-0.5">{q.icon}</span>
+                                    <span>{q.text}</span>
+                                </button>
+                            ))}
+                        </div>
                     </div>
                 ) : null}
                 {messages.map((msg, idx) => (

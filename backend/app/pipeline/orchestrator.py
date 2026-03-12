@@ -399,6 +399,26 @@ def run_pipeline(
         logger.error("Correlation failed for job %s: %s", job_id, exc, exc_info=True)
         has_errors = True
 
+    # --- Step 9: Auto-index pipeline outputs for RAG ───────────────
+    try:
+        import asyncio
+        from backend.app.config_v2 import get_settings as _get_settings
+        from backend.app.services.kb_service import auto_index_job
+
+        _settings = _get_settings()
+        _ollama_url = _settings.aipam_ollama_url.rstrip("/")
+        _persist_dir = str(_settings.aipam_db_path).replace("aipam.db", "vector_store")
+
+        index_counts = asyncio.run(auto_index_job(
+            db_session=db,
+            job_id=job_id,
+            ollama_url=_ollama_url,
+            persist_dir=_persist_dir,
+        ))
+        logger.info("Auto-indexed job %s outputs: %s", job_id, index_counts)
+    except Exception as exc:
+        logger.warning("Auto-indexing failed for job %s (non-fatal): %s", job_id, exc)
+
     # --- Final status ---
     final_status = "completed_with_errors" if has_errors else "completed"
     _update_job_status(db, job, final_status)

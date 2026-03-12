@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   api,
@@ -265,6 +265,7 @@ const renderExplainSection = (
 
 export const FindingsListPage: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
+  const navigate = useNavigate();
   const [sevFilter, setSevFilter] = useState<Severity | "">("");
   const [categoryFilter, setCategoryFilter] = useState<string>("");
   const [openExplainId, setOpenExplainId] = useState<string | null>(null);
@@ -604,6 +605,13 @@ export const FindingsListPage: React.FC = () => {
                   <span className="text-xs text-slate-600 font-mono">{f.finding_id.slice(0, 8)}</span>
 
                   <div className="flex items-center gap-1.5 mt-1">
+                    <button
+                      onClick={() => navigate(`/jobs/${jobId}/chat?ask=${encodeURIComponent(`Analyze finding "${f.title}" (severity: ${f.severity}). ${f.summary ? f.summary + ' ' : ''}What does this mean, what is the impact, and what should an analyst do next?`)}`)}
+                      className="px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider transition-colors border bg-slate-800 border-slate-700 text-emerald-400/60 hover:text-emerald-400 hover:border-emerald-500/30"
+                      title="Ask AI about this finding"
+                    >
+                      🤖 Ask AI
+                    </button>
                     <button
                       onClick={() => void handleExplain(f.finding_id)}
                       disabled={Boolean(explainState?.loading)}
