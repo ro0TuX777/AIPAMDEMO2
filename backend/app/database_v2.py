@@ -10,7 +10,7 @@ Concurrency policy:
   - check_same_thread = False (required for FastAPI thread pool)
 """
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
 
@@ -100,8 +100,19 @@ def init_v2_db() -> None:
     import backend.app.models  # noqa: F401
     engine = get_engine()
     Base.metadata.create_all(bind=engine)
-    
-    # Alembic handles all schema migrations now; manual ALTERS removed.
+
+    # Development/self-hosted compatibility: persisted local SQLite volumes may
+    # contain older V2 tables created before newer nullable columns existed.
+    # `create_all()` will not add those columns to existing tables, so patch the
+    # minimal known compatibility case needed by the explain workflow.
+    inspector = inspect(engine)
+    if inspector.has_table("findings"):
+        column_names = {column["name"] for column in inspector.get_columns("findings")}
+        if "explanation_feedback" not in column_names:
+            with engine.begin() as connection:
+                connection.execute(
+                    text("ALTER TABLE findings ADD COLUMN explanation_feedback VARCHAR")
+                )
 
 def reset_engine() -> None:
     """Reset engine and session factory. Used in tests."""
