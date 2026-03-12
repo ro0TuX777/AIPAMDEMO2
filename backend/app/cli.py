@@ -803,6 +803,74 @@ def _log_update(status: str, bundle_name: str, detail: str) -> None:
 # Main
 # ---------------------------------------------------------------------------
 
+def cmd_perf_gate(args):
+    """Check job runtimes against performance SLOs (§8.6)."""
+
+    # SLO definitions: (profile, pcap_size_mb_max, target_seconds)
+    SLOS = [
+        ("triage",   100,    3 * 60),
+        ("standard", 100,    8 * 60),
+        ("standard", 1024,  45 * 60),
+        ("deep",     1024,  90 * 60),
+    ]
+
+    job_root = Path(args.job_root)
+    if not job_root.exists():
+        print(f"ERROR: Job root not found: {job_root}")
+        sys.exit(2)
+
+    job_dirs = sorted(
+        [d for d in job_root.iterdir() if d.is_dir() and (d / "metrics" / "job_metrics.json").exists()]
+    )
+
+    if not job_dirs:
+        print("No jobs with job_metrics.json found.")
+        sys.exit(0)
+
+    violations = 0
+    checked = 0
+
+    for jd in job_dirs:
+        metrics_path = jd / "metrics" / "job_metrics.json"
+        input_meta_path = jd / "input" / "input.meta.json"
+        try:
+            metrics = json.loads(metrics_path.read_text())
+            profile = "standard"
+            if input_meta_path.exists():
+                meta = json.loads(input_meta_path.read_text())
+                profile = meta.get("execution_profile", "standard")
+
+            runtime_sec = metrics.get("total_runtime_sec", 0)
+            pcap_mb = metrics.get("pcap_size_bytes", 0) / (1024 * 1024)
+
+            # Find the applicable SLO
+            applicable_slo = None
+            for slo_profile, slo_max_mb, slo_target in SLOS:
+                if slo_profile == profile and pcap_mb <= slo_max_mb:
+                    applicable_slo = (slo_max_mb, slo_target)
+                    break
+
+            if applicable_slo is None:
+                continue
+
+            checked += 1
+            slo_target = applicable_slo[1]
+            status = "✅" if runtime_sec <= slo_target else "❌"
+            if runtime_sec > slo_target:
+                violations += 1
+
+            print(
+                f"{status} {jd.name}  profile={profile}  "
+                f"pcap={pcap_mb:.1f}MB  runtime={runtime_sec}s  "
+                f"SLO={slo_target}s"
+            )
+        except Exception as exc:
+            print(f"⚠️  {jd.name}: {exc}")
+
+    print(f"\nChecked {checked} jobs, {violations} SLO violations")
+    sys.exit(1 if violations > 0 else 0)
+
+
 def main():
     parser = argparse.ArgumentParser(prog="aipam-admin", description="AIPAM V2 Admin CLI")
     sub = parser.add_subparsers(dest="command", help="Available commands")
@@ -836,6 +904,13 @@ def main():
     p_update = sub.add_parser("apply-update", help="Apply offline update bundle (§13)")
     p_update.add_argument("zip_path", help="Path to update ZIP bundle")
 
+    # perf-gate (§8.6)
+    p_perf = sub.add_parser("perf-gate", help="Check job runtimes against SLOs (§8.6)")
+    p_perf.add_argument(
+        "--job-root", default=os.environ.get("AIPAM_JOB_ROOT", "/data/jobs"),
+        help="Root directory for job data",
+    )
+
     args = parser.parse_args()
 
     if args.command == "smoke-test":
@@ -848,6 +923,8 @@ def main():
         cmd_support_bundle(args)
     elif args.command == "apply-update":
         cmd_apply_update(args)
+    elif args.command == "perf-gate":
+        cmd_perf_gate(args)
     else:
         parser.print_help()
         sys.exit(2)

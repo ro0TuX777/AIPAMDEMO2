@@ -1,0 +1,82 @@
+# AIPAM V2 CI Pipeline (§14.13)
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    # Nightly at 03:00 UTC
+    - cron: "0 3 * * *"
+
+env:
+  AIPAM_API_TOKEN: test-token-ci
+  PYTHON_VERSION: "3.11"
+
+jobs:
+  # ── PR checks ──────────────────────────────────────────
+  unit-tests:
+    name: Unit + Contract Tests
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - run: pip install -r backend/requirements.txt
+      - run: make test-unit
+      - run: make test-contract
+      - run: make test-api
+      - run: make test-worker
+      - run: make test-sse
+      - run: make test-sensor-contract
+
+  lint:
+    name: Lint + Type Check
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' || github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - run: pip install -r backend/requirements.txt
+      - run: make lint
+      - run: make check
+
+  # ── Merge-to-main checks ───────────────────────────────
+  integration:
+    name: Integration Tests (Golden PCAPs)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    needs: [unit-tests, lint]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - run: pip install -r backend/requirements.txt
+      - run: make test-integration
+      - run: make test-smoke
+
+  # ── Nightly checks ─────────────────────────────────────
+  nightly:
+    name: Nightly (Parity + E2E + Benchmark)
+    runs-on: ubuntu-latest
+    if: github.event_name == 'schedule'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          cache: pip
+      - run: pip install -r backend/requirements.txt
+      - run: make test-parity
+      - run: make test-e2e
+      - run: make benchmark
+

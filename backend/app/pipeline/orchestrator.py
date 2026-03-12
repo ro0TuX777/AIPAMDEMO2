@@ -76,6 +76,129 @@ def _record_sensor_result(db: Session, job_id: str, result: SensorResult) -> Non
     db.commit()
 
 
+def _write_job_metrics(
+    job_dir: Path,
+    job: Job,
+    stages: list[SensorDef],
+    sensor_results: list[SensorResult],
+    corr_counts: dict[str, int] | None,
+) -> None:
+    """Write job_metrics.json per §20 of the implementation plan."""
+    try:
+        started = datetime.fromisoformat(job.started_at) if job.started_at else None
+        completed = datetime.fromisoformat(job.completed_at) if job.completed_at else None
+        total_runtime_sec = (
+            int((completed - started).total_seconds()) if started and completed else 0
+        )
+
+        # Gather stage runtimes from sensor.meta.json files
+        stage_runtimes: dict[str, float] = {}
+        for stage_def in stages:
+            meta_path = job_dir / "sensors" / stage_def.name / "sensor.meta.json"
+            if meta_path.exists():
+                meta = json.loads(meta_path.read_text())
+                stage_runtimes[stage_def.name] = meta.get("duration_ms", 0) / 1000.0
+
+        # Gather sensor runtimes from results
+        sensor_runtimes: dict[str, float] = {}
+        for r in sensor_results:
+            if r.duration_ms is not None:
+                sensor_runtimes[r.sensor] = r.duration_ms / 1000.0
+
+        # Count artifacts from correlation results
+        flow_count = (corr_counts or {}).get("flows", 0)
+        alert_count = (corr_counts or {}).get("alerts", 0)
+        finding_count = (corr_counts or {}).get("findings", 0)
+
+        # Count extracted files
+        file_count = 0
+        ft_results = job_dir / "sensors" / "file_triage" / "sensor.results.jsonl"
+        if ft_results.exists():
+            for line in ft_results.read_text().splitlines():
+                if line.strip():
+                    try:
+                        rec = json.loads(line)
+                        if rec.get("type") == "extracted_file":
+                            file_count += 1
+                    except json.JSONDecodeError:
+                        pass
+
+        # PCAP size
+        pcap_size = job.pcap_size_bytes or 0
+
+        # Disk usage
+        disk_used_bytes = sum(f.stat().st_size for f in job_dir.rglob("*") if f.is_file())
+
+        metrics_data = {
+            "total_runtime_sec": total_runtime_sec,
+            "pcap_size_bytes": pcap_size,
+            "flow_count": flow_count,
+            "alert_count": alert_count,
+            "file_count": file_count,
+            "finding_count": finding_count,
+            "stage_runtimes": stage_runtimes,
+            "sensor_runtimes": sensor_runtimes,
+            "disk_used_bytes": disk_used_bytes,
+        }
+
+        metrics_dir = job_dir / "metrics"
+        metrics_dir.mkdir(parents=True, exist_ok=True)
+        metrics_path = metrics_dir / "job_metrics.json"
+        metrics_path.write_text(json.dumps(metrics_data, indent=2), encoding="utf-8")
+        logger.info("Wrote job_metrics.json for job %s", job.job_id)
+    except Exception as exc:
+        logger.warning("Failed to write job_metrics.json: %s", exc)
+
+
+def _write_extraction_manifest(job_dir: Path) -> None:
+    """Write extracted_files/manifest.json per §3.3 from file_triage results."""
+    try:
+        ft_results = job_dir / "sensors" / "file_triage" / "sensor.results.jsonl"
+        if not ft_results.exists():
+            return
+
+        entries: list[dict] = []
+        for line in ft_results.read_text().splitlines():
+            if not line.strip():
+                continue
+            try:
+                rec = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if rec.get("type") != "extracted_file":
+                continue
+            data = rec.get("data", {})
+            entries.append({
+                "file_id": data.get("file_id"),
+                "filename": data.get("filename"),
+                "sha256": data.get("sha256"),
+                "size_bytes": data.get("size_bytes"),
+                "mime": data.get("mime"),
+                "file_type": data.get("file_type"),
+                "suspicious": data.get("suspicious", False),
+                "yara_matches": data.get("yara_matches", []),
+                "src_ip": data.get("src_ip"),
+                "dst_ip": data.get("dst_ip"),
+                "pcap_label": data.get("pcap_label"),
+            })
+
+        if not entries:
+            return
+
+        manifest_dir = job_dir / "extracted_files"
+        manifest_dir.mkdir(parents=True, exist_ok=True)
+        manifest = {
+            "schema_version": "1.0",
+            "file_count": len(entries),
+            "files": entries,
+        }
+        manifest_path = manifest_dir / "manifest.json"
+        manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+        logger.info("Wrote extracted_files/manifest.json with %d entries", len(entries))
+    except Exception as exc:
+        logger.warning("Failed to write extraction manifest: %s", exc)
+
+
 def run_pipeline(
     job_id: str,
     db: Session,
@@ -201,8 +324,9 @@ def run_pipeline(
             _update_job_status(db, job, "failed", f"Stage {stage_def.name} failed: {result.error}")
             return "failed"
 
-    # --- Step 4: File extraction placeholder ---
-    # (Will be implemented in a later phase — extracted_files/manifest.json)
+    # --- Step 4: File extraction manifest ---
+    # The actual extraction happens in file_triage sensor (Step 5).
+    # We write the manifest after sensors complete (see below).
 
     # --- Step 5: Run sensors in deterministic order ---
     sensors = get_sensors_for_profile(profile)
@@ -257,7 +381,11 @@ def run_pipeline(
             has_errors = True
             break
 
+    # --- Write extraction manifest (§3.3) ---
+    _write_extraction_manifest(job_dir)
+
     # --- Step 6-8: Normalize, Correlate, Persist ---
+    corr_counts: dict[str, int] | None = None
     try:
         from backend.app.normalize.correlate import correlate_job
 
@@ -285,6 +413,9 @@ def run_pipeline(
     }
     job.metrics_json = json.dumps(metrics)
     db.commit()
+
+    # --- Write job_metrics.json (§20) ---
+    _write_job_metrics(job_dir, job, stages, sensor_results, corr_counts)
 
     logger.info("Pipeline completed for job %s: status=%s, metrics=%s", job_id, final_status, metrics)
     return final_status

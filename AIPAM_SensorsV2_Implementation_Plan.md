@@ -2754,7 +2754,7 @@ All 54 implementation items from §17 have been verified against the codebase. S
 |---|------|--------|----------|
 | 6 | Job folder contract + `input.meta.json` | ✅ | `backend/app/pipeline/job_dir.py` — `create_job_directory`, `write_input_meta`, `read_input_meta` |
 | 7 | SensorRunner (Docker, timeout, exit codes) | ✅ | `backend/app/pipeline/sensor_runner.py` — `run_sensor()`, `DockerClientProtocol`, timeout/kill handling |
-| 8 | File extraction stage + manifest.json | 🔧 | Extraction handled via sensor containers; no standalone `extract/files.py` module — extraction is a sensor-level concern |
+| 8 | File extraction stage + manifest.json | ✅ | `orchestrator.py:_write_extraction_manifest()` writes `extracted_files/manifest.json` from file_triage results |
 | 9 | Sensor registry with profile selection | ✅ | `backend/app/sensors/registry.py` — `SENSORS` dict, `get_sensors_for_profile`, `get_stages_for_profile`, `get_all_for_profile` |
 | 10 | Pipeline orchestrator | ✅ | `backend/app/pipeline/orchestrator.py` — `run_pipeline()` with 8-step sequence |
 | 11 | Disk guardrails (preflight, quotas, 507) | ✅ | `backend/app/pipeline/preflight.py` — `check_disk_space`, `check_job_quota`, `check_extracted_quota`, `check_disk_thresholds` |
@@ -2783,7 +2783,7 @@ All 54 implementation items from §17 have been verified against the codebase. S
 | 24 | All API endpoints | ✅ | `backend/app/api/{jobs,uploads,hosts,findings,artifacts,system}.py` — 25+ endpoints matching openapi spec |
 | 25 | SSE stream | ✅ | `backend/app/api/jobs.py:_sse_generator` + `frontend/src/hooks/useJobEvents.ts` (11 event types) |
 | 26 | Bearer token auth middleware | ✅ | `backend/app/api/deps.py:verify_token` — `HTTPBearer` scheme |
-| 27 | Job metrics collection | 🔧 | Sensor-level metrics captured via `sensor.meta.json`; no standalone `job_metrics.json` file yet |
+| 27 | Job metrics collection | ✅ | `orchestrator.py:_write_job_metrics()` writes `metrics/job_metrics.json` per §20 schema |
 | 28 | Phase 3 tests | ✅ | `tests/unit/test_phase3_api.py` — API endpoint tests |
 
 ### Phase 4: Frontend
@@ -2797,7 +2797,7 @@ All 54 implementation items from §17 have been verified against the codebase. S
 | 33 | FindingsListPage + LLM explain | ✅ | `frontend/src/pages/FindingsListPage.tsx` |
 | 34 | Timeline, IOCs, Artifacts pages | ✅ | `TimelinePage.tsx`, `IocsListPage.tsx`, `ArtifactsPage.tsx` |
 | 35 | Breadcrumbs + community_id nav | ✅ | Implemented in page components via React Router |
-| 36 | Air-gapped build + CSP | 🔧 | Air-gapped build verified; CSP headers are a deploy-time concern (Docker Compose) |
+| 36 | Air-gapped build + CSP | ✅ | `frontend/nginx.conf` — CSP `default-src 'self'` + X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy |
 | 37 | Phase 4 E2E tests | ⏭️ | E2E tests require browser runtime; framework in place at `tests/e2e/` |
 
 ### Phase 5: Integration + Golden Corpus
@@ -2828,20 +2828,20 @@ All 54 implementation items from §17 have been verified against the codebase. S
 | 49 | Docker Compose | ✅ | `deploy/docker-compose.yml` — API, Worker, Redis, Ollama with health deps |
 | 50 | Phase 7 tests | ✅ | `tests/unit/test_phase7_ops.py` — 8 tests covering cleanup, bundle, apply-update |
 | 51 | UI maturity checklist | ✅ | All pages implemented with error states, loading, pagination |
-| 52 | Performance gates | 🔧 | SLOs defined in plan; runtime verification requires production workload |
-| 53 | Nightly CI pipeline | 🔧 | `Makefile` targets ready (`test-contract`, `test-integration`, etc.); CI YAML is deploy-time |
+| 52 | Performance gates | ✅ | `backend/app/cli.py:cmd_perf_gate` — `aipam-admin perf-gate` checks job runtimes against §8.6 SLOs |
+| 53 | Nightly CI pipeline | ✅ | `.github/workflows/ci.yml` — PR (unit+contract+lint), merge (integration+smoke), nightly (parity+e2e+benchmark) |
 | 54 | Exit criteria sign-off | ✅ | **This document** — all items verified |
 
 ### Summary
 
 | Category | Count |
 |----------|-------|
-| ✅ Implemented | 44 |
-| 🔧 Partial (runtime/deploy-time remaining) | 5 |
+| ✅ Implemented | 49 |
+| 🔧 Partial (runtime/deploy-time remaining) | 0 |
 | ⏭️ Skipped (justified) | 5 |
 | **Total** | **54** |
 
-**110/110 tests passing.** V2 migration is complete and ready for production deployment.
+**All actionable items implemented.** V2 migration is complete and ready for production deployment.
 
 ---
 
