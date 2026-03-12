@@ -1,5 +1,6 @@
 """Shared process-level state (uptime counter, lightweight in-process stats, etc.)."""
 
+import threading
 import time
 
 _START_TIME = time.time()
@@ -15,6 +16,9 @@ _EXPLAIN_LATENCY_MS = {
     "max_ms": 0,
     "last_ms": 0,
 }
+_EXPLAIN_LLM_GATE = threading.Condition()
+_EXPLAIN_LLM_IN_FLIGHT = 0
+_EXPLAIN_LLM_WAITERS = 0
 
 
 def get_uptime_seconds() -> int:
@@ -61,10 +65,59 @@ def get_explain_latency_ms() -> dict[str, int]:
     }
 
 
+def try_acquire_explain_llm_slot(wait_timeout_seconds: float = 1.0, max_waiters: int = 1) -> str:
+    """Serialize LLM explain calls with a tiny bounded queue.
+
+    Returns one of:
+      - ``"acquired"`` when the caller may proceed immediately
+      - ``"busy"`` when the caller briefly waited but should retry later
+      - ``"queue_full"`` when the bounded wait queue is already full
+    """
+    global _EXPLAIN_LLM_IN_FLIGHT, _EXPLAIN_LLM_WAITERS
+
+    deadline = time.monotonic() + max(0.0, wait_timeout_seconds)
+    with _EXPLAIN_LLM_GATE:
+        if _EXPLAIN_LLM_IN_FLIGHT == 0:
+            _EXPLAIN_LLM_IN_FLIGHT = 1
+            return "acquired"
+
+        if _EXPLAIN_LLM_WAITERS >= max_waiters:
+            return "queue_full"
+
+        _EXPLAIN_LLM_WAITERS += 1
+        try:
+            while _EXPLAIN_LLM_IN_FLIGHT > 0:
+                remaining = deadline - time.monotonic()
+                if remaining <= 0:
+                    return "busy"
+                _EXPLAIN_LLM_GATE.wait(timeout=remaining)
+
+            _EXPLAIN_LLM_IN_FLIGHT = 1
+            return "acquired"
+        finally:
+            _EXPLAIN_LLM_WAITERS -= 1
+
+
+def release_explain_llm_slot() -> None:
+    """Release the active LLM explain slot and wake one waiter."""
+    global _EXPLAIN_LLM_IN_FLIGHT
+
+    with _EXPLAIN_LLM_GATE:
+        if _EXPLAIN_LLM_IN_FLIGHT > 0:
+            _EXPLAIN_LLM_IN_FLIGHT -= 1
+        _EXPLAIN_LLM_GATE.notify(1)
+
+
 def reset_explain_response_counts() -> None:
-    """Reset explain-response counters and latency summary for tests."""
+    """Reset explain-response counters, latency summary, and busy gate for tests."""
+    global _EXPLAIN_LLM_IN_FLIGHT, _EXPLAIN_LLM_WAITERS
+
     for key in _EXPLAIN_RESPONSE_COUNTS:
         _EXPLAIN_RESPONSE_COUNTS[key] = 0
     for key in _EXPLAIN_LATENCY_MS:
         _EXPLAIN_LATENCY_MS[key] = 0
+    with _EXPLAIN_LLM_GATE:
+        _EXPLAIN_LLM_IN_FLIGHT = 0
+        _EXPLAIN_LLM_WAITERS = 0
+        _EXPLAIN_LLM_GATE.notify_all()
 

@@ -5,6 +5,7 @@ GET  /jobs/{jobId}/findings                   – list findings
 POST /jobs/{jobId}/findings/{findingId}/explain – grounded explain
 """
 
+import asyncio
 import json
 import os
 from time import perf_counter
@@ -14,7 +15,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
-from backend.app.api._state import increment_explain_response_count
+from backend.app.api._state import (
+    increment_explain_response_count,
+    release_explain_llm_slot,
+    try_acquire_explain_llm_slot,
+)
 from backend.app.api.deps import get_db, get_request_id, verify_token
 from backend.app.api.pagination import paginate
 from backend.app.config_v2 import Settings, get_settings
@@ -38,6 +43,10 @@ router = APIRouter(tags=["Findings"], dependencies=[Depends(verify_token)])
 
 _MAX_EXPLAIN_EVIDENCE_ITEMS = 8
 _MAX_LLM_PROMPT_EVIDENCE_ITEMS = 5
+_EXPLAIN_BUSY_RETRY_AFTER_SECONDS = 2
+_EXPLAIN_QUEUE_FULL_RETRY_AFTER_SECONDS = 5
+_EXPLAIN_QUEUE_WAIT_SECONDS = 1.0
+_EXPLAIN_MAX_QUEUE_WAITERS = 1
 
 
 def _require_job(db: Session, job_id: str) -> Job:
@@ -45,6 +54,37 @@ def _require_job(db: Session, job_id: str) -> Job:
     if not job:
         raise HTTPException(status_code=404, detail="Job not found")
     return job
+
+
+async def _acquire_explain_llm_slot_or_raise() -> bool:
+    outcome = await asyncio.to_thread(
+        try_acquire_explain_llm_slot,
+        wait_timeout_seconds=_EXPLAIN_QUEUE_WAIT_SECONDS,
+        max_waiters=_EXPLAIN_MAX_QUEUE_WAITERS,
+    )
+    if outcome == "acquired":
+        return True
+
+    if outcome == "busy":
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error": "LLM busy, retry shortly.",
+                "code": "LLM_BUSY",
+                "details": {"retry_after": _EXPLAIN_BUSY_RETRY_AFTER_SECONDS},
+            },
+            headers={"Retry-After": str(_EXPLAIN_BUSY_RETRY_AFTER_SECONDS)},
+        )
+
+    raise HTTPException(
+        status_code=503,
+        detail={
+            "error": "Analysis queue full, retry shortly.",
+            "code": "LLM_QUEUE_FULL",
+            "details": {"retry_after": _EXPLAIN_QUEUE_FULL_RETRY_AFTER_SECONDS},
+        },
+        headers={"Retry-After": str(_EXPLAIN_QUEUE_FULL_RETRY_AFTER_SECONDS)},
+    )
 
 
 def _finding_to_item(f: Finding) -> FindingItem:
@@ -694,12 +734,21 @@ async def explain_finding(
         raise HTTPException(status_code=404, detail="Finding not found")
 
     explain_format = _normalize_explain_format(body.format)
+    llm_slot_acquired = False
+    if _llm_explain_enabled():
+        llm_slot_acquired = await _acquire_explain_llm_slot_or_raise()
+
     started_at = perf_counter()
-    content, source, warning, sections, evidence_items = await _generate_finding_explanation(
-        finding,
-        explain_format,
-        settings,
-    )
+    try:
+        content, source, warning, sections, evidence_items = await _generate_finding_explanation(
+            finding,
+            explain_format,
+            settings,
+        )
+    finally:
+        if llm_slot_acquired:
+            release_explain_llm_slot()
+
     duration_ms = max(0, round((perf_counter() - started_at) * 1000))
     increment_explain_response_count(source, duration_ms=duration_ms)
     return FindingExplainResponse(

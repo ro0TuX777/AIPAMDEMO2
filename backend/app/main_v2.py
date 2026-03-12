@@ -59,6 +59,7 @@ def create_app() -> FastAPI:
             # Wrap plain string details into the structured format
             return JSONResponse(
                 status_code=exc.status_code,
+                headers=exc.headers,
                 content={
                     "schema_version": SCHEMA_VERSION,
                     "error": detail,
@@ -70,9 +71,9 @@ def create_app() -> FastAPI:
         # If already structured (from raise_error), just add schema_version
         if isinstance(detail, dict):
             detail["schema_version"] = SCHEMA_VERSION
-            return JSONResponse(status_code=exc.status_code, content=detail)
+            return JSONResponse(status_code=exc.status_code, headers=exc.headers, content=detail)
             
-        return JSONResponse(status_code=exc.status_code, content={"error": str(detail)})
+        return JSONResponse(status_code=exc.status_code, headers=exc.headers, content={"error": str(detail)})
 
     # --- Middleware: X-Request-Id ---
     @app.middleware("http")

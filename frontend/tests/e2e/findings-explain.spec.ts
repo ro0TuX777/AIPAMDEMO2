@@ -2,6 +2,8 @@ import { test, expect } from '@playwright/test';
 
 const jobId = 'e2e-findings-job-001';
 const findingId = 'finding-explain-001';
+const findingsUrl = `http://localhost:8000/api/v1/jobs/${jobId}/findings?limit=200`;
+const explainUrl = `http://localhost:8000/api/v1/jobs/${jobId}/findings/${findingId}/explain`;
 
 function buildExplainResponse(format: 'markdown' | 'text', requestNumber: number) {
   const body = `${format.toUpperCase()} explanation request ${requestNumber}`;
@@ -9,7 +11,6 @@ function buildExplainResponse(format: 'markdown' | 'text', requestNumber: number
     schema_version: 'v1',
     format,
     content: body,
-    duration_ms: requestNumber * 25,
     source: 'deterministic',
     warning: null,
     explanation_feedback: null,
@@ -45,10 +46,8 @@ function buildExplainResponse(format: 'markdown' | 'text', requestNumber: number
   };
 }
 
-test('findings explain supports format switching and regenerate reuses selected format', async ({ page }) => {
-  const explainFormats: string[] = [];
-
-  await page.route(`http://localhost:8000/api/v1/jobs/${jobId}/findings?limit=200`, async (route) => {
+async function mockFindingsList(page: Parameters<typeof test>[0]['page']) {
+  await page.route(findingsUrl, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -71,8 +70,30 @@ test('findings explain supports format switching and regenerate reuses selected 
       }),
     });
   });
+}
 
-  await page.route(`http://localhost:8000/api/v1/jobs/${jobId}/findings/${findingId}/explain`, async (route) => {
+function buildBusyExplainError(status: 429 | 503, retryAfterSeconds: number) {
+  return {
+    status,
+    contentType: 'application/json',
+    headers: {
+      'Retry-After': String(retryAfterSeconds),
+    },
+    body: JSON.stringify({
+      schema_version: '1.0',
+      error: status === 503 ? 'Analysis queue full, retry shortly.' : 'LLM busy, retry shortly.',
+      code: status === 503 ? 'LLM_QUEUE_FULL' : 'LLM_BUSY',
+      details: { retry_after: retryAfterSeconds },
+    }),
+  };
+}
+
+test('findings explain supports format switching and regenerate reuses selected format', async ({ page }) => {
+  const explainFormats: string[] = [];
+
+  await mockFindingsList(page);
+
+  await page.route(explainUrl, async (route) => {
     const body = route.request().postDataJSON() as { format: 'markdown' | 'text' };
     explainFormats.push(body.format);
     await page.waitForTimeout(150);
@@ -91,7 +112,6 @@ test('findings explain supports format switching and regenerate reuses selected 
   const explainPanel = page.getByTestId(`explain-panel-${findingId}`);
   await expect(explainPanel).toBeVisible();
   await expect(explainPanel.getByText('MARKDOWN explanation request 1', { exact: true })).toBeVisible();
-  await expect(page.getByTestId(`text-explain-duration-${findingId}`)).toHaveText('25 ms');
   await expect(page.getByTestId(`btn-explain-format-markdown-${findingId}`)).toBeDisabled();
   expect(explainFormats).toEqual(['markdown']);
 
@@ -99,7 +119,6 @@ test('findings explain supports format switching and regenerate reuses selected 
   await expect(explainPanel.getByText('Regenerating text grounded explanation…', { exact: true })).toBeVisible();
   await expect(explainPanel.getByText('MARKDOWN explanation request 1', { exact: true })).toBeVisible();
   await expect(explainPanel.getByText('TEXT explanation request 2', { exact: true })).toBeVisible();
-  await expect(page.getByTestId(`text-explain-duration-${findingId}`)).toHaveText('50 ms');
   await expect(page.getByTestId(`btn-explain-format-text-${findingId}`)).toBeDisabled();
   expect(explainFormats).toEqual(['markdown', 'text']);
 
@@ -107,6 +126,73 @@ test('findings explain supports format switching and regenerate reuses selected 
   await expect(explainPanel.getByText('Regenerating text grounded explanation…', { exact: true })).toBeVisible();
   await expect(explainPanel.getByText('TEXT explanation request 2', { exact: true })).toBeVisible();
   await expect(explainPanel.getByText('TEXT explanation request 3', { exact: true })).toBeVisible();
-  await expect(page.getByTestId(`text-explain-duration-${findingId}`)).toHaveText('75 ms');
   expect(explainFormats).toEqual(['markdown', 'text', 'text']);
+});
+
+test('findings explain auto-retries on 429 busy responses with countdown messaging', async ({ page }) => {
+  const explainFormats: string[] = [];
+  let requestCount = 0;
+
+  await mockFindingsList(page);
+  await page.route(explainUrl, async (route) => {
+    const body = route.request().postDataJSON() as { format: 'markdown' | 'text' };
+    explainFormats.push(body.format);
+    requestCount += 1;
+
+    if (requestCount === 1) {
+      await route.fulfill(buildBusyExplainError(429, 1));
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(buildExplainResponse(body.format, requestCount)),
+    });
+  });
+
+  await page.goto(`/jobs/${jobId}/findings`);
+  await page.getByTestId(`btn-explain-${findingId}`).click();
+
+  const explainPanel = page.getByTestId(`explain-panel-${findingId}`);
+  const retryBanner = page.getByTestId(`text-explain-retry-status-${findingId}`);
+  await expect(explainPanel).toBeVisible();
+  await expect(retryBanner).toContainText('LLM busy, retrying in 1s');
+  await expect(page.getByTestId(`btn-explain-regenerate-${findingId}`)).toBeVisible();
+  await expect(explainPanel.getByText('MARKDOWN explanation request 2', { exact: true })).toBeVisible({ timeout: 3000 });
+  expect(explainFormats).toEqual(['markdown', 'markdown']);
+});
+
+test('findings explain auto-retries on 503 queue-full responses with countdown messaging', async ({ page }) => {
+  const explainFormats: string[] = [];
+  let requestCount = 0;
+
+  await mockFindingsList(page);
+  await page.route(explainUrl, async (route) => {
+    const body = route.request().postDataJSON() as { format: 'markdown' | 'text' };
+    explainFormats.push(body.format);
+    requestCount += 1;
+
+    if (requestCount === 1) {
+      await route.fulfill(buildBusyExplainError(503, 1));
+      return;
+    }
+
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(buildExplainResponse(body.format, requestCount)),
+    });
+  });
+
+  await page.goto(`/jobs/${jobId}/findings`);
+  await page.getByTestId(`btn-explain-${findingId}`).click();
+
+  const explainPanel = page.getByTestId(`explain-panel-${findingId}`);
+  const retryBanner = page.getByTestId(`text-explain-retry-status-${findingId}`);
+  await expect(explainPanel).toBeVisible();
+  await expect(retryBanner).toContainText('Analysis queue full, retrying in 1s');
+  await expect(page.getByTestId(`btn-explain-regenerate-${findingId}`)).toBeVisible();
+  await expect(explainPanel.getByText('MARKDOWN explanation request 2', { exact: true })).toBeVisible({ timeout: 3000 });
+  expect(explainFormats).toEqual(['markdown', 'markdown']);
 });

@@ -1,8 +1,9 @@
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   api,
+  ApiError,
   type FindingExplainEvidenceItem,
   type FindingExplainFeedback,
   type FindingExplainSection,
@@ -13,6 +14,8 @@ import {
 type ExplainState = {
   loading?: boolean;
   error?: string;
+  retry_status?: 429 | 503;
+  retry_at_ms?: number;
   content?: string;
   format?: "markdown" | "text";
   source?: "deterministic" | "llm" | "fallback";
@@ -79,6 +82,31 @@ const formatExplainUpdatedAt = (value: string) => {
 };
 
 const formatExplainDuration = (durationMs: number) => `${durationMs.toLocaleString()} ms`;
+
+const getExplainRetryAfterSeconds = (error: ApiError) => {
+  if (typeof error.retryAfter === "number" && Number.isFinite(error.retryAfter) && error.retryAfter > 0) {
+    return Math.max(1, Math.round(error.retryAfter));
+  }
+  return error.status === 503 ? 5 : 2;
+};
+
+const getExplainRetrySecondsRemaining = (explainState: ExplainState | undefined, nowMs: number) => {
+  if (typeof explainState?.retry_at_ms !== "number") {
+    return null;
+  }
+  return Math.max(1, Math.ceil((explainState.retry_at_ms - nowMs) / 1000));
+};
+
+const getExplainRetryMessage = (explainState: ExplainState | undefined, nowMs: number) => {
+  const remainingSeconds = getExplainRetrySecondsRemaining(explainState, nowMs);
+  if (!remainingSeconds || !explainState?.retry_status) {
+    return null;
+  }
+  if (explainState.retry_status === 503) {
+    return `Analysis queue full, retrying in ${remainingSeconds}s`;
+  }
+  return `LLM busy, retrying in ${remainingSeconds}s`;
+};
 
 const buildExplainClipboardText = (finding: FindingItem, explainState: ExplainState) => {
   const lines: string[] = [
@@ -241,6 +269,7 @@ export const FindingsListPage: React.FC = () => {
   const [categoryFilter, setCategoryFilter] = useState<string>("");
   const [openExplainId, setOpenExplainId] = useState<string | null>(null);
   const [explanations, setExplanations] = useState<Record<string, ExplainState>>({});
+  const [retryClockMs, setRetryClockMs] = useState(() => Date.now());
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["job", jobId, "findings", sevFilter, categoryFilter],
@@ -311,6 +340,8 @@ export const FindingsListPage: React.FC = () => {
         ...(prev[findingId] ?? {}),
         loading: true,
         error: undefined,
+        retry_status: undefined,
+        retry_at_ms: undefined,
         copy_status: undefined,
         download_status: undefined,
         highlighted_citation: undefined,
@@ -327,6 +358,8 @@ export const FindingsListPage: React.FC = () => {
           ...(prev[findingId] ?? {}),
           loading: false,
           error: undefined,
+          retry_status: undefined,
+          retry_at_ms: undefined,
           content: result.content,
           format: result.format,
           source: result.source,
@@ -348,11 +381,52 @@ export const FindingsListPage: React.FC = () => {
         [findingId]: {
           ...(prev[findingId] ?? {}),
           loading: false,
-          error: err instanceof Error ? err.message : "Failed to explain finding.",
+          error:
+            err instanceof ApiError && (err.status === 429 || err.status === 503)
+              ? undefined
+              : err instanceof Error
+                ? err.message
+                : "Failed to explain finding.",
+          retry_status:
+            err instanceof ApiError && (err.status === 429 || err.status === 503)
+              ? err.status as 429 | 503
+              : undefined,
+          retry_at_ms:
+            err instanceof ApiError && (err.status === 429 || err.status === 503)
+              ? Date.now() + getExplainRetryAfterSeconds(err) * 1000
+              : undefined,
         },
       }));
     }
   };
+
+  const openExplainState = openExplainId ? explanations[openExplainId] : undefined;
+
+  useEffect(() => {
+    if (!openExplainId || openExplainState?.loading || typeof openExplainState?.retry_at_ms !== "number") {
+      return undefined;
+    }
+
+    const retryDelayMs = Math.max(0, openExplainState.retry_at_ms - Date.now());
+    const timerId = window.setTimeout(() => {
+      void requestExplain(openExplainId, {
+        force: true,
+        format: openExplainState.format ?? "markdown",
+      });
+    }, retryDelayMs);
+
+    return () => window.clearTimeout(timerId);
+  }, [openExplainId, openExplainState?.format, openExplainState?.loading, openExplainState?.retry_at_ms]);
+
+  useEffect(() => {
+    if (!openExplainId || openExplainState?.loading || typeof openExplainState?.retry_at_ms !== "number") {
+      return undefined;
+    }
+
+    setRetryClockMs(Date.now());
+    const intervalId = window.setInterval(() => setRetryClockMs(Date.now()), 250);
+    return () => window.clearInterval(intervalId);
+  }, [openExplainId, openExplainState?.loading, openExplainState?.retry_at_ms]);
 
   const handleExplainFormatChange = async (findingId: string, format: ExplainFormat) => {
     await requestExplain(findingId, { force: true, format });
@@ -500,6 +574,7 @@ export const FindingsListPage: React.FC = () => {
               || (explainState?.evidence_items?.length ?? 0) > 0,
             );
             const hasExplainDuration = typeof explainState?.duration_ms === "number";
+            const explainRetryMessage = getExplainRetryMessage(explainState, retryClockMs);
 
             return (
               <div key={f.finding_id} className="bg-slate-900/50 border border-slate-800 rounded-lg p-4">
@@ -613,7 +688,7 @@ export const FindingsListPage: React.FC = () => {
                           Download
                         </button>
                       )}
-                      {!explainState?.loading && (hasExplainContent || explainState?.error) && (
+                      {!explainState?.loading && (hasExplainContent || explainState?.error || explainState?.retry_at_ms) && (
                         <button
                           onClick={() => void requestExplain(f.finding_id, { force: true, format: currentExplainFormat })}
                           data-testid={`btn-explain-regenerate-${f.finding_id}`}
@@ -736,6 +811,15 @@ export const FindingsListPage: React.FC = () => {
 
                   {explainState?.warning && (
                     <p className="mb-2 text-xs text-amber-300">{explainState.warning}</p>
+                  )}
+
+                  {explainRetryMessage && (
+                    <p
+                      className="mb-2 text-xs text-amber-300"
+                      data-testid={`text-explain-retry-status-${f.finding_id}`}
+                    >
+                      {explainRetryMessage}
+                    </p>
                   )}
 
                   {explainState?.error && (

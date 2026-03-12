@@ -735,6 +735,54 @@ class TestFindingsEndpoints:
         assert body["sections"][1]["citations"] == ["finding.summary"]
         assert body["content"].startswith("# Fallback finding")
 
+    def test_explain_finding_returns_429_with_retry_after_when_llm_busy(self, app_client, monkeypatch):
+        from backend.app.api import findings as findings_api
+
+        client, db = app_client
+        job = _seed_job(db)
+        finding = _seed_finding(db, job.job_id, title="Busy finding")
+
+        monkeypatch.setenv("AIPAM_EXPLAIN_FINDING_USE_LLM", "1")
+        monkeypatch.setattr(findings_api, "try_acquire_explain_llm_slot", lambda *args, **kwargs: "busy")
+
+        r = client.post(
+            f"/api/v1/jobs/{job.job_id}/findings/{finding.finding_id}/explain",
+            headers=AUTH,
+            json={"format": "markdown"},
+        )
+        assert r.status_code == 429
+        assert r.headers["Retry-After"] == "2"
+        assert r.json() == {
+            "schema_version": "1.0",
+            "error": "LLM busy, retry shortly.",
+            "code": "LLM_BUSY",
+            "details": {"retry_after": 2},
+        }
+
+    def test_explain_finding_returns_503_with_retry_after_when_queue_is_full(self, app_client, monkeypatch):
+        from backend.app.api import findings as findings_api
+
+        client, db = app_client
+        job = _seed_job(db)
+        finding = _seed_finding(db, job.job_id, title="Queued finding")
+
+        monkeypatch.setenv("AIPAM_EXPLAIN_FINDING_USE_LLM", "1")
+        monkeypatch.setattr(findings_api, "try_acquire_explain_llm_slot", lambda *args, **kwargs: "queue_full")
+
+        r = client.post(
+            f"/api/v1/jobs/{job.job_id}/findings/{finding.finding_id}/explain",
+            headers=AUTH,
+            json={"format": "markdown"},
+        )
+        assert r.status_code == 503
+        assert r.headers["Retry-After"] == "5"
+        assert r.json() == {
+            "schema_version": "1.0",
+            "error": "Analysis queue full, retry shortly.",
+            "code": "LLM_QUEUE_FULL",
+            "details": {"retry_after": 5},
+        }
+
     def test_explain_finding_not_found(self, app_client):
         client, db = app_client
         job = _seed_job(db)

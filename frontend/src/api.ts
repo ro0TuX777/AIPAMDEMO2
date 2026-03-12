@@ -805,13 +805,14 @@ async function request<T>(url: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(url, { ...init, headers });
   if (!res.ok) {
     const retryAfter = res.headers.get("Retry-After");
+    const parsedRetryAfter = retryAfter ? Number.parseInt(retryAfter, 10) : undefined;
     let body: any = {};
     try { body = await res.json(); } catch { /* empty */ }
     throw new ApiError(
       res.status,
       body.code || `HTTP_${res.status}`,
       body.details,
-      retryAfter ? parseInt(retryAfter, 10) : undefined,
+      typeof parsedRetryAfter === "number" && Number.isFinite(parsedRetryAfter) ? parsedRetryAfter : undefined,
     );
   }
   if (res.status === 204) return undefined as unknown as T;
