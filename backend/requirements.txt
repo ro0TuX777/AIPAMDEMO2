@@ -34,6 +34,9 @@ docker>=7.0
 # --- RAG / Vector Store ---
 chromadb>=0.4
 
+# --- Testing ---
+pytest>=8.0
+
 # --- Linting ---
 ruff>=0.4
 
