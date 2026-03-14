@@ -12,7 +12,6 @@ import logging
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-import pyarrow as pa
 import lancedb
 
 from .domain_models import FlowRecord, AlertRecord

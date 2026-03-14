@@ -1,7 +1,7 @@
 """
 Knowledge Base RAG service — chunking, embedding, storage, retrieval.
 
-Uses ChromaDB for vector storage and Ollama's embedding API (nomic-embed-text).
+Uses ChromaDB for vector storage and Ollama's embedding API (mxbai-embed-large).
 """
 
 from __future__ import annotations
@@ -9,7 +9,6 @@ from __future__ import annotations
 import logging
 import re
 import uuid
-from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -46,10 +45,11 @@ def chunk_text(text: str, chunk_size: int = _CHUNK_SIZE, overlap: int = _CHUNK_O
 async def get_embeddings(
     texts: list[str],
     ollama_url: str = "http://ollama:11434",
-    model: str = "nomic-embed-text",
+    model: str = "mxbai-embed-large",
 ) -> list[list[float]]:
     """Get embeddings from Ollama's embedding API.
 
+    Uses the /api/embed endpoint (Ollama >= 0.4).
     Falls back to a simple hash-based embedding if Ollama is unavailable,
     so the system degrades gracefully.
     """
@@ -58,14 +58,15 @@ async def get_embeddings(
         for text in texts:
             try:
                 resp = await client.post(
-                    f"{ollama_url}/api/embeddings",
-                    json={"model": model, "prompt": text},
+                    f"{ollama_url}/api/embed",
+                    json={"model": model, "input": text},
                 )
                 resp.raise_for_status()
                 data = resp.json()
-                embedding = data.get("embedding", [])
-                if embedding:
-                    embeddings.append(embedding)
+                # /api/embed returns {"embeddings": [[...], ...]}
+                emb_list = data.get("embeddings", [])
+                if emb_list and len(emb_list[0]) > 0:
+                    embeddings.append(emb_list[0])
                 else:
                     logger.warning("Empty embedding returned for chunk")
                     embeddings.append(_fallback_embedding(text))
@@ -75,7 +76,7 @@ async def get_embeddings(
     return embeddings
 
 
-def _fallback_embedding(text: str, dim: int = 768) -> list[float]:
+def _fallback_embedding(text: str, dim: int = 1024) -> list[float]:
     """Deterministic hash-based embedding for fallback (low quality but functional)."""
     import hashlib
     h = hashlib.sha256(text.encode()).digest()
@@ -130,7 +131,7 @@ async def index_document(
     doc_type: str,
     job_id: str = "",
     ollama_url: str = "http://ollama:11434",
-    embedding_model: str = "nomic-embed-text",
+    embedding_model: str = "mxbai-embed-large",
     persist_dir: str | Path | None = None,
 ) -> int:
     """Chunk a document, embed it, and store in ChromaDB.
@@ -157,12 +158,30 @@ async def index_document(
         for i in range(len(chunks))
     ]
 
-    collection.upsert(
-        ids=ids,
-        embeddings=embeddings,
-        documents=chunks,
-        metadatas=metadatas,
-    )
+    try:
+        collection.upsert(
+            ids=ids,
+            embeddings=embeddings,
+            documents=chunks,
+            metadatas=metadatas,
+        )
+    except Exception as exc:
+        # Handle dimension mismatch (e.g. switching from 768-dim fallback to 1024-dim real embeddings)
+        if "dimensionality" in str(exc).lower() or "dimension" in str(exc).lower():
+            logger.warning("Embedding dimension mismatch — recreating ChromaDB collection: %s", exc)
+            global _collection
+            if _chroma_client:
+                _chroma_client.delete_collection(_COLLECTION_NAME)
+            _collection = None
+            collection = _get_collection(persist_dir)
+            collection.upsert(
+                ids=ids,
+                embeddings=embeddings,
+                documents=chunks,
+                metadatas=metadatas,
+            )
+        else:
+            raise
 
     logger.info("Indexed %d chunks for document %s (%s) job=%s", len(chunks), doc_name, doc_id, job_id)
     return len(chunks)
@@ -174,7 +193,7 @@ async def retrieve(
     doc_type_filter: str | None = None,
     job_id: str | None = None,
     ollama_url: str = "http://ollama:11434",
-    embedding_model: str = "nomic-embed-text",
+    embedding_model: str = "mxbai-embed-large",
     persist_dir: str | Path | None = None,
 ) -> list[dict[str, Any]]:
     """Retrieve the most relevant KB chunks for a query.
@@ -320,9 +339,12 @@ def _format_alert_summary(alert) -> str:
 
 def _format_finding_summary(finding) -> str:
     """Format a Finding DB record into text for vector indexing."""
+    conf = getattr(finding, "confidence", 0.0) or 0.0
+    conf_label = "high" if conf >= 0.7 else "medium" if conf >= 0.4 else "low"
     parts = [
         f"Finding: {finding.title}",
         f"Severity: {finding.severity}",
+        f"Confidence: {round(conf * 100)}% ({conf_label})",
         f"Sensor: {finding.sensor}",
     ]
     if finding.category:
@@ -337,7 +359,7 @@ async def auto_index_job(
     job_id: str,
     ollama_url: str = "http://ollama:11434",
     persist_dir: str | Path | None = None,
-    embedding_model: str = "nomic-embed-text",
+    embedding_model: str = "mxbai-embed-large",
 ) -> dict[str, int]:
     """Auto-index all pipeline outputs for a job into the vector store.
 

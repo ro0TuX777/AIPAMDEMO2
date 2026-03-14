@@ -1,5 +1,4 @@
 import pytest
-from unittest.mock import MagicMock
 from backend.app.llm_client import LLMClient
 
 @pytest.fixture

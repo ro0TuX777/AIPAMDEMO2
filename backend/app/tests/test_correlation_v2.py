@@ -1,8 +1,3 @@
-import pytest
-import json
-from pathlib import Path
-from unittest.mock import MagicMock
-import ipaddress
 
 from backend.app.normalize.correlate import (
     _normalize_event,
@@ -13,8 +8,6 @@ from backend.app.normalize.correlate import (
 )
 from backend.app.models.connection import Connection
 from backend.app.models.alert import Alert
-from backend.app.models.finding import Finding
-from backend.app.models.ioc import Ioc
 
 def test_normalize_event_nested():
     raw = {

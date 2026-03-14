@@ -8,7 +8,7 @@ Shared FastAPI dependencies (§1.6 auth, request-id).
 
 import uuid
 
-from fastapi import Depends, Header, HTTPException, Query, Request, status
+from fastapi import Depends, Header, HTTPException, Query, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from backend.app.config_v2 import Settings, get_settings

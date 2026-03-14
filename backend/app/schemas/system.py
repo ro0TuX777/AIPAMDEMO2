@@ -8,7 +8,6 @@ from backend.app.schemas.common import (
     SCHEMA_VERSION,
     ExecutionProfile,
     JobStatus,
-    Severity,
 )
 from backend.app.schemas.host import HostListItem
 from backend.app.schemas.ioc import IocItem, IocListResponse

@@ -6,7 +6,7 @@ GET  /jobs/{jobId}/alerts/{alertId}    – get a single alert with related data
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from sqlalchemy import select, func
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.api.deps import get_db, get_request_id, verify_token

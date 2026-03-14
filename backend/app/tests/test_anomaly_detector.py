@@ -13,10 +13,8 @@ Tests all detection heuristics:
 - Entropy anomalies
 """
 
-import pytest
 from datetime import datetime, timedelta
 import uuid
-from typing import List
 
 from app.models import FlowRecord
 from app.anomaly_detector import AnomalyDetector, AnomalyFinding, AnomalyReport

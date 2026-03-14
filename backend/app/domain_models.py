@@ -240,8 +240,12 @@ class TrafficLLMResult(BaseModel):
     """TrafficLLM classification results for integration with LLM analysis."""
     malware_detections: int = 0
     botnet_detections: int = 0
+    web_attack_detections: int = 0
+    apt_detections: int = 0
     malware_types: List[str] = Field(default_factory=list)
     botnet_types: List[str] = Field(default_factory=list)
+    web_attack_types: List[str] = Field(default_factory=list)
+    apt_types: List[str] = Field(default_factory=list)
     # Skip classifications as it contains complex objects (FlowRecord)
     # The summary (counts + types) is sufficient for the LLM prompt
 

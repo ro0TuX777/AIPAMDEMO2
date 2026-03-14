@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import logging
 import os
 from datetime import datetime, timezone
 from typing import Any, Dict, List
@@ -10,16 +9,16 @@ from celery import Celery
 from sqlmodel import Session, select
 
 from .logging_config import configure_logging, get_logger, set_log_context
-from .aggregation import AggregatedData, aggregate_host_pairs, aggregate_hosts, diff_change_summaries
-from .anomaly_detector import AnomalyDetector, AnomalyReport
+from .aggregation import aggregate_host_pairs, aggregate_hosts, diff_change_summaries
+from .anomaly_detector import AnomalyDetector
 from .connectors import ArkimeConnector, SecurityOnionConnector
 from .database import engine
 from .db_models import JobDB, JobResultDB, JobStepDB, PipelineCheckpointDB, FindingDB, EvidenceDB
 from .llm_client import LLMClient, LLMConfig, analyze_chunks, classify_traffic_with_trafficllm
-from .models import AnalysisSummary, HostFinding, JobResult, JobStatus, JobStepStatus
+from .models import JobResult, JobStatus, JobStepStatus
 from .settings_runtime import get_effective_settings
 from .reporting import jobresult_to_html, jobresult_to_markdown
-from .parsers import parse_zeek_conn, parse_zeek_events, parse_suricata_eve
+from .parsers import parse_zeek_conn, parse_suricata_eve
 from .bzar_validator import bzar_enabled, parse_notice_log
 import json
 import hashlib
@@ -203,7 +202,9 @@ async def _classify_flows_with_trafficllm(
     trafficllm_endpoint: str,
     max_flows: int = 50,
 ) -> Dict[str, Any]:
-    """Use TrafficLLM to classify network flows for malware/botnet/VPN/Tor detection.
+    """Use TrafficLLM to classify network flows for malware/botnet/web-attack/APT detection.
+
+    Runs MTD, BND, WAD, and AAD tasks in parallel via asyncio.gather for each flow.
 
     Args:
         flows: List of FlowRecord objects from parsed traffic.
@@ -229,8 +230,8 @@ async def _classify_flows_with_trafficllm(
         # Create a hex representation of flow metadata
         flow_hex = _flow_to_hex(flow)
 
-        # Run multiple detection tasks on each flow
-        for task_type in ["MTD", "BND"]:  # Focus on malware and botnet detection
+        # Run all four detection tasks on each flow in parallel
+        for task_type in ["MTD", "BND", "WAD", "AAD"]:
             tasks.append({
                 "flow": flow,
                 "task": task_type,
@@ -258,7 +259,11 @@ async def _classify_flows_with_trafficllm(
     classifications = []
     malware_detected = []
     botnet_detected = []
+    web_attack_detected = []
+    apt_detected = []
     generated_alerts = []
+
+    _BENIGN_LABELS = {"normal", "benign", "error", "unknown"}
 
     for r in results:
         if isinstance(r, Exception):
@@ -270,13 +275,15 @@ async def _classify_flows_with_trafficllm(
         task = r["task"]
         classification = r["classification"]
 
+        if classification.lower() in _BENIGN_LABELS:
+            continue
+
         # Check for malware detection
-        if task == "MTD" and classification.lower() not in ["normal", "error", "unknown"]:
+        if task == "MTD":
             malware_detected.append({
                 "flow": flow,
                 "malware_type": classification,
             })
-            # Generate alert using AlertRecord
             generated_alerts.append(AlertRecord(
                 id=str(uuid.uuid4()),
                 timestamp=flow.start_time,
@@ -292,7 +299,7 @@ async def _classify_flows_with_trafficllm(
             ))
 
         # Check for botnet detection
-        if task == "BND" and classification.lower() not in ["normal", "error", "unknown"]:
+        elif task == "BND":
             botnet_detected.append({
                 "flow": flow,
                 "botnet_type": classification,
@@ -311,14 +318,58 @@ async def _classify_flows_with_trafficllm(
                 category="botnet",
             ))
 
+        # Check for web attack detection
+        elif task == "WAD":
+            web_attack_detected.append({
+                "flow": flow,
+                "attack_type": classification,
+            })
+            generated_alerts.append(AlertRecord(
+                id=str(uuid.uuid4()),
+                timestamp=flow.start_time,
+                src_ip=flow.src_ip,
+                src_port=flow.src_port,
+                dst_ip=flow.dst_ip,
+                dst_port=flow.dst_port,
+                alert_source="TRAFFICLLM",
+                signature_id=f"TRAFFICLLM-WAD-{classification.upper()}",
+                signature_name=f"TrafficLLM detected potential {classification} web attack",
+                severity="high",
+                category="web_attack",
+            ))
+
+        # Check for APT detection
+        elif task == "AAD":
+            apt_detected.append({
+                "flow": flow,
+                "apt_type": classification,
+            })
+            generated_alerts.append(AlertRecord(
+                id=str(uuid.uuid4()),
+                timestamp=flow.start_time,
+                src_ip=flow.src_ip,
+                src_port=flow.src_port,
+                dst_ip=flow.dst_ip,
+                dst_port=flow.dst_port,
+                alert_source="TRAFFICLLM",
+                signature_id=f"TRAFFICLLM-AAD-{classification.upper()}",
+                signature_name=f"TrafficLLM detected potential APT activity ({classification})",
+                severity="critical",
+                category="apt",
+            ))
+
     return {
         "classifications": classifications,
         "summary": {
             "total_flows_analyzed": len(sample_flows),
             "malware_detections": len(malware_detected),
             "botnet_detections": len(botnet_detected),
+            "web_attack_detections": len(web_attack_detected),
+            "apt_detections": len(apt_detected),
             "malware_types": list(set(m["malware_type"] for m in malware_detected)),
             "botnet_types": list(set(b["botnet_type"] for b in botnet_detected)),
+            "web_attack_types": list(set(w["attack_type"] for w in web_attack_detected)),
+            "apt_types": list(set(a["apt_type"] for a in apt_detected)),
         },
         "alerts": generated_alerts,
     }
@@ -456,7 +507,6 @@ def _extract_raw_packets(pcap_paths: List[str], max_packets: int = 50) -> List[s
     return packet_strings
 
 
-from .baseline_utils import _split_baseline_exploit
 
 
 
@@ -577,7 +627,6 @@ def run_pipeline(job_id: str) -> None:
             _update_step(session, job_id, "parse", JobStepStatus.RUNNING)
 
             flows = []
-            events = []
             alerts = []
 
             # Create a working directory for logs
@@ -711,7 +760,7 @@ def run_pipeline(job_id: str) -> None:
                         logger.info(f"[PIPELINE] Zeek parsed {len(parsed_flows)} flows from {len(zeek_data)} records")
                         flows.extend(parsed_flows)
                 else:
-                    logger.warning(f"[PIPELINE] conn.log not found!")
+                    logger.warning("[PIPELINE] conn.log not found!")
 
                 logger.info(f"[PIPELINE] Looking for eve.json at {eve_log}")
                 if eve_log.exists():
@@ -734,7 +783,7 @@ def run_pipeline(job_id: str) -> None:
                         logger.info(f"[PIPELINE] Suricata parsed {len(parsed_alerts)} alerts from {len(suricata_data)} records")
                         alerts.extend(parsed_alerts)
                 else:
-                    logger.warning(f"[PIPELINE] eve.json not found!")
+                    logger.warning("[PIPELINE] eve.json not found!")
 
             if bzar_enabled():
                 notice_log = work_dir / "notice.log"
@@ -955,7 +1004,7 @@ def run_pipeline(job_id: str) -> None:
             set_log_context(step="llm_analysis")
             _update_step(session, job_id, "llm_analysis", JobStepStatus.RUNNING)
 
-            from .models import LLMInputBundle, TimeWindow, TrafficLLMResult
+            from .models import TimeWindow, TrafficLLMResult
 
             # Materialize TimeWindow objects from ranges.
             time_ranges: Dict[str, TimeWindow] = {}
@@ -982,8 +1031,12 @@ def run_pipeline(job_id: str) -> None:
                 trafficllm_data = TrafficLLMResult(
                     malware_detections=tllm_summary.get("malware_detections", 0),
                     botnet_detections=tllm_summary.get("botnet_detections", 0),
+                    web_attack_detections=tllm_summary.get("web_attack_detections", 0),
+                    apt_detections=tllm_summary.get("apt_detections", 0),
                     malware_types=tllm_summary.get("malware_types", []),
                     botnet_types=tllm_summary.get("botnet_types", []),
+                    web_attack_types=tllm_summary.get("web_attack_types", []),
+                    apt_types=tllm_summary.get("apt_types", []),
                 )
 
             # Use both the provided exercise_id and the PCAP filename to provide
@@ -1221,7 +1274,6 @@ def run_finetuning_pipeline() -> str:
     Updates the DAWN training ledger upon completion.
     """
     import uuid
-    import hashlib
     
     job_id = str(uuid.uuid4())
     set_log_context(job_id=job_id, step="finetune")

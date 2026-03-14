@@ -22,7 +22,7 @@ import hashlib
 import json
 import logging
 from collections import defaultdict
-from typing import Any, Dict, List, Optional, Set, Tuple
+from typing import Any, Dict, List, Set, Tuple
 
 from pydantic import BaseModel, Field
 from sqlmodel import Session, select

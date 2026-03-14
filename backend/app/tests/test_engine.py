@@ -3,7 +3,7 @@
 import json
 import pytest
 
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 from app.core.interfaces import AnalysisContext, Finding, ForensicAnalyzer
 from app.core.engine import (

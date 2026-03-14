@@ -34,6 +34,9 @@ docker>=7.0
 # --- RAG / Vector Store ---
 chromadb>=0.4
 
+# --- Linting ---
+ruff>=0.4
+
 # --- V1 compatibility (training, embeddings) ---
 sqlmodel
 lancedb>=0.6.0

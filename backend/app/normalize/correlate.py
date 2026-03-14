@@ -41,6 +41,22 @@ from backend.app.models.tls import TlsSession
 logger = logging.getLogger("aipam.correlator")
 
 
+def _emit_finding_event(job_id: str, finding: Finding) -> None:
+    """Publish a sensor.finding SSE event for high-severity findings."""
+    try:
+        from backend.app.events import publish_job_event
+        publish_job_event(job_id, "sensor.finding", {
+            "job_id": job_id,
+            "sensor": finding.sensor or "unknown",
+            "finding_id": finding.finding_id or "",
+            "severity": finding.severity or "info",
+            "title": finding.title,
+            "confidence": round(getattr(finding, "confidence", 0.0) or 0.0, 2),
+        })
+    except Exception:
+        pass  # Best-effort — never block correlator
+
+
 def _uuid() -> str:
     return str(uuid.uuid4())
 
@@ -456,6 +472,12 @@ def _process_finding(evt: dict, job_id: str, hosts: HostAccumulator) -> Finding 
                          pcap_label=evt.get("pcap_label"))
 
     evidence = evt.get("evidence")
+    # Compute confidence from event data or derive from severity
+    raw_conf = evt.get("confidence")
+    confidence = _to_confidence(raw_conf)
+    if confidence is None:
+        # Fall back to severity-based confidence
+        confidence = _CONFIDENCE_MAP.get(evt.get("severity", "info"), 0.3)
     return Finding(
         job_id=job_id,
         finding_id=evt.get("finding_id") or _uuid(),
@@ -467,6 +489,7 @@ def _process_finding(evt: dict, job_id: str, hosts: HostAccumulator) -> Finding 
         community_id=evt.get("community_id"),
         evidence_json=json.dumps(evidence) if evidence else None,
         pcap_label=evt.get("pcap_label"),
+        confidence=confidence,
     )
 
 
@@ -638,6 +661,9 @@ def correlate_job(
             if row:
                 db.add(row)
                 counts["findings"] += 1
+                # Emit SSE event for high-severity findings
+                if row.severity in ("critical", "high"):
+                    _emit_finding_event(job_id, row)
         elif event_type == "ioc":
             ioc_key = (evt.get("ioc_type", ""), evt.get("value", ""))
             if ioc_key not in seen_iocs:
@@ -691,6 +717,12 @@ def correlate_job(
         # Use pcap_label from the first alert in the group (if available)
         pcap_label = alert_evts[0].get("pcap_label")
 
+        # Compute confidence: more alert firings + higher severity = higher confidence
+        alert_conf = _CONFIDENCE_MAP.get(severity, 0.6)
+        # Bonus for repeated alerts (capped at +0.2)
+        repeat_bonus = min(len(alert_evts) - 1, 4) * 0.05
+        alert_conf = min(alert_conf + repeat_bonus, 1.0)
+
         finding = Finding(
             job_id=job_id,
             finding_id=_uuid(),
@@ -706,9 +738,13 @@ def correlate_job(
                 "sample_ts": alert_evts[0].get("ts"),
             }),
             pcap_label=pcap_label,
+            confidence=round(alert_conf, 2),
         )
         db.add(finding)
         counts["findings"] += 1
+        # Emit SSE event for high-severity alert-group findings
+        if severity in ("critical", "high"):
+            _emit_finding_event(job_id, finding)
 
         # Update host finding counts
         for ip in affected_ips:

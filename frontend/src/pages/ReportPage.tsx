@@ -1,6 +1,6 @@
-import React, { useRef, useCallback } from "react";
+import React, { useRef, useCallback, useState } from "react";
 import { useParams, Link } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   api,
   type JobSummaryResponse,
@@ -10,6 +10,8 @@ import {
   type AlertItem,
   type FindingItem,
   type Severity,
+  type ReportItem,
+  type ReportListResponse,
 } from "../api";
 
 /* ────────────────────────────────────────────────────────────────────────── */
@@ -155,6 +157,31 @@ const SeverityBadge: React.FC<{ severity: string }> = ({ severity }) => (
 export const ReportPage: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
   const reportRef = useRef<HTMLDivElement>(null);
+  const queryClient = useQueryClient();
+  const [genMode, setGenMode] = useState<"executive" | "analyst">("analyst");
+  const [viewMode, setViewMode] = useState<"live" | "generated">("live");
+  const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
+
+  // ── Generated reports ──
+  const reportsQ = useQuery<ReportListResponse>({
+    queryKey: ["job", jobId, "reports"],
+    queryFn: () => api.listReports(jobId!),
+    enabled: !!jobId,
+  });
+
+  const generateMut = useMutation({
+    mutationFn: (mode: "executive" | "analyst") => api.generateReport(jobId!, mode),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["job", jobId, "reports"] });
+      setSelectedReportId(data.item.report_id);
+      setViewMode("generated");
+    },
+  });
+
+  const generatedReports: ReportItem[] = reportsQ.data?.items ?? [];
+  const activeReport = selectedReportId
+    ? generatedReports.find(r => r.report_id === selectedReportId)
+    : generatedReports[0] ?? null;
 
   // ── Data fetching (parallel) ──
   const summaryQ = useQuery<JobSummaryResponse>({
@@ -270,6 +297,95 @@ export const ReportPage: React.FC = () => {
           </button>
         </div>
 
+        {/* ── Report Generator Panel ── */}
+        <div className="no-print bg-slate-900/60 border border-slate-800 rounded-lg p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-slate-200">Report Composer</h3>
+            <div className="flex items-center gap-2">
+              {/* View mode toggle */}
+              <button
+                onClick={() => setViewMode("live")}
+                className={`px-3 py-1 text-xs rounded ${viewMode === "live" ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-400 hover:text-white"}`}
+              >
+                Live View
+              </button>
+              <button
+                onClick={() => setViewMode("generated")}
+                className={`px-3 py-1 text-xs rounded ${viewMode === "generated" ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-400 hover:text-white"}`}
+                disabled={generatedReports.length === 0}
+              >
+                Generated ({generatedReports.length})
+              </button>
+            </div>
+          </div>
+          <div className="flex items-center gap-3">
+            <select
+              value={genMode}
+              onChange={(e) => setGenMode(e.target.value as "executive" | "analyst")}
+              className="bg-slate-800 border border-slate-700 text-slate-200 text-sm rounded px-3 py-1.5"
+            >
+              <option value="analyst">Analyst Report</option>
+              <option value="executive">Executive Summary</option>
+            </select>
+            <button
+              onClick={() => generateMut.mutate(genMode)}
+              disabled={generateMut.isPending}
+              className="px-4 py-1.5 bg-green-600 hover:bg-green-700 disabled:opacity-50 text-white text-sm font-medium rounded transition-colors"
+            >
+              {generateMut.isPending ? "Generating…" : "Generate Report"}
+            </button>
+            {generateMut.isError && (
+              <span className="text-red-400 text-xs">Generation failed</span>
+            )}
+          </div>
+          {/* Generated report selector */}
+          {viewMode === "generated" && generatedReports.length > 0 && (
+            <div className="flex gap-2 flex-wrap">
+              {generatedReports.map(r => (
+                <button
+                  key={r.report_id}
+                  onClick={() => setSelectedReportId(r.report_id)}
+                  className={`px-3 py-1 text-xs rounded border ${
+                    activeReport?.report_id === r.report_id
+                      ? "border-blue-500 bg-blue-500/20 text-blue-300"
+                      : "border-slate-700 bg-slate-800 text-slate-400 hover:text-white"
+                  }`}
+                >
+                  {r.mode === "executive" ? "📋" : "🔬"} {r.mode} — {r.threat_level.toUpperCase()} ({new Date(r.created_at).toLocaleString()})
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* ── Generated Report View ── */}
+        {viewMode === "generated" && activeReport && (
+          <Section title={activeReport.title} icon={activeReport.mode === "executive" ? "📋" : "🔬"}>
+            <div className="space-y-3">
+              <div className="flex gap-3 text-xs text-slate-400">
+                <span>Threat: <span className={`font-bold ${
+                  activeReport.threat_level === "critical" ? "text-red-500" :
+                  activeReport.threat_level === "high" ? "text-red-400" :
+                  activeReport.threat_level === "medium" ? "text-amber-400" :
+                  activeReport.threat_level === "low" ? "text-blue-400" : "text-green-400"
+                }`}>{activeReport.threat_level.toUpperCase()}</span></span>
+                <span>Confidence: {(activeReport.confidence * 100).toFixed(0)}%</span>
+                <span>Theories: {activeReport.theory_count}</span>
+                <span>Slices: {activeReport.slice_count}</span>
+                <span>Findings: {activeReport.finding_count}</span>
+                <span>Alerts: {activeReport.alert_count}</span>
+              </div>
+              <div className="prose prose-invert prose-sm max-w-none">
+                <pre className="whitespace-pre-wrap text-sm text-slate-300 font-sans leading-relaxed bg-slate-950/30 rounded-lg p-4 border border-slate-800">
+                  {activeReport.content_markdown}
+                </pre>
+              </div>
+            </div>
+          </Section>
+        )}
+
+        {/* ── Live Report View (original client-side rendering) ── */}
+        {viewMode === "live" && (<>
         {/* Print header (only shows in print) */}
         <div className="print-header items-center justify-between border-b-2 border-gray-900 pb-4 mb-6">
           <div>
@@ -615,6 +731,7 @@ export const ReportPage: React.FC = () => {
             </div>
           </>
         )}
+        </>)}
       </div>
     </>
   );

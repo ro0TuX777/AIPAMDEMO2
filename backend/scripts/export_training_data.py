@@ -6,11 +6,9 @@ into a JSONL format suitable for TrafficLLM v2 fine-tuning.
 """
 
 import json
-import os
 import sys
 from pathlib import Path
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 # Add backend to path
 sys.path.append(str(Path(__file__).parent.parent.parent))
@@ -56,7 +54,7 @@ def export_findings(output_file: str):
             
             # Construct the training record
             record = {
-                "instruction": f"Detect malware in this traffic",
+                "instruction": "Detect malware in this traffic",
                 "input": f"<packet>: {packet_hex}",
                 "output": output_label,
                 "metadata": {

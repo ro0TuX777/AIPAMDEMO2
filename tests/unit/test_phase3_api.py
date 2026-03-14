@@ -1073,10 +1073,10 @@ class TestSSEEvents:
         r = client.get(f"/api/v1/jobs/{job.job_id}/events", headers=AUTH)
         assert r.status_code == 200
         assert "text/event-stream" in r.headers["content-type"]
-        # Should contain a status event and a done event
+        # Should contain envelope-format status and complete events
         text = r.text
-        assert "event: status" in text
-        assert "event: done" in text
+        assert '"type": "job.status"' in text or '"type":"job.status"' in text
+        assert '"type": "job.complete"' in text or '"type":"job.complete"' in text
 
     def test_events_stream_not_found(self, app_client):
         client, db = app_client

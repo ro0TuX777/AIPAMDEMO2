@@ -1,6 +1,6 @@
 """Chat conversation and message models for V2."""
 
-from sqlalchemy import Column, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Column, ForeignKey, Index, String, Text
 
 from backend.app.database_v2 import Base
 

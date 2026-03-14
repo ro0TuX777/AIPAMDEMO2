@@ -14,8 +14,7 @@ import os
 import re
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
-from typing import Any, AsyncGenerator
+from typing import AsyncGenerator
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
@@ -24,7 +23,10 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.llm_client import LLMClient, LLMConfig
+from backend.app.services.entity_extractor import extract_entities
+from backend.app.services.evidence_bundles import build_scoped_bundle, parse_context_hint
 from backend.app.services.kb_service import extract_ips_from_context, retrieve as kb_retrieve
+from backend.app.services.structured_retrieval import retrieve_structured
 
 from backend.app.api.deps import get_db, verify_token
 from backend.app.config_v2 import Settings, get_settings
@@ -33,10 +35,8 @@ from backend.app.models.chat import ChatConversation, ChatMessage
 from backend.app.models.connection import Connection
 from backend.app.models.finding import Finding
 from backend.app.models.host import Host
-from backend.app.models.ioc import Ioc
 from backend.app.models.job import Job
 from backend.app.models.job_pcap import JobPcap
-from backend.app.models.sensor import JobSensor
 
 logger = logging.getLogger("aipam.chat")
 
@@ -72,11 +72,19 @@ class ChatRequestBody(BaseModel):
     context_hint: str | None = None
 
 
+class EvidenceRefOut(BaseModel):
+    type: str          # "host", "finding", "alert", "ioc"
+    id: str | None = None
+    label: str         # human-readable label, e.g. "Host 10.0.0.5"
+
+
 class ChatResponseBody(BaseModel):
     response: str
     citations: list[ChatCitationOut] = []
     conversation_id: str
     confidence: float | None = None
+    evidence_refs: list[EvidenceRefOut] = []
+    suggested_followups: list[str] = []
 
 
 class ConversationSummaryOut(BaseModel):
@@ -471,9 +479,16 @@ def _unsupported_response_details(
         unsupported_credentials.append("unsupported_credential_assertion")
 
     unsupported_quoted_details: list[str] = []
+    # Normalize context for flexible matching (dots, underscores, hyphens → spaces)
+    normalized_context = re.sub(r"[._\-]", " ", lowered_context)
     for match in _QUOTED_DETAIL_RE.finditer(response_text):
         candidate = match.group(1).strip()
-        if candidate and candidate.lower() not in lowered_context:
+        if not candidate:
+            continue
+        candidate_lower = candidate.lower()
+        # Check both raw and normalized forms
+        candidate_normalized = re.sub(r"[._\-]", " ", candidate_lower)
+        if candidate_lower not in lowered_context and candidate_normalized not in normalized_context:
             unsupported_quoted_details.append(candidate)
 
     return unsupported_ips, unsupported_credentials, unsupported_quoted_details
@@ -533,14 +548,21 @@ def _finalize_grounded_response_payload(
         response_text,
         combined_context,
     )
-    if unsupported_ips or unsupported_credentials or unsupported_quoted_details:
+    # Hard block on unsupported IPs or credentials (high-risk hallucinations)
+    if unsupported_ips or unsupported_credentials:
         logger.warning(
-            "Blocked unsupported V2 chat claims (ips=%s, credentials=%s, quoted_details=%s)",
+            "Blocked unsupported V2 chat claims (ips=%s, credentials=%s)",
             unsupported_ips,
             unsupported_credentials,
-            unsupported_quoted_details,
         )
         return _build_unsupported_claims_payload(safe_citations, user_message)
+    # Quoted detail mismatches are lower-risk — log but allow through
+    # (KB content like names/departments may not match DB context verbatim)
+    if unsupported_quoted_details:
+        logger.info(
+            "Allowing response with minor quoted detail mismatches: %s",
+            unsupported_quoted_details,
+        )
     return _append_sources_and_limits(response_text, safe_citations), safe_citations
 
 
@@ -557,6 +579,121 @@ def _finalize_grounded_response(
         user_message,
     )
     return finalized_text
+
+
+# ── Post-processing: evidence refs & dynamic follow-ups ──────────────
+
+_IP_IN_RESPONSE_RE = re.compile(r"\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\b")
+_FINDING_IN_RESPONSE_RE = re.compile(r"\bF-[0-9a-fA-F-]{1,36}\b", re.IGNORECASE)
+_MITRE_IN_RESPONSE_RE = re.compile(r"\bT\d{4}(?:\.\d{3})?\b")
+
+
+def _extract_evidence_refs(
+    response_text: str,
+    citations: list[ChatCitationOut],
+) -> list[EvidenceRefOut]:
+    """Extract structured evidence references from the LLM response and citations."""
+    refs: list[EvidenceRefOut] = []
+    seen: set[str] = set()
+
+    # IPs mentioned in response
+    for match in _IP_IN_RESPONSE_RE.finditer(response_text):
+        ip = match.group(0)
+        if ip not in seen and not ip.startswith("0.") and not ip.startswith("255."):
+            seen.add(ip)
+            refs.append(EvidenceRefOut(type="host", id=ip, label=f"Host {ip}"))
+
+    # Finding IDs mentioned in response
+    for match in _FINDING_IN_RESPONSE_RE.finditer(response_text):
+        fid = match.group(0)
+        key = fid.upper()
+        if key not in seen:
+            seen.add(key)
+            refs.append(EvidenceRefOut(type="finding", id=fid, label=f"Finding {fid}"))
+
+    # Citation-sourced refs
+    for c in citations[:8]:
+        if c.type == "finding" and c.id and c.id.upper() not in seen:
+            seen.add(c.id.upper())
+            title = (c.snippet or "").split(":", 1)[-1].strip()[:60] if ":" in (c.snippet or "") else c.id
+            refs.append(EvidenceRefOut(type="finding", id=c.id, label=f"Finding: {title}"))
+
+    return refs[:10]  # cap at 10
+
+
+def _generate_dynamic_followups(
+    response_text: str,
+    user_message: str,
+    citations: list[ChatCitationOut],
+) -> list[str]:
+    """Generate 2-4 context-aware follow-up questions based on entities in the response."""
+    followups: list[str] = []
+    response_lower = response_text.lower()
+    question_lower = user_message.lower()
+
+    # Collect IPs, findings, MITRE IDs from the response
+    ips = list(dict.fromkeys(_IP_IN_RESPONSE_RE.findall(response_text)))[:5]
+    finding_ids = list(dict.fromkeys(_FINDING_IN_RESPONSE_RE.findall(response_text)))[:5]
+    mitre_ids = list(dict.fromkeys(_MITRE_IN_RESPONSE_RE.findall(response_text)))[:3]
+
+    # Strategies based on what's in the response
+    if ips and "lateral" not in question_lower:
+        # Offer to check lateral movement for mentioned IPs
+        followups.append(
+            f"Check for signs of lateral movement involving {ips[0]}"
+        )
+
+    if ips and len(ips) >= 2 and "relationship" not in question_lower:
+        followups.append(
+            f"What is the relationship between {ips[0]} and {ips[1]}?"
+        )
+
+    if any(kw in response_lower for kw in ("c2", "c&c", "command and control", "beacon")):
+        if "timeline" not in question_lower:
+            followups.append("Show the timeline of C2 communication activity")
+
+    if any(kw in response_lower for kw in ("dns", "domain", "resolution")):
+        if "dns" not in question_lower:
+            followups.append("What suspicious DNS activity was observed?")
+
+    if any(kw in response_lower for kw in ("exfiltration", "data transfer", "upload")):
+        if "exfiltration" not in question_lower:
+            followups.append("Quantify the potential data exfiltration — how much data was sent?")
+
+    if finding_ids and "finding" not in question_lower:
+        followups.append(f"Explain finding {finding_ids[0]} in detail")
+
+    if mitre_ids and "mitre" not in question_lower and "technique" not in question_lower:
+        followups.append(f"What evidence supports MITRE technique {mitre_ids[0]}?")
+
+    if ips and "host" not in question_lower and "role" not in question_lower:
+        ip = ips[1] if len(ips) > 1 else ips[0]
+        followups.append(f"What is the role and behavior of host {ip}?")
+
+    if any(kw in response_lower for kw in ("critical", "high severity", "high-severity")):
+        if "remediation" not in question_lower and "recommend" not in question_lower:
+            followups.append("What remediation actions do you recommend?")
+
+    # Dedupe and cap
+    unique: list[str] = []
+    seen: set[str] = set()
+    for q in followups:
+        key = q.lower().strip()
+        if key not in seen:
+            seen.add(key)
+            unique.append(q)
+    return unique[:4]
+
+
+def _post_process_response(
+    response_text: str,
+    user_message: str,
+    citations: list[ChatCitationOut],
+) -> tuple[list[EvidenceRefOut], list[str]]:
+    """Post-process the LLM response to extract evidence refs and generate follow-ups."""
+    evidence_refs = _extract_evidence_refs(response_text, citations)
+    followups = _generate_dynamic_followups(response_text, user_message, citations)
+    return evidence_refs, followups
 
 
 def _chunk_text(text: str, chunk_size: int = 350) -> list[str]:
@@ -577,7 +714,9 @@ def _build_job_citations(db: Session, job_id: str) -> list[ChatCitationOut]:
     ).scalars().all()
     for finding in findings:
         citation_id = finding.finding_id or (str(finding.id) if finding.id is not None else None)
-        snippet = f"[{finding.severity}] {finding.title}"
+        conf = getattr(finding, "confidence", 0.0) or 0.0
+        conf_pct = f"{round(conf * 100)}%"
+        snippet = f"[{finding.severity}|conf:{conf_pct}] {finding.title}"
         if finding.summary:
             snippet += f": {finding.summary[:120]}"
         citations.append(ChatCitationOut(type="finding", id=citation_id, snippet=snippet[:200]))
@@ -646,6 +785,7 @@ def _summarise_jsonl_line(raw: str, max_len: int = 500) -> str:
 _MAX_CONTEXT_CHARS = 6000
 _MAX_PCAP_CHARS = 4000    # PCAP data budget
 _MAX_RAG_CHARS = 3000     # RAG context budget
+_MIN_RAG_BUDGET = 1500    # KB RAG always gets at least this much
 _MAX_HOST_SUMMARIES = 10
 _MAX_HOSTPAIRS = 15
 _MAX_ALERTS = 25
@@ -783,17 +923,36 @@ def _build_sensor_context(db: Session, job_id: str, settings: Settings) -> str:
             "dest_port": a.dest_port,
         })
 
-    # ── 4. Findings (AIPAM-specific, not in training but high value) ─
+    # ── 4. Findings grouped by confidence tier ─────────────────────
     findings = db.execute(
-        select(Finding).where(Finding.job_id == job_id).limit(10)
+        select(Finding).where(Finding.job_id == job_id)
+        .order_by(Finding.confidence.desc())
+        .limit(15)
     ).scalars().all()
-    findings_list = []
+    # Bucket into confidence tiers for LLM reasoning
+    _CONF_TIERS = [
+        ("high_confidence", 0.7, 1.01),
+        ("medium_confidence", 0.4, 0.7),
+        ("low_confidence", 0.0, 0.4),
+    ]
+    findings_by_tier: dict[str, list[dict]] = {}
     for f in findings:
-        findings_list.append({
-            "severity": f.severity,
-            "title": f.title,
-            "summary": (f.summary or "")[:200],
-        })
+        conf = getattr(f, "confidence", 0.0) or 0.0
+        for tier_name, lo, hi in _CONF_TIERS:
+            if lo <= conf < hi:
+                findings_by_tier.setdefault(tier_name, []).append({
+                    "severity": f.severity,
+                    "title": f.title,
+                    "confidence": round(conf, 2),
+                    "summary": (f.summary or "")[:200],
+                })
+                break
+    # Flat list for backward-compat in multi-pcap breakdown
+    [
+        item
+        for tier_items in findings_by_tier.values()
+        for item in tier_items
+    ]
 
     # ── 5. Multi-PCAP temporal context ─────────────────────────────────
     # Check if job has multiple PCAPs with labels for comparative analysis
@@ -823,8 +982,8 @@ def _build_sensor_context(db: Session, job_id: str, settings: Settings) -> str:
         "hostpair_summaries": hostpair_summaries,
         "alerts": alerts_list,
     }
-    if findings_list:
-        context_obj["findings"] = findings_list
+    if findings_by_tier:
+        context_obj["findings_by_confidence"] = findings_by_tier
 
     if is_multi_pcap:
         # Add per-label alert/finding breakdown for temporal reasoning
@@ -843,7 +1002,7 @@ def _build_sensor_context(db: Session, job_id: str, settings: Settings) -> str:
                     for a in label_alerts[:5]
                 ],
                 "top_findings": [
-                    {"title": f.title, "severity": f.severity}
+                    {"title": f.title, "severity": f.severity, "confidence": round(getattr(f, "confidence", 0.0) or 0.0, 2)}
                     for f in label_findings[:3]
                 ],
             }
@@ -914,7 +1073,7 @@ async def _build_rag_context(
                 n_results=8,
                 job_id=job_id or None,
                 ollama_url=ollama_url,
-                embedding_model="nomic-embed-text",
+                embedding_model="mxbai-embed-large",
                 persist_dir=persist_dir,
             )
             for c in query_chunks:
@@ -932,7 +1091,7 @@ async def _build_rag_context(
                 n_results=5,
                 job_id=job_id or None,
                 ollama_url=ollama_url,
-                embedding_model="nomic-embed-text",
+                embedding_model="mxbai-embed-large",
                 persist_dir=persist_dir,
             )
             for c in ip_chunks:
@@ -963,8 +1122,9 @@ async def _build_rag_context(
             return ""
 
         return (
-            "\n\nEnriched Context (auto-indexed analysis + knowledge base):\n"
+            "\n\n=== ANALYST-UPLOADED KNOWLEDGE BASE (authoritative for user/host/policy info) ===\n"
             + "\n---\n".join(rag_parts)
+            + "\n=== END KNOWLEDGE BASE ==="
         )
 
     except Exception as exc:
@@ -989,17 +1149,68 @@ async def _build_chat_messages(
     settings: Settings,
     conv_id: str,
     user_message: str,
+    context_hint: str | None = None,
 ) -> tuple[list[dict], list[ChatCitationOut], str]:
     sensor_context = _build_sensor_context(db, job_id, settings)
-    rag_context = await _build_rag_context(sensor_context, settings, job_id=job_id, user_query=user_message)
+
+    # ── Scoped evidence bundle (from context_hint) ───────────────────
+    scoped_context_str = ""
+    scope_type, scope_id = parse_context_hint(context_hint)
+    if scope_type:
+        logger.info(
+            "Scoped bundle: type=%s id=%s for job=%s",
+            scope_type, scope_id, job_id,
+        )
+        bundle = build_scoped_bundle(db, job_id, scope_type, scope_id)
+        if bundle.has_evidence:
+            scoped_context_str = bundle.to_context(max_chars=_MAX_RAG_CHARS // 2)
+
+    # ── Hybrid retrieval router ──────────────────────────────────────
+    # Route A: Extract structured entities → direct DB lookup
+    # Route B: Semantic vector search (fallback / complement)
+    entities = extract_entities(user_message)
+    structured_context_str = ""
+    if entities.has_structured_entities:
+        logger.info(
+            "Hybrid router: Route A (structured) for job=%s entities=%s",
+            job_id, entities.summary(),
+        )
+        structured_ctx = retrieve_structured(db, job_id, entities)
+        if structured_ctx.has_results:
+            # Budget: structured gets priority, RAG gets remainder
+            structured_context_str = structured_ctx.to_context_string(
+                max_chars=_MAX_RAG_CHARS
+            )
+
+    # Route B: vector search — always gets at least _MIN_RAG_BUDGET chars
+    # so KB documents aren't crowded out by structured DB data
+    remaining_rag_budget = max(
+        _MIN_RAG_BUDGET,
+        _MAX_RAG_CHARS - len(scoped_context_str) - len(structured_context_str),
+    )
+    rag_context = ""
+    rag_context = await _build_rag_context(
+        sensor_context, settings, job_id=job_id, user_query=user_message
+    )
+    logger.info(
+        "RAG budget=%d rag_len=%d", remaining_rag_budget, len(rag_context),
+    )
+    # Trim RAG to budget
+    if rag_context and len(rag_context) > remaining_rag_budget:
+        rag_context = rag_context[:remaining_rag_budget]
+
     all_citations = _build_job_citations(db, job_id)
     focus_citations = _select_relevant_citations(all_citations, user_message, limit=8)
     citations = focus_citations or all_citations
     focus_block = _build_primary_supporting_evidence_block(focus_citations, user_message)
 
     context_sections = ["=== CURRENT JOB EVIDENCE ONLY ==="]
+    if scoped_context_str:
+        context_sections.append(scoped_context_str)
     if sensor_context:
         context_sections.append(sensor_context)
+    if structured_context_str:
+        context_sections.append(structured_context_str)
     if rag_context:
         context_sections.append(rag_context)
     context_sections.append("=== END CURRENT JOB EVIDENCE ===")
@@ -1092,8 +1303,13 @@ SYSTEM_PROMPT = (
     "(asset inventories, network maps, baseline profiles, threat intel, SOC playbooks).\n"
     "3. **Citations** — structured references to specific DB records you may cite.\n"
     "When answering, synthesize across ALL three sections. Environmental context often contains richer "
-    "narrative summaries (e.g., 'Host 10.0.0.5 — internal, 23 connections, 4 critical alerts') that "
+    "narrative summaries (e.g., 'Host X.X.X.X — internal, N connections, N critical alerts') that "
     "complement the structured primary evidence. Use both.\n\n"
+    "**Confidence Scoring** — findings are grouped into confidence tiers:\n"
+    "- **high_confidence** (≥ 70%) — strongly corroborated by multiple signals; treat as reliable.\n"
+    "- **medium_confidence** (40-70%) — moderate evidence; note the confidence when reporting.\n"
+    "- **low_confidence** (< 40%) — weak or single-source; flag as tentative and recommend further investigation.\n"
+    "Always mention the confidence level when discussing individual findings so the analyst can prioritize.\n\n"
     "Your goals:\n"
     "1. Identify evidence of attacks, exploitation, malware activity, C2, "
     "lateral movement, or data exfiltration.\n"
@@ -1107,7 +1323,14 @@ SYSTEM_PROMPT = (
     "names as evidence.\n"
     "6. When knowledge base documents (asset inventory, baseline, playbook) are available, "
     "cross-reference them: flag hosts not in the asset inventory, deviations from baseline, "
-    "and recommend playbook steps that match observed activity.\n\n"
+    "and recommend playbook steps that match observed activity.\n"
+    "7. **IMPORTANT — Knowledge Base Priority**: When analyst-uploaded knowledge base documents "
+    "(labeled [asset_inventory], [baseline], [threat_intel], etc.) provide host ownership, "
+    "user attribution, department, or security policy information, ALWAYS prefer that information "
+    "over auto-generated DB host summaries. Knowledge base documents are curated by analysts and "
+    "represent ground-truth organizational context. For example, if a KB asset inventory says "
+    "'10.6.26.101 is assigned to John Smith in Finance' but a DB host summary says 'user1 in Sales', "
+    "use the KB information.\n\n"
     "REQUIRED RESPONSE STYLE:\n"
     "1. Give a direct answer based only on the current-job context.\n"
     "2. Explicitly name the evidence you relied on.\n"
@@ -1157,7 +1380,7 @@ async def chat_about_job(
     ))
 
     messages, citations, combined_context = await _build_chat_messages(
-        db, job_id, settings, conv_id, body.message
+        db, job_id, settings, conv_id, body.message, context_hint=body.context_hint
     )
 
     # COMMIT user message + conversation BEFORE the LLM call to release the
@@ -1197,10 +1420,16 @@ async def chat_about_job(
         conv.updated_at = _now_iso()
     db.commit()
 
+    evidence_refs, suggested_followups = _post_process_response(
+        response_text, body.message, final_citations,
+    )
+
     return ChatResponseBody(
         response=response_text,
         citations=final_citations,
         conversation_id=conv_id,
+        evidence_refs=evidence_refs,
+        suggested_followups=suggested_followups,
     )
 
 
@@ -1249,7 +1478,7 @@ async def chat_about_job_stream(
     ))
 
     messages, citations, combined_context = await _build_chat_messages(
-        db, job_id, settings, conv_id, body.message
+        db, job_id, settings, conv_id, body.message, context_hint=body.context_hint
     )
 
     # Commit user message before long LLM call
@@ -1286,7 +1515,10 @@ async def chat_about_job_stream(
         else:
             response_text = "".join(full_response)
 
-        yield f"data: {json.dumps({'type': 'meta', 'conversation_id': conv_id, 'citations': [c.model_dump() for c in final_citations], 'confidence': 0.85})}\n\n"
+        evidence_refs, suggested_followups = _post_process_response(
+            response_text, body.message, final_citations,
+        )
+        yield f"data: {json.dumps({'type': 'meta', 'conversation_id': conv_id, 'citations': [c.model_dump() for c in final_citations], 'confidence': 0.85, 'evidence_refs': [r.model_dump() for r in evidence_refs], 'suggested_followups': suggested_followups})}\n\n"
 
         try:
             asst_msg_id = str(uuid.uuid4())

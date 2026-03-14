@@ -51,7 +51,7 @@ export const HostDetailPage: React.FC = () => {
             <p className="text-xs text-slate-500 font-mono mt-1">Host Identity / Analysis</p>
           </div>
           <button
-            onClick={() => navigate(`/jobs/${jobId}/chat?ask=${encodeURIComponent(`Analyze host ${ip}. What is its role, what suspicious activity is associated with it, and what are the key alerts and findings?`)}`)}
+            onClick={() => navigate(`/jobs/${jobId}/chat?ask=${encodeURIComponent(`Analyze host ${ip}. What is its role, what suspicious activity is associated with it, and what are the key alerts and findings?`)}&hint=${encodeURIComponent(`host:${ip}`)}`)}
             className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-400 hover:text-emerald-300 text-sm rounded-lg transition-colors"
             title="Ask AI about this host"
           >

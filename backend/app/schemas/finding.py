@@ -22,6 +22,7 @@ class FindingItem(BaseModel):
     summary: str | None = None
     evidence: dict[str, Any] | None = None
     feedback: str | None = None
+    confidence: float = 0.0
 
 
 class FindingFeedbackRequest(BaseModel):

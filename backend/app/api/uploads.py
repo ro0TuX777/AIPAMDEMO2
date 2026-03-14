@@ -6,8 +6,6 @@ POST /uploads/{id}/validate – validate PCAP header (capinfos)
 """
 
 import hashlib
-import os
-import struct
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path

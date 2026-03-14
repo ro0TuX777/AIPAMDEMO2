@@ -7,9 +7,7 @@ and lifecycle helpers (delete_flow_index, job_has_flow_index).
 
 from __future__ import annotations
 
-import tempfile
 from datetime import datetime, timezone
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import numpy as np

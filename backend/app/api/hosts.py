@@ -27,7 +27,6 @@ from backend.app.models.host import Host
 from backend.app.models.job import Job
 from backend.app.models.tls import TlsSession
 from backend.app.schemas.alert import AlertItem, AlertListResponse
-from backend.app.schemas.common import PageInfo
 from backend.app.schemas.connection import ConnectionItem, ConnectionListResponse
 from backend.app.schemas.dns import DnsQueryItem, DnsQueryListResponse
 from backend.app.schemas.file import FileItem, FileListResponse

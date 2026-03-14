@@ -7,12 +7,10 @@ aggregated training statistics for the web UI.
 
 import json
 import os
-import sys
 import urllib.request
 import urllib.error
-from collections import defaultdict
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from fastapi import APIRouter
 from fastapi.responses import JSONResponse
@@ -20,7 +18,6 @@ from fastapi.responses import JSONResponse
 router = APIRouter(prefix="/api/v1/training", tags=["training"])
 
 # Ledger path resolution — works in Docker (/data/finetuning/) and on host
-import os
 
 _LEDGER_CANDIDATES = [
     Path("/data/dawn_training_ledger.jsonl"),                               # Docker writable volume
@@ -268,7 +265,7 @@ async def start_training_job():
     import urllib.request
     import urllib.error
 
-    in_docker = os.path.exists("/.dockerenv")
+    os.path.exists("/.dockerenv")
 
     # Pre-flight: verify host trainer is reachable
     host_trainer_url = os.environ.get("HOST_TRAINER_URL", "http://host.docker.internal:8002")
@@ -291,7 +288,7 @@ async def start_training_job():
                 headers={"Content-Type": "application/json"},
             )
             resp = urllib.request.urlopen(req, timeout=15)
-            launch_result = json.loads(resp.read())
+            json.loads(resp.read())
             import time
             time.sleep(1)
             req2 = urllib.request.Request(f"{host_trainer_url}/health", method="GET")

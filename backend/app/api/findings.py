@@ -99,6 +99,7 @@ def _finding_to_item(f: Finding) -> FindingItem:
         summary=f.summary,
         evidence=evidence,
         feedback=f.feedback,
+        confidence=getattr(f, "confidence", 0.0) or 0.0,
     )
 
 

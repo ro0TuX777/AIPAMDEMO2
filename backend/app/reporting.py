@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, List, Optional, Sequence
 
-from .models import HostFinding, JobResult
+from .models import JobResult
 
 
 def jobresult_to_markdown(
@@ -150,7 +150,7 @@ def jobresult_to_markdown(
             "application/x-dosexec", "application/x-elf", "application/x-mach-binary",
             "application/x-ole-storage", "text/javascript",
         ) or f.get("yara_matches")]
-        safe_files = [f for f in file_list if f not in suspicious_files]
+        [f for f in file_list if f not in suspicious_files]
 
         if suspicious_files:
             lines.append(f"### ⚠ Suspicious Files ({len(suspicious_files)})")

@@ -12,7 +12,6 @@
 
 - [What is AIPAM?](#what-is-aipam)
 - [Key Features](#key-features)
-- [V2 Architecture](#v2-architecture)
 - [How It Works](#how-it-works)
 - [System Architecture](#system-architecture)
 - [Execution Profiles](#execution-profiles)
@@ -63,18 +62,52 @@ Live updates via Server-Sent Events as each sensor completes:
 - Pipeline stage progression
 - Auto-refreshing job detail view
 
-### 💬 Interactive Chat Assistant
-Ask follow-up questions about the analysis in plain English:
-- *"What hosts are infected?"*
-- *"How did this malware spread?"*
-- *"What should I do to contain this?"*
+### 💬 AI-Assisted Investigation (Ask AI)
+Context-aware AI chat available on **every page** — Alerts, Hosts, IOCs, Findings, and more:
+- 🤖 **One-click "Ask AI"** buttons generate a scoped prompt with full entity context
+- **3-source RAG** — Current case data + campaign correlations + forensic memory (ChromaDB)
+- *"What hosts are infected?"* · *"Is this alert a true positive?"* · *"What should I do next?"*
 
-### 📊 Detailed Reports
-Get comprehensive reports including:
-- Executive summary with headline, top signals, and recommendations
-- Per-host findings with connection, DNS, TLS, and alert details
-- MITRE ATT&CK technique mapping
-- IOC extraction (IPs, domains, file hashes)
+### 🕸️ Evidence Graph
+Interactive **D3-based visualization** of all evidence relationships for a job:
+- **7 node types**: Hosts, Alerts, Findings, Theories, Slices, IOCs, Annotations
+- Click any node to inspect details and pin it to a Proof
+- Edge types: `triggered_on`, `correlated`, `belongs_to`, `annotates`, and more
+
+### 🏗️ Proof Builder
+Build structured forensic arguments by **pinning evidence** from the graph:
+- **Role selection**: ✅ Supports / ❌ Contradicts / ℹ️ Context
+- **Analyst notes** on each pinned item
+- **Metadata editor** — status (draft/final/archived), severity, confidence slider
+- **Narrative rendering** — generates a Markdown report grouped by evidence role
+- **Copy to clipboard** for pasting into tickets or reports
+
+### 🧠 Theory of the Case
+Automated **hypothesis generation and ranking** (deterministic, no LLM):
+- Scores 10+ hypothesis types: C2 beaconing, data exfiltration, lateral movement, ransomware, credential theft, etc.
+- Supporting and contradicting evidence shown as human-readable chips (🚨 alerts, 💀 IOCs, 🔎 findings)
+- Confidence labels (High / Medium / Low) with numerical scores
+
+### 🔪 Incident Slices
+Groups related alerts, findings, and connections into **logical attack threads**:
+- Seeded from `community_id` grouping, merged by host overlap + time proximity
+- Attached findings and IOCs per slice
+- Ranked by severity and evidence count
+
+### 📝 Why Unusual? (Annotations)
+Context annotations explaining **why specific traffic is anomalous**:
+- Links to related alerts, findings, and hosts
+- Analyst-readable explanations of what made the traffic stand out
+
+### 📊 Reports & Detection Rules
+- **HTML + Markdown reports** — executive summary, per-host findings, IOC tables, MITRE mappings
+- **Detection-as-Code** — auto-generate Suricata and Sigma rules from findings
+- **Report generation** via API with customizable templates
+
+### 🌐 Global Hosts (Cross-Job Forensics)
+Track hosts across **all jobs** to identify repeat offenders:
+- Aggregate view of every IP seen across analyses
+- Drill into per-host detail with connections, DNS, TLS, alerts, and files
 
 ### 🔒 Air-Gapped Ready
 AIPAM runs completely offline—no data ever leaves your network. Perfect for sensitive environments.
@@ -154,12 +187,13 @@ AIPAM V2 is built as a containerized application with five main services:
 
 | Component | What It Does | Technology |
 |-----------|--------------|------------|
-| **Frontend** | Web interface — job list, detail, upload, findings | React + TypeScript + TanStack Query |
-| **API Server** | REST API (25+ endpoints) + SSE event stream | Python FastAPI (V2) |
+| **Frontend** | Web interface — jobs, evidence graph, proof builder, chat, reports | React + TypeScript + TanStack Query + D3 |
+| **API Server** | REST API (30+ endpoints) + SSE event stream | Python FastAPI (V2) |
 | **Worker** | Pipeline orchestrator — runs sensor containers | Celery + Docker |
 | **Redis** | Celery broker + SSE event buffer | Redis 7 |
-| **Ollama** | Local LLM inference for classification | Ollama + fine-tuned Llama 3.1 8B |
-| **SQLite** | Job, sensor, finding, host, IOC, timeline storage | SQLite with WAL mode |
+| **Ollama** | Local LLM inference for chat + classification | Ollama + fine-tuned Llama 3.1 8B |
+| **ChromaDB** | Forensic memory — vector store for cross-case knowledge | ChromaDB |
+| **SQLite** | Jobs, sensors, findings, hosts, IOCs, proofs, theories, slices | SQLite with WAL mode |
 
 ---
 
@@ -433,7 +467,7 @@ All settings are loaded from environment variables (or a `.env` file). Defined i
 
 ---
 
-## �📖 User Guide
+## 📖 User Guide
 
 ### Analyzing a PCAP File (V2)
 
@@ -464,26 +498,50 @@ Each finding includes mapped MITRE ATT&CK techniques. For example:
 - **T1566** - Phishing (initial access)
 - **T1486** - Data Encrypted for Impact (ransomware)
 
-### Using the Chat Feature
+### Using the AI Chat (Ask AI)
 
-After analysis, you can ask follow-up questions:
+Every evidence page has a 🤖 **Ask AI** button that jumps to the chat with a pre-filled, context-aware question. You can also open the chat page directly and ask free-form questions:
 
 ```
 You: "What hosts were compromised?"
-AIPAM: "Based on the analysis, host 192.168.1.105 shows 
+AIPAM: "Based on the analysis, host 192.168.1.105 shows
        signs of compromise with Emotet C2 beaconing to..."
 
-You: "What remediation steps should I take?"
-AIPAM: "1. Isolate 192.168.1.105 from the network
-        2. Block the C2 domains: evil.com, bad-domain.net
-        3. Scan for lateral movement indicators..."
+You: "Is alert ET MALWARE Remcos a true positive?"
+AIPAM: "Yes — the alert correlates with beaconing to 206.123.152.51
+       on port 2404, a known Remcos C2 endpoint..."
 ```
+
+The chat uses **3-source RAG**: current job data, cross-job campaign correlations, and a persistent forensic memory (ChromaDB vector store) that remembers past investigations.
+
+### Using the Evidence Graph & Proof Builder
+
+1. **Open the Evidence Graph** from the job detail tab bar
+2. **Explore nodes** — click any host, alert, finding, theory, slice, IOC, or annotation
+3. **Toggle the Proof Builder** sidebar and create a new proof (e.g., "Remcos C2 Chain")
+4. **Pin evidence** — select a role (Supports / Contradicts / Context) and add analyst notes
+5. **Edit metadata** — set status, severity, and confidence via the ⚙ editor
+6. **Render Narrative** — click 📝 to generate a Markdown report, then 📋 copy it
+
+### Theory of the Case & Incident Slices
+
+- Navigate to **Theories** from the job detail page to see ranked hypotheses with confidence scores
+- Navigate to **Slices** to see how alerts and findings group into attack threads
+- Navigate to **Why Unusual?** for context annotations on anomalous traffic
+- Each page includes breadcrumb navigation back to the job
+
+### Detection Rules
+
+From any finding, generate **Suricata** or **Sigma** rules:
+- Rules are auto-generated from finding metadata (IPs, ports, signatures)
+- Manage all generated rules on the **Rules** page
 
 ### Exporting Results
 
-- **HTML Report** - Full report for sharing with stakeholders
-- **Markdown Export** - Technical report for documentation
-- **Chat Transcript** - Download conversation history
+- **HTML Report** — Full report for sharing with stakeholders
+- **Markdown Export** — Technical report for documentation
+- **Chat Transcript** — Download conversation history
+- **Proof Narrative** — Rendered Markdown from the Proof Builder
 
 ---
 
@@ -530,6 +588,21 @@ AIPAM: "1. Isolate 192.168.1.105 from the network
 - [x] **Ops Tooling** — cleanup-jobs, support-bundle, apply-update, Docker Compose
 - [x] **Documentation** — Updated README, env var reference, CLI docs
 - [x] 110 tests passing (unit + integration)
+
+### Analyst Workbench (Completed ✅)
+
+- [x] **Evidence Graph** — D3 visualization of 7 entity types with relationship edges
+- [x] **Proof Builder** — Pin evidence with roles, analyst notes, metadata, and narrative rendering
+- [x] **Theory of the Case** — Deterministic hypothesis generation and ranking (10+ types)
+- [x] **Incident Slices** — Attack thread grouping by community_id, host overlap, and time proximity
+- [x] **Why Unusual? (Annotations)** — Context annotations for anomalous traffic
+- [x] **Ask AI Everywhere** — 🤖 contextual chat buttons on Alerts, Hosts, IOCs, Findings pages
+- [x] **Global Hosts** — Cross-job host tracking and forensics
+- [x] **TI Matcher** — Threat intelligence feed integration with confidence scoring
+- [x] **Knowledge Base** — Persistent forensic memory via ChromaDB
+- [x] **Reports** — HTML + Markdown report generation with executive summaries
+- [x] **Detection Rules** — Auto-generate Suricata and Sigma rules from findings
+- [x] **Human-readable Evidence** — Supporting evidence shown as chips (🚨 alerts, 💀 IOCs, 🔎 findings)
 
 ### Phase 4 — Enterprise Features (Future)
 

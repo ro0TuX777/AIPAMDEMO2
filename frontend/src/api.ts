@@ -406,6 +406,7 @@ export interface GraphNode {
   label: string;
   type: string;
   severity?: string | null;
+  meta?: Record<string, any> | null;
 }
 
 export interface GraphEdge {
@@ -419,6 +420,14 @@ export interface JobGraphResponse {
   schema_version: string;
   nodes: GraphNode[];
   edges: GraphEdge[];
+}
+
+export interface EvidenceGraphResponse {
+  schema_version: string;
+  nodes: GraphNode[];
+  edges: GraphEdge[];
+  node_count: number;
+  edge_count: number;
 }
 
 // ─── Files ──────────────────────────────────────────────────────────────────
@@ -460,6 +469,7 @@ export interface FindingItem {
   summary?: string;
   evidence?: Record<string, unknown>;
   feedback?: "confirmed" | "false_positive" | "false_negative" | null;
+  confidence: number;
 }
 
 export type FindingExplainFeedback = "useful" | "not_useful";
@@ -521,6 +531,208 @@ export interface IocListResponse {
   schema_version: string;
   items: IocItem[];
   page: PageInfo;
+}
+
+// ─── Theories (Theory of the Case) ──────────────────────────────────────────
+
+export type HypothesisType =
+  | "c2"
+  | "malware_delivery"
+  | "recon"
+  | "lateral_movement"
+  | "exfiltration"
+  | "admin_tools"
+  | "benign"
+  | "inconclusive";
+
+export interface EvidenceRef {
+  id: string;
+  type: "alert" | "finding" | "ioc" | "unknown";
+  label: string;
+}
+
+export interface TheoryItem {
+  theory_id: string;
+  scope_type: string;
+  scope_id?: string | null;
+  label: string;
+  hypothesis_type: HypothesisType;
+  score: number;
+  confidence: "low" | "medium" | "high";
+  rank: number;
+  supporting_evidence: EvidenceRef[];
+  contradicting_evidence: EvidenceRef[];
+  explanation?: string | null;
+  next_steps: string[];
+  created_at: string;
+}
+
+export interface TheoryListResponse {
+  schema_version: string;
+  items: TheoryItem[];
+  job_id: string;
+  scope_type: string;
+  scope_id?: string | null;
+}
+
+// ─── Incident Slices ────────────────────────────────────────────────────────
+
+export type SliceType =
+  | "attack_thread"
+  | "recon_phase"
+  | "c2_session"
+  | "lateral"
+  | "exfil"
+  | "misc";
+
+export interface SliceItem {
+  slice_id: string;
+  label: string;
+  slice_type: SliceType;
+  severity: string;
+  confidence: number;
+  community_ids: string[];
+  host_ips: string[];
+  time_start?: string | null;
+  time_end?: string | null;
+  alert_ids: string[];
+  finding_ids: string[];
+  ioc_ids: string[];
+  connection_ids: string[];
+  summary?: string | null;
+  rank: number;
+  created_at: string;
+}
+
+export interface SliceListResponse {
+  schema_version: string;
+  items: SliceItem[];
+  job_id: string;
+}
+
+export interface SliceDetailResponse {
+  schema_version: string;
+  item: SliceItem;
+  job_id: string;
+}
+
+// ─── Context Annotations (Why Unusual?) ─────────────────────────────────────
+
+export interface ContextAnnotationItem {
+  annotation_id: string;
+  host_ip: string;
+  metric_name: string;
+  metric_category: string;
+  baseline_value: number | null;
+  observed_value: number | null;
+  deviation_factor: number | null;
+  population_size: number | null;
+  severity: string;
+  confidence: number;
+  title: string;
+  description: string;
+  why_unusual: string;
+  related_alert_ids: string[];
+  related_finding_ids: string[];
+  created_at: string;
+}
+
+export interface ContextAnnotationListResponse {
+  schema_version: string;
+  items: ContextAnnotationItem[];
+  job_id: string;
+}
+
+// ─── Reports ────────────────────────────────────────────────────────────────
+
+export interface ReportItem {
+  report_id: string;
+  mode: string;
+  title: string;
+  threat_level: string;
+  confidence: number;
+  content_markdown: string;
+  content_json: Record<string, unknown>;
+  theory_count: number;
+  slice_count: number;
+  finding_count: number;
+  alert_count: number;
+  ioc_count: number;
+  host_count: number;
+  annotation_count: number;
+  evidence_refs: string[];
+  created_at: string;
+}
+
+export interface ReportListResponse {
+  schema_version: string;
+  items: ReportItem[];
+  job_id: string;
+}
+
+export interface ReportDetailResponse {
+  schema_version: string;
+  item: ReportItem;
+  job_id: string;
+}
+
+// ─── Proofs ─────────────────────────────────────────────────────────────────
+
+export interface ProofItem {
+  proof_id: string;
+  job_id: string;
+  title: string;
+  conclusion: string | null;
+  status: string;
+  severity: string;
+  confidence: number;
+  narrative_markdown: string | null;
+  item_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProofItemEntry {
+  item_id: string;
+  proof_id: string;
+  entity_type: string;
+  entity_id: string;
+  role: string;
+  analyst_note: string | null;
+  order: number;
+  label: string | null;
+  severity: string | null;
+  created_at: string;
+}
+
+export interface ProofListResponse {
+  schema_version: string;
+  items: ProofItem[];
+  job_id: string;
+}
+
+export interface ProofDetailResponse {
+  schema_version: string;
+  item: ProofItem;
+  job_id: string;
+}
+
+export interface ProofItemListResponse {
+  schema_version: string;
+  items: ProofItemEntry[];
+  proof_id: string;
+}
+
+export interface ProofItemDetailResponse {
+  schema_version: string;
+  item: ProofItemEntry;
+  proof_id: string;
+}
+
+export interface ProofNarrativeResponse {
+  schema_version: string;
+  proof_id: string;
+  narrative_markdown: string;
 }
 
 // ─── Timeline ───────────────────────────────────────────────────────────────
@@ -662,10 +874,10 @@ export interface SseJobCompleteData {
   status: JobStatus;
   summary?: { finding_count?: number; alert_count?: number; host_count?: number; ioc_count?: number; duration_sec?: number };
 }
-export interface SseStageStatusData { job_id: string; stage: string; status: string; message?: string | null }
-export interface SseSensorStatusData { job_id: string; sensor: string; status: SensorStatus; message?: string | null }
+export interface SseStageStatusData { job_id: string; stage: string; status: string; step?: number; total_steps?: number; duration_ms?: number; message?: string | null }
+export interface SseSensorStatusData { job_id: string; sensor: string; status: SensorStatus; step?: number; total_steps?: number; duration_ms?: number; message?: string | null }
 export interface SseSensorLogData { job_id: string; sensor: string; stream: "stdout" | "stderr"; line: string }
-export interface SseSensorFindingData { job_id: string; sensor: string; finding_id: string; severity: Severity; title?: string | null }
+export interface SseSensorFindingData { job_id: string; sensor: string; finding_id: string; severity: Severity; title?: string | null; confidence?: number }
 export interface SseArtifactCreatedData { job_id: string; artifact_id: string; type: string }
 export interface SseQuotaHitData { job_id: string; quota_type: "disk" | "extracted_bytes"; message?: string | null }
 export interface SseDiskWarningData { usage_pct: number; free_bytes: number; threshold_pct: number; message?: string | null }
@@ -971,6 +1183,77 @@ export const api = {
     return post<FindingExplainResponse>(`/jobs/${jobId}/findings/${findingId}/explain`, body);
   },
 
+  // ── Theories ───────────────────────────────────────────────────────────
+  listJobTheories(jobId: string): Promise<TheoryListResponse> {
+    return get<TheoryListResponse>(`/jobs/${jobId}/theories`);
+  },
+  listHostTheories(jobId: string, ip: string): Promise<TheoryListResponse> {
+    return get<TheoryListResponse>(`/jobs/${jobId}/hosts/${encodeURIComponent(ip)}/theories`);
+  },
+  generateTheories(jobId: string): Promise<TheoryListResponse> {
+    return post<TheoryListResponse>(`/jobs/${jobId}/theories/generate`);
+  },
+
+  // ── Slices ────────────────────────────────────────────────────────────
+  listSlices(jobId: string): Promise<SliceListResponse> {
+    return get<SliceListResponse>(`/jobs/${jobId}/slices`);
+  },
+  getSlice(jobId: string, sliceId: string): Promise<SliceDetailResponse> {
+    return get<SliceDetailResponse>(`/jobs/${jobId}/slices/${encodeURIComponent(sliceId)}`);
+  },
+  generateSlices(jobId: string): Promise<SliceListResponse> {
+    return post<SliceListResponse>(`/jobs/${jobId}/slices/generate`);
+  },
+
+  // ── Annotations (Why Unusual?) ─────────────────────────────────────────
+  listAnnotations(jobId: string, hostIp?: string): Promise<ContextAnnotationListResponse> {
+    const params = hostIp ? `?host_ip=${encodeURIComponent(hostIp)}` : "";
+    return get<ContextAnnotationListResponse>(`/jobs/${jobId}/annotations${params}`);
+  },
+  generateAnnotations(jobId: string): Promise<ContextAnnotationListResponse> {
+    return post<ContextAnnotationListResponse>(`/jobs/${jobId}/annotations/generate`);
+  },
+
+  // ── Reports ─────────────────────────────────────────────────────────
+  listReports(jobId: string): Promise<ReportListResponse> {
+    return get<ReportListResponse>(`/jobs/${jobId}/reports`);
+  },
+  getReport(jobId: string, reportId: string): Promise<ReportDetailResponse> {
+    return get<ReportDetailResponse>(`/jobs/${jobId}/reports/${reportId}`);
+  },
+  generateReport(jobId: string, mode: "executive" | "analyst" = "analyst"): Promise<ReportDetailResponse> {
+    return post<ReportDetailResponse>(`/jobs/${jobId}/reports/generate`, { mode });
+  },
+
+  // ── Proofs ──────────────────────────────────────────────────────────
+  listProofs(jobId: string): Promise<ProofListResponse> {
+    return get<ProofListResponse>(`/jobs/${jobId}/proofs`);
+  },
+  getProof(jobId: string, proofId: string): Promise<ProofDetailResponse> {
+    return get<ProofDetailResponse>(`/jobs/${jobId}/proofs/${proofId}`);
+  },
+  createProof(jobId: string, body: { title: string; conclusion?: string; severity?: string; confidence?: number }): Promise<ProofDetailResponse> {
+    return post<ProofDetailResponse>(`/jobs/${jobId}/proofs`, body);
+  },
+  updateProof(jobId: string, proofId: string, body: Record<string, unknown>): Promise<ProofDetailResponse> {
+    return patch<ProofDetailResponse>(`/jobs/${jobId}/proofs/${proofId}`, body);
+  },
+  deleteProof(jobId: string, proofId: string): Promise<void> {
+    return del<void>(`/jobs/${jobId}/proofs/${proofId}`);
+  },
+  listProofItems(jobId: string, proofId: string): Promise<ProofItemListResponse> {
+    return get<ProofItemListResponse>(`/jobs/${jobId}/proofs/${proofId}/items`);
+  },
+  addProofItem(jobId: string, proofId: string, body: { entity_type: string; entity_id: string; role?: string; analyst_note?: string }): Promise<ProofItemDetailResponse> {
+    return post<ProofItemDetailResponse>(`/jobs/${jobId}/proofs/${proofId}/items`, body);
+  },
+  removeProofItem(jobId: string, proofId: string, itemId: string): Promise<void> {
+    return del<void>(`/jobs/${jobId}/proofs/${proofId}/items/${itemId}`);
+  },
+  renderProofNarrative(jobId: string, proofId: string): Promise<ProofNarrativeResponse> {
+    return post<ProofNarrativeResponse>(`/jobs/${jobId}/proofs/${proofId}/narrative`, {});
+  },
+
   // ── Timeline ───────────────────────────────────────────────────────────
   listTimeline(jobId: string, p: TimelineListParams = {}): Promise<TimelineListResponse> {
     return get<TimelineListResponse>(`/jobs/${jobId}/timeline${qs(p)}`);
@@ -990,6 +1273,10 @@ export const api = {
   },
   getJobGraph(jobId: string): Promise<JobGraphResponse> {
     return get<JobGraphResponse>(`/jobs/${jobId}/graph`);
+  },
+  getEvidenceGraph(jobId: string, include?: string[]): Promise<EvidenceGraphResponse> {
+    const params = include?.length ? `?include=${include.join(",")}` : "";
+    return get<EvidenceGraphResponse>(`/jobs/${jobId}/evidence-graph${params}`);
   },
   generateEvidencePackage(jobId: string): Promise<EvidencePackageCreateResponse> {
     return post<EvidencePackageCreateResponse>(`/jobs/${jobId}/artifacts/evidence-package`);
@@ -1214,8 +1501,9 @@ export interface SetupStatusResponse { model_configured: boolean; llm_model_name
 
 // ─── Chat types ─────────────────────────────────────────────────────────────
 export interface ChatCitation { type: string; id?: string; snippet: string }
+export interface ChatEvidenceRef { type: string; id?: string; label: string }
 export interface ChatRequest { message: string; conversation_id?: string; context_hint?: string }
-export interface ChatResponse { response: string; citations: ChatCitation[]; conversation_id: string; confidence?: number }
+export interface ChatResponse { response: string; citations: ChatCitation[]; conversation_id: string; confidence?: number; evidence_refs?: ChatEvidenceRef[]; suggested_followups?: string[] }
 export interface ConversationSummary { id: string; job_id: string; created_at: string; updated_at: string; title?: string; message_count: number }
 export interface ConversationHistoryOut { id: string; job_id: string; messages: any[]; created_at: string; updated_at: string }
 export interface SuricataRuleItem { filename: string; content?: string; size_bytes: number; updated_at: string }

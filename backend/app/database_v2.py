@@ -108,10 +108,14 @@ def init_v2_db() -> None:
     inspector = inspect(engine)
     if inspector.has_table("findings"):
         column_names = {column["name"] for column in inspector.get_columns("findings")}
-        if "explanation_feedback" not in column_names:
-            with engine.begin() as connection:
+        with engine.begin() as connection:
+            if "explanation_feedback" not in column_names:
                 connection.execute(
                     text("ALTER TABLE findings ADD COLUMN explanation_feedback VARCHAR")
+                )
+            if "confidence" not in column_names:
+                connection.execute(
+                    text("ALTER TABLE findings ADD COLUMN confidence REAL DEFAULT 0.0")
                 )
 
 def reset_engine() -> None:

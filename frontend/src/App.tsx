@@ -18,9 +18,13 @@ import { ChatPage } from "./pages/ChatPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { TrainingPage } from "./pages/TrainingPage";
 import { RulesManagementPage } from "./pages/RulesManagementPage";
+import { TheoriesPage } from "./pages/TheoriesPage";
+import { SlicesPage } from "./pages/SlicesPage";
+import { AnnotationsPage } from "./pages/AnnotationsPage";
 import { GlobalHostsPage } from "./pages/GlobalHostsPage";
 import { GlobalHostDetailPage } from "./pages/GlobalHostDetailPage";
 import { ModelSetupModal } from "./components/ModelSetupModal";
+import { ToastProvider } from "./components/ToastProvider";
 import { api } from "./api";
 
 export const App: React.FC = () => {
@@ -43,6 +47,7 @@ export const App: React.FC = () => {
   }, []);
 
   return (
+    <ToastProvider>
     <div className="min-h-screen bg-slate-950 text-slate-100" data-testid="app-root">
       {/* Model setup modal (first-boot) */}
       {showSetup && !checkingSetup && (
@@ -91,6 +96,9 @@ export const App: React.FC = () => {
           <Route path="/jobs/:jobId" element={<JobDetailPage />} />
 
           {/* Job sub-resources */}
+          <Route path="/jobs/:jobId/theories" element={<TheoriesPage />} />
+          <Route path="/jobs/:jobId/slices" element={<SlicesPage />} />
+          <Route path="/jobs/:jobId/annotations" element={<AnnotationsPage />} />
           <Route path="/jobs/:jobId/hosts" element={<HostListPage />} />
           <Route path="/jobs/:jobId/hosts/:ip" element={<HostDetailPage />}>
             <Route index element={<Navigate to="connections" replace />} />
@@ -125,6 +133,7 @@ export const App: React.FC = () => {
         </Routes>
       </main>
     </div>
+    </ToastProvider>
   );
 };
 

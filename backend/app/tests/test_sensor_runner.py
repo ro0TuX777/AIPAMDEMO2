@@ -1,5 +1,4 @@
 import pytest
-from pathlib import Path
 from unittest.mock import MagicMock
 from backend.app.pipeline.sensor_runner import run_sensor
 from backend.app.sensors.registry import SensorDef

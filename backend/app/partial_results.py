@@ -11,7 +11,7 @@ import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from sqlmodel import Session, select
+from sqlmodel import Session
 
 from .database import engine
 from .db_models import PartialJobResultDB

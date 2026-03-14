@@ -11,7 +11,7 @@ adapter ensures consumers only depend on the stable interface.
 from __future__ import annotations
 
 import logging
-from typing import List, Optional
+from typing import List
 
 import httpx
 
@@ -20,7 +20,6 @@ from ..domain.forensic_data import ForensicData
 from ..domain.finding_adapter import llm_output_to_findings
 from ..llm_client import LLMClient, LLMConfig
 from ..llm_chunking import aggregate_llm_results, build_llm_chunks
-from ..models import LLMInputBundle
 
 logger = logging.getLogger(__name__)
 

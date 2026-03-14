@@ -28,14 +28,12 @@ Usage::
 from __future__ import annotations
 
 import json
-import logging
 import os
 import shutil
 import subprocess
 import asyncio
-from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from celery import chain as celery_chain
 from sqlmodel import Session, select
@@ -48,8 +46,6 @@ from .db_models import (
     FlowDB,
     JobDB,
     JobResultDB,
-    JobStepDB,
-    PipelineCheckpointDB,
 )
 from .models import (
     AnalysisSummary,
@@ -60,7 +56,6 @@ from .models import (
 )
 from .logging_config import get_logger, set_log_context
 from .tasks import (
-    _clear_checkpoints,
     _load_checkpoints,
     _save_checkpoint,
     _set_job_status,
@@ -395,7 +390,6 @@ def analyze_traffic(job_id: str) -> str:
             from .aggregation import aggregate_hosts, aggregate_host_pairs, diff_change_summaries
             from .settings_runtime import get_effective_settings
             from .baseline_utils import _split_baseline_exploit
-            from .domain.evidence_store import link_evidence
 
             # Load flows and alerts from Evidence Store
             db_flows = session.exec(
@@ -478,7 +472,6 @@ def analyze_traffic(job_id: str) -> str:
                 changes = []
 
             # Build LLM chunks and analyze
-            from .models import LLMInputBundle
 
             bundles = build_llm_chunks(
                 exercise_id=ctx.exercise_id,

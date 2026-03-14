@@ -1,6 +1,6 @@
 """Smoke tests for V2 ORM models and fixtures."""
 
-from backend.app.models import Job, Host, Upload
+from backend.app.models import Host
 
 
 def test_job_creation(sample_job):

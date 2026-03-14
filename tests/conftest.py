@@ -21,18 +21,8 @@ os.environ.setdefault("AIPAM_API_TOKEN", "test-token-v2")
 
 from backend.app.database_v2 import Base, _set_sqlite_pragmas, get_db
 from backend.app.models import (
-    Alert,
-    Artifact,
-    Connection,
-    DnsQuery,
-    File,
-    Finding,
     Host,
-    Ioc,
     Job,
-    JobSensor,
-    TimelineEvent,
-    TlsSession,
     Upload,
 )
 

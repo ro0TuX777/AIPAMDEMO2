@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import tempfile
 from datetime import datetime, timezone
-from pathlib import Path
 
 import pytest
 from sqlmodel import Session, SQLModel, create_engine

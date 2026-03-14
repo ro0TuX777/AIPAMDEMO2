@@ -1,6 +1,5 @@
 """Tests for app/llm/parsers.py — JSON extraction, repair, and text helpers."""
 
-import pytest
 
 from app.llm.parsers import (
     parse_llm_response,

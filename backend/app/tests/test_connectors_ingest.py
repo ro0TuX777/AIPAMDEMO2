@@ -1,13 +1,10 @@
 from __future__ import annotations
 
-import os
-from pathlib import Path
 from datetime import datetime, timezone
 from uuid import uuid4
 
 from sqlmodel import Session
 
-from app.connectors import SecurityOnionConnector, ArkimeConnector
 from app.db_models import JobDB, JobStepDB
 from app.database import engine
 from app.models import JobStatus, JobStepStatus

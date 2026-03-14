@@ -26,6 +26,7 @@ export const ChatPage: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
   const [searchParams] = useSearchParams();
   const initialAsk = useMemo(() => searchParams.get("ask") || undefined, [searchParams]);
+  const contextHint = useMemo(() => searchParams.get("hint") || undefined, [searchParams]);
   const [kbOpen, setKbOpen] = useState(false);
 
   // ── KB state ──
@@ -154,7 +155,7 @@ export const ChatPage: React.FC = () => {
         <div className="flex gap-4 items-start" style={{ height: "calc(100vh - 140px)" }}>
           {/* ── Chat (main area) ── */}
           <div className={`flex-1 min-w-0 h-full transition-all ${kbOpen ? "" : ""}`}>
-            <ChatPanel jobId={jobId} initialContext={initialAsk} />
+            <ChatPanel jobId={jobId} initialMessage={initialAsk} contextHint={contextHint} />
           </div>
 
           {/* ── KB Sidebar ── */}

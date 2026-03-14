@@ -30,7 +30,6 @@ from backend.app.pipeline.job_dir import (
     create_sensor_output_dir,
     link_pcap,
     link_pcap_labeled,
-    read_input_meta,
     write_input_meta,
 )
 from backend.app.pipeline.preflight import check_disk_space, check_job_quota
@@ -38,12 +37,20 @@ from backend.app.pipeline.sensor_runner import SensorResult, run_sensor
 from backend.app.sensors.registry import (
     Profile,
     SensorDef,
-    get_all_for_profile,
     get_sensors_for_profile,
     get_stages_for_profile,
 )
+from backend.app.events import publish_job_event
 
 logger = logging.getLogger("aipam.orchestrator")
+
+
+def _emit(job_id: str, event_type: str, **payload: Any) -> None:
+    """Fire-and-forget event publish (never fails the pipeline)."""
+    try:
+        publish_job_event(job_id, event_type, {"job_id": job_id, **payload})
+    except Exception:
+        pass
 
 
 def _now_iso() -> str:
@@ -304,8 +311,13 @@ def run_pipeline(
 
     # --- Step 2-3: Run stages (Zeek, Suricata) ---
     stages = get_stages_for_profile(profile)
+    total_steps = len(stages) + len(get_sensors_for_profile(profile)) + 5  # +5 for correlate + index + theories + slices + annotations
+    step_num = 0
     for stage_def in stages:
+        step_num += 1
         logger.info("Running stage %s for job %s", stage_def.name, job_id)
+        _emit(job_id, "stage.status", stage=stage_def.name, status="running",
+              step=step_num, total_steps=total_steps)
         create_sensor_output_dir(job_dir, stage_def.name)
 
         # Stages are run as Docker containers just like sensors
@@ -318,6 +330,9 @@ def run_pipeline(
             sensor_config_dir=sensor_config_dir,
         )
         _record_sensor_result(db, job_id, result)
+        _emit(job_id, "stage.status", stage=stage_def.name, status=result.status,
+              step=step_num, total_steps=total_steps,
+              duration_ms=result.duration_ms)
 
         if result.status == "failed":
             logger.error("Stage %s failed for job %s: %s", stage_def.name, job_id, result.error)
@@ -354,7 +369,10 @@ def run_pipeline(
                 sensor_results.append(skip_result)
                 continue
 
+        step_num += 1
         logger.info("Running sensor %s for job %s", sensor_def.name, job_id)
+        _emit(job_id, "sensor.status", sensor=sensor_def.name, status="running",
+              step=step_num, total_steps=total_steps)
         create_sensor_output_dir(job_dir, sensor_def.name)
 
         result = run_sensor(
@@ -367,6 +385,9 @@ def run_pipeline(
         )
         _record_sensor_result(db, job_id, result)
         sensor_results.append(result)
+        _emit(job_id, "sensor.status", sensor=sensor_def.name, status=result.status,
+              step=step_num, total_steps=total_steps,
+              duration_ms=result.duration_ms)
 
         if result.status in ("failed", "timeout"):
             has_errors = True
@@ -385,12 +406,18 @@ def run_pipeline(
     _write_extraction_manifest(job_dir)
 
     # --- Step 6-8: Normalize, Correlate, Persist ---
+    step_num += 1
+    _emit(job_id, "stage.status", stage="correlate", status="running",
+          step=step_num, total_steps=total_steps)
     corr_counts: dict[str, int] | None = None
     try:
         from backend.app.normalize.correlate import correlate_job
 
         corr_counts = correlate_job(job_id, job_dir, db)
         logger.info("Correlation results for job %s: %s", job_id, corr_counts)
+        _emit(job_id, "stage.status", stage="correlate", status="completed",
+              step=step_num, total_steps=total_steps,
+              message=f"findings={corr_counts.get('findings', 0)}")
 
         # Update global host registry for cross-job forensics
         from backend.app.normalize.post_process import update_global_host_stats
@@ -400,6 +427,9 @@ def run_pipeline(
         has_errors = True
 
     # --- Step 9: Auto-index pipeline outputs for RAG ───────────────
+    step_num += 1
+    _emit(job_id, "stage.status", stage="index", status="running",
+          step=step_num, total_steps=total_steps)
     try:
         import asyncio
         from backend.app.config_v2 import get_settings as _get_settings
@@ -416,12 +446,68 @@ def run_pipeline(
             persist_dir=_persist_dir,
         ))
         logger.info("Auto-indexed job %s outputs: %s", job_id, index_counts)
+        _emit(job_id, "stage.status", stage="index", status="completed",
+              step=step_num, total_steps=total_steps)
     except Exception as exc:
         logger.warning("Auto-indexing failed for job %s (non-fatal): %s", job_id, exc)
+        _emit(job_id, "stage.status", stage="index", status="completed",
+              step=step_num, total_steps=total_steps, message="index failed (non-fatal)")
+
+    # --- Step 10: Generate Theory of the Case ───────────────────────
+    step_num += 1
+    _emit(job_id, "stage.status", stage="theories", status="running",
+          step=step_num, total_steps=total_steps)
+    try:
+        from backend.app.services.theory_engine import generate_all_theories
+
+        theory_counts = generate_all_theories(db, job_id)
+        logger.info("Theory generation for job %s: %s", job_id, theory_counts)
+        _emit(job_id, "stage.status", stage="theories", status="completed",
+              step=step_num, total_steps=total_steps,
+              message=f"theories={theory_counts.get('total', 0)}")
+    except Exception as exc:
+        logger.warning("Theory generation failed for job %s (non-fatal): %s", job_id, exc)
+        _emit(job_id, "stage.status", stage="theories", status="completed",
+              step=step_num, total_steps=total_steps, message="theories failed (non-fatal)")
+
+    # --- Step 11: Generate Incident Slices ──────────────────────────
+    step_num += 1
+    _emit(job_id, "stage.status", stage="slices", status="running",
+          step=step_num, total_steps=total_steps)
+    try:
+        from backend.app.services.slicer import generate_slices
+
+        slices = generate_slices(db, job_id)
+        logger.info("Slice generation for job %s: %d slices", job_id, len(slices))
+        _emit(job_id, "stage.status", stage="slices", status="completed",
+              step=step_num, total_steps=total_steps,
+              message=f"slices={len(slices)}")
+    except Exception as exc:
+        logger.warning("Slice generation failed for job %s (non-fatal): %s", job_id, exc)
+        _emit(job_id, "stage.status", stage="slices", status="completed",
+              step=step_num, total_steps=total_steps, message="slices failed (non-fatal)")
+
+    # --- Step 12: Generate Context Annotations (Why Unusual?) ─────
+    step_num += 1
+    _emit(job_id, "stage.status", stage="annotations", status="running",
+          step=step_num, total_steps=total_steps)
+    try:
+        from backend.app.services.contextualizer import generate_annotations
+
+        anns = generate_annotations(db, job_id)
+        logger.info("Annotation generation for job %s: %d annotations", job_id, len(anns))
+        _emit(job_id, "stage.status", stage="annotations", status="completed",
+              step=step_num, total_steps=total_steps,
+              message=f"annotations={len(anns)}")
+    except Exception as exc:
+        logger.warning("Annotation generation failed for job %s (non-fatal): %s", job_id, exc)
+        _emit(job_id, "stage.status", stage="annotations", status="completed",
+              step=step_num, total_steps=total_steps, message="annotations failed (non-fatal)")
 
     # --- Final status ---
     final_status = "completed_with_errors" if has_errors else "completed"
     _update_job_status(db, job, final_status)
+    _emit(job_id, "job.complete", status=final_status)
 
     # Store metrics
     metrics = {

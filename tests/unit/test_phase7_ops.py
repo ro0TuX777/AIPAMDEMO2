@@ -10,23 +10,19 @@ import hashlib
 import json
 import os
 import tarfile
-import tempfile
 import uuid
 import zipfile
 from datetime import datetime, timedelta, timezone
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 from sqlalchemy import create_engine, event
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import sessionmaker
 
 os.environ.setdefault("AIPAM_API_TOKEN", "test-token-v2")
 
 from backend.app.database_v2 import Base, _set_sqlite_pragmas
 from backend.app.models.job import Job
-from backend.app.models.sensor import JobSensor
-from backend.app.models.finding import Finding
 
 
 def _uuid():

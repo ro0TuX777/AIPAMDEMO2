@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import json
 import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Dict, List, Optional
 
@@ -350,7 +350,7 @@ class LLMClient:
         if self.dual_config is None:
             trafficllm_endpoint = os.getenv("TRAFFICLLM_ENDPOINT")
             if trafficllm_endpoint:
-                trafficllm_config = LLMConfig(
+                LLMConfig(
                     endpoint=trafficllm_endpoint,
                     model="trafficllm",
                     temperature=config.temperature,
@@ -905,14 +905,14 @@ class LLMClient:
             malware_count = self._get_v(trafficllm_results, "malware_detections", 0)
             botnet_count = self._get_v(trafficllm_results, "botnet_detections", 0)
             malware_types = self._get_v(trafficllm_results, "malware_types", [])
-            botnet_types = self._get_v(trafficllm_results, "botnet_types", [])
+            self._get_v(trafficllm_results, "botnet_types", [])
 
             if malware_count > 0 or botnet_count > 0:
                 malware_list = ', '.join(malware_types) if malware_types else 'unidentified malware'
 
                 # Build example evidence strings
                 example_evidence = [f"TrafficLLM detected {mtype} malware traffic" for mtype in malware_types[:3]]
-                example_evidence_str = ', '.join([f'"{e}"' for e in example_evidence]) if example_evidence else '"TrafficLLM detected malware traffic"'
+                ', '.join([f'"{e}"' for e in example_evidence]) if example_evidence else '"TrafficLLM detected malware traffic"'
 
                 trafficllm_context = f"""
 ## POTENTIAL MALWARE INDICATORS (from TrafficLLM AI analysis):
@@ -936,7 +936,7 @@ Do NOT feel forced to use these names if the forensic evidence in the <packet> d
             if findings and zero_day_likelihood != "none":
                 # Build the anomaly context with chain-of-thought reasoning
                 anomaly_lines = [
-                    f"\n## ZERO-DAY ANOMALY DETECTION REPORT",
+                    "\n## ZERO-DAY ANOMALY DETECTION REPORT",
                     f"**Zero-Day Likelihood: {zero_day_likelihood.upper()}** (score: {anomaly_score:.2f})",
                     f"**Behavioral Anomalies Detected: {len(findings)}**\n",
                 ]
@@ -975,11 +975,11 @@ Use the chain-of-thought reasoning above to inform your analysis.""")
 
         # Serialize bundle safely regardless of type
         if hasattr(bundle, "model_dump"):
-            llm_chunk_json = json.dumps(bundle.model_dump(), default=str)
+            json.dumps(bundle.model_dump(), default=str)
         elif hasattr(bundle, "dict"):
-            llm_chunk_json = json.dumps(bundle.dict(), default=str)
+            json.dumps(bundle.dict(), default=str)
         else:
-            llm_chunk_json = json.dumps(bundle, default=str)
+            json.dumps(bundle, default=str)
 
         # Build a summary of key traffic data for the prompt
         # Extract key IPs and statistics from the bundle
@@ -1090,7 +1090,6 @@ Provide your findings in a structured JSON format with this exact structure:
                 mitre_techniques_overall=[],
             )
 
-        provider_name = active_config.provider.value if active_config.provider else "unknown"
         try:
             # Use a configurable timeout so large analyses on local models
             # (like llama3.1:8b via Ollama) have enough time to complete.
@@ -1138,10 +1137,10 @@ Provide your findings in a structured JSON format with this exact structure:
                 except ValidationError as ve:
                     # JSON was valid but schema didn't match (simplified types)
                     print(f"[DEBUG] Pydantic validation error: {ve}")
-                    print(f"[DEBUG] Attempting to repair malformed JSON data...")
+                    print("[DEBUG] Attempting to repair malformed JSON data...")
                     output = self._parse_natural_language(content, partial_json=raw, bundle=bundle)
             else:
-                print(f"Warning: Could not extract JSON from LLM response")
+                print("Warning: Could not extract JSON from LLM response")
                 # Try to create a basic output from natural language response
                 output = self._parse_natural_language(content, bundle=bundle)
 
@@ -1276,7 +1275,7 @@ Provide your findings in a structured JSON format with this exact structure:
                         if classification.lower() in ["anomalous/zero-day", "zero-day", "anomalous"]:
                             detected_malware = "Anomalous/Zero-Day"
                             severity = "high"
-                            print(f"[DEBUG] Model explicitly flagged a Zero-Day/Anomaly")
+                            print("[DEBUG] Model explicitly flagged a Zero-Day/Anomaly")
 
             # Get severity if present (but only if higher than what we determined)
             if "overall_severity" in partial_json:
@@ -1471,20 +1470,20 @@ Provide your findings in a structured JSON format with this exact structure:
                 attack_chain.append({
                     "stage": "collection",
                     "description": f"{detected_malware} credential and data harvesting",
-                    "evidence": [f"Browser credential theft activity", f"System data enumeration"],
+                    "evidence": ["Browser credential theft activity", "System data enumeration"],
                     "mitre_techniques": [t for t in malware_mitre if t["id"].startswith("T1555") or t["id"].startswith("T1056") or t["id"].startswith("T1113")][:2] or [{"id": "T1555", "name": "Credentials from Password Stores"}]
                 })
                 attack_chain.append({
                     "stage": "exfiltration",
                     "description": f"{detected_malware} data exfiltration to C2",
-                    "evidence": [f"Stolen data transmitted to C2 server"],
+                    "evidence": ["Stolen data transmitted to C2 server"],
                     "mitre_techniques": [t for t in malware_mitre if t["id"].startswith("T1048")][:1] or [{"id": "T1048", "name": "Exfiltration Over Alternative Protocol"}]
                 })
             elif "RAT" in malware_type or "Remote Access" in malware_type:
                 attack_chain.append({
                     "stage": "execution",
                     "description": f"{detected_malware} ({malware_type}) implant executed",
-                    "evidence": [f"Remote access trojan traffic detected"],
+                    "evidence": ["Remote access trojan traffic detected"],
                     "mitre_techniques": [{"id": "T1059", "name": "Command and Scripting Interpreter"}]
                 })
                 attack_chain.append({
@@ -1496,39 +1495,39 @@ Provide your findings in a structured JSON format with this exact structure:
                 attack_chain.append({
                     "stage": "persistence",
                     "description": f"{detected_malware} maintaining persistence",
-                    "evidence": [f"Recurring C2 communication patterns"],
+                    "evidence": ["Recurring C2 communication patterns"],
                     "mitre_techniques": [t for t in malware_mitre if t["id"].startswith("T1547")][:1] or [{"id": "T1547", "name": "Boot or Logon Autostart Execution"}]
                 })
             elif "Banking Trojan" in malware_type:
                 attack_chain.append({
                     "stage": "execution",
                     "description": f"{detected_malware} ({malware_type}) executed",
-                    "evidence": [f"Banking trojan traffic patterns detected"],
+                    "evidence": ["Banking trojan traffic patterns detected"],
                     "mitre_techniques": [{"id": "T1059", "name": "Command and Scripting Interpreter"}]
                 })
                 attack_chain.append({
                     "stage": "credential_access",
                     "description": f"{detected_malware} browser credential theft",
-                    "evidence": [f"Web injection activity detected", f"Form grabbing behavior"],
+                    "evidence": ["Web injection activity detected", "Form grabbing behavior"],
                     "mitre_techniques": [{"id": "T1185", "name": "Browser Session Hijacking"}, {"id": "T1056", "name": "Input Capture"}]
                 })
                 attack_chain.append({
                     "stage": "command_and_control",
                     "description": f"{detected_malware} C2 communication",
-                    "evidence": [f"Banking trojan C2 traffic"],
+                    "evidence": ["Banking trojan C2 traffic"],
                     "mitre_techniques": [{"id": "T1071", "name": "Application Layer Protocol"}]
                 })
             elif "Loader" in malware_type:
                 attack_chain.append({
                     "stage": "execution",
                     "description": f"{detected_malware} ({malware_type}) executed",
-                    "evidence": [f"Loader/dropper traffic detected"],
+                    "evidence": ["Loader/dropper traffic detected"],
                     "mitre_techniques": [{"id": "T1059", "name": "Command and Scripting Interpreter"}]
                 })
                 attack_chain.append({
                     "stage": "command_and_control",
                     "description": f"{detected_malware} downloading additional payloads",
-                    "evidence": [f"Secondary payload download activity"],
+                    "evidence": ["Secondary payload download activity"],
                     "mitre_techniques": [{"id": "T1105", "name": "Ingress Tool Transfer"}, {"id": "T1071", "name": "Application Layer Protocol"}]
                 })
             else:

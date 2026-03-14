@@ -109,7 +109,7 @@ class TestFindingVerifyRequest:
     """Validate the schemas for verify requests."""
 
     def test_valid_request(self):
-        from app.schemas import FindingVerifyRequest, VALID_ANALYST_STATUSES
+        from app.schemas import FindingVerifyRequest
 
         req = FindingVerifyRequest(status="confirmed", notes="Looks legit")
         assert req.status == "confirmed"

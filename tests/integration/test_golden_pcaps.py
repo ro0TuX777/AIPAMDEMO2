@@ -7,14 +7,13 @@ They do NOT require Docker or real sensors — they test the API layer
 and DB persistence using the FastAPI TestClient.
 """
 
-import json
 import os
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session
 
 os.environ.setdefault("AIPAM_API_TOKEN", "test-token-v2")
 
@@ -203,7 +202,7 @@ class TestFullApiRoundTrip:
             pytest.skip("Golden PCAP not generated")
 
         upload = _upload_pcap(client, pcap_path)
-        val = _validate_upload(client, upload["upload_id"])
+        _validate_upload(client, upload["upload_id"])
         job = _create_job(client, upload["upload_id"], "deep")
         r = client.get(f"/api/v1/jobs/{job['job_id']}", headers=AUTH)
         assert r.status_code == 200

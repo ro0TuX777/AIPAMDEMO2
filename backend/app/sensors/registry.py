@@ -7,8 +7,8 @@ and which execution profiles include it.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Callable, Literal
+from dataclasses import dataclass
+from typing import Callable, Literal
 
 SensorType = Literal["stage", "sensor"]
 Profile = Literal["triage", "standard", "deep"]

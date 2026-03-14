@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api, type IocItem, type IocType } from "../api";
 
@@ -16,6 +16,7 @@ const SEV_COLORS: Record<string, string> = {
 
 export const IocsListPage: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
+  const navigate = useNavigate();
   const [typeFilter, setTypeFilter] = useState<IocType | "">("");
 
   const { data, isLoading, error } = useQuery({
@@ -72,6 +73,7 @@ export const IocsListPage: React.FC = () => {
                 <th className="px-3 py-2 text-right">Confidence</th>
                 <th className="px-3 py-2">Reason</th>
                 <th className="px-3 py-2">Sources</th>
+                <th className="px-3 py-2 text-center">AI</th>
               </tr>
             </thead>
             <tbody>
@@ -94,6 +96,15 @@ export const IocsListPage: React.FC = () => {
                   </td>
                   <td className="px-3 py-2 text-xs text-slate-500">
                     {ioc.sources?.join(", ") || "—"}
+                  </td>
+                  <td className="px-3 py-2 text-center">
+                    <button
+                      onClick={() => navigate(`/jobs/${jobId}/chat?ask=${encodeURIComponent(`Analyze IOC "${ioc.value}" (type: ${ioc.type}, severity: ${ioc.severity ?? "unknown"}). ${ioc.context ? ioc.context + ' ' : ''}What is this indicator, where was it seen, and what threat does it represent?`)}&hint=${encodeURIComponent(`ioc:${ioc.value}`)}`)}
+                      className="text-emerald-400/60 hover:text-emerald-400 transition-colors text-sm"
+                      title={`Ask AI about ${ioc.value}`}
+                    >
+                      🤖
+                    </button>
                   </td>
                 </tr>
               ))}

@@ -10,7 +10,6 @@ from backend.app.schemas.common import (
     JobStatus,
     PageInfo,
     Priority,
-    Severity,
 )
 
 
@@ -142,14 +141,15 @@ class JobGetResponse(BaseModel):
 class GraphNode(BaseModel):
     id: str
     label: str
-    type: str  # host, external, dns, etc.
+    type: str  # host, external, dns, alert, finding, theory, slice, ioc, annotation
     severity: str | None = None
+    meta: dict[str, Any] | None = None
 
 
 class GraphEdge(BaseModel):
     source: str
     target: str
-    type: str  # connection, alert, etc.
+    type: str  # connection, triggered_on, correlated, supported_by, contains, etc.
     weight: int = 1
 
 
@@ -157,4 +157,12 @@ class JobGraphResponse(BaseModel):
     schema_version: str = SCHEMA_VERSION
     nodes: list[GraphNode]
     edges: list[GraphEdge]
+
+
+class EvidenceGraphResponse(BaseModel):
+    schema_version: str = SCHEMA_VERSION
+    nodes: list[GraphNode]
+    edges: list[GraphEdge]
+    node_count: int = 0
+    edge_count: int = 0
 

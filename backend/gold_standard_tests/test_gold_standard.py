@@ -8,25 +8,19 @@ Finding conversion stage.
 
 from __future__ import annotations
 
-import json
-import os
 from pathlib import Path
-from typing import Dict, List
+from typing import List
 
 import pytest
 
 from app.domain.forensic_data import ForensicData
-from app.domain.finding import Finding, FindingSeverity
+from app.domain.finding import FindingSeverity
 from app.domain.finding_adapter import llm_output_to_findings
 from app.models import (
-    AlertRecord,
-    AnalysisSummary,
     AttackChainItem,
-    FlowRecord,
     HostFindingLLM,
     LLMOutput,
     MitreTechnique,
-    Anomaly,
 )
 from app.parsers import parse_zeek_conn, parse_suricata_eve
 from app.aggregation import aggregate_hosts, aggregate_host_pairs

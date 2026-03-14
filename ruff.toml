@@ -1,0 +1,13 @@
+# AIPAM Ruff configuration
+target-version = "py311"
+
+[lint]
+# Ignore rules that are noisy in legacy V1 code
+ignore = [
+    "E402",   # Module-level import not at top — V1 files have late imports by design
+    "F821",   # Undefined name — forward type references in V1 LLM client
+    "F405",   # Undefined names from star imports — V1 schema re-exports
+    "E701",   # Multiple statements on one line — minor style
+    "E722",   # Bare except — legacy error handling
+]
+

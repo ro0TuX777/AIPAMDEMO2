@@ -88,7 +88,7 @@ async def create_document(
             doc_type=body.doc_type,
             job_id=job_id,
             ollama_url=ollama_url,
-            embedding_model="nomic-embed-text",
+            embedding_model="mxbai-embed-large",
             persist_dir=str(settings.aipam_db_path).replace("aipam.db", "vector_store"),
         )
         doc.chunk_count = chunk_count
@@ -200,7 +200,7 @@ async def search_kb(
         doc_type_filter=body.doc_type,
         job_id=job_id,
         ollama_url=ollama_url,
-        embedding_model="nomic-embed-text",
+        embedding_model="mxbai-embed-large",
         persist_dir=persist_dir,
     )
 

@@ -3,8 +3,8 @@ import shutil
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-from typing import Any, Dict, List, Optional
-from sqlalchemy import select, delete
+from typing import Optional
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.config_v2 import Settings, get_settings

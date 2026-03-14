@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Dict, List
+from typing import Dict
 from datetime import datetime
 
 from app.llm_chunking import (
@@ -12,7 +12,6 @@ from app.models import (
     AlertRecord,
     AnalysisSummary,
     ChangeSummary,
-    HostPairSummary,
     HostSummary,
     MetricChange,
     TimeWindow,

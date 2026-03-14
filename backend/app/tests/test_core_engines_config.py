@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import configparser
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -11,7 +10,6 @@ import pytest
 from app.core_engines.config.model_config_manager import (
     ModelConfig,
     ModelConfigManager,
-    get_model_config_manager,
 )
 
 

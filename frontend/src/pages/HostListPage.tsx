@@ -94,7 +94,7 @@ export const HostListPage: React.FC = () => {
                   </td>
                   <td className="px-3 py-2 text-center">
                     <button
-                      onClick={() => navigate(`/jobs/${jobId}/chat?ask=${encodeURIComponent(`Analyze host ${h.ip}. What is its role, what suspicious activity is associated with it, and what are the key alerts and findings?`)}`)}
+                      onClick={() => navigate(`/jobs/${jobId}/chat?ask=${encodeURIComponent(`Analyze host ${h.ip}. What is its role, what suspicious activity is associated with it, and what are the key alerts and findings?`)}&hint=${encodeURIComponent(`host:${h.ip}`)}`)}
                       className="text-emerald-400/60 hover:text-emerald-400 transition-colors text-sm"
                       title={`Ask AI about ${h.ip}`}
                     >

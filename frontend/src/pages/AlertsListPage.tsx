@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api, type AlertItem, type Severity } from "../api";
 
@@ -13,6 +13,7 @@ const SEV_COLORS: Record<string, string> = {
 
 export const AlertsListPage: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
+  const navigate = useNavigate();
   const [sevFilter, setSevFilter] = useState<Severity | "">("");
 
   const { data, isLoading, error } = useQuery({
@@ -65,6 +66,7 @@ export const AlertsListPage: React.FC = () => {
                 <th className="px-3 py-2">Source</th>
                 <th className="px-3 py-2">Destination</th>
                 <th className="px-3 py-2">Proto</th>
+                <th className="px-3 py-2 text-center">AI</th>
               </tr>
             </thead>
             <tbody>
@@ -98,6 +100,15 @@ export const AlertsListPage: React.FC = () => {
                     {a.dest_port ? `:${a.dest_port}` : ""}
                   </td>
                   <td className="px-3 py-2 text-xs">{a.proto ?? "—"}</td>
+                  <td className="px-3 py-2 text-center">
+                    <button
+                      onClick={() => navigate(`/jobs/${jobId}/chat?ask=${encodeURIComponent(`Analyze alert "${a.signature}" (severity: ${a.severity}). Source: ${a.src_ip ?? "unknown"}${a.src_port ? ":" + a.src_port : ""} → Destination: ${a.dest_ip ?? "unknown"}${a.dest_port ? ":" + a.dest_port : ""}. What does this alert mean, is it a true positive, and what should an analyst do next?`)}&hint=${encodeURIComponent(`alert:${a.alert_id}`)}`)}
+                      className="text-emerald-400/60 hover:text-emerald-400 transition-colors text-sm"
+                      title={`Ask AI about this alert`}
+                    >
+                      🤖
+                    </button>
+                  </td>
                 </tr>
               ))}
             </tbody>

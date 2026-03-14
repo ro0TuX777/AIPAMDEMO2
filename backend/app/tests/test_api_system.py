@@ -4,7 +4,6 @@ import httpx
 from unittest.mock import MagicMock
 
 from app.main import app as real_app
-from app.schemas.system import HealthResponse
 
 @pytest_asyncio.fixture
 async def client():

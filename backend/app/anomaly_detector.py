@@ -24,7 +24,7 @@ import math
 import statistics
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Any, Dict, List, Optional, Tuple
 
 from .domain_models import FlowRecord, AlertRecord
@@ -546,10 +546,10 @@ ATTACK PROGRESSION:
 Initial Access → Privilege Escalation → Lateral Movement → Data Access
 
 {f"⚠️ HIGH ALERT: Access to ports {list(admin_ports_hit)} indicates active exploitation of:" if admin_ports_hit else ""}
-{f"- Port 445 (SMB): Credential harvesting, ransomware spread" if 445 in admin_ports_hit else ""}
-{f"- Port 3389 (RDP): Remote desktop hijacking" if 3389 in admin_ports_hit else ""}
-{f"- Port 22 (SSH): SSH key theft or brute force" if 22 in admin_ports_hit else ""}
-{f"- Port 5985/5986 (WinRM): PowerShell remoting abuse" if (5985 in admin_ports_hit or 5986 in admin_ports_hit) else ""}
+{"- Port 445 (SMB): Credential harvesting, ransomware spread" if 445 in admin_ports_hit else ""}
+{"- Port 3389 (RDP): Remote desktop hijacking" if 3389 in admin_ports_hit else ""}
+{"- Port 22 (SSH): SSH key theft or brute force" if 22 in admin_ports_hit else ""}
+{"- Port 5985/5986 (WinRM): PowerShell remoting abuse" if (5985 in admin_ports_hit or 5986 in admin_ports_hit) else ""}
 
 RECOMMENDED ACTIONS:
 1. Isolate {src_ip} for forensic analysis

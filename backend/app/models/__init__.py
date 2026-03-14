@@ -21,6 +21,11 @@ from backend.app.models.upload import Upload
 from backend.app.models.chat import ChatConversation, ChatMessage
 from backend.app.models.knowledge_base import KBDocument
 from backend.app.models.job_pcap import JobPcap
+from backend.app.models.theory import Theory
+from backend.app.models.slice import IncidentSlice
+from backend.app.models.context_annotation import ContextAnnotation
+from backend.app.models.report import Report
+from backend.app.models.proof import Proof, ProofItem
 
 __all__ = [
     "JobStatus",
@@ -43,5 +48,11 @@ __all__ = [
     "ChatConversation",
     "ChatMessage",
     "KBDocument",
+    "Theory",
+    "IncidentSlice",
+    "ContextAnnotation",
+    "Report",
+    "Proof",
+    "ProofItem",
 ]
 

@@ -1,14 +1,11 @@
 import json
 import pytest
-from pathlib import Path
 from backend.app.normalize.correlate import correlate_job
 from backend.app.normalize.post_process import update_global_host_stats
-from backend.app.models.host import Host
 from backend.app.models.global_host import GlobalHost
 from backend.app.models.job import Job
 from backend.app.database_v2 import init_v2_db, get_session_factory
 from backend.app.config_v2 import get_settings
-from sqlalchemy import select
 
 TOKEN = "test-token-v2"
 AUTH = {"Authorization": f"Bearer {TOKEN}"}
@@ -104,10 +101,10 @@ from unittest.mock import patch
 from pathlib import Path as _Path
 from fastapi.testclient import TestClient
 from sqlalchemy import create_engine, event
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session
 from backend.app.database_v2 import Base, _set_sqlite_pragmas, get_db
 from backend.app.main_v2 import create_app
-from backend.app.config_v2 import Settings, get_settings
+from backend.app.config_v2 import Settings
 
 
 @pytest.fixture()

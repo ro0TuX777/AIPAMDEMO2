@@ -52,7 +52,7 @@ def _get_session(base_url: str, token: str):
 def _smoke_test_with_client(pcap_path: Path):
     """Run smoke test using FastAPI TestClient (no server needed)."""
     from sqlalchemy import create_engine, event
-    from sqlalchemy.orm import Session, sessionmaker
+    from sqlalchemy.orm import Session
     from fastapi.testclient import TestClient
     from backend.app.database_v2 import Base, _set_sqlite_pragmas, get_db
     from backend.app.config_v2 import Settings, get_settings
@@ -262,7 +262,7 @@ def cmd_parity_check(args):
     # Summary
     summary_path = report_dir / "diff_summary.md"
     lines = [
-        f"# Parity Check Report\n",
+        "# Parity Check Report\n",
         f"**Date**: {time.strftime('%Y-%m-%d %H:%M UTC', time.gmtime())}\n",
         f"**PCAPs tested**: {len(pcap_files)}\n",
         f"**Overall**: {'PASS' if all_passed else 'FAIL'}\n\n",
@@ -303,7 +303,7 @@ def _parse_duration(value: str) -> int:
 def cmd_cleanup_jobs(args):
     """Delete expired jobs (filesystem + DB rows) per §18 retention policy."""
     from sqlalchemy import create_engine, event
-    from sqlalchemy.orm import Session, sessionmaker
+    from sqlalchemy.orm import sessionmaker
     from backend.app.database_v2 import _set_sqlite_pragmas
     from backend.app.models.job import Job
 
@@ -426,7 +426,7 @@ def _human_bytes(n: int) -> str:
 def cmd_support_bundle(args):
     """Generate a support bundle tar.gz for air-gapped debugging."""
     from sqlalchemy import create_engine, event
-    from sqlalchemy.orm import Session, sessionmaker
+    from sqlalchemy.orm import sessionmaker
     from backend.app.database_v2 import _set_sqlite_pragmas
     from backend.app.models.job import Job
     from backend.app.models.sensor import JobSensor
@@ -466,7 +466,7 @@ def cmd_support_bundle(args):
         output_path = Path(args.output) if args.output else Path(f"support_bundle_{timestamp}.tar.gz")
 
         print(f"\n{'='*60}")
-        print(f"AIPAM Support Bundle")
+        print("AIPAM Support Bundle")
         print(f"  Jobs:   {len(jobs)}")
         print(f"  Output: {output_path}")
         print(f"{'='*60}\n")
@@ -673,7 +673,7 @@ def cmd_apply_update(args):
         applied = _load_applied()
         if bundle_version in applied:
             print(f"  WARNING: Bundle {bundle_version} was previously applied.")
-            print(f"  Continuing anyway (re-application allowed).\n")
+            print("  Continuing anyway (re-application allowed).\n")
 
         # 2. Verify SHA256 checksums for every file (§13.1)
         print("  Verifying checksums...")

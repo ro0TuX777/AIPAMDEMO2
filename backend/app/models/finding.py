@@ -1,6 +1,6 @@
 """Finding model (§12.5)."""
 
-from sqlalchemy import Column, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Column, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 
 from backend.app.database_v2 import Base
 
@@ -21,6 +21,7 @@ class Finding(Base):
     pcap_label = Column(String, nullable=True)  # which PCAP generated this finding
     feedback = Column(String, nullable=True)    # confirmed, false_positive, false_negative
     explanation_feedback = Column(String, nullable=True)  # useful, not_useful
+    confidence = Column(Float, nullable=False, default=0.0, server_default="0.0")  # 0.0–1.0
 
     __table_args__ = (
         UniqueConstraint("job_id", "finding_id"),

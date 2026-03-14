@@ -41,7 +41,6 @@ from .settings_runtime import get_effective_settings
 from .logging_config import configure_logging, get_logger, set_log_context
 import os
 import shutil
-from pathlib import Path
 
 configure_logging(component="api")
 logger = get_logger(__name__)
@@ -1269,7 +1268,6 @@ async def test_trafficllm_connection(body: Settings) -> dict:
 
     Uses provided settings (if present) or falls back to environment/defaults.
     """
-    import httpx
 
     effective = get_effective_settings()
     endpoint = body.trafficllm_endpoint or getattr(effective, 'trafficllm_endpoint', None) or os.getenv(

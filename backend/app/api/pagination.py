@@ -9,7 +9,7 @@ import base64
 import json
 from typing import Any, Sequence
 
-from fastapi import HTTPException, Query
+from fastapi import HTTPException
 from sqlalchemy import Column, Select
 from sqlalchemy.orm import Session
 

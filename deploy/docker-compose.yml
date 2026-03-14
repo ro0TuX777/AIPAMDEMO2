@@ -44,6 +44,7 @@ services:
       - aipam-uploads:/uploads
       - aipam-logs:/opt/aipam/logs
       - aipam-rules:/opt/aipam/rules
+      - ./ti:/opt/aipam/ti:ro
     depends_on:
       redis:
         condition: service_healthy
@@ -86,6 +87,7 @@ services:
       - aipam-uploads:/uploads
       - aipam-logs:/opt/aipam/logs
       - aipam-rules:/opt/aipam/rules
+      - ./ti:/opt/aipam/ti:ro
       - aipam-sensor-config:/opt/aipam/sensor-config:ro
       - /var/run/docker.sock:/var/run/docker.sock  # sensor containers
     depends_on:
@@ -179,6 +181,7 @@ volumes:
     driver: local
   aipam-rules:
     driver: local
+
   redis-data:
     driver: local
 

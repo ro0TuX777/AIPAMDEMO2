@@ -21,7 +21,6 @@ from uuid import uuid4
 
 from sqlmodel import Session, select
 
-from .models import AnalysisSummary, HostFinding, JobResult
 from .schemas import ChatCitation, ChatResponse
 from .llm_client import LLMClient, LLMConfig
 from .settings_runtime import get_effective_settings

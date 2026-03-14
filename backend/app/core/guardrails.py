@@ -16,7 +16,7 @@ Usage::
 from __future__ import annotations
 
 import logging
-from typing import List, Optional, Set
+from typing import Optional, Set
 
 from sqlmodel import Session, select
 

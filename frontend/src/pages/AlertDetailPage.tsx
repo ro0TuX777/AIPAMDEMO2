@@ -1,5 +1,5 @@
 import React from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api, type AlertRelatedHost, type AlertRelatedConnection } from "../api";
 
@@ -10,6 +10,7 @@ const SEV_COLORS: Record<string, string> = {
 
 export const AlertDetailPage: React.FC = () => {
   const { jobId, alertId } = useParams<{ jobId: string; alertId: string }>();
+  const navigate = useNavigate();
 
   const { data: alert, isLoading, error } = useQuery({
     queryKey: ["job", jobId, "alert", alertId],
@@ -35,7 +36,16 @@ export const AlertDetailPage: React.FC = () => {
 
       {/* Header */}
       <div>
-        <h1 className="text-xl font-semibold">{alert.signature}</h1>
+        <div className="flex items-center gap-3">
+          <h1 className="text-xl font-semibold">{alert.signature}</h1>
+          <button
+            onClick={() => navigate(`/jobs/${jobId}/chat?ask=${encodeURIComponent(`Analyze alert "${alert.signature}" (severity: ${alert.severity}, SID: ${alert.sid ?? "unknown"}). Source: ${alert.src_ip ?? "unknown"}${alert.src_port ? ":" + alert.src_port : ""} → Destination: ${alert.dest_ip ?? "unknown"}${alert.dest_port ? ":" + alert.dest_port : ""}. Category: ${alert.category ?? "unknown"}. What does this alert mean, is it a true positive, and what should an analyst do next?`)}&hint=${encodeURIComponent(`alert:${alertId}`)}`)}
+            className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-400 hover:text-emerald-300 text-sm rounded-lg transition-colors"
+            title="Ask AI about this alert"
+          >
+            🤖 Ask AI
+          </button>
+        </div>
         <div className="flex gap-4 mt-2 text-sm">
           <span className={`font-medium ${SEV_COLORS[alert.severity] ?? "text-slate-400"}`}>
             {alert.severity.toUpperCase()}

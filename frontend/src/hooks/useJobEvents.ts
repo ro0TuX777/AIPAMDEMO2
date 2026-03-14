@@ -72,6 +72,7 @@ export function useJobEvents(
   const lastEventIdRef = useRef<string | undefined>(undefined);
   const [connected, setConnected] = useState(false);
   const [jobStatus, setJobStatus] = useState<JobStatus | null>(null);
+  const [progress, setProgress] = useState<{ step: number; total: number; label: string } | null>(null);
 
   // Stable ref for callbacks so effect doesn't re-run on every render
   const onRef = useRef(on);
@@ -119,9 +120,22 @@ export function useJobEvents(
             queryClient.invalidateQueries({ queryKey: ["job", jobId] });
             close();
             break;
-          case "sensor.status":
+          case "stage.status": {
+            const stage = data as SseStageStatusData;
+            if (stage.step && stage.total_steps) {
+              setProgress({ step: stage.step, total: stage.total_steps, label: `${stage.stage}: ${stage.status}` });
+            }
             queryClient.invalidateQueries({ queryKey: ["job", jobId, "sensors"] });
             break;
+          }
+          case "sensor.status": {
+            const sensor = data as SseSensorStatusData;
+            if (sensor.step && sensor.total_steps) {
+              setProgress({ step: sensor.step, total: sensor.total_steps, label: `${sensor.sensor}: ${sensor.status}` });
+            }
+            queryClient.invalidateQueries({ queryKey: ["job", jobId, "sensors"] });
+            break;
+          }
           case "sensor.finding":
             queryClient.invalidateQueries({ queryKey: ["job", jobId, "findings"] });
             break;
@@ -141,6 +155,6 @@ export function useJobEvents(
     return () => close();
   }, [jobId, enabled, queryClient, close]);
 
-  return { connected, jobStatus, close };
+  return { connected, jobStatus, progress, close };
 }
 

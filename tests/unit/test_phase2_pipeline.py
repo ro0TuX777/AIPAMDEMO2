@@ -6,7 +6,6 @@ import json
 import os
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -14,7 +13,6 @@ import pytest
 os.environ.setdefault("AIPAM_API_TOKEN", "test-token-v2")
 
 from backend.app.models.job import Job
-from backend.app.models.sensor import JobSensor
 from backend.app.pipeline.job_dir import (
     cleanup_job_directory,
     compute_pcap_sha256,
@@ -34,7 +32,7 @@ from backend.app.pipeline.preflight import (
 )
 from backend.app.pipeline.recovery import recover_interrupted_jobs
 from backend.app.pipeline.sensor_handlers import _parse_zeek_results, handle_beaconing, handle_capa, handle_ti_matcher
-from backend.app.pipeline.sensor_runner import SensorResult, run_sensor
+from backend.app.pipeline.sensor_runner import run_sensor
 from backend.app.sensors.registry import (
     SENSORS,
     SensorDef,
@@ -646,7 +644,7 @@ class TestSensorRunner:
         job_dir = create_job_directory(tmp_path, _uuid())
         docker = _make_mock_docker(exit_code=0, logs=b"matched 3 IOCs")
 
-        result = run_sensor(sensor_def, job_dir, "job-7", "standard", docker)
+        run_sensor(sensor_def, job_dir, "job-7", "standard", docker)
         log_path = job_dir / "sensors" / "test_logger" / "container.log"
         assert log_path.exists()
         assert "matched 3 IOCs" in log_path.read_text()
@@ -724,7 +722,6 @@ class TestRecovery:
 class TestOrchestrator:
     def _setup_job(self, db_session, tmp_path, profile="standard"):
         """Helper: create a job + upload directory with a PCAP."""
-        from backend.app.pipeline.orchestrator import run_pipeline
 
         job_id = _uuid()
         upload_id = _uuid()

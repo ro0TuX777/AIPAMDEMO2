@@ -1,6 +1,5 @@
 """Phase 1 API endpoint tests: auth, uploads, jobs, health, system/config."""
 
-import pytest
 
 AUTH_HEADER = {"Authorization": "Bearer test-token-v2"}
 BAD_AUTH = {"Authorization": "Bearer wrong-token"}
@@ -15,10 +14,11 @@ PCAP_BODY = PCAP_MAGIC + b"\x00" * 100  # minimal valid-looking pcap
 # ---------------------------------------------------------------------------
 
 class TestAuth:
-    def test_no_token_returns_403(self, app_client):
+    def test_no_token_returns_401(self, app_client):
         client, _ = app_client
         r = client.get("/api/v1/health")
-        assert r.status_code == 403
+        # FastAPI >=0.109 HTTPBearer returns 401 (was 403 in older versions)
+        assert r.status_code == 401
 
     def test_wrong_token_returns_401(self, app_client):
         client, _ = app_client

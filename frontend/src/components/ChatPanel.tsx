@@ -1,20 +1,25 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { api, ChatResponse, ChatCitation, ConversationSummary, setApiToken } from "../api";
+import { api, ChatResponse, ChatCitation, ChatEvidenceRef, ConversationSummary, setApiToken } from "../api";
 
 interface ChatMessage {
     role: "user" | "assistant";
     content: string;
     citations?: ChatCitation[];
+    evidence_refs?: ChatEvidenceRef[];
+    suggested_followups?: string[];
     timestamp: Date;
 }
 
 interface ChatPanelProps {
     jobId: string;
-    initialContext?: string;
+    /** Auto-sent as the first message on mount (e.g. the ?ask= value). */
+    initialMessage?: string;
+    /** Scope hint passed as context_hint on every request (e.g. "finding:F-101"). */
+    contextHint?: string;
     onClose?: () => void;
 }
 
-export function ChatPanel({ jobId, initialContext, onClose }: ChatPanelProps) {
+export function ChatPanel({ jobId, initialMessage, contextHint, onClose }: ChatPanelProps) {
     const [messages, setMessages] = useState<ChatMessage[]>([]);
     const [input, setInput] = useState("");
     const [isLoading, setIsLoading] = useState(false);
@@ -100,13 +105,13 @@ export function ChatPanel({ jobId, initialContext, onClose }: ChatPanelProps) {
         }
     };
 
-    // If initialContext is provided, send it as a message (only once per mount)
+    // If initialMessage is provided, send it as a message (only once per mount)
     useEffect(() => {
-        if (initialContext && !isLoadingHistory && !initialContextHandled.current) {
+        if (initialMessage && !isLoadingHistory && !initialContextHandled.current) {
             initialContextHandled.current = true;
-            handleSend(initialContext);
+            handleSend(initialMessage);
         }
-    }, [initialContext, isLoadingHistory]);
+    }, [initialMessage, isLoadingHistory]);
 
     const handleSend = async (messageText?: string) => {
         const text = messageText || input.trim();
@@ -144,7 +149,7 @@ export function ChatPanel({ jobId, initialContext, onClose }: ChatPanelProps) {
                 body: JSON.stringify({
                     message: text,
                     conversation_id: conversationId,
-                    context_hint: initialContext,
+                    context_hint: contextHint,
                 }),
             });
 
@@ -178,12 +183,17 @@ export function ChatPanel({ jobId, initialContext, onClose }: ChatPanelProps) {
                             const evt = JSON.parse(payload);
                             if (evt.type === "meta" || evt.conversation_id) {
                                 setConversationId(evt.conversation_id);
-                                if (evt.citations) {
+                                if (evt.citations || evt.evidence_refs || evt.suggested_followups) {
                                     setMessages((prev) => {
                                         const updated = [...prev];
                                         const last = updated[updated.length - 1];
                                         if (last && last.role === "assistant") {
-                                            updated[updated.length - 1] = { ...last, citations: evt.citations };
+                                            updated[updated.length - 1] = {
+                                                ...last,
+                                                ...(evt.citations ? { citations: evt.citations } : {}),
+                                                ...(evt.evidence_refs ? { evidence_refs: evt.evidence_refs } : {}),
+                                                ...(evt.suggested_followups ? { suggested_followups: evt.suggested_followups } : {}),
+                                            };
                                         }
                                         return updated;
                                     });
@@ -224,7 +234,7 @@ export function ChatPanel({ jobId, initialContext, onClose }: ChatPanelProps) {
                 const response: ChatResponse = await api.chatWithJob(jobId, {
                     message: text,
                     conversation_id: conversationId,
-                    context_hint: initialContext,
+                    context_hint: contextHint,
                 });
                 setConversationId(response.conversation_id);
                 setMessages((prev) => {
@@ -235,6 +245,8 @@ export function ChatPanel({ jobId, initialContext, onClose }: ChatPanelProps) {
                             ...last,
                             content: response.response,
                             citations: response.citations,
+                            evidence_refs: response.evidence_refs,
+                            suggested_followups: response.suggested_followups,
                         };
                     }
                     return updated;
@@ -473,6 +485,24 @@ export function ChatPanel({ jobId, initialContext, onClose }: ChatPanelProps) {
                                             ))}
                                         </div>
                                     </details>
+                                </div>
+                            )}
+                            {/* Follow-up suggestions */}
+                            {msg.role === "assistant" && msg.suggested_followups && msg.suggested_followups.length > 0 && !isLoading && (
+                                <div className="mt-3 pt-2 border-t border-gray-700">
+                                    <p className="text-[10px] uppercase tracking-wider text-gray-500 mb-1.5">Follow-up questions</p>
+                                    <div className="flex flex-wrap gap-1.5">
+                                        {msg.suggested_followups.map((q, i) => (
+                                            <button
+                                                key={i}
+                                                onClick={() => handleSend(q)}
+                                                disabled={isLoading}
+                                                className="text-left text-xs px-2 py-1 rounded border border-gray-700 bg-gray-900/60 text-emerald-400/80 hover:text-emerald-300 hover:border-emerald-500/30 hover:bg-gray-800/80 transition-colors disabled:opacity-50"
+                                            >
+                                                {q}
+                                            </button>
+                                        ))}
+                                    </div>
                                 </div>
                             )}
                         </div>

@@ -25,6 +25,7 @@ services:
     volumes:
       - aipam_data:/data
       - aipam_rules:/opt/aipam/rules
+      - ./ti:/opt/aipam/ti:ro
       - ./finetuning:/data/finetuning:ro
       - ${EXTERNAL_DATA_PATH:-/Volumes}:/external_data # Configurable external drive mount
     depends_on:
@@ -62,6 +63,7 @@ services:
     volumes:
       - aipam_data:/data
       - aipam_rules:/opt/aipam/rules
+      - ./ti:/opt/aipam/ti:ro
       - ./finetuning:/data/finetuning:ro
       - ${EXTERNAL_DATA_PATH:-/Volumes}:/external_data # Configurable external drive mount
     depends_on:

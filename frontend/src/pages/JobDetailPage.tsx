@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useCallback, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -8,8 +8,10 @@ import {
   type SensorItem,
   type SensorStatus,
   type JobStatus,
+  type SseSensorFindingData,
 } from "../api";
 import { useJobEvents } from "../hooks/useJobEvents";
+import { useToast, type ToastSeverity } from "../components/ToastProvider";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -37,6 +39,9 @@ const TERMINAL_STATUSES = new Set<string>([
 ]);
 
 const SUB_TABS = [
+  { label: "Theories", path: "theories" },
+  { label: "Slices", path: "slices" },
+  { label: "Why Unusual?", path: "annotations" },
   { label: "Hosts", path: "hosts" },
   { label: "Alerts", path: "alerts" },
   { label: "Findings", path: "findings" },
@@ -83,9 +88,25 @@ export const JobDetailPage: React.FC = () => {
     refetchInterval: (query) => isTerminal(job?.status) ? false : 3000,
   });
 
+  // ── Toast for high-severity findings ──
+  const { addToast } = useToast();
+  const onFinding = useCallback((data: SseSensorFindingData) => {
+    const sev = (data.severity ?? "info") as ToastSeverity;
+    if (sev === "critical" || sev === "high") {
+      addToast({
+        severity: sev,
+        title: data.title ?? `${sev.toUpperCase()} finding detected`,
+        body: `Sensor: ${data.sensor}${data.confidence ? ` · Confidence: ${Math.round(data.confidence * 100)}%` : ""}`,
+        href: `/jobs/${jobId}/findings`,
+        duration: sev === "critical" ? 12000 : 8000,
+      });
+    }
+  }, [addToast, jobId]);
+
   // ── SSE for live updates ──
-  useJobEvents(jobId, {
+  const { progress } = useJobEvents(jobId, {
     enabled: !!jobId && !isTerminal(job?.status),
+    on: { "sensor.finding": onFinding },
   });
 
   // ── Mutations ──
@@ -201,6 +222,23 @@ export const JobDetailPage: React.FC = () => {
             </button>
           ))}
           {rerunMut.isPending && <span className="text-slate-400 animate-pulse">Creating…</span>}
+        </div>
+      )}
+
+      {/* SSE Step Progress (shown while pipeline is running) */}
+      {progress && !isTerminal(job.status) && (
+        <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-4">
+          <div className="flex items-center justify-between text-xs text-slate-400 mb-2">
+            <span className="flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-blue-500 animate-pulse" />
+              <span className="capitalize">{progress.label}</span>
+            </span>
+            <span>Step {progress.step}/{progress.total}</span>
+          </div>
+          <div className="w-full bg-slate-800 rounded-full h-1.5">
+            <div className="bg-blue-500 h-1.5 rounded-full transition-all duration-500"
+              style={{ width: `${Math.round((progress.step / progress.total) * 100)}%` }} />
+          </div>
         </div>
       )}
 

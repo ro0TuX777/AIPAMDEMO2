@@ -1,6 +1,6 @@
 """Connection model (§12.5)."""
 
-from sqlalchemy import Column, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Column, Float, ForeignKey, Index, Integer, String, UniqueConstraint
 
 from backend.app.database_v2 import Base
 

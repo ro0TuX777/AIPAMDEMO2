@@ -9,7 +9,6 @@ without requiring a running database, Zeek, or LLM.
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
 
 
 def main() -> None:
@@ -160,9 +159,9 @@ def main() -> None:
     print(f"  classification:  {finding.classification}")
     print(f"  kill_chain:      {finding.attack_chain_stage}")
     print(f"  affected_hosts:  {finding.affected_hosts}")
-    print(f"  evidence:")
+    print("  evidence:")
     print(f"    {finding.raw_evidence_snippet}")
-    print(f"  rationale:")
+    print("  rationale:")
     print(f"    {finding.rationale}")
 
     # -----------------------------------------------------------------------

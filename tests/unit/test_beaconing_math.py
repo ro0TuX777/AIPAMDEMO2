@@ -1,4 +1,3 @@
-import pytest
 from backend.app.anomaly_detector import AnomalyDetector
 
 def test_calculate_mad_symmetric():

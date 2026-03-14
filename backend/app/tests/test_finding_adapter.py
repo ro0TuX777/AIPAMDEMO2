@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import pytest
 
-from app.domain.finding import Finding, FindingSeverity
 from app.domain.finding_adapter import llm_output_to_findings
 from app.models import (
     Anomaly,

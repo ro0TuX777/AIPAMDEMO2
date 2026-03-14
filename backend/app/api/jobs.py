@@ -29,7 +29,7 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.api.deps import get_db, get_request_id, verify_token, verify_token_or_query
-from backend.app.api.pagination import encode_cursor, decode_cursor, paginate
+from backend.app.api.pagination import paginate
 from backend.app.config_v2 import Settings, get_settings
 from backend.app.models.alert import Alert
 from backend.app.models.finding import Finding
@@ -45,13 +45,14 @@ from backend.app.schemas.common import (
     ExecutionProfile,
     JobStatus,
     PageInfo,
-    Priority,
-    Severity,
 )
 from backend.app.schemas.file import FileItem, FileListResponse
 from backend.app.schemas.host import HostListItem
 from backend.app.schemas.ioc import IocItem, IocListResponse
 from backend.app.schemas.job import (
+    EvidenceGraphResponse,
+    GraphEdge,
+    GraphNode,
     JobCreateRequest,
     JobCreateResponse,
     JobDetail,
@@ -489,7 +490,7 @@ async def job_summary(
     db: Session = Depends(get_db),
 ):
     """Get a high-level summary of a completed job."""
-    job = _require_job(db, job_id)
+    _require_job(db, job_id)
     response.headers["X-Request-Id"] = request_id
 
     alert_count = db.scalar(select(func.count()).select_from(Alert).where(Alert.job_id == job_id)) or 0
@@ -751,7 +752,6 @@ async def job_graph(
     """Generate a graph of network activity for the job."""
     from backend.app.models.host import Host
     from backend.app.models.connection import Connection
-    from backend.app.models.alert import Alert
     from backend.app.schemas.job import GraphNode, GraphEdge
 
     _require_job(db, job_id)
@@ -794,51 +794,137 @@ async def job_graph(
     return JobGraphResponse(nodes=nodes, edges=edges)
 
 
+# ---------- GET /jobs/{jobId}/evidence-graph ----------
+
+@router.get("/jobs/{job_id}/evidence-graph", response_model=EvidenceGraphResponse)
+async def job_evidence_graph(
+    job_id: str,
+    db: Session = Depends(get_db),
+    include: str | None = Query(None, description="Comma-separated node types to include"),
+):
+    """Build the full evidence relationship graph for a job.
+
+    Returns nodes for all evidence entity types (hosts, alerts, findings,
+    theories, slices, IOCs, annotations) and edges showing their relationships.
+
+    Use ``include`` to filter: e.g. ``?include=host,alert,theory``
+    """
+    from backend.app.services.evidence_graph import build_evidence_graph
+
+    _require_job(db, job_id)
+
+    include_types = None
+    if include:
+        include_types = {t.strip() for t in include.split(",") if t.strip()}
+
+    try:
+        graph = build_evidence_graph(db, job_id, include_types=include_types)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+    nodes = [GraphNode(**n) for n in graph["nodes"]]
+    edges = [GraphEdge(**e) for e in graph["edges"]]
+
+    return EvidenceGraphResponse(
+        nodes=nodes,
+        edges=edges,
+        node_count=len(nodes),
+        edge_count=len(edges),
+    )
+
+
 # ---------- GET /jobs/{jobId}/events (SSE) ----------
 
 async def _sse_generator(job_id: str, db_factory):
-    """Server-Sent Events generator for real-time job progress."""
-    import time
+    """Server-Sent Events generator with Redis pub/sub + DB polling fallback.
 
+    Subscribes to the job's Redis event channel for low-latency pipeline
+    events (sensor start/complete, high-severity findings).  Falls back to
+    DB polling every 2 s to detect status changes even if Redis is down.
+    """
+    from backend.app.events import subscribe_job_events
+
+    pubsub = subscribe_job_events(job_id)
     last_status = None
     retry_count = 0
-    max_retries = 3600  # 1 hour at 1s intervals
+    max_retries = 3600  # ~1 hour at 1 s intervals
+    _event_id = 0
 
-    while retry_count < max_retries:
-        try:
-            db = db_factory()
+    try:
+        while retry_count < max_retries:
+            # ── 1. Drain any queued Redis pub/sub messages ──────────
+            if pubsub is not None:
+                try:
+                    for _ in range(50):  # batch up to 50 messages per tick
+                        msg = pubsub.get_message(ignore_subscribe_messages=True, timeout=0.0)
+                        if msg is None:
+                            break
+                        if msg["type"] == "message":
+                            raw = msg["data"]
+                            # Forward the envelope directly — it matches SseEnvelope
+                            yield f"data: {raw}\n\n"
+                except Exception:
+                    pass  # Redis hiccup — fall through to DB poll
+
+            # ── 2. DB status poll (authoritative, every tick) ───────
             try:
-                job = db.get(Job, job_id)
-                if not job:
-                    yield f"event: error\ndata: {{\"message\": \"Job not found\"}}\n\n"
-                    return
+                db = db_factory()
+                try:
+                    job = db.get(Job, job_id)
+                    if not job:
+                        yield "event: error\ndata: {\"message\": \"Job not found\"}\n\n"
+                        return
 
-                current_status = job.status
+                    current_status = job.status
+                    if current_status != last_status:
+                        _event_id += 1
+                        envelope = json.dumps({
+                            "id": _event_id,
+                            "type": "job.status",
+                            "ts": job.started_at or "",
+                            "data": {
+                                "job_id": job_id,
+                                "status": current_status,
+                                "started_at": job.started_at,
+                                "completed_at": job.completed_at,
+                                "error_summary": job.error_summary,
+                            },
+                        })
+                        yield f"data: {envelope}\n\n"
+                        last_status = current_status
 
-                if current_status != last_status:
-                    data = json.dumps({
-                        "job_id": job_id,
-                        "status": current_status,
-                        "started_at": job.started_at,
-                        "completed_at": job.completed_at,
-                        "error_summary": job.error_summary,
-                    })
-                    yield f"event: status\ndata: {data}\n\n"
-                    last_status = current_status
+                    # Terminal states
+                    if current_status in ("completed", "completed_with_errors",
+                                          "failed", "canceled", "deleted"):
+                        _event_id += 1
+                        done_envelope = json.dumps({
+                            "id": _event_id,
+                            "type": "job.complete",
+                            "ts": job.completed_at or "",
+                            "data": {
+                                "job_id": job_id,
+                                "status": current_status,
+                            },
+                        })
+                        yield f"data: {done_envelope}\n\n"
+                        return
+                finally:
+                    db.close()
+            except Exception as e:
+                yield f"event: error\ndata: {{\"message\": \"{str(e)}\"}}\n\n"
 
-                # Terminal states
-                if current_status in ("completed", "failed", "canceled", "deleted"):
-                    yield f"event: done\ndata: {{\"job_id\": \"{job_id}\", \"final_status\": \"{current_status}\"}}\n\n"
-                    return
-            finally:
-                db.close()
-        except Exception as e:
-            yield f"event: error\ndata: {{\"message\": \"{str(e)}\"}}\n\n"
+            await asyncio.sleep(1.0)
+            retry_count += 1
+    finally:
+        # Clean up Redis subscription
+        if pubsub is not None:
+            try:
+                pubsub.unsubscribe()
+                pubsub.close()
+            except Exception:
+                pass
 
-        await asyncio.sleep(1.0)
-        retry_count += 1
-
-    yield f"event: timeout\ndata: {{\"message\": \"SSE stream timed out\"}}\n\n"
+    yield "event: timeout\ndata: {\"message\": \"SSE stream timed out\"}\n\n"
 
 
 @sse_router.get("/jobs/{job_id}/events")
@@ -857,16 +943,25 @@ async def job_events(
     job = _require_job(db, job_id)
 
     # For terminal states, return immediately without long-polling
-    terminal = ("completed", "failed", "canceled", "deleted")
+    terminal = ("completed", "completed_with_errors", "failed", "canceled", "deleted")
     if job.status in terminal:
         async def _immediate():
-            data = json.dumps({
-                "job_id": job_id, "status": job.status,
-                "started_at": job.started_at, "completed_at": job.completed_at,
-                "error_summary": job.error_summary,
+            status_env = json.dumps({
+                "id": 1, "type": "job.status",
+                "ts": job.started_at or "",
+                "data": {
+                    "job_id": job_id, "status": job.status,
+                    "started_at": job.started_at, "completed_at": job.completed_at,
+                    "error_summary": job.error_summary,
+                },
             })
-            yield f"event: status\ndata: {data}\n\n"
-            yield f"event: done\ndata: {{\"job_id\": \"{job_id}\", \"final_status\": \"{job.status}\"}}\n\n"
+            yield f"data: {status_env}\n\n"
+            done_env = json.dumps({
+                "id": 2, "type": "job.complete",
+                "ts": job.completed_at or "",
+                "data": {"job_id": job_id, "status": job.status},
+            })
+            yield f"data: {done_env}\n\n"
         gen = _immediate()
     else:
         from backend.app.database_v2 import get_session_factory

@@ -3,6 +3,15 @@
 All schemas match the openapi.yaml component definitions.
 """
 
+from backend.app.schemas.theory import EvidenceRef, TheoryItem, TheoryListResponse
+from backend.app.schemas.slice import SliceItem, SliceListResponse, SliceDetailResponse
+from backend.app.schemas.context_annotation import ContextAnnotationItem, ContextAnnotationListResponse
+from backend.app.schemas.report import ReportItem, ReportListResponse, ReportDetailResponse, ReportGenerateRequest
+from backend.app.schemas.proof import (
+    ProofOut, ProofListResponse, ProofDetailResponse, ProofCreate, ProofUpdate,
+    ProofItemOut, ProofItemListResponse, ProofItemDetailResponse, ProofItemCreate, ProofItemUpdate,
+    ProofNarrativeResponse,
+)
 from backend.app.schemas.common import (
     SCHEMA_VERSION,
     ErrorResponse,
@@ -58,6 +67,29 @@ __all__ = [
     "Priority",
     "SensorStatus",
     "Severity",
+    "EvidenceRef",
+    "TheoryItem",
+    "TheoryListResponse",
+    "SliceItem",
+    "SliceListResponse",
+    "SliceDetailResponse",
+    "ContextAnnotationItem",
+    "ContextAnnotationListResponse",
+    "ReportItem",
+    "ReportListResponse",
+    "ReportDetailResponse",
+    "ReportGenerateRequest",
+    "ProofOut",
+    "ProofListResponse",
+    "ProofDetailResponse",
+    "ProofCreate",
+    "ProofUpdate",
+    "ProofItemOut",
+    "ProofItemListResponse",
+    "ProofItemDetailResponse",
+    "ProofItemCreate",
+    "ProofItemUpdate",
+    "ProofNarrativeResponse",
     # V1 legacy
     "ArkimeJobRequest",
     "AvailableModelsResponse",

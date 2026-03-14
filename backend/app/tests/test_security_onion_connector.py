@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import os
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Dict, List
 
 import asyncio
@@ -40,7 +39,7 @@ def test_find_pcaps_filters_by_time_and_sensors(tmp_path, monkeypatch):
 
     start_dt = datetime(2025, 5, 1, 10, 0, tzinfo=timezone.utc)
     mid_dt = datetime(2025, 5, 1, 10, 30, tzinfo=timezone.utc)
-    end_dt = datetime(2025, 5, 1, 11, 0, tzinfo=timezone.utc)
+    datetime(2025, 5, 1, 11, 0, tzinfo=timezone.utc)
 
     os.utime(old_pcap, (start_dt.timestamp() - 3600, start_dt.timestamp() - 3600))
     os.utime(new_pcap, (mid_dt.timestamp(), mid_dt.timestamp()))

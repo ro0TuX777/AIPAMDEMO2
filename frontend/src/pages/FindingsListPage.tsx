@@ -41,6 +41,25 @@ const SEV_COLORS: Record<string, string> = {
   info: "text-slate-400 bg-slate-400/10",
 };
 
+/** Color-coded confidence badge: red < 0.4, amber 0.4–0.7, green ≥ 0.7 */
+function ConfidenceBadge({ value }: { value: number }) {
+  const pct = Math.round(value * 100);
+  const color =
+    value >= 0.7
+      ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20"
+      : value >= 0.4
+        ? "text-amber-400 bg-amber-500/10 border-amber-500/20"
+        : "text-red-400 bg-red-500/10 border-red-500/20";
+  return (
+    <span
+      className={`px-1.5 py-0.5 rounded text-[10px] font-mono font-medium border ${color}`}
+      title={`Confidence: ${pct}%`}
+    >
+      {pct}%
+    </span>
+  );
+}
+
 const EXPLAIN_SOURCE_LABELS: Record<"deterministic" | "llm" | "fallback", string> = {
   deterministic: "Deterministic grounded response",
   llm: "LLM-grounded response",
@@ -590,6 +609,7 @@ export const FindingsListPage: React.FC = () => {
                         {f.category}
                       </span>
                     )}
+                    <ConfidenceBadge value={f.confidence} />
                     <h3 className="text-sm font-semibold text-slate-200">{f.title}</h3>
                   </div>
                   {(f.sensor || f.pcap_label) && (
@@ -606,7 +626,7 @@ export const FindingsListPage: React.FC = () => {
 
                   <div className="flex items-center gap-1.5 mt-1">
                     <button
-                      onClick={() => navigate(`/jobs/${jobId}/chat?ask=${encodeURIComponent(`Analyze finding "${f.title}" (severity: ${f.severity}). ${f.summary ? f.summary + ' ' : ''}What does this mean, what is the impact, and what should an analyst do next?`)}`)}
+                      onClick={() => navigate(`/jobs/${jobId}/chat?ask=${encodeURIComponent(`Analyze finding "${f.title}" (severity: ${f.severity}). ${f.summary ? f.summary + ' ' : ''}What does this mean, what is the impact, and what should an analyst do next?`)}&hint=${encodeURIComponent(`finding:${f.finding_id}`)}`)}
                       className="px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider transition-colors border bg-slate-800 border-slate-700 text-emerald-400/60 hover:text-emerald-400 hover:border-emerald-500/30"
                       title="Ask AI about this finding"
                     >

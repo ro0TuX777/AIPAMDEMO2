@@ -20,8 +20,13 @@ from backend.app.api import (
     hosts,
     jobs,
     knowledge_base,
+    proofs,
     rules,
+    annotations,
+    reports,
+    slices,
     system,
+    theories,
     uploads,
 )
 from backend.app.api._state import get_uptime_seconds  # noqa: F401
@@ -96,6 +101,11 @@ def create_app() -> FastAPI:
     app.include_router(chat.router, prefix="/api/v1")
     app.include_router(knowledge_base.router, prefix="/api/v1")
     app.include_router(rules.router, prefix="/api/v1")
+    app.include_router(theories.router, prefix="/api/v1")
+    app.include_router(slices.router, prefix="/api/v1")
+    app.include_router(annotations.router, prefix="/api/v1")
+    app.include_router(reports.router, prefix="/api/v1")
+    app.include_router(proofs.router, prefix="/api/v1")
 
     # Training Intelligence routes (V1 — router already has /api/v1/training prefix)
     from backend.app.training_routes import router as training_router

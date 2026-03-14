@@ -506,7 +506,7 @@ def aggregate_llm_results(
     if best_class.lower() == "unknown" and alerts is not None:
         total_alerts = len(alerts) if alerts else 0
         if total_alerts == 0:
-            print(f"[DEBUG] Benign heuristic: LLM said 'Unknown' with 0 alerts — overriding to 'Benign'")
+            print("[DEBUG] Benign heuristic: LLM said 'Unknown' with 0 alerts — overriding to 'Benign'")
             best_class = "Benign"
             best_sev = "low"
 
@@ -547,37 +547,43 @@ def aggregate_llm_results(
 
     # Inject TrafficLLM findings if the LLM missed the specific malware names
     trafficllm_findings: List[str] = []
-    malware_types: List[str] = []
-    botnet_types: List[str] = []
+    all_trafficllm_types: List[str] = []
     if trafficllm_results:
         malware_types = trafficllm_results.malware_types or []
         botnet_types = trafficllm_results.botnet_types or []
-        malware_count = trafficllm_results.malware_detections
-        botnet_count = trafficllm_results.botnet_detections
+        web_attack_types = trafficllm_results.web_attack_types or []
+        apt_types = trafficllm_results.apt_types or []
+        all_trafficllm_types = malware_types + botnet_types + web_attack_types + apt_types
 
         if malware_types:
-            malware_list = ', '.join(malware_types)
             trafficllm_findings.append(
-                f"malware_detected: TrafficLLM detected {malware_count} flows containing "
-                f"malware traffic ({malware_list})."
+                f"malware_detected: TrafficLLM detected {trafficllm_results.malware_detections} flows "
+                f"containing malware traffic ({', '.join(malware_types)})."
             )
         if botnet_types:
-            botnet_list = ', '.join(botnet_types)
             trafficllm_findings.append(
-                f"botnet_detected: TrafficLLM detected {botnet_count} flows containing "
-                f"botnet traffic ({botnet_list})."
+                f"botnet_detected: TrafficLLM detected {trafficllm_results.botnet_detections} flows "
+                f"containing botnet traffic ({', '.join(botnet_types)})."
+            )
+        if web_attack_types:
+            trafficllm_findings.append(
+                f"web_attack_detected: TrafficLLM detected {trafficllm_results.web_attack_detections} flows "
+                f"containing web attack traffic ({', '.join(web_attack_types)})."
+            )
+        if apt_types:
+            trafficllm_findings.append(
+                f"apt_detected: TrafficLLM detected {trafficllm_results.apt_detections} flows "
+                f"containing APT activity ({', '.join(apt_types)})."
             )
 
-    # Check if any TrafficLLM malware names appear in existing findings
+    # Check if any TrafficLLM names appear in existing findings
     # If not, prepend the TrafficLLM findings
     if trafficllm_findings:
         existing_text = ' '.join(key_findings).lower()
-        has_malware_names = any(
-            mtype.lower() in existing_text
-            for mtype in (malware_types + botnet_types)
+        has_names = any(
+            t.lower() in existing_text for t in all_trafficllm_types
         )
-        if not has_malware_names:
-            # Prepend TrafficLLM findings at the top
+        if not has_names:
             key_findings = trafficllm_findings + key_findings
 
     # Check for Zero-Day findings in LLM outputs and promote them
@@ -641,14 +647,13 @@ def aggregate_llm_results(
                 if s not in entry["findings"]:
                     entry["findings"].append(s)
 
-    # Inject TrafficLLM malware findings into host findings if we have alerts
+    # Inject TrafficLLM findings (malware, botnet, web attack, APT) into host findings
+    _TRAFFICLLM_CATEGORIES = {"malware", "botnet", "web_attack", "apt"}
     if alerts and trafficllm_results:
-        malware_types = trafficllm_results.malware_types or []
         for alert in alerts:
-            if alert.alert_source == "TRAFFICLLM" and alert.category == "malware":
+            if alert.alert_source == "TRAFFICLLM" and alert.category in _TRAFFICLLM_CATEGORIES:
                 src_ip = alert.src_ip
                 if src_ip and src_ip in host_map:
-                    # Extract malware type from signature
                     sig_name = alert.signature_name or ""
                     finding = f"TrafficLLM: {sig_name}"
                     if finding not in host_map[src_ip]["findings"]:
