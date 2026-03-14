@@ -4,7 +4,9 @@
 SHELL := /bin/bash
 PYTHON ?= python
 PYTEST ?= $(PYTHON) -m pytest
+# Exit code 5 = "no tests collected" — not a failure for stub directories
 PYTEST_ARGS ?= -v --tb=short
+PYTEST_RUN = $(PYTEST) $(1) $(PYTEST_ARGS) || { ec=$$?; [ $$ec -eq 5 ] && exit 0 || exit $$ec; }
 
 # Export required env vars for tests
 export AIPAM_API_TOKEN ?= test-token-v2
@@ -23,27 +25,27 @@ test-unit:
 
 ## OpenAPI schema / contract validation
 test-contract:
-	$(PYTEST) tests/contract/ $(PYTEST_ARGS)
+	$(call PYTEST_RUN,tests/contract/)
 
 ## API endpoint tests (FastAPI TestClient)
 test-api:
-	$(PYTEST) tests/unit/ -k "api" $(PYTEST_ARGS)
+	$(call PYTEST_RUN,tests/unit/ -k "api")
 
 ## Worker + sensor runner tests
 test-worker:
-	$(PYTEST) tests/unit/ -k "worker or pipeline or sensor_runner" $(PYTEST_ARGS)
+	$(call PYTEST_RUN,tests/unit/ -k "worker or pipeline or sensor_runner")
 
 ## SSE stream tests
 test-sse:
-	$(PYTEST) tests/unit/ -k "sse" $(PYTEST_ARGS)
+	$(call PYTEST_RUN,tests/unit/ -k "sse")
 
 ## Sensor image contract validation
 test-sensor-contract:
-	$(PYTEST) tests/contract/ -k "sensor" $(PYTEST_ARGS)
+	$(call PYTEST_RUN,tests/contract/ -k "sensor")
 
 ## Integration tests — golden PCAP corpus (requires Docker)
 test-integration:
-	$(PYTEST) tests/integration/ $(PYTEST_ARGS)
+	$(call PYTEST_RUN,tests/integration/)
 
 ## Smoke test — aipam-admin smoke-test
 test-smoke:
@@ -51,15 +53,15 @@ test-smoke:
 
 ## Parity tests — V1/V2 comparison (bridge mode only)
 test-parity:
-	$(PYTEST) tests/parity/ $(PYTEST_ARGS)
+	$(call PYTEST_RUN,tests/parity/)
 
 ## End-to-end UI workflow tests
 test-e2e:
-	$(PYTEST) tests/e2e/ $(PYTEST_ARGS)
+	$(call PYTEST_RUN,tests/e2e/)
 
 ## Performance regression detection
 benchmark:
-	$(PYTEST) tests/integration/ -k "benchmark" $(PYTEST_ARGS) --benchmark-only 2>/dev/null || echo "benchmark fixtures not yet implemented"
+	$(call PYTEST_RUN,tests/integration/ -k "benchmark" --benchmark-only) 2>/dev/null || echo "benchmark fixtures not yet implemented"
 
 ## Run everything except parity, e2e, benchmark
 test-all: test-unit test-contract test-api test-worker test-sse
