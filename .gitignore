@@ -133,8 +133,9 @@ AIPAM_Dev_Package
 AIPAM_ROM.docx
 Playwright Testing Bootstrap.md
 
-# Test fixture exception (45B stub, not a real capture)
+# Test fixture exceptions (small generated PCAPs for CI)
 !frontend/tests/fixtures/dummy.pcap
+!tests/fixtures/golden/*.pcap
 
 # PDF papers
 *.pdf

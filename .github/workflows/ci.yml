@@ -61,8 +61,6 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
       - run: pip install -r backend/requirements.txt
-      - name: Generate golden PCAPs
-        run: python -m tests.fixtures.golden.generate_golden_pcaps
       - run: make test-integration
       - run: make test-smoke
 
