@@ -3,6 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import * as d3 from "d3";
 import { api, type GraphNode, type GraphEdge, type ProofItem, type ProofItemEntry, type ProofNarrativeResponse } from "../api";
+import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
 
 interface D3Node extends d3.SimulationNodeDatum, GraphNode { }
 interface D3Link extends d3.SimulationLinkDatum<D3Node> {
@@ -330,6 +331,8 @@ export const AttackGraphPage: React.FC = () => {
         }
     }
 
+    const { activeHelpField, setActiveHelpField, toggleHelp } = usePageHelp();
+
     return (
         <div className="space-y-4 h-full flex flex-col">
             <nav className="text-sm text-slate-400">
@@ -342,7 +345,7 @@ export const AttackGraphPage: React.FC = () => {
 
             {/* Header with mode toggle */}
             <div className="flex items-center justify-between">
-                <h1 className="text-xl font-semibold">
+                <h1 className={`text-xl font-semibold ${labelHint(mode === "evidence" ? "evidence_graph" : "network_topology", activeHelpField)}`} onClick={() => toggleHelp(mode === "evidence" ? "evidence_graph" : "network_topology")}>
                     {mode === "evidence" ? "Evidence Graph" : "Network Topology"}
                 </h1>
                 <div className="flex items-center gap-2">
@@ -755,6 +758,7 @@ export const AttackGraphPage: React.FC = () => {
                     </div>
                 </div>
             )}
+            <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
         </div>
     );
 };

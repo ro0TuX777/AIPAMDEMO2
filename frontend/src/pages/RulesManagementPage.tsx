@@ -7,6 +7,7 @@ import {
   RuleFileStats,
   CategoryStats,
 } from "../api";
+import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
 
 const SEVERITY_LABELS: Record<number, { label: string; color: string }> = {
   1: { label: "High", color: "text-red-400 bg-red-900/30" },
@@ -17,6 +18,7 @@ const SEVERITY_LABELS: Record<number, { label: string; color: string }> = {
 const PAGE_SIZE = 50;
 
 export const RulesManagementPage: React.FC = () => {
+  const { activeHelpField, setActiveHelpField, toggleHelp } = usePageHelp();
   // ── File list state ──
   const [files, setFiles] = useState<SuricataRuleItem[]>([]);
   const [selectedFile, setSelectedFile] = useState<string>("");
@@ -168,7 +170,7 @@ export const RulesManagementPage: React.FC = () => {
     <div className="flex flex-col h-[calc(100vh-100px)] space-y-4">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold">Suricata Rule Management</h1>
+        <h1 className={`text-2xl font-bold ${labelHint("rules_management", activeHelpField)}`} onClick={() => toggleHelp("rules_management")}>Suricata Rule Management</h1>
         <div className="flex items-center gap-3">
           <select
             value={selectedFile}
@@ -396,6 +398,7 @@ export const RulesManagementPage: React.FC = () => {
           )}
         </div>
       )}
+      <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
     </div>
   );
 };

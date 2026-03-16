@@ -8,6 +8,7 @@ import {
   type KBDocumentOut,
   type KBDocType,
 } from "../api";
+import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -25,6 +26,7 @@ const DOC_ICONS: Record<string, string> = {
 export const ChatPage: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
   const [searchParams] = useSearchParams();
+  const { activeHelpField, setActiveHelpField, toggleHelp } = usePageHelp();
   const initialAsk = useMemo(() => searchParams.get("ask") || undefined, [searchParams]);
   const contextHint = useMemo(() => searchParams.get("hint") || undefined, [searchParams]);
   const [kbOpen, setKbOpen] = useState(false);
@@ -127,7 +129,7 @@ export const ChatPage: React.FC = () => {
   // ── Render ──
   return (
     <div className="space-y-4">
-      {/* Breadcrumb */}
+      {/* Breadcrumb + heading */}
       <div className="flex items-center gap-2 text-sm text-slate-400">
         <Link to={`/jobs/${jobId}`} className="hover:text-slate-200 transition-colors">
           ← Back to Job
@@ -139,6 +141,9 @@ export const ChatPage: React.FC = () => {
           </>
         )}
       </div>
+
+      <h1 className={`text-xl font-semibold ${labelHint("chat", activeHelpField)}`} onClick={() => toggleHelp("chat")}>AI Chat</h1>
+      <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
 
       {/* Not ready state */}
       {!isTerminal && (

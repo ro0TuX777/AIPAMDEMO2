@@ -2,6 +2,7 @@ import React, { useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, type ArtifactItem } from "../api";
+import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
 
 const STATUS_COLORS: Record<string, string> = {
   available: "text-emerald-400", generating: "text-blue-400 animate-pulse",
@@ -11,6 +12,7 @@ const STATUS_COLORS: Record<string, string> = {
 export const ArtifactsPage: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
   const queryClient = useQueryClient();
+  const { activeHelpField, setActiveHelpField, toggleHelp } = usePageHelp();
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["job", jobId, "artifacts"],
@@ -33,7 +35,8 @@ export const ArtifactsPage: React.FC = () => {
   const artifacts = data?.items ?? [];
 
   return (
-    <div className="space-y-4">
+    <div className="flex gap-6 items-start">
+    <div className="space-y-4 flex-1 min-w-0">
       <nav className="text-sm text-slate-400">
         <Link to="/jobs" className="hover:text-white">Jobs</Link>
         <span className="mx-1">/</span>
@@ -43,7 +46,7 @@ export const ArtifactsPage: React.FC = () => {
       </nav>
 
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Artifacts</h1>
+        <h1 className={`text-xl font-semibold ${labelHint("artifacts", activeHelpField)}`} onClick={() => toggleHelp("artifacts")}>Artifacts</h1>
         <button onClick={() => genMut.mutate()} disabled={genMut.isPending}
           className="px-3 py-1.5 text-sm rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white">
           {genMut.isPending ? "Generating…" : "Generate Evidence Package"}
@@ -81,6 +84,8 @@ export const ArtifactsPage: React.FC = () => {
           ))}
         </div>
       )}
+    </div>
+    <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
     </div>
   );
 };

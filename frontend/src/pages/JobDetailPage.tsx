@@ -12,6 +12,7 @@ import {
 } from "../api";
 import { useJobEvents } from "../hooks/useJobEvents";
 import { useToast, type ToastSeverity } from "../components/ToastProvider";
+import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -62,6 +63,8 @@ export const JobDetailPage: React.FC = () => {
 
   // ── Data fetching ──
   const isTerminal = (s?: string) => TERMINAL_STATUSES.has(s ?? "");
+
+  const { activeHelpField, setActiveHelpField, toggleHelp } = usePageHelp();
 
   const jobQ = useQuery({
     queryKey: ["job", jobId],
@@ -143,7 +146,8 @@ export const JobDetailPage: React.FC = () => {
   const sensors: SensorItem[] = sensorsQ.data?.items ?? job.sensors ?? [];
 
   return (
-    <div className="space-y-6">
+    <div className="flex gap-6 items-start">
+    <div className="space-y-6 flex-1 min-w-0">
       {/* Breadcrumbs */}
       <nav className="text-sm text-slate-400">
         <Link to="/jobs" className="hover:text-white">Jobs</Link>
@@ -155,7 +159,7 @@ export const JobDetailPage: React.FC = () => {
       <div className="flex items-center justify-between border-b border-slate-800 pb-4">
         <div>
           <div className="flex items-center gap-3 mb-1">
-            <h1 className="text-2xl font-semibold text-slate-100">Job Detail</h1>
+            <h1 className={`text-2xl font-semibold text-slate-100 ${labelHint("job_detail", activeHelpField)}`} onClick={() => toggleHelp("job_detail")}>Job Detail</h1>
             <span className={`px-2 py-0.5 rounded-full text-xs font-medium uppercase tracking-wide ${STATUS_COLORS[job.status] ?? "text-slate-400 bg-slate-400/10"}`}>
               {job.status.replace(/_/g, " ")}
             </span>
@@ -245,7 +249,7 @@ export const JobDetailPage: React.FC = () => {
       {/* Sensor Progress Panel */}
       {sensors.length > 0 && (
         <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-4">
-          <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-3">Sensors</h2>
+          <h2 className={`text-sm font-semibold text-slate-300 uppercase tracking-wider mb-3 ${labelHint("job_sensors", activeHelpField)}`} onClick={() => toggleHelp("job_sensors")}>Sensors</h2>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2">
             {sensors.map((s) => (
               <div key={s.sensor} className="flex items-center gap-2 p-2 bg-slate-950/50 rounded border border-slate-800/50 group relative cursor-default hover:bg-slate-900/80 transition-colors">
@@ -315,7 +319,7 @@ export const JobDetailPage: React.FC = () => {
       {/* Summary Card (only when job is terminal) */}
       {summary && (
         <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-6">
-          <h2 className="text-lg font-semibold text-slate-100 mb-3">Summary</h2>
+          <h2 className={`text-lg font-semibold text-slate-100 mb-3 ${labelHint("job_summary", activeHelpField)}`} onClick={() => toggleHelp("job_summary")}>Summary</h2>
           <p className="text-slate-300 mb-4">{summary.headline}</p>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
             {summary.alert_count != null && (
@@ -368,7 +372,7 @@ export const JobDetailPage: React.FC = () => {
       {/* Stage progress (if available) */}
       {job.stages && job.stages.length > 0 && (
         <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-4">
-          <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-3">Pipeline Stages</h2>
+          <h2 className={`text-sm font-semibold text-slate-300 uppercase tracking-wider mb-3 ${labelHint("job_pipeline", activeHelpField)}`} onClick={() => toggleHelp("job_pipeline")}>Pipeline Stages</h2>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
             {job.stages.map((stage) => (
               <div key={stage.stage} className="flex items-center gap-2 group relative cursor-default hover:bg-slate-900/80 p-1.5 -m-1.5 rounded transition-colors">
@@ -394,6 +398,8 @@ export const JobDetailPage: React.FC = () => {
         </div>
       )}
 
+    </div>
+    <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
     </div>
   );
 };

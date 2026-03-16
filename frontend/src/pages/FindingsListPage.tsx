@@ -10,6 +10,7 @@ import {
   type FindingItem,
   type Severity,
 } from "../api";
+import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
 
 type ExplainState = {
   loading?: boolean;
@@ -290,6 +291,7 @@ export const FindingsListPage: React.FC = () => {
   const [openExplainId, setOpenExplainId] = useState<string | null>(null);
   const [explanations, setExplanations] = useState<Record<string, ExplainState>>({});
   const [retryClockMs, setRetryClockMs] = useState(() => Date.now());
+  const { activeHelpField, setActiveHelpField, toggleHelp } = usePageHelp();
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["job", jobId, "findings", sevFilter, categoryFilter],
@@ -535,7 +537,8 @@ export const FindingsListPage: React.FC = () => {
   };
 
   return (
-    <div className="space-y-4">
+    <div className="flex gap-6 items-start">
+    <div className="space-y-4 flex-1 min-w-0">
       <nav className="text-sm text-slate-400">
         <Link to="/jobs" className="hover:text-white">Jobs</Link>
         <span className="mx-1">/</span>
@@ -545,7 +548,7 @@ export const FindingsListPage: React.FC = () => {
       </nav>
 
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h1 className="text-xl font-semibold">Findings ({findings.length})</h1>
+        <h1 className={`text-xl font-semibold ${labelHint("findings", activeHelpField)}`} onClick={() => toggleHelp("findings")}>Findings ({findings.length})</h1>
         <div className="flex items-center gap-2 flex-wrap">
           <select value={sevFilter} onChange={e => setSevFilter(e.target.value as Severity | "")}
             className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-sm text-slate-300">
@@ -957,6 +960,8 @@ export const FindingsListPage: React.FC = () => {
           })}
         </div>
       )}
+    </div>
+    <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
     </div>
   );
 };

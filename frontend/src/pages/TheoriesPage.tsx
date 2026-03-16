@@ -2,6 +2,7 @@ import React from "react";
 import { useParams, Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, type EvidenceRef, type TheoryItem, type TheoryListResponse } from "../api";
+import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
 
 const CONFIDENCE_COLORS: Record<string, string> = {
   high: "bg-red-900/40 text-red-300 border-red-700",
@@ -131,6 +132,7 @@ function TheoryCard({ theory, jobId }: { theory: TheoryItem; jobId: string }) {
 export const TheoriesPage: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
   const queryClient = useQueryClient();
+  const { activeHelpField, setActiveHelpField, toggleHelp } = usePageHelp();
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["theories", jobId],
@@ -149,7 +151,8 @@ export const TheoriesPage: React.FC = () => {
   const theories = data?.items ?? [];
 
   return (
-    <div className="p-6 max-w-4xl mx-auto space-y-4">
+    <div className="flex gap-6 items-start p-6">
+    <div className="max-w-4xl mx-auto space-y-4 flex-1 min-w-0">
       <nav className="text-sm text-slate-400">
         <Link to="/jobs" className="hover:text-white">Jobs</Link>
         <span className="mx-1">/</span>
@@ -159,7 +162,7 @@ export const TheoriesPage: React.FC = () => {
       </nav>
 
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-bold text-slate-100">Theory of the Case</h2>
+        <h2 className={`text-lg font-bold text-slate-100 ${labelHint("theories", activeHelpField)}`} onClick={() => toggleHelp("theories")}>Theory of the Case</h2>
         <button
           onClick={() => generateMut.mutate()}
           disabled={generateMut.isPending}
@@ -184,6 +187,8 @@ export const TheoriesPage: React.FC = () => {
           ))}
         </div>
       )}
+    </div>
+    <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
     </div>
   );
 };

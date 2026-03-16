@@ -1,6 +1,7 @@
 import React, { useState, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, type ExecutionProfile, type PcapUploadItem } from "../api";
+import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
 
 type Step = "select" | "uploading" | "creating" | "error";
 
@@ -16,6 +17,7 @@ interface PcapEntry {
 export const NewAnalysisPage: React.FC = () => {
   const navigate = useNavigate();
   const inputRef = useRef<HTMLInputElement>(null);
+  const { activeHelpField, setActiveHelpField, toggleHelp } = usePageHelp();
 
   // Upload tab state (multi-file)
   const [entries, setEntries] = useState<PcapEntry[]>([]);
@@ -155,8 +157,9 @@ export const NewAnalysisPage: React.FC = () => {
   };
 
   return (
-    <div className="space-y-4 max-w-2xl" data-testid="page-new-analysis">
-      <h1 className="text-xl font-semibold">New Analysis</h1>
+    <div className="flex gap-6 items-start">
+    <div className="space-y-4 max-w-2xl flex-1 min-w-0" data-testid="page-new-analysis">
+      <h1 className={`text-xl font-semibold ${labelHint("new_analysis", activeHelpField)}`} onClick={() => toggleHelp("new_analysis")}>New Analysis</h1>
       <div className="border border-slate-800 rounded-lg p-4 space-y-4 text-sm">
         <div className="flex gap-4">
           <button
@@ -493,6 +496,8 @@ export const NewAnalysisPage: React.FC = () => {
           </form>
         )}
       </div>
+    </div>
+    <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
     </div>
   );
 };

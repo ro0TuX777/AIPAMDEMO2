@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api, type AlertItem, type Severity } from "../api";
+import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
 
 const SEV_COLORS: Record<string, string> = {
   critical: "text-red-500 bg-red-500/10",
@@ -15,6 +16,7 @@ export const AlertsListPage: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
   const navigate = useNavigate();
   const [sevFilter, setSevFilter] = useState<Severity | "">("");
+  const { activeHelpField, setActiveHelpField, toggleHelp } = usePageHelp();
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["job", jobId, "alerts", sevFilter],
@@ -25,7 +27,8 @@ export const AlertsListPage: React.FC = () => {
   const alerts = data?.items ?? [];
 
   return (
-    <div className="space-y-4">
+    <div className="flex gap-6 items-start">
+    <div className="space-y-4 flex-1 min-w-0">
       <nav className="text-sm text-slate-400">
         <Link to="/jobs" className="hover:text-white">Jobs</Link>
         <span className="mx-1">/</span>
@@ -35,7 +38,7 @@ export const AlertsListPage: React.FC = () => {
       </nav>
 
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Alerts ({alerts.length})</h1>
+        <h1 className={`text-xl font-semibold ${labelHint("alerts", activeHelpField)}`} onClick={() => toggleHelp("alerts")}>Alerts ({alerts.length})</h1>
         <select value={sevFilter} onChange={e => setSevFilter(e.target.value as Severity | "")}
           className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-sm text-slate-300">
           <option value="">All severities</option>
@@ -115,6 +118,8 @@ export const AlertsListPage: React.FC = () => {
           </table>
         </div>
       )}
+    </div>
+    <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
     </div>
   );
 };

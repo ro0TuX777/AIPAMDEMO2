@@ -2,6 +2,7 @@ import React from "react";
 import { useParams, Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, type ContextAnnotationItem, type ContextAnnotationListResponse } from "../api";
+import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
 
 const SEVERITY_COLORS: Record<string, string> = {
   critical: "bg-red-900/40 text-red-300 border-red-700",
@@ -74,6 +75,7 @@ function AnnotationCard({ ann, jobId }: { ann: ContextAnnotationItem; jobId: str
 export function AnnotationsPage() {
   const { jobId } = useParams<{ jobId: string }>();
   const queryClient = useQueryClient();
+  const { activeHelpField, setActiveHelpField, toggleHelp } = usePageHelp();
 
   const { data, isLoading, error } = useQuery<ContextAnnotationListResponse>({
     queryKey: ["annotations", jobId],
@@ -92,7 +94,8 @@ export function AnnotationsPage() {
   const annotations = data?.items ?? [];
 
   return (
-    <div className="p-6 max-w-4xl">
+    <div className="flex gap-6 items-start p-6">
+    <div className="max-w-4xl flex-1 min-w-0">
       <nav className="text-sm text-slate-400 mb-4">
         <Link to="/jobs" className="hover:text-white">Jobs</Link>
         <span className="mx-1">/</span>
@@ -102,7 +105,7 @@ export function AnnotationsPage() {
       </nav>
 
       <div className="flex items-center justify-between mb-4">
-        <h2 className="text-lg font-bold text-slate-100">
+        <h2 className={`text-lg font-bold text-slate-100 ${labelHint("annotations", activeHelpField)}`} onClick={() => toggleHelp("annotations")}>
           Why Unusual? <span className="text-slate-500 text-sm font-normal ml-2">({annotations.length})</span>
         </h2>
         <button
@@ -126,6 +129,8 @@ export function AnnotationsPage() {
           ))}
         </div>
       )}
+    </div>
+    <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
     </div>
   );
 }

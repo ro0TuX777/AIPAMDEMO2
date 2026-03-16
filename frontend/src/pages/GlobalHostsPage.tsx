@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api, type GlobalHostListItem } from "../api";
+import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
 
 const ROLE_COLORS: Record<string, string> = {
   internal: "text-blue-400 bg-blue-400/10",
@@ -11,6 +12,7 @@ const ROLE_COLORS: Record<string, string> = {
 
 export const GlobalHostsPage: React.FC = () => {
   const [filter, setFilter] = useState<"" | "true" | "false">("");
+  const { activeHelpField, setActiveHelpField, toggleHelp } = usePageHelp();
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["global-hosts", filter],
@@ -24,7 +26,8 @@ export const GlobalHostsPage: React.FC = () => {
   const hosts = data?.items ?? [];
 
   return (
-    <div className="space-y-4">
+    <div className="flex gap-6 items-start">
+    <div className="space-y-4 flex-1 min-w-0">
       <nav className="text-sm text-slate-400">
         <Link to="/jobs" className="hover:text-white">Jobs</Link>
         <span className="mx-1">/</span>
@@ -33,7 +36,7 @@ export const GlobalHostsPage: React.FC = () => {
 
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-semibold">Global Hosts ({hosts.length})</h1>
+          <h1 className={`text-xl font-semibold ${labelHint("global_hosts", activeHelpField)}`} onClick={() => toggleHelp("global_hosts")}>Global Hosts ({hosts.length})</h1>
           <p className="text-sm text-slate-400 mt-1">
             Host identities tracked across all analysis jobs
           </p>
@@ -129,6 +132,8 @@ export const GlobalHostsPage: React.FC = () => {
           </table>
         </div>
       )}
+    </div>
+    <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
     </div>
   );
 };

@@ -10,6 +10,7 @@ import {
   type BatchAction,
   type PcapUploadItem,
 } from "../api";
+import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -257,6 +258,7 @@ export const JobListPage: React.FC = () => {
   const [params, setParams] = useSearchParams();
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [uploadOpen, setUploadOpen] = useState(false);
+  const { activeHelpField, setActiveHelpField, toggleHelp } = usePageHelp();
 
   // Read filters from URL
   const statusFilter = (params.get("status") as JobStatus) || undefined;
@@ -346,10 +348,11 @@ export const JobListPage: React.FC = () => {
 
   // ── Render ──
   return (
-    <div className="space-y-4">
+    <div className="flex gap-6 items-start">
+    <div className="space-y-4 flex-1 min-w-0">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Jobs</h1>
+        <h1 className={`text-2xl font-semibold ${labelHint("jobs_list", activeHelpField)}`} onClick={() => toggleHelp("jobs_list")}>Jobs</h1>
         <button onClick={() => setUploadOpen(true)}
           className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-md text-sm font-medium transition-colors">
           New Analysis
@@ -486,6 +489,8 @@ export const JobListPage: React.FC = () => {
 
       {/* Upload dialog */}
       <UploadDialog open={uploadOpen} onClose={() => setUploadOpen(false)} onCreated={handleUploadCreated} />
+    </div>
+    <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
     </div>
   );
 };

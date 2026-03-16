@@ -8,6 +8,7 @@ import {
     TrainingStatus,
     PhaseStats,
 } from "../api";
+import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
 
 // Phase icon mapping
 const PHASE_ICONS: Record<string, string> = {
@@ -61,6 +62,7 @@ function getPhaseIcon(label: string): string {
 }
 
 export const TrainingPage: React.FC = () => {
+    const { activeHelpField, setActiveHelpField, toggleHelp } = usePageHelp();
     const [summary, setSummary] = useState<TrainingSummary | null>(null);
     const [ledger, setLedger] = useState<TrainingLedgerResponse | null>(null);
     const [config, setConfig] = useState<TrainingConfig | null>(null);
@@ -134,8 +136,9 @@ export const TrainingPage: React.FC = () => {
 
     if (!summary?.has_data) {
         return (
-            <div className="space-y-6">
-                <h1 className="text-2xl font-semibold text-slate-100">
+            <div className="flex gap-6 items-start">
+            <div className="space-y-6 flex-1 min-w-0">
+                <h1 className={`text-2xl font-semibold text-slate-100 ${labelHint("training", activeHelpField)}`} onClick={() => toggleHelp("training")}>
                     Training Intelligence
                 </h1>
                 <div className="border border-slate-800 rounded-xl p-12 text-center">
@@ -166,6 +169,8 @@ export const TrainingPage: React.FC = () => {
                     )}
                 </div>
             </div>
+            <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
+            </div>
         );
     }
 
@@ -173,9 +178,10 @@ export const TrainingPage: React.FC = () => {
     const visibleEntries = showAll ? entries : entries.slice(-15).reverse();
 
     return (
-        <div className="space-y-6">
+        <div className="flex gap-6 items-start">
+        <div className="space-y-6 flex-1 min-w-0">
             <div className="flex items-center justify-between">
-                <h1 className="text-2xl font-semibold text-slate-100">
+                <h1 className={`text-2xl font-semibold text-slate-100 ${labelHint("training", activeHelpField)}`} onClick={() => toggleHelp("training")}>
                     Training Intelligence
                 </h1>
                 <div className="flex items-center gap-3">
@@ -558,6 +564,8 @@ export const TrainingPage: React.FC = () => {
                     )}
                 </div>
             )}
+        </div>
+        <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
         </div>
     );
 };

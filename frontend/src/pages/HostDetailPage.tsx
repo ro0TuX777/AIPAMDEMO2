@@ -9,6 +9,7 @@ import {
   type AlertItem,
   type FileItem,
 } from "../api";
+import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
 
 const TABS = [
   { label: "Connections", path: "connections" },
@@ -23,6 +24,7 @@ export const HostDetailPage: React.FC = () => {
   const location = useLocation();
   const navigate = useNavigate();
   const base = `/jobs/${jobId}/hosts/${ip}`;
+  const { activeHelpField, setActiveHelpField, toggleHelp } = usePageHelp();
 
   const { data: hostData, isLoading } = useQuery({
     queryKey: ["host", jobId, ip],
@@ -33,7 +35,8 @@ export const HostDetailPage: React.FC = () => {
   const h = hostData?.host;
 
   return (
-    <div className="space-y-4">
+    <div className="flex gap-6 items-start">
+    <div className="space-y-4 flex-1 min-w-0">
       <nav className="text-sm text-slate-400">
         <Link to="/jobs" className="hover:text-white">Jobs</Link>
         <span className="mx-1">/</span>
@@ -47,7 +50,7 @@ export const HostDetailPage: React.FC = () => {
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div className="flex items-center gap-3">
           <div>
-            <h1 className="text-2xl font-bold tracking-tight">{ip}</h1>
+            <h1 className={`text-2xl font-bold tracking-tight ${labelHint("host_detail", activeHelpField)}`} onClick={() => toggleHelp("host_detail")}>{ip}</h1>
             <p className="text-xs text-slate-500 font-mono mt-1">Host Identity / Analysis</p>
           </div>
           <button
@@ -106,6 +109,8 @@ export const HostDetailPage: React.FC = () => {
         })}
       </div>
       <Outlet />
+    </div>
+    <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
     </div>
   );
 };

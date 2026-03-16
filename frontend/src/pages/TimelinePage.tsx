@@ -2,6 +2,7 @@ import React from "react";
 import { useParams, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api, type TimelineItem } from "../api";
+import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
 
 const TYPE_ICONS: Record<string, string> = {
   connection: "🔗", alert: "🚨", dns: "🌐", tls: "🔒",
@@ -15,6 +16,7 @@ const SEV_COLORS: Record<string, string> = {
 
 export const TimelinePage: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
+  const { activeHelpField, setActiveHelpField, toggleHelp } = usePageHelp();
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["job", jobId, "timeline"],
@@ -25,7 +27,8 @@ export const TimelinePage: React.FC = () => {
   const events = data?.items ?? [];
 
   return (
-    <div className="space-y-4">
+    <div className="flex gap-6 items-start">
+    <div className="space-y-4 flex-1 min-w-0">
       <nav className="text-sm text-slate-400">
         <Link to="/jobs" className="hover:text-white">Jobs</Link>
         <span className="mx-1">/</span>
@@ -34,7 +37,7 @@ export const TimelinePage: React.FC = () => {
         <span className="text-slate-200">Timeline</span>
       </nav>
 
-      <h1 className="text-xl font-semibold">Timeline ({events.length} events)</h1>
+      <h1 className={`text-xl font-semibold ${labelHint("timeline", activeHelpField)}`} onClick={() => toggleHelp("timeline")}>Timeline ({events.length} events)</h1>
 
       {isLoading && <p className="text-slate-400 animate-pulse">Loading timeline…</p>}
       {error && <p className="text-red-400">Failed to load timeline.</p>}
@@ -70,6 +73,8 @@ export const TimelinePage: React.FC = () => {
           ))}
         </div>
       )}
+    </div>
+    <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
     </div>
   );
 };

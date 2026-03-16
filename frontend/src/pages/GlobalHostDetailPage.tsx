@@ -2,6 +2,7 @@ import React from "react";
 import { useParams, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api";
+import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
 
 const ROLE_COLORS: Record<string, string> = {
   internal: "text-blue-400 bg-blue-400/10",
@@ -12,6 +13,7 @@ const ROLE_COLORS: Record<string, string> = {
 export const GlobalHostDetailPage: React.FC = () => {
   const { ip } = useParams<{ ip: string }>();
   const decodedIp = decodeURIComponent(ip || "");
+  const { activeHelpField, setActiveHelpField, toggleHelp } = usePageHelp();
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["global-host", decodedIp],
@@ -22,7 +24,8 @@ export const GlobalHostDetailPage: React.FC = () => {
   const host = data?.host;
 
   return (
-    <div className="space-y-6">
+    <div className="flex gap-6 items-start">
+    <div className="space-y-6 flex-1 min-w-0">
       <nav className="text-sm text-slate-400">
         <Link to="/jobs" className="hover:text-white">Jobs</Link>
         <span className="mx-1">/</span>
@@ -38,7 +41,7 @@ export const GlobalHostDetailPage: React.FC = () => {
         <>
           {/* Header */}
           <div className="flex items-center gap-4">
-            <h1 className="text-2xl font-semibold font-mono">{host.ip}</h1>
+            <h1 className={`text-2xl font-semibold font-mono ${labelHint("global_host_detail", activeHelpField)}`} onClick={() => toggleHelp("global_host_detail")}>{host.ip}</h1>
             {host.hostname && (
               <span className="text-slate-400">({host.hostname})</span>
             )}
@@ -86,7 +89,7 @@ export const GlobalHostDetailPage: React.FC = () => {
 
           {/* Cross-Job History */}
           <div>
-            <h2 className="text-lg font-semibold mb-3">Cross-Job History</h2>
+            <h2 className={`text-lg font-semibold mb-3 ${labelHint("global_host_history", activeHelpField)}`} onClick={() => toggleHelp("global_host_history")}>Cross-Job History</h2>
             {host.history.length === 0 ? (
               <p className="text-slate-500">No history entries.</p>
             ) : (
@@ -137,6 +140,8 @@ export const GlobalHostDetailPage: React.FC = () => {
           </div>
         </>
       )}
+    </div>
+    <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
     </div>
   );
 };

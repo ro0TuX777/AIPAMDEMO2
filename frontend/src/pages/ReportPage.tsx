@@ -13,6 +13,7 @@ import {
   type ReportItem,
   type ReportListResponse,
 } from "../api";
+import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
 
 /* ────────────────────────────────────────────────────────────────────────── */
 /*  Helpers                                                                  */
@@ -161,6 +162,7 @@ export const ReportPage: React.FC = () => {
   const [genMode, setGenMode] = useState<"executive" | "analyst">("analyst");
   const [viewMode, setViewMode] = useState<"live" | "generated">("live");
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
+  const { activeHelpField, setActiveHelpField, toggleHelp } = usePageHelp();
 
   // ── Generated reports ──
   const reportsQ = useQuery<ReportListResponse>({
@@ -410,7 +412,7 @@ export const ReportPage: React.FC = () => {
 
         {/* Screen title */}
         <div className="no-print">
-          <h1 className="text-2xl font-bold">Network Analysis Report</h1>
+          <h1 className={`text-2xl font-bold ${labelHint("report", activeHelpField)}`} onClick={() => toggleHelp("report")}>Network Analysis Report</h1>
           {job?.pcaps && job.pcaps.length > 1 ? (
             <div className="mt-1">
               <p className="text-slate-400 text-sm">{job.pcaps.length} Capture Phases (Temporal Comparative Analysis)</p>
@@ -733,6 +735,7 @@ export const ReportPage: React.FC = () => {
         )}
         </>)}
       </div>
+      <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
     </>
   );
 };

@@ -1,12 +1,14 @@
 import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, JobStatusResponse } from "../api";
+import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
 
 export const DashboardPage: React.FC = () => {
   const [jobs, setJobs] = useState<JobStatusResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const { activeHelpField, setActiveHelpField, toggleHelp } = usePageHelp();
 
   const loadJobs = () => {
     api.getJobs()
@@ -53,9 +55,10 @@ export const DashboardPage: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6">
+    <div className="flex gap-6 items-start">
+    <div className="space-y-6 flex-1 min-w-0">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold text-slate-100">Dashboard</h1>
+        <h1 className={`text-2xl font-semibold text-slate-100 ${labelHint("dashboard", activeHelpField)}`} onClick={() => toggleHelp("dashboard")}>Dashboard</h1>
         <Link
           to="/new"
           className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-md text-sm font-medium transition-colors"
@@ -124,6 +127,8 @@ export const DashboardPage: React.FC = () => {
           </table>
         </div>
       )}
+    </div>
+    <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
     </div>
   );
 };

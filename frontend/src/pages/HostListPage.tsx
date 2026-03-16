@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api, type HostListItem, type HostRole } from "../api";
+import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
 
 const ROLE_COLORS: Record<string, string> = {
   internal: "text-blue-400 bg-blue-400/10",
@@ -13,6 +14,7 @@ export const HostListPage: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
   const navigate = useNavigate();
   const [roleFilter, setRoleFilter] = useState<HostRole | "">("");
+  const { activeHelpField, setActiveHelpField, toggleHelp } = usePageHelp();
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["job", jobId, "hosts", roleFilter],
@@ -23,7 +25,8 @@ export const HostListPage: React.FC = () => {
   const hosts = data?.items ?? [];
 
   return (
-    <div className="space-y-4">
+    <div className="flex gap-6 items-start">
+    <div className="space-y-4 flex-1 min-w-0">
       <nav className="text-sm text-slate-400">
         <Link to="/jobs" className="hover:text-white">Jobs</Link>
         <span className="mx-1">/</span>
@@ -33,7 +36,7 @@ export const HostListPage: React.FC = () => {
       </nav>
 
       <div className="flex items-center justify-between">
-        <h1 className="text-xl font-semibold">Hosts ({hosts.length})</h1>
+        <h1 className={`text-xl font-semibold ${labelHint("hosts", activeHelpField)}`} onClick={() => toggleHelp("hosts")}>Hosts ({hosts.length})</h1>
         <select value={roleFilter} onChange={e => setRoleFilter(e.target.value as HostRole | "")}
           className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-sm text-slate-300">
           <option value="">All roles</option>
@@ -107,6 +110,8 @@ export const HostListPage: React.FC = () => {
           </table>
         </div>
       )}
+    </div>
+    <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
     </div>
   );
 };
