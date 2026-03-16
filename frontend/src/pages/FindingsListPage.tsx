@@ -11,6 +11,8 @@ import {
   type Severity,
 } from "../api";
 import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
+import { useToast } from "../components/ToastProvider";
+import { CardGridSkeleton } from "../components/SkeletonLoader";
 
 type ExplainState = {
   loading?: boolean;
@@ -308,10 +310,15 @@ export const FindingsListPage: React.FC = () => {
   });
 
   const queryClient = useQueryClient();
+  const { addToast } = useToast();
   const feedbackMut = useMutation({
     mutationFn: ({ id, val }: { id: string; val: string | null }) =>
       api.updateFindingFeedback(jobId!, id, val),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["job", jobId, "findings"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["job", jobId, "findings"] });
+      addToast({ severity: "info", title: "Feedback saved", duration: 3000 });
+    },
+    onError: () => addToast({ severity: "high", title: "Failed to save feedback" }),
   });
   const explainFeedbackMut = useMutation({
     mutationFn: ({ id, val }: { id: string; val: FindingExplainFeedback | null }) =>
@@ -569,7 +576,7 @@ export const FindingsListPage: React.FC = () => {
         </div>
       </div>
 
-      {isLoading && <p className="text-slate-400 animate-pulse">Loading findings…</p>}
+      {isLoading && <CardGridSkeleton count={4} />}
       {error && <p className="text-red-400">Failed to load findings.</p>}
 
       {!isLoading && findings.length === 0 && (

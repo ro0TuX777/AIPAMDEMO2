@@ -8,6 +8,8 @@ import {
   CategoryStats,
 } from "../api";
 import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
+import { useToast } from "../components/ToastProvider";
+import { TableSkeleton, SkeletonBar } from "../components/SkeletonLoader";
 
 const SEVERITY_LABELS: Record<number, { label: string; color: string }> = {
   1: { label: "High", color: "text-red-400 bg-red-900/30" },
@@ -19,6 +21,7 @@ const PAGE_SIZE = 50;
 
 export const RulesManagementPage: React.FC = () => {
   const { activeHelpField, setActiveHelpField, toggleHelp } = usePageHelp();
+  const { addToast } = useToast();
   // ── File list state ──
   const [files, setFiles] = useState<SuricataRuleItem[]>([]);
   const [selectedFile, setSelectedFile] = useState<string>("");
@@ -118,6 +121,7 @@ export const RulesManagementPage: React.FC = () => {
       setStats(s);
     } catch (e) {
       console.error("Toggle failed:", e);
+      addToast({ severity: "high", title: "Failed to toggle rule" });
     } finally {
       setToggling((prev) => { const n = new Set(prev); n.delete(sid); return n; });
     }
@@ -130,8 +134,10 @@ export const RulesManagementPage: React.FC = () => {
       await loadRules();
       const s = await api.getRuleFileStats(selectedFile);
       setStats(s);
+      addToast({ severity: "info", title: `Category "${catName}" ${enable ? "enabled" : "disabled"}`, duration: 3000 });
     } catch (e) {
       console.error("Category toggle failed:", e);
+      addToast({ severity: "high", title: "Failed to toggle category" });
     }
   };
 
@@ -156,8 +162,10 @@ export const RulesManagementPage: React.FC = () => {
       await api.updateSuricataRule(selectedFile, rawContent);
       const s = await api.getRuleFileStats(selectedFile);
       setStats(s);
+      addToast({ severity: "info", title: "Rules saved", body: `${selectedFile} updated successfully.` });
     } catch (e) {
       console.error("Save failed:", e);
+      addToast({ severity: "high", title: "Failed to save rules" });
     } finally {
       setRawSaving(false);
     }
@@ -284,7 +292,7 @@ export const RulesManagementPage: React.FC = () => {
             {/* Table */}
             <div className="flex-1 overflow-y-auto">
               {rulesLoading ? (
-                <div className="p-8 text-center text-gray-500 animate-pulse">Loading rules...</div>
+                <div className="p-4"><TableSkeleton rows={8} cols={5} /></div>
               ) : rules && rules.items.length === 0 ? (
                 <div className="p-8 text-center text-gray-500">No rules match your filters.</div>
               ) : (
@@ -387,7 +395,7 @@ export const RulesManagementPage: React.FC = () => {
             </button>
           </div>
           {rawLoading ? (
-            <div className="flex-1 flex items-center justify-center text-gray-500 animate-pulse">Loading...</div>
+            <div className="flex-1 p-4 space-y-3"><SkeletonBar className="h-3 w-full" /><SkeletonBar className="h-3 w-full" /><SkeletonBar className="h-3 w-4/5" /><SkeletonBar className="h-3 w-full" /><SkeletonBar className="h-3 w-3/4" /></div>
           ) : (
             <textarea
               value={rawContent}

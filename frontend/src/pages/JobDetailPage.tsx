@@ -13,6 +13,7 @@ import {
 import { useJobEvents } from "../hooks/useJobEvents";
 import { useToast, type ToastSeverity } from "../components/ToastProvider";
 import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
+import { DetailSkeleton } from "../components/SkeletonLoader";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -115,21 +116,33 @@ export const JobDetailPage: React.FC = () => {
   // ── Mutations ──
   const cancelMut = useMutation({
     mutationFn: () => api.cancelJob(jobId!),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["job", jobId] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["job", jobId] });
+      addToast({ severity: "info", title: "Job cancelled", body: `Job ${jobId?.slice(0, 8)} has been cancelled.` });
+    },
+    onError: () => addToast({ severity: "high", title: "Failed to cancel job" }),
   });
   const deleteMut = useMutation({
     mutationFn: () => api.deleteJob(jobId!),
-    onSuccess: () => navigate("/jobs"),
+    onSuccess: () => {
+      addToast({ severity: "info", title: "Job deleted", body: `Job ${jobId?.slice(0, 8)} has been deleted.` });
+      navigate("/jobs");
+    },
+    onError: () => addToast({ severity: "high", title: "Failed to delete job" }),
   });
   const rerunMut = useMutation({
     mutationFn: (profile: string) =>
       api.rerunJob(jobId!, { execution_profile: profile as any }),
-    onSuccess: (data) => navigate(`/jobs/${data.job_id}`),
+    onSuccess: (data) => {
+      addToast({ severity: "info", title: "Job re-run started", body: `New job ${data.job_id.slice(0, 8)} created.` });
+      navigate(`/jobs/${data.job_id}`);
+    },
+    onError: () => addToast({ severity: "high", title: "Failed to re-run job" }),
   });
 
   // ── Loading / Error states ──
   if (jobQ.isLoading) {
-    return <div className="text-slate-400 animate-pulse">Loading job details…</div>;
+    return <DetailSkeleton />;
   }
   if (jobQ.error || !job) {
     return (

@@ -3,6 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api";
 import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
+import { DetailSkeleton } from "../components/SkeletonLoader";
 
 const ROLE_COLORS: Record<string, string> = {
   internal: "text-blue-400 bg-blue-400/10",
@@ -34,7 +35,7 @@ export const GlobalHostDetailPage: React.FC = () => {
         <span className="text-slate-200 font-mono">{decodedIp}</span>
       </nav>
 
-      {isLoading && <p className="text-slate-400 animate-pulse">Loading host…</p>}
+      {isLoading && <DetailSkeleton />}
       {error && <p className="text-red-400">Failed to load host details.</p>}
 
       {host && (

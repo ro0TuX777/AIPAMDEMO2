@@ -11,6 +11,7 @@ import {
   type PcapUploadItem,
 } from "../api";
 import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
+import { useToast } from "../components/ToastProvider";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -322,22 +323,29 @@ export const JobListPage: React.FC = () => {
     else setSelected(new Set(jobs.map(j => j.job_id)));
   };
 
+  const { addToast } = useToast();
+
   // ── Batch mutations ──
   const batchMut = useMutation({
     mutationFn: (action: BatchAction) =>
       api.batchJobs({ action, job_ids: Array.from(selected) }),
-    onSuccess: () => {
+    onSuccess: (_data, action) => {
+      const count = selected.size;
       setSelected(new Set());
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
+      addToast({ severity: "info", title: `Batch ${action} complete`, body: `${count} job(s) affected.` });
     },
+    onError: (_err, action) => addToast({ severity: "high", title: `Batch ${action} failed` }),
   });
 
   // ── Single delete mutation ──
   const deleteMut = useMutation({
     mutationFn: (jobId: string) => api.deleteJob(jobId),
-    onSuccess: () => {
+    onSuccess: (_data, jobId) => {
       queryClient.invalidateQueries({ queryKey: ["jobs"] });
+      addToast({ severity: "info", title: "Job deleted", body: `Job ${jobId.slice(0, 8)} removed.` });
     },
+    onError: () => addToast({ severity: "high", title: "Failed to delete job" }),
   });
 
   // ── Upload complete handler ──

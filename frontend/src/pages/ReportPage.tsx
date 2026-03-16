@@ -14,6 +14,7 @@ import {
   type ReportListResponse,
 } from "../api";
 import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
+import { DetailSkeleton } from "../components/SkeletonLoader";
 
 /* ────────────────────────────────────────────────────────────────────────── */
 /*  Helpers                                                                  */
@@ -436,7 +437,7 @@ export const ReportPage: React.FC = () => {
           )}
         </div>
 
-        {isLoading && <p className="text-slate-400 animate-pulse">Generating report…</p>}
+        {isLoading && <DetailSkeleton />}
         {error && <p className="text-red-400">Failed to load report data.</p>}
 
         {summary && (

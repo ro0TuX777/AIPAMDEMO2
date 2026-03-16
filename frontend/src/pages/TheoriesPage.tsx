@@ -3,6 +3,8 @@ import { useParams, Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, type EvidenceRef, type TheoryItem, type TheoryListResponse } from "../api";
 import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
+import { useToast } from "../components/ToastProvider";
+import { CardGridSkeleton } from "../components/SkeletonLoader";
 
 const CONFIDENCE_COLORS: Record<string, string> = {
   high: "bg-red-900/40 text-red-300 border-red-700",
@@ -133,6 +135,7 @@ export const TheoriesPage: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
   const queryClient = useQueryClient();
   const { activeHelpField, setActiveHelpField, toggleHelp } = usePageHelp();
+  const { addToast } = useToast();
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["theories", jobId],
@@ -142,10 +145,14 @@ export const TheoriesPage: React.FC = () => {
 
   const generateMut = useMutation({
     mutationFn: () => api.generateTheories(jobId!),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["theories", jobId] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["theories", jobId] });
+      addToast({ severity: "info", title: "Theories regenerated", body: "Hypotheses have been recalculated." });
+    },
+    onError: () => addToast({ severity: "high", title: "Failed to generate theories", body: "Check backend connectivity." }),
   });
 
-  if (isLoading) return <div className="p-6 text-slate-400">Loading theories…</div>;
+  if (isLoading) return <div className="p-6"><CardGridSkeleton count={3} /></div>;
   if (error) return <div className="p-6 text-red-400">Failed to load theories.</div>;
 
   const theories = data?.items ?? [];

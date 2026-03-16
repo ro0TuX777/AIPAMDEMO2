@@ -4,6 +4,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import * as d3 from "d3";
 import { api, type GraphNode, type GraphEdge, type ProofItem, type ProofItemEntry, type ProofNarrativeResponse } from "../api";
 import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
+import { useToast } from "../components/ToastProvider";
 
 interface D3Node extends d3.SimulationNodeDatum, GraphNode { }
 interface D3Link extends d3.SimulationLinkDatum<D3Node> {
@@ -131,12 +132,16 @@ export const AttackGraphPage: React.FC = () => {
         },
     });
 
+    const { addToast } = useToast();
+
     const deleteProofMut = useMutation({
         mutationFn: (proofId: string) => api.deleteProof(jobId!, proofId),
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ["job", jobId, "proofs"] });
             if (activeProofId) setActiveProofId(null);
+            addToast({ severity: "info", title: "Proof deleted" });
         },
+        onError: () => addToast({ severity: "high", title: "Failed to delete proof" }),
     });
 
     const updateProofMut = useMutation({
@@ -146,11 +151,14 @@ export const AttackGraphPage: React.FC = () => {
         },
         onSuccess: () => {
             queryClient.invalidateQueries({ queryKey: ["job", jobId, "proofs"] });
+            addToast({ severity: "info", title: "Proof updated", duration: 3000 });
         },
+        onError: () => addToast({ severity: "high", title: "Failed to update proof" }),
     });
 
     const narrativeMut = useMutation({
         mutationFn: (proofId: string) => api.renderProofNarrative(jobId!, proofId),
+        onError: () => addToast({ severity: "high", title: "Failed to render narrative" }),
     });
 
     // Extra UI state

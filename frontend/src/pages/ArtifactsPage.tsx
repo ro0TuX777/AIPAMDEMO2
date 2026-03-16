@@ -3,6 +3,8 @@ import { useParams, Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, type ArtifactItem } from "../api";
 import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
+import { useToast } from "../components/ToastProvider";
+import { CardSkeleton } from "../components/SkeletonLoader";
 
 const STATUS_COLORS: Record<string, string> = {
   available: "text-emerald-400", generating: "text-blue-400 animate-pulse",
@@ -13,6 +15,7 @@ export const ArtifactsPage: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
   const queryClient = useQueryClient();
   const { activeHelpField, setActiveHelpField, toggleHelp } = usePageHelp();
+  const { addToast } = useToast();
 
   const { data, isLoading, error } = useQuery({
     queryKey: ["job", jobId, "artifacts"],
@@ -22,7 +25,11 @@ export const ArtifactsPage: React.FC = () => {
 
   const genMut = useMutation({
     mutationFn: () => api.generateEvidencePackage(jobId!),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["job", jobId, "artifacts"] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["job", jobId, "artifacts"] });
+      addToast({ severity: "info", title: "Evidence package generated", body: "Artifacts are now available for download." });
+    },
+    onError: () => addToast({ severity: "high", title: "Failed to generate evidence package" }),
   });
 
   const handleDownload = useCallback((artifactId: string, filename?: string | null) => {
@@ -53,7 +60,7 @@ export const ArtifactsPage: React.FC = () => {
         </button>
       </div>
 
-      {isLoading && <p className="text-slate-400 animate-pulse">Loading artifacts…</p>}
+      {isLoading && <div className="space-y-2"><CardSkeleton lines={2} /><CardSkeleton lines={2} /></div>}
       {error && <p className="text-red-400">Failed to load artifacts.</p>}
 
       {!isLoading && artifacts.length === 0 && (

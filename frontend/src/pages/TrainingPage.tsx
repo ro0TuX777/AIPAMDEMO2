@@ -9,6 +9,7 @@ import {
     PhaseStats,
 } from "../api";
 import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
+import { CardGridSkeleton } from "../components/SkeletonLoader";
 
 // Phase icon mapping
 const PHASE_ICONS: Record<string, string> = {
@@ -118,10 +119,8 @@ export const TrainingPage: React.FC = () => {
 
     if (loading) {
         return (
-            <div className="flex items-center justify-center h-64">
-                <div className="text-slate-400 animate-pulse text-lg">
-                    Loading Training Intelligence...
-                </div>
+            <div className="p-6">
+                <CardGridSkeleton count={6} />
             </div>
         );
     }

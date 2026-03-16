@@ -2,9 +2,39 @@
 @tailwind components;
 @tailwind utilities;
 
-body {
-  @apply bg-slate-950 text-slate-100;
+/* ── Theme variables ─────────────────────────────────── */
+:root {
+  --surface-bg: rgb(2 6 23);          /* slate-950 */
+  --surface-text: rgb(241 245 249);   /* slate-100 */
 }
+
+html.light {
+  --surface-bg: rgb(248 250 252);     /* slate-50 */
+  --surface-text: rgb(15 23 42);      /* slate-900 */
+}
+
+body {
+  background-color: var(--surface-bg);
+  color: var(--surface-text);
+}
+
+/* Light mode overrides for hardcoded dark classes */
+html.light .bg-slate-950 { background-color: rgb(248 250 252) !important; }
+html.light .bg-slate-900 { background-color: rgb(241 245 249) !important; }
+html.light .bg-slate-900\/50,
+html.light .bg-slate-900\/60,
+html.light .bg-slate-900\/80 { background-color: rgb(241 245 249 / 0.8) !important; }
+html.light .bg-slate-800 { background-color: rgb(226 232 240) !important; }
+html.light .bg-slate-800\/40,
+html.light .bg-slate-800\/50 { background-color: rgb(226 232 240 / 0.5) !important; }
+html.light .text-slate-100 { color: rgb(15 23 42) !important; }
+html.light .text-slate-200 { color: rgb(30 41 59) !important; }
+html.light .text-slate-300 { color: rgb(51 65 85) !important; }
+html.light .text-slate-400 { color: rgb(71 85 105) !important; }
+html.light .text-slate-500 { color: rgb(100 116 139) !important; }
+html.light .border-slate-700,
+html.light .border-slate-700\/50 { border-color: rgb(203 213 225) !important; }
+html.light .border-slate-800 { border-color: rgb(226 232 240) !important; }
 
 /* ── Help Guide Panel ───────────────────────────────── */
 
@@ -28,6 +58,25 @@ body {
   background: rgb(15 23 42 / 0.85);
   border-left-color: rgb(51 65 85 / 0.6); /* slate-700 */
   box-shadow: -8px 0 24px -4px rgb(0 0 0 / 0.3);
+}
+
+/* Mobile: hide collapsed panel, overlay when open */
+@media (max-width: 767px) {
+  .help-guide-panel {
+    display: none;
+  }
+  .help-guide-panel--open {
+    display: block;
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 300px;
+    min-height: 100vh;
+    z-index: 50;
+    border-radius: 0;
+    overflow-y: auto;
+  }
 }
 
 .help-guide-content {

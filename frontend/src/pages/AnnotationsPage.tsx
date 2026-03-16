@@ -3,6 +3,8 @@ import { useParams, Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, type ContextAnnotationItem, type ContextAnnotationListResponse } from "../api";
 import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
+import { useToast } from "../components/ToastProvider";
+import { CardGridSkeleton } from "../components/SkeletonLoader";
 
 const SEVERITY_COLORS: Record<string, string> = {
   critical: "bg-red-900/40 text-red-300 border-red-700",
@@ -76,6 +78,7 @@ export function AnnotationsPage() {
   const { jobId } = useParams<{ jobId: string }>();
   const queryClient = useQueryClient();
   const { activeHelpField, setActiveHelpField, toggleHelp } = usePageHelp();
+  const { addToast } = useToast();
 
   const { data, isLoading, error } = useQuery<ContextAnnotationListResponse>({
     queryKey: ["annotations", jobId],
@@ -85,10 +88,14 @@ export function AnnotationsPage() {
 
   const regenerate = useMutation({
     mutationFn: () => api.generateAnnotations(jobId!),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["annotations", jobId] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["annotations", jobId] });
+      addToast({ severity: "info", title: "Annotations regenerated", body: "Context annotations have been recalculated." });
+    },
+    onError: () => addToast({ severity: "high", title: "Failed to generate annotations", body: "Check backend connectivity." }),
   });
 
-  if (isLoading) return <div className="p-6 text-slate-400">Loading annotations…</div>;
+  if (isLoading) return <div className="p-6"><CardGridSkeleton count={4} /></div>;
   if (error) return <div className="p-6 text-red-400">Error loading annotations</div>;
 
   const annotations = data?.items ?? [];

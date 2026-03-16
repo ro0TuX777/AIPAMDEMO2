@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api, type HostListItem, type HostRole } from "../api";
 import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
+import { TableSkeleton } from "../components/SkeletonLoader";
 
 const ROLE_COLORS: Record<string, string> = {
   internal: "text-blue-400 bg-blue-400/10",
@@ -46,7 +47,7 @@ export const HostListPage: React.FC = () => {
         </select>
       </div>
 
-      {isLoading && <p className="text-slate-400 animate-pulse">Loading hosts…</p>}
+      {isLoading && <TableSkeleton rows={5} cols={4} />}
       {error && <p className="text-red-400">Failed to load hosts.</p>}
 
       {!isLoading && hosts.length === 0 && (

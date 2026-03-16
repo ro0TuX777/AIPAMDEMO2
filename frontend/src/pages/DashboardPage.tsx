@@ -2,6 +2,7 @@ import React, { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api, JobStatusResponse } from "../api";
 import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
+import { TableSkeleton } from "../components/SkeletonLoader";
 
 export const DashboardPage: React.FC = () => {
   const [jobs, setJobs] = useState<JobStatusResponse[]>([]);
@@ -68,7 +69,7 @@ export const DashboardPage: React.FC = () => {
       </div>
 
       {loading ? (
-        <div className="text-slate-400 animate-pulse">Loading jobs...</div>
+        <TableSkeleton rows={4} cols={5} />
       ) : error ? (
         <div className="text-red-400">{error}</div>
       ) : jobs.length === 0 ? (

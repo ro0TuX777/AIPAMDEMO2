@@ -3,6 +3,8 @@ import { useParams, Link } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, type SliceItem, type SliceListResponse } from "../api";
 import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
+import { useToast } from "../components/ToastProvider";
+import { CardGridSkeleton } from "../components/SkeletonLoader";
 
 const SEVERITY_COLORS: Record<string, string> = {
   critical: "bg-red-900/40 text-red-300 border-red-700",
@@ -108,6 +110,7 @@ export function SlicesPage() {
   const { jobId } = useParams<{ jobId: string }>();
   const queryClient = useQueryClient();
   const { activeHelpField, setActiveHelpField, toggleHelp } = usePageHelp();
+  const { addToast } = useToast();
 
   const { data, isLoading, error } = useQuery<SliceListResponse>({
     queryKey: ["slices", jobId],
@@ -117,10 +120,14 @@ export function SlicesPage() {
 
   const regenerate = useMutation({
     mutationFn: () => api.generateSlices(jobId!),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ["slices", jobId] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["slices", jobId] });
+      addToast({ severity: "info", title: "Slices regenerated", body: "Incident slices have been recalculated." });
+    },
+    onError: () => addToast({ severity: "high", title: "Failed to generate slices", body: "Check backend connectivity." }),
   });
 
-  if (isLoading) return <div className="p-6 text-slate-400">Loading slices…</div>;
+  if (isLoading) return <div className="p-6"><CardGridSkeleton count={4} /></div>;
   if (error) return <div className="p-6 text-red-400">Error loading slices</div>;
 
   const slices = data?.items ?? [];
