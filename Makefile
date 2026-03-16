@@ -59,9 +59,9 @@ test-parity:
 test-e2e:
 	$(call PYTEST_RUN,tests/e2e/)
 
-## Performance regression detection
+## Performance regression detection (requires pytest-benchmark)
 benchmark:
-	$(call PYTEST_RUN,tests/integration/ -k "benchmark" --benchmark-only) 2>/dev/null || echo "benchmark fixtures not yet implemented"
+	$(PYTEST) tests/integration/ -k "benchmark" $(PYTEST_ARGS) 2>/dev/null || echo "benchmark fixtures not yet implemented — skipping"
 
 ## Run everything except parity, e2e, benchmark
 test-all: test-unit test-contract test-api test-worker test-sse
