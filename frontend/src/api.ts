@@ -1452,6 +1452,12 @@ export const api = {
   pauseTraining(): Promise<any> { return post<any>("/training/pause"); },
   /** @deprecated V1 */
   stopTraining(): Promise<any> { return post<any>("/training/stop"); },
+
+  // ── Frontier Knowledge Distillation ──
+  getDistillConfig(): Promise<DistillConfig> { return get<DistillConfig>("/training/distill/config"); },
+  updateDistillConfig(cfg: Partial<DistillConfigUpdate>): Promise<any> { return post<any>("/training/distill/config", cfg); },
+  getDistillStats(): Promise<DistillStats> { return get<DistillStats>("/training/distill/stats"); },
+  testTeacher(): Promise<any> { return post<any>("/training/distill/test"); },
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1594,4 +1600,22 @@ export interface TrainingSummary {
   active_model: ActiveModel | null; phase_counts: Record<string, PhaseStats>;
   models: string[]; peak_vram_gb: number | null;
   self_healing: SelfHealingStats | null; total_events: number;
+}
+
+
+// ─── Frontier Knowledge Distillation types ──────────────────────────────────
+export interface DistillConfig {
+  endpoint: string; model: string; temperature: number; max_tokens: number;
+  timeout_seconds: number; enabled: boolean; configured: boolean;
+  api_key_set: boolean; api_key_preview: string;
+}
+export interface DistillConfigUpdate {
+  endpoint?: string; api_key?: string; model?: string;
+  temperature?: number; max_tokens?: number; timeout_seconds?: number;
+  enabled?: boolean;
+}
+export interface DistillStats {
+  total_samples: number; file_size_mb: number; file_path: string;
+  exists: boolean; teacher_models: string[]; jobs_distilled: string[];
+  per_task: Record<string, number>; rejected_count: number;
 }

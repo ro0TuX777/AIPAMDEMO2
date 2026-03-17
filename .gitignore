@@ -144,3 +144,10 @@ Playwright Testing Bootstrap.md
 DAWN/
 aipam-migrate-20260304/
 aipam-migrate-20260305/
+
+# Sensitive keys
+openai_api_key.txt
+
+# Debug/temp logs
+wlog*.txt
+worker_distill*.txt

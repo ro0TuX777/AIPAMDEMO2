@@ -13,6 +13,7 @@ class LLMProvider(Enum):
     """Available LLM providers."""
     OLLAMA = "ollama"
     TRAFFICLLM = "trafficllm"
+    FRONTIER = "frontier"  # OpenAI / Anthropic / any OpenAI-compatible cloud API
 
 
 @dataclass
@@ -876,6 +877,71 @@ class LLMClient:
                     anom.description = fix(anom.description)
                 if hasattr(anom, "reason") and anom.reason:
                     anom.reason = fix(anom.reason)
+
+    def build_user_prompt(self, bundle: Dict[str, Any]) -> str:
+        """Build the user prompt string for a bundle WITHOUT sending it.
+
+        Useful for frontier distillation — the same prompt sent to the local
+        model can be replayed against a teacher model.
+        """
+        packet_data = self._format_packet_data(bundle)
+        hosts_info = self._format_hosts_info(bundle)
+        alert_context = self._format_alert_context(bundle)
+        trafficllm_context = self._format_trafficllm_context(bundle)
+        anomaly_context = self._format_anomaly_context(bundle)
+        malware_categories = self._get_v(bundle, "malware_categories", "")
+
+        return f"""Conduct a detailed FORENSIC ANALYSIS on the following traffic data <packet>.
+Determine if this traffic is **Benign** or **Malicious**.
+
+IMPORTANT CLASSIFICATION RULES:
+1. If the traffic shows normal enterprise patterns (web browsing, email, file sharing, DNS, DHCP, etc.)
+   with only low-severity generic IDS alerts, classify as "Benign".
+2. If malicious, check if the traffic matches a known malware family from: '{malware_categories}'.
+3. Classify as 'Anomalous/Zero-Day' ONLY if the traffic is clearly malicious but does NOT match
+   any known malware family patterns.
+4. Do NOT classify as malicious solely because of:
+   - Generic protocol decode warnings
+   - TCP retransmits or RST packets
+   - Corporate policy violations (Dropbox, Flash, streaming services)
+   - High volume of low-severity alerts
+
+<packet>: {packet_data}
+{trafficllm_context}{anomaly_context}
+Network hosts: {hosts_info}{alert_context}
+
+Provide your findings in a structured JSON format with this exact structure:
+{{
+  "classification": "Benign or MALWARE_NAME or Anomalous/Zero-Day",
+  "overall_severity": "low|medium|high|critical",
+  "attack_chain": [
+    {{
+      "stage": "stage_name",
+      "description": "deep analysis of what happened",
+      "evidence": ["Session-Specific Indicator: [Technical Detail from Packet Data]", "observed [IP/Port/Bytes/Offset/String]"],
+      "mitre_techniques": [{{"id": "T1XXX", "name": "..."}}]
+    }}
+  ],
+  "host_findings": [
+    {{
+      "ip": "IP_ADDRESS",
+      "role_in_attack": "attacker|victim|normal",
+      "summary": "finding summary",
+      "suspicious_behaviors": ["behavior1"]
+    }}
+  ],
+  "anomalies": [
+    {{
+      "description": "anomaly description",
+      "related_hosts": ["IP1"],
+      "confidence": 0.9,
+      "reason": "specific forensic reason for this anomaly"
+    }}
+  ],
+  "mitre_techniques_overall": [
+    {{"id": "T1XXX", "name": "..."}}
+  ]
+}}"""
 
     async def analyze_chunk(
         self, bundle: Dict[str, Any], task_hint: Optional[str] = None

@@ -504,6 +504,34 @@ def run_pipeline(
         _emit(job_id, "stage.status", stage="annotations", status="completed",
               step=step_num, total_steps=total_steps, message="annotations failed (non-fatal)")
 
+    # --- Frontier Knowledge Distillation v2 (non-blocking) ---
+    try:
+        from backend.app.distillation import reload_teacher_config, distill_v2
+        teacher = reload_teacher_config()  # reload from shared JSON on disk
+        if teacher.enabled and teacher.is_configured():
+            logger.info(
+                "[PIPELINE] Frontier distillation v2 enabled — distilling job %s via %s",
+                job_id, teacher.model,
+            )
+            import asyncio
+            from backend.app.database_v2 import get_session_factory
+            distill_stats = asyncio.run(
+                distill_v2(
+                    db_session_factory=get_session_factory(),
+                    job_id=job_id,
+                    teacher=teacher,
+                )
+            )
+            logger.info("[PIPELINE] Distillation v2 result: %s", distill_stats)
+        else:
+            logger.debug("[PIPELINE] Distillation v2 skipped (not configured or disabled)")
+    except Exception as distill_exc:
+        # Distillation failure must never fail the analysis job
+        logger.warning(
+            "[PIPELINE] Frontier distillation failed (continuing): %s",
+            distill_exc,
+        )
+
     # --- Final status ---
     final_status = "completed_with_errors" if has_errors else "completed"
     _update_job_status(db, job, final_status)

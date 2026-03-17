@@ -22,11 +22,14 @@ services:
       - AIPAM_JOB_ROOT=/data/jobs
       - AIPAM_OLLAMA_URL=http://host.docker.internal:11434
       - AIPAM_REDIS_URL=redis://redis:6379/0
+      # Host workspace root — used to translate Docker paths to host paths
+      # when dispatching training jobs to the host-native GPU trainer.
+      - HOST_WORKSPACE_ROOT=${HOST_WORKSPACE_ROOT:-.}
     volumes:
       - aipam_data:/data
       - aipam_rules:/opt/aipam/rules
       - ./ti:/opt/aipam/ti:ro
-      - ./finetuning:/data/finetuning:ro
+      - ./finetuning:/data/finetuning
       - ${EXTERNAL_DATA_PATH:-/Volumes}:/external_data # Configurable external drive mount
     depends_on:
       - redis
@@ -64,7 +67,7 @@ services:
       - aipam_data:/data
       - aipam_rules:/opt/aipam/rules
       - ./ti:/opt/aipam/ti:ro
-      - ./finetuning:/data/finetuning:ro
+      - ./finetuning:/data/finetuning
       - ${EXTERNAL_DATA_PATH:-/Volumes}:/external_data # Configurable external drive mount
     depends_on:
       - redis

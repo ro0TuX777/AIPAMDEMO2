@@ -18,6 +18,7 @@ import json
 import os
 import sys
 from pathlib import Path
+from transformers import TrainerCallback
 
 # --- FIX for Unsloth/Torch/_inductor AttributeError ---
 try:
@@ -57,6 +58,18 @@ def check_dependencies():
         print("  pip install --no-deps trl peft accelerate bitsandbytes")
         return False
     return True
+
+
+class LossPrinterCallback(TrainerCallback):
+    """Print loss to stdout so host_trainer can parse it."""
+    def on_log(self, args, state, control, logs=None, **kwargs):
+        if logs and "loss" in logs:
+            step = state.global_step
+            loss = logs["loss"]
+            lr = logs.get("learning_rate", 0)
+            epoch = logs.get("epoch", 0)
+            print(f'{{"loss": {loss}, "learning_rate": {lr}, "epoch": {epoch}, "step": {step}}}',
+                  flush=True)
 
 
 def load_training_data(data_path: str):
@@ -121,7 +134,7 @@ def main():
     train_path = Path(args.data)
     if not train_path.exists():
         print(f"Error: Training data not found at {train_path}")
-        return
+        sys.exit(1)
 
     if args.validate_data:
         # ... (validation logic unchanged) ...
@@ -130,7 +143,7 @@ def main():
         return
 
     if not check_dependencies():
-        return
+        sys.exit(1)
 
     from unsloth import FastLanguageModel
     from trl import SFTTrainer
@@ -213,6 +226,7 @@ def main():
         output_dir=args.output,
         save_strategy="steps" if max_steps > 0 else "epoch",
         save_steps=100 if max_steps > 0 else None,
+        report_to="none",
     )
 
     # Initialize trainer
@@ -223,6 +237,7 @@ def main():
         dataset_text_field="text",
         max_seq_length=args.max_seq_length,
         args=training_args,
+        callbacks=[LossPrinterCallback()],
     )
 
     # Train

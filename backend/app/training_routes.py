@@ -306,28 +306,112 @@ async def start_training_job():
             )
         }, status_code=503)
 
-    # Try to dispatch via Celery
+    # Dispatch directly to the host trainer (bypasses Celery which uses
+    # a separate worker module that doesn't register this task).
+    import uuid as _uuid
+    from datetime import datetime, timezone
+    from .settings_runtime import get_effective_settings
+
+    effective = get_effective_settings()
+    job_id = str(_uuid.uuid4())
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+
+    # Read fine-tuning params from DB settings
     try:
-        from .tasks import run_finetuning_pipeline
-        task = run_finetuning_pipeline.delay()
-        return JSONResponse(content={
-            "status": "queued",
-            "task_id": str(task.id),
-            "message": "Fine-tuning job started in background."
-        }, status_code=202)
-    except ImportError:
-        # V1 tasks module not compatible with V2 model layout
-        return JSONResponse(content={
-            "status": "error",
-            "message": (
-                "Training pipeline is not available in V2 yet. "
-                "Use the V1 backend or the standalone finetuning scripts."
+        from .database import get_session
+        from .db_models import SettingsDB
+        with get_session() as session:
+            settings_row = session.get(SettingsDB, 1)
+            vals = settings_row.values if settings_row else {}
+    except Exception:
+        vals = {}
+
+    # The backend runs in Docker where dataset_storage_path resolves to a
+    # container-internal path (e.g. /finetuning/data).  The host trainer
+    # runs natively, so we must translate to a host-absolute path.
+    host_ws = os.environ.get("HOST_WORKSPACE_ROOT", "").strip()
+    if host_ws and host_ws != ".":
+        # Explicit workspace root provided
+        host_data_dir = Path(host_ws) / "finetuning" / "data"
+    elif os.path.exists("/.dockerenv"):
+        # Inside Docker without explicit root — try to derive from the
+        # Docker-to-host volume convention:  ./finetuning -> /data/finetuning
+        # The host path cannot be determined; fall back to a common default.
+        import subprocess
+        try:
+            # Ask the host trainer for its workspace root
+            _ws_req = urllib.request.Request(f"{host_trainer_url}/health", method="GET")
+            with urllib.request.urlopen(_ws_req, timeout=3) as _ws_resp:
+                _ws_info = json.loads(_ws_resp.read())
+                _scripts_dir = _ws_info.get("scripts_dir", "")
+                if _scripts_dir:
+                    # scripts_dir is e.g. /home/bc/Documents/AIPAM/finetuning
+                    host_data_dir = Path(_scripts_dir) / "data"
+                else:
+                    host_data_dir = effective.dataset_storage_path
+        except Exception:
+            host_data_dir = effective.dataset_storage_path
+    else:
+        host_data_dir = effective.dataset_storage_path
+
+    # ── Merge distilled training data if available ──
+    base_train_path = host_data_dir / "training" / "train.jsonl"
+    train_data_path = base_train_path  # default: use original
+
+    try:
+        from .distillation import merge_distilled_into_training, get_distill_stats
+        d_stats = get_distill_stats()
+        if d_stats.get("total_samples", 0) > 0:
+            merged = merge_distilled_into_training(base_train_path)
+            train_data_path = Path(merged["output_path"])
+            import logging
+            logging.getLogger(__name__).info(
+                "Merged %d base + %d distilled = %d total training samples",
+                merged["base_samples"],
+                merged["distilled_samples"],
+                merged["total_samples"],
             )
-        }, status_code=501)
+    except Exception as merge_err:
+        import logging
+        logging.getLogger(__name__).warning(
+            "Distilled data merge failed (using base only): %s", merge_err
+        )
+
+    host_config = {
+        "job_id": job_id,
+        "train_data": str(train_data_path),
+        "val_data": str(host_data_dir / "training" / "validation.jsonl"),
+        "output_dir": str(host_data_dir / "models" / f"run_{timestamp}"),
+        "base_model": vals.get("finetune_base_model", "mlx-community/Meta-Llama-3.1-8B-Instruct-4bit"),
+        "batch_size": int(vals.get("finetune_batch_size") or 2),
+        "iters": int(vals.get("finetune_iters") or 1000),
+        "learning_rate": float(vals.get("finetune_learning_rate") or 1e-5),
+        "lora_rank": int(vals.get("finetune_lora_rank") or 8),
+        "num_layers": int(vals.get("finetune_num_layers") or 16),
+        "max_seq_length": int(vals.get("finetune_max_seq_length") or 1024),
+    }
+
+    try:
+        req = urllib.request.Request(
+            f"{host_trainer_url}/train",
+            data=json.dumps(host_config).encode(),
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            result = json.loads(resp.read())
+            return JSONResponse(content={
+                "status": "started",
+                "task_id": result.get("job_id", job_id),
+                "message": "Fine-tuning job started on host trainer."
+            }, status_code=202)
+    except urllib.error.HTTPError as e:
+        body = json.loads(e.read()) if e.fp else {"error": str(e)}
+        return JSONResponse(content=body, status_code=e.code)
     except Exception as e:
         return JSONResponse(content={
             "status": "error",
-            "message": f"Failed to start training: {e}"
+            "message": f"Failed to dispatch training to host trainer: {e}"
         }, status_code=500)
 
 
@@ -462,4 +546,126 @@ async def get_training_status():
             "elapsed_seconds": None,
             "eta_seconds": None,
         })
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Frontier Knowledge Distillation Routes
+# ═══════════════════════════════════════════════════════════════════════════
+
+from .distillation import (
+    get_teacher_config,
+    update_teacher_config,
+    get_distill_stats,
+    distill_chunk,
+)
+
+
+@router.get("/distill/config")
+async def get_distill_config():
+    """Return the current teacher model configuration."""
+    tc = get_teacher_config()
+    return JSONResponse(content={
+        "endpoint": tc.endpoint,
+        "model": tc.model,
+        "temperature": tc.temperature,
+        "max_tokens": tc.max_tokens,
+        "timeout_seconds": tc.timeout_seconds,
+        "enabled": tc.enabled,
+        "configured": tc.is_configured(),
+        # Never expose the full API key
+        "api_key_set": bool(tc.api_key),
+        "api_key_preview": (tc.api_key[:4] + "…" + tc.api_key[-4:]) if len(tc.api_key) > 8 else ("****" if tc.api_key else ""),
+    })
+
+
+@router.post("/distill/config")
+async def set_distill_config(payload: Dict[str, Any]):
+    """Update the teacher model configuration at runtime."""
+    tc = update_teacher_config(payload)
+    return JSONResponse(content={
+        "status": "updated",
+        "configured": tc.is_configured(),
+        "enabled": tc.enabled,
+        "model": tc.model,
+    })
+
+
+@router.get("/distill/stats")
+async def distill_stats():
+    """Return statistics about accumulated distilled training data."""
+    return JSONResponse(content=get_distill_stats())
+
+
+@router.post("/distill/test")
+async def test_teacher():
+    """Send a small test prompt to the teacher to verify connectivity."""
+    import httpx
+    from .llm_client import SYSTEM_PROMPT
+
+    tc = get_teacher_config()
+    if not tc.is_configured():
+        return JSONResponse(
+            content={"status": "error", "message": "Teacher model not configured"},
+            status_code=400,
+        )
+
+    test_prompt = (
+        "This is a connectivity test. Respond with a short JSON object: "
+        '{"status": "ok", "model": "<your model name>"}'
+    )
+
+    # Call teacher directly with full error capture
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {tc.api_key}",
+    }
+    payload = {
+        "model": tc.model,
+        "temperature": 0.1,
+        "max_tokens": 256,
+        "messages": [
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": test_prompt},
+        ],
+    }
+    try:
+        async with httpx.AsyncClient(timeout=30) as client:
+            resp = await client.post(tc.endpoint, json=payload, headers=headers)
+            if resp.status_code != 200:
+                try:
+                    err_body = resp.json()
+                except Exception:
+                    err_body = {"raw": resp.text[:500]}
+                return JSONResponse(
+                    content={
+                        "status": "error",
+                        "message": f"Teacher API returned {resp.status_code}",
+                        "api_error": err_body,
+                        "model": tc.model,
+                        "endpoint": tc.endpoint,
+                    },
+                    status_code=200,  # Return 200 so frontend doesn't crash
+                )
+            data = resp.json()
+            content = data["choices"][0]["message"]["content"]
+            return JSONResponse(content={
+                "status": "ok",
+                "response_preview": content.strip()[:500],
+                "model": tc.model,
+            })
+    except httpx.ConnectError as e:
+        return JSONResponse(content={
+            "status": "error",
+            "message": f"Cannot connect to {tc.endpoint}: {e}",
+        }, status_code=200)
+    except httpx.TimeoutException:
+        return JSONResponse(content={
+            "status": "error",
+            "message": f"Timeout connecting to {tc.endpoint}",
+        }, status_code=200)
+    except Exception as e:
+        return JSONResponse(content={
+            "status": "error",
+            "message": f"Unexpected error: {e}",
+        }, status_code=200)
 

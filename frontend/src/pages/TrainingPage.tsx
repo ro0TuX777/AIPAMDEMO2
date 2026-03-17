@@ -7,6 +7,8 @@ import {
     TrainingConfig,
     TrainingStatus,
     PhaseStats,
+    DistillConfig,
+    DistillStats,
 } from "../api";
 import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
 import { CardGridSkeleton } from "../components/SkeletonLoader";
@@ -73,6 +75,13 @@ export const TrainingPage: React.FC = () => {
     const [showAll, setShowAll] = useState(false);
     const [jobStatus, setJobStatus] = useState<{ type: 'idle' | 'loading' | 'success' | 'error'; message: string }>({ type: 'idle', message: '' });
 
+    // ── Frontier distillation state ──
+    const [distillConfig, setDistillConfig] = useState<DistillConfig | null>(null);
+    const [distillStats, setDistillStats] = useState<DistillStats | null>(null);
+    const [distillOpen, setDistillOpen] = useState(false);
+    const [distillForm, setDistillForm] = useState({ endpoint: '', api_key: '', model: '', enabled: false });
+    const [distillTestStatus, setDistillTestStatus] = useState<{ type: 'idle' | 'loading' | 'success' | 'error'; message: string }>({ type: 'idle', message: '' });
+
     // Auto-dismiss job status banner
     useEffect(() => {
         if (jobStatus.type === 'success' || jobStatus.type === 'error') {
@@ -98,12 +107,21 @@ export const TrainingPage: React.FC = () => {
                 api.getTrainingLedger(),
                 api.getTrainingConfig(),
                 api.getTrainingStatus().catch(() => null),
+                api.getDistillConfig().catch(() => null),
+                api.getDistillStats().catch(() => null),
             ])
-                .then(([s, l, c, ts]) => {
+                .then(([s, l, c, ts, dc, ds]) => {
                     setSummary(s);
                     setLedger(l);
                     setConfig(c);
                     if (ts) setTrainerStatus(ts);
+                    if (dc) {
+                        setDistillConfig(dc);
+                        if (!distillForm.endpoint && !distillForm.model) {
+                            setDistillForm({ endpoint: dc.endpoint, api_key: '', model: dc.model, enabled: dc.enabled });
+                        }
+                    }
+                    if (ds) setDistillStats(ds);
                 })
                 .catch((err) => {
                     console.error(err);
@@ -357,6 +375,170 @@ export const TrainingPage: React.FC = () => {
                     )}
                 </div>
             )}
+
+            {/* ── Frontier Knowledge Distillation Card ── */}
+            <div className="border border-indigo-500/20 rounded-xl bg-gradient-to-r from-indigo-500/5 to-violet-500/5">
+                <button
+                    className="w-full px-5 py-4 flex items-center justify-between text-left"
+                    onClick={() => setDistillOpen(!distillOpen)}
+                >
+                    <div className="flex items-center gap-3">
+                        <span className="text-xl">🧠</span>
+                        <div>
+                            <h2 className="text-sm font-semibold text-slate-100">Frontier Knowledge Distillation</h2>
+                            <p className="text-xs text-slate-400 mt-0.5">
+                                {distillConfig?.enabled && distillConfig?.configured
+                                    ? `Active — teaching via ${distillConfig.model}`
+                                    : 'Train your model using a smarter frontier model'}
+                            </p>
+                        </div>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        {distillStats && distillStats.total_samples > 0 && (
+                            <span className="px-2.5 py-1 rounded-full bg-violet-500/10 text-violet-400 text-xs font-medium border border-violet-500/20">
+                                {distillStats.total_samples} distilled samples
+                            </span>
+                        )}
+                        <span className={`text-slate-400 transition-transform ${distillOpen ? 'rotate-180' : ''}`}>▾</span>
+                    </div>
+                </button>
+
+                {distillOpen && (
+                    <div className="px-5 pb-5 space-y-4 border-t border-indigo-500/10 pt-4">
+                        <p className="text-xs text-slate-400">
+                            Configure a frontier model (GPT-4o, Claude, etc.) as a "teacher." When enabled, every PCAP analysis
+                            will also be sent to the teacher — its superior responses become gold-standard training data for your
+                            local model.
+                        </p>
+
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                            <div>
+                                <label className="block text-xs text-slate-500 mb-1">API Endpoint</label>
+                                <input
+                                    type="text"
+                                    className="w-full bg-slate-800/50 border border-slate-700 rounded px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500/50"
+                                    placeholder="https://api.openai.com/v1/chat/completions"
+                                    value={distillForm.endpoint}
+                                    onChange={e => setDistillForm(f => ({ ...f, endpoint: e.target.value }))}
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs text-slate-500 mb-1">Model Name</label>
+                                <input
+                                    type="text"
+                                    className="w-full bg-slate-800/50 border border-slate-700 rounded px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500/50"
+                                    placeholder="gpt-4o"
+                                    value={distillForm.model}
+                                    onChange={e => setDistillForm(f => ({ ...f, model: e.target.value }))}
+                                />
+                            </div>
+                            <div>
+                                <label className="block text-xs text-slate-500 mb-1">
+                                    API Key {distillConfig?.api_key_set && <span className="text-emerald-400 ml-1">✓ set ({distillConfig.api_key_preview})</span>}
+                                </label>
+                                <input
+                                    type="password"
+                                    className="w-full bg-slate-800/50 border border-slate-700 rounded px-3 py-2 text-sm text-slate-200 placeholder-slate-500 focus:outline-none focus:border-indigo-500/50"
+                                    placeholder="sk-..."
+                                    value={distillForm.api_key}
+                                    onChange={e => setDistillForm(f => ({ ...f, api_key: e.target.value }))}
+                                />
+                            </div>
+                            <div className="flex items-end gap-3">
+                                <label className="flex items-center gap-2 cursor-pointer">
+                                    <input
+                                        type="checkbox"
+                                        checked={distillForm.enabled}
+                                        onChange={e => setDistillForm(f => ({ ...f, enabled: e.target.checked }))}
+                                        className="rounded bg-slate-800 border-slate-600 text-indigo-500 focus:ring-indigo-500/30"
+                                    />
+                                    <span className="text-sm text-slate-300">Enable auto-distillation</span>
+                                </label>
+                            </div>
+                        </div>
+
+                        <div className="flex items-center gap-3">
+                            <button
+                                onClick={async () => {
+                                    const payload: Record<string, any> = {};
+                                    if (distillForm.endpoint) payload.endpoint = distillForm.endpoint;
+                                    if (distillForm.api_key) payload.api_key = distillForm.api_key;
+                                    if (distillForm.model) payload.model = distillForm.model;
+                                    payload.enabled = distillForm.enabled;
+                                    try {
+                                        await api.updateDistillConfig(payload);
+                                        setDistillTestStatus({ type: 'success', message: 'Configuration saved' });
+                                        // Refresh config
+                                        const dc = await api.getDistillConfig();
+                                        setDistillConfig(dc);
+                                    } catch (err: any) {
+                                        setDistillTestStatus({ type: 'error', message: err.message || 'Save failed' });
+                                    }
+                                }}
+                                className="px-4 py-2 rounded bg-indigo-600 hover:bg-indigo-500 text-sm font-medium text-white transition-colors"
+                            >
+                                Save Configuration
+                            </button>
+                            <button
+                                onClick={async () => {
+                                    setDistillTestStatus({ type: 'loading', message: 'Testing connection…' });
+                                    try {
+                                        const res = await api.testTeacher();
+                                        setDistillTestStatus({ type: 'success', message: `Connected to ${res.model}` });
+                                    } catch (err: any) {
+                                        setDistillTestStatus({ type: 'error', message: err.message || 'Connection failed' });
+                                    }
+                                }}
+                                disabled={distillTestStatus.type === 'loading'}
+                                className="px-4 py-2 rounded border border-slate-600 hover:border-slate-500 text-sm text-slate-300 transition-colors disabled:opacity-50"
+                            >
+                                {distillTestStatus.type === 'loading' ? 'Testing…' : '🔗 Test Connection'}
+                            </button>
+                            {distillTestStatus.type !== 'idle' && distillTestStatus.type !== 'loading' && (
+                                <span className={`text-xs ${distillTestStatus.type === 'success' ? 'text-emerald-400' : 'text-red-400'}`}>
+                                    {distillTestStatus.type === 'success' ? '✓' : '✗'} {distillTestStatus.message}
+                                </span>
+                            )}
+                        </div>
+
+                        {distillStats && distillStats.total_samples > 0 && (
+                            <div className="space-y-3 mt-2">
+                                <div className="grid grid-cols-4 gap-3">
+                                    <div className="bg-slate-900/50 rounded-lg px-3 py-2">
+                                        <div className="text-lg font-bold text-violet-400">{distillStats.total_samples}</div>
+                                        <div className="text-xs text-slate-500">Validated Samples</div>
+                                    </div>
+                                    <div className="bg-slate-900/50 rounded-lg px-3 py-2">
+                                        <div className="text-lg font-bold text-red-400">{distillStats.rejected_count || 0}</div>
+                                        <div className="text-xs text-slate-500">Rejected</div>
+                                    </div>
+                                    <div className="bg-slate-900/50 rounded-lg px-3 py-2">
+                                        <div className="text-lg font-bold text-slate-200">{distillStats.file_size_mb} MB</div>
+                                        <div className="text-xs text-slate-500">Data Size</div>
+                                    </div>
+                                    <div className="bg-slate-900/50 rounded-lg px-3 py-2">
+                                        <div className="text-lg font-bold text-slate-200 text-sm truncate">{distillStats.teacher_models.join(', ') || '—'}</div>
+                                        <div className="text-xs text-slate-500">Teacher Model</div>
+                                    </div>
+                                </div>
+                                {distillStats.per_task && Object.keys(distillStats.per_task).length > 0 && (
+                                    <div>
+                                        <div className="text-xs text-slate-500 mb-1.5">Per-Task Breakdown</div>
+                                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+                                            {Object.entries(distillStats.per_task).sort(([,a],[,b]) => b - a).map(([task, count]) => (
+                                                <div key={task} className="bg-slate-800/50 rounded px-2.5 py-1.5 flex items-center justify-between">
+                                                    <span className="text-xs text-slate-400 truncate">{task.replace(/_/g, ' ')}</span>
+                                                    <span className="text-xs font-medium text-violet-300 ml-2">{count}</span>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    </div>
+                                )}
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
 
             {/* ── Section 1: Active Model Card ── */}
             {summary.active_model && (

@@ -1,12 +1,14 @@
 #!/usr/bin/env python3
 """
-AIPAM Host Trainer — Native MLX Fine-Tuning Server
+AIPAM Host Trainer — Native Fine-Tuning Server
 
-Runs on the host macOS system (not inside Docker) so that fine-tuning
-can use the Apple Silicon GPU (Metal) through MLX.
+Runs on the host system (not inside Docker) so that fine-tuning
+can use the GPU directly:
+  - macOS: Apple Silicon GPU (Metal) via MLX  → finetune_mlx.py
+  - Linux: NVIDIA GPU (CUDA) via Unsloth/PyTorch → finetune_llama.py
 
 The Docker worker sends a POST /train request with training config;
-this server runs the finetune_mlx.py script and streams output.
+this server runs the appropriate finetune script and streams output.
 
 Usage:
     python finetuning/host_trainer.py
@@ -29,6 +31,17 @@ from pathlib import Path
 PORT = 8002
 FINETUNING_DIR = Path(__file__).resolve().parent
 LEDGER_PATH = FINETUNING_DIR / "dawn_training_ledger.jsonl"
+
+# ── Platform detection ──
+import platform as _platform
+IS_LINUX = _platform.system() == "Linux"
+IS_MACOS = _platform.system() == "Darwin"
+
+# ── Resolve the Python interpreter for training subprocesses ──
+# On Linux, prefer the venv_unsloth virtualenv (which has unsloth + torch + CUDA)
+# over the system python (which may lack unsloth).
+_VENV_PYTHON = FINETUNING_DIR.parent / "venv_unsloth" / "bin" / "python3"
+TRAINING_PYTHON = str(_VENV_PYTHON) if (IS_LINUX and _VENV_PYTHON.exists()) else sys.executable
 
 # Track the currently running job
 _current_job = {
@@ -60,31 +73,56 @@ OLLAMA_TO_HF = {
 }
 
 _DEFAULT_MLX_MODEL = "mlx-community/Meta-Llama-3.1-8B-Instruct-4bit"
+_DEFAULT_CUDA_MODEL = "unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit"
+
+# Map Ollama names → HuggingFace CUDA-compatible models (4-bit via bitsandbytes)
+OLLAMA_TO_HF_CUDA = {
+    "llama3.1:8b":              "unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit",
+    "llama3.1:latest":          "unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit",
+    "llama3.1:8b-instruct":     "unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit",
+    "qwen2.5:7b":               "unsloth/Qwen2.5-7B-Instruct-bnb-4bit",
+    "qwen2.5:latest":           "unsloth/Qwen2.5-7B-Instruct-bnb-4bit",
+    "deepseek-r1:8b":           "unsloth/DeepSeek-R1-Distill-Qwen-7B-bnb-4bit",
+    "deepseek-r1:latest":       "unsloth/DeepSeek-R1-Distill-Qwen-7B-bnb-4bit",
+}
+
+# Map MLX HuggingFace paths → CUDA HuggingFace paths (for when the backend
+# sends an MLX model name but training runs on Linux/CUDA)
+_MLX_TO_CUDA = {
+    "mlx-community/Meta-Llama-3.1-8B-Instruct-4bit":      "unsloth/Meta-Llama-3.1-8B-Instruct-bnb-4bit",
+    "mlx-community/Qwen2.5-7B-Instruct-4bit":             "unsloth/Qwen2.5-7B-Instruct-bnb-4bit",
+    "mlx-community/DeepSeek-R1-Distill-Qwen-7B-4bit":     "unsloth/DeepSeek-R1-Distill-Qwen-7B-bnb-4bit",
+}
 
 
 def resolve_model_name(name: str) -> str:
-    """Convert Ollama model name → HuggingFace MLX model path.
-    
-    If the name already contains '/' it's treated as a HuggingFace path.
-    Otherwise, look it up in the mapping table.
+    """Convert Ollama model name → HuggingFace model path.
+
+    Uses the CUDA mapping table on Linux, MLX on macOS.
+    On Linux, also translates MLX HuggingFace paths to CUDA equivalents.
     """
+    mapping = OLLAMA_TO_HF_CUDA if IS_LINUX else OLLAMA_TO_HF
+    default = _DEFAULT_CUDA_MODEL if IS_LINUX else _DEFAULT_MLX_MODEL
+
     if not name or name == "string":
-        return _DEFAULT_MLX_MODEL
-    # Already a HuggingFace path
+        return default
+    # Already a HuggingFace path — but on Linux, check if it's an MLX model
     if "/" in name:
+        if IS_LINUX and name in _MLX_TO_CUDA:
+            return _MLX_TO_CUDA[name]
         return name
     # Exact match
     key = name.lower().strip()
-    if key in OLLAMA_TO_HF:
-        return OLLAMA_TO_HF[key]
+    if key in mapping:
+        return mapping[key]
     # Try without tag (e.g. 'aipam-pcaplog:latest' → check 'aipam-pcaplog')
     base = key.split(":")[0]
-    for k, v in OLLAMA_TO_HF.items():
+    for k, v in mapping.items():
         if k.startswith(base):
             return v
     # Fallback
-    print(f"[HOST_TRAINER] WARNING: Unknown model '{name}', falling back to {_DEFAULT_MLX_MODEL}")
-    return _DEFAULT_MLX_MODEL
+    print(f"[HOST_TRAINER] WARNING: Unknown model '{name}', falling back to {default}")
+    return default
 
 
 def append_ledger(entry: dict):
@@ -101,12 +139,31 @@ def run_training(config: dict):
     global _current_job
     job_id = config.get("job_id", str(uuid.uuid4()))
 
-    script_path = FINETUNING_DIR / "finetune_mlx.py"
+    # Select the correct training script based on platform
+    if IS_LINUX:
+        script_path = FINETUNING_DIR / "finetune_llama.py"
+    else:
+        script_path = FINETUNING_DIR / "finetune_mlx.py"
+
     if not script_path.exists():
         print(f"[HOST_TRAINER] Script not found: {script_path}")
         with _lock:
             _current_job = {"id": job_id, "status": "failed", "process": None}
         return
+
+    print(f"[HOST_TRAINER] Platform: {'Linux/CUDA' if IS_LINUX else 'macOS/MLX'}, script: {script_path.name}")
+    print(f"[HOST_TRAINER] Python interpreter: {TRAINING_PYTHON}")
+
+    # ── Translate Docker container paths to host paths ──
+    # The backend runs in Docker where /data/finetuning/ is the mount point.
+    # On the host, this corresponds to FINETUNING_DIR.
+    _CONTAINER_PREFIX = "/data/finetuning/"
+    for key in ("train_data", "val_data", "output_dir"):
+        val = config.get(key, "")
+        if val.startswith(_CONTAINER_PREFIX):
+            host_path = str(FINETUNING_DIR / val[len(_CONTAINER_PREFIX):])
+            print(f"[HOST_TRAINER] Path mapped: {val} → {host_path}")
+            config[key] = host_path
 
     # Resolve model name (Ollama → HuggingFace)
     raw_model = config.get("base_model", "")
@@ -116,7 +173,7 @@ def run_training(config: dict):
 
     # Build command
     cmd = [
-        sys.executable, str(script_path),
+        TRAINING_PYTHON, str(script_path),
         "--data", config["train_data"],
         "--output", config["output_dir"],
         "--base-model", hf_model,
@@ -175,28 +232,47 @@ def run_training(config: dict):
                 "it_per_sec": 0.0,
             }
 
-        # Regex patterns for parsing MLX output
-        # MLX-LM outputs lines like: "Iter 10: Train loss 2.345, It/sec 1.23"
+        # Regex patterns for parsing training output
+        # MLX-LM:  "Iter 10: Train loss 2.345, It/sec 1.23"
+        # HF/trl:  "{'loss': 1.234, 'learning_rate': 5e-05, 'epoch': 0.5}" or step-based logs
+        # tqdm:    " 1%|▏ | 14/1000 [02:03<2:21:00, 8.58s/it]"
         iter_re = re.compile(r"Iter\s+(\d+)", re.IGNORECASE)
+        step_re = re.compile(r"['\"]step['\"]:\s*(\d+)")  # HF trainer JSON logs
+        tqdm_re = re.compile(r"(\d+)/(\d+)\s*\[")  # tqdm progress: "14/1000 ["
         loss_re = re.compile(r"(?:train\s+)?loss[:\s]+([\d.]+)", re.IGNORECASE)
+        hf_loss_re = re.compile(r"['\"]loss['\"]:\s*([\d.]+)")  # HF trainer JSON format
         speed_re = re.compile(r"It/sec[:\s]+([\d.]+)", re.IGNORECASE)
+        tqdm_speed_re = re.compile(r"([\d.]+)s/it")  # tqdm: "8.58s/it" → convert to it/s
+
+        log_prefix = "CUDA" if IS_LINUX else "MLX"
 
         # Stream output and parse for progress
         last_loss = 0.0
         for line in process.stdout:
             line = line.strip()
             if line:
-                print(f"[MLX] {line}")
+                print(f"[{log_prefix}] {line}")
 
-                # Parse iteration number
+                # Parse iteration/step number
+                # MLX: "Iter 10", HF JSON: "'step': 10", tqdm: "14/1000 ["
                 iter_match = iter_re.search(line)
+                if not iter_match:
+                    iter_match = step_re.search(line)
                 if iter_match:
                     cur_iter = int(iter_match.group(1))
                     with _lock:
                         _current_job["current_iter"] = cur_iter
+                else:
+                    tqdm_match = tqdm_re.search(line)
+                    if tqdm_match:
+                        cur_iter = int(tqdm_match.group(1))
+                        with _lock:
+                            _current_job["current_iter"] = cur_iter
 
-                # Parse loss value
+                # Parse loss value (MLX: "loss: 1.23", HF: "'loss': 1.23")
                 loss_match = loss_re.search(line)
+                if not loss_match:
+                    loss_match = hf_loss_re.search(line)
                 if loss_match:
                     try:
                         last_loss = float(loss_match.group(1))
@@ -206,6 +282,7 @@ def run_training(config: dict):
                         pass
 
                 # Parse iteration speed
+                # MLX: "It/sec: 1.23", tqdm: "8.58s/it" (invert to it/s)
                 speed_match = speed_re.search(line)
                 if speed_match:
                     try:
@@ -213,6 +290,16 @@ def run_training(config: dict):
                             _current_job["it_per_sec"] = float(speed_match.group(1))
                     except ValueError:
                         pass
+                else:
+                    tqdm_speed_match = tqdm_speed_re.search(line)
+                    if tqdm_speed_match:
+                        try:
+                            s_per_it = float(tqdm_speed_match.group(1))
+                            if s_per_it > 0:
+                                with _lock:
+                                    _current_job["it_per_sec"] = 1.0 / s_per_it
+                        except (ValueError, ZeroDivisionError):
+                            pass
 
         process.wait()
         duration = (datetime.now(timezone.utc) - start_time).total_seconds()
@@ -388,7 +475,7 @@ class TrainerHandler(BaseHTTPRequestHandler):
             }
             self._respond(200, status)
         elif self.path == "/health":
-            self._respond(200, {"status": "ok"})
+            self._respond(200, {"status": "ok", "scripts_dir": str(FINETUNING_DIR)})
         else:
             self._respond(404, {"error": "Not found"})
 
@@ -403,15 +490,20 @@ class TrainerHandler(BaseHTTPRequestHandler):
 
 
 def main():
+    backend = "CUDA (NVIDIA GPU)" if IS_LINUX else "MLX (Apple Silicon)"
+    script = "finetune_llama.py" if IS_LINUX else "finetune_mlx.py"
     print("=" * 60)
-    print("AIPAM Host Trainer — Native MLX Fine-Tuning Server")
+    print(f"AIPAM Host Trainer — {backend}")
     print("=" * 60)
     print(f"Listening on 0.0.0.0:{PORT}")
     print(f"Ledger:  {LEDGER_PATH}")
     print(f"Scripts: {FINETUNING_DIR}")
+    print(f"Backend: {backend}")
+    print(f"Script:  {script}")
+    print(f"Python:  {TRAINING_PYTHON}")
     print()
     print("The Docker worker will send training jobs here for")
-    print("native Apple Silicon execution with Metal GPU.")
+    print(f"native GPU execution via {backend}.")
     print("=" * 60)
 
     server = HTTPServer(("0.0.0.0", PORT), TrainerHandler)

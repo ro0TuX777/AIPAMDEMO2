@@ -2,11 +2,11 @@
 """
 AIPAM Host Trainer Launcher — Auto-start service for the host trainer.
 
-Runs on the host macOS system alongside Docker. The Docker backend calls
-this launcher to start/stop/check the host trainer process on demand.
+Runs on the host system (macOS or Linux) alongside Docker. The Docker
+backend calls this launcher to start/stop/check the host trainer on demand.
 
 This solves the Docker–host boundary problem: Docker containers cannot
-start native macOS processes, but they CAN send HTTP requests to the host.
+start native host processes, but they CAN send HTTP requests to the host.
 
 Port: 8003 (launcher) → manages → port 8002 (host_trainer)
 
@@ -16,12 +16,15 @@ Usage:
 
 import json
 import os
+import platform as _platform
 import signal
 import subprocess
 import sys
 import time
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
+
+IS_LINUX = _platform.system() == "Linux"
 
 PORT = 8003
 HOST_TRAINER_PORT = 8002
@@ -31,6 +34,27 @@ LOG_FILE = Path("/tmp/aipam_host_trainer.log")
 PID_FILE = Path("/tmp/aipam_host_trainer.pid")
 
 _trainer_process = None
+
+
+def _kill_port(port: int):
+    """Kill any process listening on the given port (cross-platform)."""
+    try:
+        if IS_LINUX:
+            subprocess.run(["fuser", "-k", f"{port}/tcp"],
+                           capture_output=True, timeout=3)
+        else:
+            result = subprocess.run(
+                ["lsof", "-ti", f":{port}"],
+                capture_output=True, text=True, timeout=3,
+            )
+            if result.stdout.strip():
+                for pid in result.stdout.strip().split("\n"):
+                    try:
+                        os.kill(int(pid), signal.SIGKILL)
+                    except (OSError, ValueError):
+                        pass
+    except Exception:
+        pass
 
 
 def is_trainer_running() -> bool:
@@ -67,20 +91,8 @@ def start_trainer() -> dict:
         return {"status": "already_running", "message": "Host trainer is already running"}
 
     # Kill any stale process on the port
-    try:
-        result = subprocess.run(
-            ["lsof", "-ti", f":{HOST_TRAINER_PORT}"],
-            capture_output=True, text=True, timeout=3,
-        )
-        if result.stdout.strip():
-            for pid in result.stdout.strip().split("\n"):
-                try:
-                    os.kill(int(pid), signal.SIGKILL)
-                except (OSError, ValueError):
-                    pass
-            time.sleep(0.5)
-    except Exception:
-        pass
+    _kill_port(HOST_TRAINER_PORT)
+    time.sleep(0.5)
 
     # Launch host_trainer.py
     log_fh = open(LOG_FILE, "a")
@@ -133,20 +145,8 @@ def stop_trainer() -> dict:
         PID_FILE.unlink(missing_ok=True)
 
     # Kill anything on the port
-    try:
-        result = subprocess.run(
-            ["lsof", "-ti", f":{HOST_TRAINER_PORT}"],
-            capture_output=True, text=True, timeout=3,
-        )
-        if result.stdout.strip():
-            for pid in result.stdout.strip().split("\n"):
-                try:
-                    os.kill(int(pid), signal.SIGKILL)
-                    killed = True
-                except (OSError, ValueError):
-                    pass
-    except Exception:
-        pass
+    _kill_port(HOST_TRAINER_PORT)
+    killed = True
 
     if killed:
         return {"status": "stopped", "message": "Host trainer stopped"}

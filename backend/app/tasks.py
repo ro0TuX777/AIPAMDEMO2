@@ -14,7 +14,7 @@ from .anomaly_detector import AnomalyDetector
 from .connectors import ArkimeConnector, SecurityOnionConnector
 from .database import engine
 from .db_models import JobDB, JobResultDB, JobStepDB, PipelineCheckpointDB, FindingDB, EvidenceDB
-from .llm_client import LLMClient, LLMConfig, analyze_chunks, classify_traffic_with_trafficllm
+from .llm_client import LLMClient, LLMConfig, SYSTEM_PROMPT, analyze_chunks, classify_traffic_with_trafficllm
 from .models import JobResult, JobStatus, JobStepStatus
 from .settings_runtime import get_effective_settings
 from .reporting import jobresult_to_html, jobresult_to_markdown
@@ -1111,6 +1111,31 @@ def run_pipeline(job_id: str) -> None:
                 # Finding persistence failure should not fail the job
                 logger.warning(f"Finding persistence failed for job {job.id}: {finding_exc}")
 
+            # ── Frontier Knowledge Distillation v2 (background, non-blocking) ──
+            try:
+                from .distillation import reload_teacher_config, distill_v2
+                teacher = reload_teacher_config()  # reload from disk — config set by API in backend process
+                if teacher.enabled and teacher.is_configured():
+                    logger.info(
+                        "[PIPELINE] Frontier distillation v2 enabled — distilling job %s via %s",
+                        job_id, teacher.model,
+                    )
+                    from .database_v2 import get_session_factory
+                    distill_stats = asyncio.run(
+                        distill_v2(
+                            db_session_factory=get_session_factory(),
+                            job_id=job_id,
+                            teacher=teacher,
+                        )
+                    )
+                    logger.info("[PIPELINE] Distillation v2 result: %s", distill_stats)
+            except Exception as distill_exc:
+                # Distillation failure must never fail the analysis job
+                logger.warning(
+                    "[PIPELINE] Frontier distillation failed (continuing): %s",
+                    distill_exc,
+                )
+
             # REPORT
             set_log_context(step="report")
             _update_step(session, job_id, "report", JobStepStatus.RUNNING)
@@ -1331,14 +1356,15 @@ def run_finetuning_pipeline() -> str:
     
     # 3. Construct & Execute
     backend = effective.finetuning_backend.lower()
-    
-    # ── MLX in Docker → Delegate to host-native trainer ──
-    if backend == "mlx" and in_docker:
+
+    # ── GPU training in Docker → Delegate to host-native trainer ──
+    # Both MLX (macOS) and CUDA (Linux) need host GPU access when inside Docker
+    if in_docker and backend in ("mlx", "cuda"):
         import urllib.request
         import urllib.error
-        
+
         host_trainer_url = os.environ.get("HOST_TRAINER_URL", "http://host.docker.internal:8002")
-        logger.info(f"[FINETUNE] MLX in Docker — delegating to host trainer at {host_trainer_url}")
+        logger.info(f"[FINETUNE] {backend.upper()} in Docker — delegating to host trainer at {host_trainer_url}")
         
         # Use ORIGINAL host paths (not rewritten), since host trainer runs natively on macOS
         original_base = effective.dataset_storage_path
