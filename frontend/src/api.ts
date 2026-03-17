@@ -1458,6 +1458,10 @@ export const api = {
   updateDistillConfig(cfg: Partial<DistillConfigUpdate>): Promise<any> { return post<any>("/training/distill/config", cfg); },
   getDistillStats(): Promise<DistillStats> { return get<DistillStats>("/training/distill/stats"); },
   testTeacher(): Promise<any> { return post<any>("/training/distill/test"); },
+
+  // ── Merge & Deploy (LoRA → GGUF → Ollama) ──
+  exportModel(): Promise<any> { return post<any>("/training/export"); },
+  getExportStatus(): Promise<ExportStatus> { return get<ExportStatus>("/training/export/status"); },
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1600,6 +1604,11 @@ export interface TrainingSummary {
   active_model: ActiveModel | null; phase_counts: Record<string, PhaseStats>;
   models: string[]; peak_vram_gb: number | null;
   self_healing: SelfHealingStats | null; total_events: number;
+}
+export interface ExportStatus {
+  job_id: string | null; status: string; message: string;
+  model_name: string | null; version: number | null;
+  gguf_path: string | null; elapsed_seconds: number | null;
 }
 
 

@@ -25,7 +25,7 @@ import threading
 import time
 import uuid
 from datetime import datetime, timezone
-from http.server import HTTPServer, BaseHTTPRequestHandler
+from http.server import HTTPServer, BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
 PORT = 8002
@@ -55,6 +55,18 @@ _current_job = {
     "it_per_sec": 0.0,
 }
 _lock = threading.Lock()
+
+# Track the export job separately
+_export_job = {
+    "id": None,
+    "status": "idle",  # idle | running | completed | failed
+    "message": "",
+    "model_name": None,
+    "version": None,
+    "gguf_path": None,
+    "start_time": None,
+}
+_export_lock = threading.Lock()
 
 # ── Ollama → HuggingFace MLX model mapping ──
 # Maps common Ollama model names to MLX-compatible HuggingFace models.
@@ -358,6 +370,130 @@ def run_training(config: dict):
             }
 
 
+def run_export(config: dict):
+    """Run export_to_ollama.py in a subprocess to merge LoRA → GGUF → Ollama."""
+    global _export_job
+    job_id = config.get("job_id", str(uuid.uuid4()))
+
+    export_script = FINETUNING_DIR / "export_to_ollama.py"
+    if not export_script.exists():
+        print(f"[HOST_TRAINER] Export script not found: {export_script}")
+        with _export_lock:
+            _export_job = {"id": job_id, "status": "failed", "message": "Export script not found",
+                           "model_name": None, "version": None, "gguf_path": None, "start_time": None}
+        return
+
+    adapter_dir = config.get("adapter_dir", "")
+    if not adapter_dir or not Path(adapter_dir).exists():
+        # Try to find the latest training run output
+        models_dir = FINETUNING_DIR / "data" / "models"
+        if models_dir.exists():
+            runs = sorted([d for d in models_dir.iterdir() if d.is_dir() and d.name.startswith("run_")],
+                          key=lambda d: d.name, reverse=True)
+            if runs:
+                adapter_dir = str(runs[0])
+                print(f"[HOST_TRAINER] Auto-detected latest adapter: {adapter_dir}")
+        if not adapter_dir or not Path(adapter_dir).exists():
+            msg = f"No adapter directory found: {adapter_dir}"
+            print(f"[HOST_TRAINER] {msg}")
+            with _export_lock:
+                _export_job = {"id": job_id, "status": "failed", "message": msg,
+                               "model_name": None, "version": None, "gguf_path": None, "start_time": None}
+            return
+
+    base_model = config.get("base_model", _DEFAULT_CUDA_MODEL if IS_LINUX else _DEFAULT_MLX_MODEL)
+    base_model = resolve_model_name(base_model)
+    model_prefix = config.get("model_prefix", "aipam-trafficllm")
+    ollama_url = config.get("ollama_url", "http://localhost:11434")
+    quantization = config.get("quantization", "q4_k_m")
+
+    cmd = [
+        TRAINING_PYTHON, str(export_script),
+        "--adapter-dir", adapter_dir,
+        "--base-model", base_model,
+        "--model-prefix", model_prefix,
+        "--ollama-url", ollama_url,
+        "--quantization", quantization,
+    ]
+    if config.get("version"):
+        cmd.extend(["--version", str(config["version"])])
+
+    print(f"[HOST_TRAINER] Export command: {' '.join(cmd)}")
+
+    with _export_lock:
+        _export_job = {
+            "id": job_id, "status": "running",
+            "message": "Loading model and merging LoRA adapters...",
+            "model_name": None, "version": None, "gguf_path": None,
+            "start_time": time.time(),
+        }
+
+    try:
+        env = os.environ.copy()
+        env["HF_HUB_OFFLINE"] = "1"          # use cached weights, don't re-download
+        env["HF_HUB_DISABLE_XET"] = "1"      # avoid XET storage issues
+        process = subprocess.Popen(
+            cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+            env=env,
+        )
+
+        export_result_re = re.compile(r"\[EXPORT_RESULT\](.+)")
+        step_re = re.compile(r"\[EXPORT\] Step (\d+)/(\d+):")
+
+        for line in process.stdout:
+            line = line.strip()
+            if line:
+                print(f"[EXPORT] {line}")
+                # Update progress message from step markers
+                step_match = step_re.search(line)
+                if step_match:
+                    with _export_lock:
+                        _export_job["message"] = line.split(": ", 1)[-1] if ": " in line else line
+
+                # Parse final result JSON
+                result_match = export_result_re.search(line)
+                if result_match:
+                    try:
+                        result = json.loads(result_match.group(1))
+                        with _export_lock:
+                            _export_job["model_name"] = result.get("model_name")
+                            _export_job["version"] = result.get("version")
+                            _export_job["gguf_path"] = result.get("gguf_path")
+                    except json.JSONDecodeError:
+                        pass
+
+        process.wait()
+
+        if process.returncode == 0:
+            with _export_lock:
+                _export_job["status"] = "completed"
+                _export_job["message"] = f"Successfully deployed {_export_job.get('model_name', 'model')}"
+            append_ledger({
+                "event_type": "distill_gguf_export",
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+                "job_id": job_id,
+                "metrics": {
+                    "model_name": _export_job.get("model_name"),
+                    "version": _export_job.get("version"),
+                    "gguf_path": _export_job.get("gguf_path"),
+                    "adapter_dir": adapter_dir,
+                    "quantization": quantization,
+                },
+            })
+            print(f"[HOST_TRAINER] Export {job_id} completed: {_export_job.get('model_name')}")
+        else:
+            with _export_lock:
+                _export_job["status"] = "failed"
+                _export_job["message"] = f"Export failed (exit code {process.returncode})"
+            print(f"[HOST_TRAINER] Export {job_id} failed (exit code {process.returncode})")
+
+    except Exception as e:
+        print(f"[HOST_TRAINER] Export {job_id} exception: {e}")
+        with _export_lock:
+            _export_job["status"] = "failed"
+            _export_job["message"] = str(e)
+
+
 class TrainerHandler(BaseHTTPRequestHandler):
     """HTTP handler for training requests."""
 
@@ -440,6 +576,27 @@ class TrainerHandler(BaseHTTPRequestHandler):
             else:
                 self._respond(400, {"error": "No active training job to pause/resume"})
 
+        elif self.path == "/export":
+            # Check if export is already running
+            with _export_lock:
+                if _export_job["status"] == "running":
+                    self._respond(409, {"error": "Export already in progress"})
+                    return
+            content_length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(content_length)
+            try:
+                config = json.loads(body) if body else {}
+            except json.JSONDecodeError:
+                config = {}
+            config["job_id"] = str(uuid.uuid4())
+            # Map Docker paths to host paths if needed
+            if config.get("adapter_dir"):
+                config["adapter_dir"] = map_path(config["adapter_dir"])
+            t = threading.Thread(target=run_export, args=(config,), daemon=True)
+            t.start()
+            self._respond(202, {"status": "started", "job_id": config["job_id"],
+                                "message": "Export job started"})
+
         else:
             self._respond(404, {"error": "Not found"})
 
@@ -476,14 +633,32 @@ class TrainerHandler(BaseHTTPRequestHandler):
             self._respond(200, status)
         elif self.path == "/health":
             self._respond(200, {"status": "ok", "scripts_dir": str(FINETUNING_DIR)})
+        elif self.path == "/export/status":
+            with _export_lock:
+                exp = _export_job.copy()
+            elapsed = None
+            if exp.get("start_time") and exp["status"] == "running":
+                elapsed = round(time.time() - exp["start_time"], 1)
+            self._respond(200, {
+                "job_id": exp.get("id"),
+                "status": exp["status"],
+                "message": exp.get("message", ""),
+                "model_name": exp.get("model_name"),
+                "version": exp.get("version"),
+                "gguf_path": exp.get("gguf_path"),
+                "elapsed_seconds": elapsed,
+            })
         else:
             self._respond(404, {"error": "Not found"})
 
     def _respond(self, code: int, body: dict):
-        self.send_response(code)
-        self.send_header("Content-Type", "application/json")
-        self.end_headers()
-        self.wfile.write(json.dumps(body).encode())
+        try:
+            self.send_response(code)
+            self.send_header("Content-Type", "application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(body).encode())
+        except BrokenPipeError:
+            pass  # client disconnected, ignore
 
     def log_message(self, format, *args):
         print(f"[HOST_TRAINER] {args[0]}")
@@ -506,7 +681,7 @@ def main():
     print(f"native GPU execution via {backend}.")
     print("=" * 60)
 
-    server = HTTPServer(("0.0.0.0", PORT), TrainerHandler)
+    server = ThreadingHTTPServer(("0.0.0.0", PORT), TrainerHandler)
     try:
         server.serve_forever()
     except KeyboardInterrupt:

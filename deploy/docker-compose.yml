@@ -35,7 +35,7 @@ services:
       AIPAM_UPLOAD_ROOT: /uploads
       AIPAM_REDIS_URL: redis://redis:6379/0
       AIPAM_OLLAMA_URL: http://ollama:11434
-      LLM_MODEL_NAME: aipam-trafficllm-v8
+      LLM_MODEL_NAME: aipam-trafficllm-v9
       LLM_ENDPOINT: http://ollama:11434/v1/chat/completions
       VECTOR_STORE_PATH: /data/vector_store
     volumes:
@@ -77,7 +77,7 @@ services:
       AIPAM_UPLOAD_ROOT: /uploads
       AIPAM_REDIS_URL: redis://redis:6379/0
       AIPAM_OLLAMA_URL: http://ollama:11434
-      LLM_MODEL_NAME: aipam-trafficllm-v8
+      LLM_MODEL_NAME: aipam-trafficllm-v9
       LLM_ENDPOINT: http://ollama:11434/v1/chat/completions
       AIPAM_SENSOR_CONFIG_DIR: /opt/aipam/sensor-config
       C_FORCE_ROOT: "true"

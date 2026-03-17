@@ -151,3 +151,7 @@ openai_api_key.txt
 # Debug/temp logs
 wlog*.txt
 worker_distill*.txt
+
+# Large build artifacts & external tools
+dist/
+llama.cpp/

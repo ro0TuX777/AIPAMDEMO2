@@ -9,6 +9,7 @@ import {
     PhaseStats,
     DistillConfig,
     DistillStats,
+    ExportStatus,
 } from "../api";
 import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
 import { CardGridSkeleton } from "../components/SkeletonLoader";
@@ -82,6 +83,10 @@ export const TrainingPage: React.FC = () => {
     const [distillForm, setDistillForm] = useState({ endpoint: '', api_key: '', model: '', enabled: false });
     const [distillTestStatus, setDistillTestStatus] = useState<{ type: 'idle' | 'loading' | 'success' | 'error'; message: string }>({ type: 'idle', message: '' });
 
+    // ── Merge & Deploy state ──
+    const [exportStatus, setExportStatus] = useState<ExportStatus | null>(null);
+    const [exportTriggering, setExportTriggering] = useState(false);
+
     // Auto-dismiss job status banner
     useEffect(() => {
         if (jobStatus.type === 'success' || jobStatus.type === 'error') {
@@ -99,6 +104,32 @@ export const TrainingPage: React.FC = () => {
             setJobStatus({ type: 'error', message: err.message || 'Failed to start job' });
         }
     };
+
+    const handleExport = async () => {
+        if (!confirm('Merge LoRA adapters and deploy as a new Ollama model? This may take 5-15 minutes.')) return;
+        setExportTriggering(true);
+        try {
+            await api.exportModel();
+            // Start polling export status
+        } catch (err: any) {
+            alert(`Export failed: ${err.message || 'Unknown error'}`);
+        } finally {
+            setExportTriggering(false);
+        }
+    };
+
+    // Poll export status when export is running
+    useEffect(() => {
+        const poll = async () => {
+            try {
+                const s = await api.getExportStatus();
+                setExportStatus(s);
+            } catch { /* ignore */ }
+        };
+        poll(); // initial fetch
+        const interval = setInterval(poll, 3000);
+        return () => clearInterval(interval);
+    }, []);
 
     useEffect(() => {
         const fetchData = () => {
@@ -328,6 +359,59 @@ export const TrainingPage: React.FC = () => {
                                 <span>Elapsed <span className="text-slate-200 font-mono">{formatDuration(trainerStatus.elapsed_seconds)}</span></span>
                                 {trainerStatus.eta_seconds != null && !isPaused && (
                                     <span>ETA <span className="text-blue-300 font-mono">{formatDuration(trainerStatus.eta_seconds)}</span></span>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                );
+            })()}
+
+            {/* ── Merge & Deploy Panel ── */}
+            {(() => {
+                const trainingActive = trainerStatus?.status === 'running' || trainerStatus?.status === 'paused';
+                const exportRunning = exportStatus?.status === 'running';
+                const exportDone = exportStatus?.status === 'completed';
+                const exportFailed = exportStatus?.status === 'failed';
+                const showPanel = !trainingActive || exportRunning || exportDone || exportFailed;
+                if (!showPanel) return null;
+                return (
+                    <div className={`px-4 py-3 rounded-lg border ${exportDone ? 'border-emerald-500/30 bg-emerald-500/5' : exportFailed ? 'border-red-500/30 bg-red-500/5' : exportRunning ? 'border-purple-500/30 bg-purple-500/5' : 'border-slate-700/50 bg-slate-900/40'}`}>
+                        <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                                <span className="text-lg">{exportDone ? '✅' : exportRunning ? '⏳' : exportFailed ? '❌' : '🚀'}</span>
+                                <div>
+                                    <h4 className="text-sm font-medium text-slate-200">
+                                        {exportDone ? `Deployed: ${exportStatus?.model_name}` :
+                                         exportRunning ? 'Merging & Deploying…' :
+                                         exportFailed ? 'Export Failed' :
+                                         'Merge & Deploy to Ollama'}
+                                    </h4>
+                                    <p className="text-xs text-slate-400 mt-0.5">
+                                        {exportDone ? `GGUF model registered with Ollama as ${exportStatus?.model_name}` :
+                                         exportRunning ? (exportStatus?.message || 'Processing…') :
+                                         exportFailed ? (exportStatus?.message || 'Unknown error') :
+                                         'Merge LoRA adapters into base model, quantize to GGUF, and register with Ollama'}
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-3">
+                                {exportRunning && exportStatus?.elapsed_seconds != null && (
+                                    <span className="text-xs text-purple-300 font-mono">{formatDuration(exportStatus.elapsed_seconds)}</span>
+                                )}
+                                {!exportRunning && !exportDone && (
+                                    <button
+                                        onClick={handleExport}
+                                        disabled={exportTriggering || trainerStatus?.status === 'running'}
+                                        className="rounded bg-purple-600 px-4 py-1.5 text-xs font-medium hover:bg-purple-500 flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                    >
+                                        {exportTriggering ? '⏳ Starting…' : '🚀 Merge & Deploy'}
+                                    </button>
+                                )}
+                                {exportRunning && (
+                                    <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-500/10 text-purple-400 text-xs font-medium border border-purple-500/20">
+                                        <span className="inline-block w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" />
+                                        Exporting…
+                                    </span>
                                 )}
                             </div>
                         </div>

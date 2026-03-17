@@ -508,6 +508,52 @@ async def pause_training():
         )
 
 
+@router.post("/export")
+async def export_model():
+    """Trigger LoRA merge + GGUF export + Ollama registration on the host trainer."""
+    import urllib.request
+    import urllib.error
+
+    host_trainer_url = os.environ.get(
+        "HOST_TRAINER_URL", "http://host.docker.internal:8002"
+    )
+    try:
+        req = urllib.request.Request(
+            f"{host_trainer_url}/export", method="POST",
+            data=b"{}", headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            result = json.loads(resp.read())
+            return JSONResponse(content=result, status_code=202)
+    except urllib.error.HTTPError as e:
+        body = json.loads(e.read()) if e.fp else {"error": str(e)}
+        return JSONResponse(content=body, status_code=e.code)
+    except Exception as e:
+        return JSONResponse(
+            content={"error": f"Cannot reach host trainer: {e}"},
+            status_code=503,
+        )
+
+
+@router.get("/export/status")
+async def get_export_status():
+    """Return live export job status from the host trainer."""
+    host_trainer_url = os.environ.get(
+        "HOST_TRAINER_URL", "http://host.docker.internal:8002"
+    )
+    try:
+        req = urllib.request.Request(
+            f"{host_trainer_url}/export/status", method="GET",
+        )
+        with urllib.request.urlopen(req, timeout=3) as resp:
+            return JSONResponse(content=json.loads(resp.read()))
+    except Exception:
+        return JSONResponse(content={
+            "status": "offline",
+            "message": "Cannot reach host trainer",
+        })
+
+
 @router.get("/status")
 async def get_training_status():
     """Return live training job status from the host trainer."""

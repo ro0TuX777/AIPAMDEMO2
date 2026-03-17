@@ -175,7 +175,8 @@ export const RulesManagementPage: React.FC = () => {
   const currentPage = Math.floor(offset / PAGE_SIZE) + 1;
 
   return (
-    <div className="flex flex-col h-[calc(100vh-100px)] space-y-4">
+    <div className="flex gap-4 items-start">
+    <div className="flex flex-col h-[calc(100vh-100px)] space-y-4 flex-1 min-w-0">
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className={`text-2xl font-bold ${labelHint("rules_management", activeHelpField)}`} onClick={() => toggleHelp("rules_management")}>Suricata Rule Management</h1>
@@ -406,6 +407,7 @@ export const RulesManagementPage: React.FC = () => {
           )}
         </div>
       )}
+    </div>
       <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
     </div>
   );
