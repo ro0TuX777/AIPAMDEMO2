@@ -4,9 +4,9 @@ import { useQuery } from "@tanstack/react-query";
 import { api, type TimelineItem } from "../api";
 import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
 
-const TYPE_ICONS: Record<string, string> = {
-  connection: "🔗", alert: "🚨", dns: "🌐", tls: "🔒",
-  finding: "🔍", ioc: "⚠️", file: "📄", unknown: "•",
+const TYPE_LABELS: Record<string, string> = {
+  connection: "CONN", alert: "ALR", dns: "DNS", tls: "TLS",
+  finding: "FND", ioc: "IOC", file: "FILE", unknown: "•",
 };
 
 const SEV_COLORS: Record<string, string> = {
@@ -51,7 +51,7 @@ export const TimelinePage: React.FC = () => {
           {events.map((evt: TimelineItem, idx: number) => (
             <div key={idx}
               className={`flex items-start gap-3 px-3 py-2 border-l-2 ${SEV_COLORS[evt.severity ?? "info"] ?? SEV_COLORS.info} hover:bg-slate-800/30`}>
-              <span className="text-sm shrink-0">{TYPE_ICONS[evt.type] ?? TYPE_ICONS.unknown}</span>
+              <span className="text-[10px] font-mono font-bold text-slate-500 shrink-0">{TYPE_LABELS[evt.type] ?? TYPE_LABELS.unknown}</span>
               <div className="flex-1 min-w-0">
                 <div className="flex items-baseline gap-2">
                   <span className="text-xs text-slate-500 font-mono shrink-0">

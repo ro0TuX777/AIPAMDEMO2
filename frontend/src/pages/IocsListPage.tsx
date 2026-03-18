@@ -4,10 +4,10 @@ import { useQuery } from "@tanstack/react-query";
 import { api, type IocItem, type IocType } from "../api";
 import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
 
-const TYPE_ICONS: Record<string, string> = {
-  ip: "🌐", domain: "🔗", url: "🔗", hash: "#️⃣",
-  ja3: "🔒", ja3s: "🔒", sni: "🔒", email: "📧",
-  mutex: "🧵", registry: "🗂️",
+const TYPE_LABELS: Record<string, string> = {
+  ip: "IP", domain: "DOM", url: "URL", hash: "HSH",
+  ja3: "JA3", ja3s: "J3S", sni: "SNI", email: "EML",
+  mutex: "MTX", registry: "REG",
 };
 
 const SEV_COLORS: Record<string, string> = {
@@ -83,7 +83,7 @@ export const IocsListPage: React.FC = () => {
               {iocs.map((ioc: IocItem) => (
                 <tr key={ioc.ioc_id} className="border-b border-slate-800/50 hover:bg-slate-800/30">
                   <td className="px-3 py-2">
-                    <span className="text-xs">{TYPE_ICONS[ioc.type] ?? "•"} {ioc.type.toUpperCase()}</span>
+                    <span className="text-xs">{TYPE_LABELS[ioc.type] ?? "•"} {ioc.type.toUpperCase()}</span>
                   </td>
                   <td className="px-3 py-2 font-mono text-slate-300">{ioc.value}</td>
                   <td className="px-3 py-2">
@@ -106,7 +106,7 @@ export const IocsListPage: React.FC = () => {
                       className="text-emerald-400/60 hover:text-emerald-400 transition-colors text-sm"
                       title={`Ask AI about ${ioc.value}`}
                     >
-                      🤖
+                      Ask AI
                     </button>
                   </td>
                 </tr>

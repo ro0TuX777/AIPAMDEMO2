@@ -14,12 +14,12 @@ const SEVERITY_COLORS: Record<string, string> = {
   info: "bg-slate-800 text-slate-500 border-slate-700",
 };
 
-const CATEGORY_ICONS: Record<string, string> = {
-  traffic: "📊",
-  behavioral: "🧠",
-  protocol: "🔌",
-  alert: "🚨",
-  dns: "🌐",
+const CATEGORY_LABELS: Record<string, string> = {
+  traffic: "TRF",
+  behavioral: "BHV",
+  protocol: "PRT",
+  alert: "ALR",
+  dns: "DNS",
 };
 
 function DeviationBadge({ factor }: { factor: number | null }) {
@@ -29,13 +29,13 @@ function DeviationBadge({ factor }: { factor: number | null }) {
 }
 
 function AnnotationCard({ ann, jobId }: { ann: ContextAnnotationItem; jobId: string }) {
-  const icon = CATEGORY_ICONS[ann.metric_category] || "📊";
+  const tag = CATEGORY_LABELS[ann.metric_category] || "TRF";
   const sevClass = SEVERITY_COLORS[ann.severity] || SEVERITY_COLORS.info;
 
   return (
     <div className="bg-slate-900 border border-slate-700 rounded-lg p-4 hover:border-slate-500 transition-colors">
       <div className="flex items-start gap-3">
-        <span className="text-2xl">{icon}</span>
+        <span className="text-xs font-mono font-bold text-slate-400 bg-slate-800 rounded px-1.5 py-0.5">{tag}</span>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
             <h3 className="text-sm font-semibold text-slate-100">{ann.title}</h3>
@@ -64,8 +64,8 @@ function AnnotationCard({ ann, jobId }: { ann: ContextAnnotationItem; jobId: str
 
           {(ann.related_alert_ids.length > 0 || ann.related_finding_ids.length > 0) && (
             <div className="flex gap-3 mt-1 text-[10px] text-slate-500">
-              {ann.related_alert_ids.length > 0 && <span>🚨 {ann.related_alert_ids.length} alert(s)</span>}
-              {ann.related_finding_ids.length > 0 && <span>🔎 {ann.related_finding_ids.length} finding(s)</span>}
+              {ann.related_alert_ids.length > 0 && <span>{ann.related_alert_ids.length} alert(s)</span>}
+              {ann.related_finding_ids.length > 0 && <span>{ann.related_finding_ids.length} finding(s)</span>}
             </div>
           )}
         </div>

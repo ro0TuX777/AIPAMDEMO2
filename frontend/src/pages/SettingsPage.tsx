@@ -475,12 +475,12 @@ export const SettingsPage: React.FC = () => {
                         try {
                           const res = await api.validateStoragePath(values.dataset_storage_path);
                           if (res.valid) {
-                            alert("✅ Path is valid and writable!");
+                            alert("Path is valid and writable!");
                           } else {
-                            alert(`❌ Invalid Path: ${res.message}`);
+                            alert(`Invalid Path: ${res.message}`);
                           }
                         } catch (err: any) {
-                          alert(`❌ Error validating path: ${err.message}`);
+                          alert(`Error validating path: ${err.message}`);
                         }
                       }}
                       className="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-0.5 rounded border border-slate-600"

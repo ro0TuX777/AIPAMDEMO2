@@ -26,11 +26,11 @@ export const useToast = () => useContext(ToastContext);
 // ─── Severity styling ───────────────────────────────────────────────────────
 
 const SEV_STYLES: Record<ToastSeverity, { border: string; icon: string; bg: string; text: string }> = {
-  critical: { border: "border-red-500/60", icon: "🔴", bg: "bg-red-950/90", text: "text-red-200" },
-  high:     { border: "border-orange-500/60", icon: "🟠", bg: "bg-orange-950/90", text: "text-orange-200" },
-  medium:   { border: "border-amber-500/50", icon: "🟡", bg: "bg-amber-950/80", text: "text-amber-200" },
-  low:      { border: "border-slate-500/40", icon: "🔵", bg: "bg-slate-900/80", text: "text-slate-300" },
-  info:     { border: "border-slate-700/40", icon: "ℹ️", bg: "bg-slate-900/80", text: "text-slate-300" },
+  critical: { border: "border-red-500/60", icon: "●", bg: "bg-red-950/90", text: "text-red-200" },
+  high:     { border: "border-orange-500/60", icon: "●", bg: "bg-orange-950/90", text: "text-orange-200" },
+  medium:   { border: "border-amber-500/50", icon: "●", bg: "bg-amber-950/80", text: "text-amber-200" },
+  low:      { border: "border-slate-500/40", icon: "●", bg: "bg-slate-900/80", text: "text-slate-300" },
+  info:     { border: "border-slate-700/40", icon: "●", bg: "bg-slate-900/80", text: "text-slate-300" },
 };
 
 // ─── Provider ───────────────────────────────────────────────────────────────

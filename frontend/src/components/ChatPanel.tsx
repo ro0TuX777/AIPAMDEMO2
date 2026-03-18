@@ -292,11 +292,11 @@ export function ChatPanel({ jobId, initialMessage, contextHint, onClose }: ChatP
         for (const msg of messages) {
             const timestamp = msg.timestamp.toLocaleString();
             if (msg.role === "user") {
-                lines.push(`## 🧑 User (${timestamp})`);
+                lines.push(`## User (${timestamp})`);
                 lines.push(``);
                 lines.push(msg.content);
             } else {
-                lines.push(`## 🤖 Assistant (${timestamp})`);
+                lines.push(`## Assistant (${timestamp})`);
                 lines.push(``);
                 lines.push(msg.content);
                 if (msg.citations && msg.citations.length > 0) {
@@ -383,7 +383,7 @@ export function ChatPanel({ jobId, initialMessage, contextHint, onClose }: ChatP
                                         className="text-gray-500 hover:text-red-400 transition-colors"
                                         title="Delete conversation"
                                     >
-                                        🗑
+                                        Del
                                     </button>
                                 </>
                             )}
@@ -398,14 +398,14 @@ export function ChatPanel({ jobId, initialMessage, contextHint, onClose }: ChatP
                                 className="text-gray-400 hover:text-white transition-colors text-sm px-2 py-1 rounded hover:bg-gray-700"
                                 title="Start new conversation"
                             >
-                                ➕ New
+                                + New
                             </button>
                             <button
                                 onClick={exportToMarkdown}
                                 className="text-gray-400 hover:text-white transition-colors text-sm px-2 py-1 rounded hover:bg-gray-700"
                                 title="Export chat to Markdown"
                             >
-                                📥 Export
+                                Export
                             </button>
                         </>
                     )}
@@ -431,12 +431,12 @@ export function ChatPanel({ jobId, initialMessage, contextHint, onClose }: ChatP
                         <p className="text-base mb-4">Ask questions about this PCAP analysis</p>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-w-xl mx-auto text-left">
                             {[
-                                { icon: "🔍", text: "Summarize the key findings and their severity" },
-                                { icon: "🚨", text: "What are the highest-severity alerts and which hosts triggered them?" },
-                                { icon: "🔗", text: "Check for signs of lateral movement between internal hosts" },
-                                { icon: "📡", text: "Identify any command-and-control (C2) communication patterns" },
-                                { icon: "📤", text: "Is there evidence of data exfiltration?" },
-                                { icon: "🖥️", text: "Which hosts have the most suspicious activity?" },
+                                { icon: "•", text: "Summarize the key findings and their severity" },
+                                { icon: "•", text: "What are the highest-severity alerts and which hosts triggered them?" },
+                                { icon: "•", text: "Check for signs of lateral movement between internal hosts" },
+                                { icon: "•", text: "Identify any command-and-control (C2) communication patterns" },
+                                { icon: "•", text: "Is there evidence of data exfiltration?" },
+                                { icon: "•", text: "Which hosts have the most suspicious activity?" },
                             ].map((q) => (
                                 <button
                                     key={q.text}

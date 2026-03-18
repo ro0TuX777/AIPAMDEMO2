@@ -189,7 +189,7 @@ export const pageHelpData: Record<string, PageHelpEntry> = {
     chat: {
         title: "AI Chat",
         description:
-            "The AI Chat provides an interactive conversational interface for investigating analysis results. Ask questions about findings, alerts, hosts, or attack patterns, and the forensic LLM will answer using a 3-source RAG (Retrieval-Augmented Generation) approach — combining the job's evidence data, the knowledge base, and the model's training. Use the 🤖 Ask AI buttons throughout the app to pre-fill questions with context.",
+            "The AI Chat provides an interactive conversational interface for investigating analysis results. Ask questions about findings, alerts, hosts, or attack patterns, and the forensic LLM will answer using a 3-source RAG (Retrieval-Augmented Generation) approach — combining the job's evidence data, the knowledge base, and the model's training. Use the Ask AI buttons throughout the app to pre-fill questions with context.",
         section: "AI & Training",
     },
 

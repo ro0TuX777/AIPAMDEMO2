@@ -517,11 +517,11 @@ export const AttackGraphPage: React.FC = () => {
                                     <div className="flex gap-1">
                                         <button onClick={() => pinSelectedNode("supports")}
                                             className="flex-1 text-[10px] px-2 py-1 rounded bg-emerald-900/50 text-emerald-300 hover:bg-emerald-800/60">
-                                            ✅ Supports
+                                            + Supports
                                         </button>
                                         <button onClick={() => pinSelectedNode("contradicts")}
                                             className="flex-1 text-[10px] px-2 py-1 rounded bg-red-900/50 text-red-300 hover:bg-red-800/60">
-                                            ❌ Contradicts
+                                            − Contradicts
                                         </button>
                                         <button onClick={() => pinSelectedNode("context")}
                                             className="flex-1 text-[10px] px-2 py-1 rounded bg-blue-900/50 text-blue-300 hover:bg-blue-800/60">
@@ -549,7 +549,7 @@ export const AttackGraphPage: React.FC = () => {
                 {proofPanelOpen && mode === "evidence" && (
                     <div className="w-72 bg-slate-900 border border-slate-800 rounded-lg p-4 overflow-y-auto">
                         <div className="flex items-center justify-between mb-3">
-                            <h3 className="text-sm font-semibold text-white">🔒 Proof Builder</h3>
+                            <h3 className="text-sm font-semibold text-white">Proof Builder</h3>
                             <button onClick={() => setProofPanelOpen(false)}
                                 className="text-slate-500 hover:text-white text-xs">✕</button>
                         </div>
@@ -609,7 +609,7 @@ export const AttackGraphPage: React.FC = () => {
                                     <button onClick={() => { setEditMeta(true); setMetaSeverity(activeProof.severity); setMetaConfidence(activeProof.confidence); setMetaStatus(activeProof.status); }}
                                         className="text-slate-500 hover:text-white" title="Edit metadata">⚙</button>
                                     <button onClick={() => { if (confirm("Delete this proof?")) deleteProofMut.mutate(activeProofId); }}
-                                        className="text-slate-500 hover:text-red-400" title="Delete proof">🗑</button>
+                                        className="text-slate-500 hover:text-red-400" title="Delete proof">Del</button>
                                 </div>
 
                                 {/* Metadata editor */}
@@ -682,12 +682,12 @@ export const AttackGraphPage: React.FC = () => {
                                         {proofItemsQuery.data?.items.map(it => (
                                             <div key={it.item_id}
                                                 className="flex items-start gap-1 text-[10px] px-2 py-1 rounded bg-slate-800 border border-slate-700">
-                                                <span>{it.role === "supports" ? "✅" : it.role === "contradicts" ? "❌" : "ℹ️"}</span>
+                                                <span>{it.role === "supports" ? "+" : it.role === "contradicts" ? "−" : "i"}</span>
                                                 <div className="flex-1 min-w-0">
                                                     <span className="text-slate-400">{it.entity_type.toUpperCase()}</span>{" "}
                                                     <span className="text-slate-200 truncate block">{it.label || it.entity_id}</span>
                                                     {it.analyst_note && (
-                                                        <span className="text-slate-500 italic block truncate">💬 {it.analyst_note}</span>
+                                                        <span className="text-slate-500 italic block truncate">{it.analyst_note}</span>
                                                     )}
                                                 </div>
                                                 <button onClick={() => removeItemMut.mutate(it.item_id)}
@@ -708,7 +708,7 @@ export const AttackGraphPage: React.FC = () => {
                                     disabled={narrativeMut.isPending || (proofItemsQuery.data?.items.length ?? 0) === 0}
                                     className="w-full text-xs px-3 py-2 rounded border border-cyan-700 bg-cyan-900/30 text-cyan-300 hover:bg-cyan-800/40 disabled:opacity-40 disabled:cursor-not-allowed"
                                 >
-                                    {narrativeMut.isPending ? "Rendering…" : "📝 Render Narrative"}
+                                    {narrativeMut.isPending ? "Rendering…" : "Render Narrative"}
                                 </button>
                             </div>
                         )}
@@ -726,7 +726,7 @@ export const AttackGraphPage: React.FC = () => {
                             : "border-slate-700 bg-slate-800 text-slate-400 hover:text-white hover:border-slate-600"
                             }`}
                     >
-                        🔒 {proofPanelOpen ? "Hide" : "Show"} Proof Builder
+                        {proofPanelOpen ? "Hide" : "Show"} Proof Builder
                     </button>
                 </div>
             )}
@@ -736,7 +736,7 @@ export const AttackGraphPage: React.FC = () => {
                 <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60" onClick={() => setNarrativeModal(false)}>
                     <div className="bg-slate-900 border border-slate-700 rounded-lg w-[700px] max-h-[80vh] flex flex-col" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700">
-                            <h3 className="text-sm font-semibold text-white">📝 Proof Narrative</h3>
+                            <h3 className="text-sm font-semibold text-white">Proof Narrative</h3>
                             <div className="flex items-center gap-2">
                                 <button
                                     onClick={() => {
@@ -745,7 +745,7 @@ export const AttackGraphPage: React.FC = () => {
                                         }
                                     }}
                                     className="text-xs px-2 py-1 rounded bg-slate-800 text-slate-300 hover:bg-slate-700"
-                                >📋 Copy</button>
+                                >Copy</button>
                                 <button onClick={() => setNarrativeModal(false)}
                                     className="text-slate-500 hover:text-white text-xs">✕</button>
                             </div>

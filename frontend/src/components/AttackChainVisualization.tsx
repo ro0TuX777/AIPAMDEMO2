@@ -18,18 +18,18 @@ interface AttackChainVisualizationProps {
 
 // Stage colors and icons for visualization
 const stageConfig: Record<string, { color: string; bgColor: string; borderColor: string; icon: string }> = {
-  initial_access: { color: "text-red-400", bgColor: "bg-red-500/10", borderColor: "border-red-500/30", icon: "🎯" },
-  execution: { color: "text-orange-400", bgColor: "bg-orange-500/10", borderColor: "border-orange-500/30", icon: "⚡" },
-  persistence: { color: "text-yellow-400", bgColor: "bg-yellow-500/10", borderColor: "border-yellow-500/30", icon: "🔗" },
-  privilege_escalation: { color: "text-amber-400", bgColor: "bg-amber-500/10", borderColor: "border-amber-500/30", icon: "⬆️" },
-  defense_evasion: { color: "text-lime-400", bgColor: "bg-lime-500/10", borderColor: "border-lime-500/30", icon: "🛡️" },
-  credential_access: { color: "text-green-400", bgColor: "bg-green-500/10", borderColor: "border-green-500/30", icon: "🔑" },
-  discovery: { color: "text-teal-400", bgColor: "bg-teal-500/10", borderColor: "border-teal-500/30", icon: "🔍" },
-  lateral_movement: { color: "text-cyan-400", bgColor: "bg-cyan-500/10", borderColor: "border-cyan-500/30", icon: "↔️" },
-  collection: { color: "text-blue-400", bgColor: "bg-blue-500/10", borderColor: "border-blue-500/30", icon: "📦" },
-  command_and_control: { color: "text-indigo-400", bgColor: "bg-indigo-500/10", borderColor: "border-indigo-500/30", icon: "📡" },
-  exfiltration: { color: "text-purple-400", bgColor: "bg-purple-500/10", borderColor: "border-purple-500/30", icon: "📤" },
-  impact: { color: "text-pink-400", bgColor: "bg-pink-500/10", borderColor: "border-pink-500/30", icon: "💥" },
+  initial_access: { color: "text-red-400", bgColor: "bg-red-500/10", borderColor: "border-red-500/30", icon: "IA" },
+  execution: { color: "text-orange-400", bgColor: "bg-orange-500/10", borderColor: "border-orange-500/30", icon: "EX" },
+  persistence: { color: "text-yellow-400", bgColor: "bg-yellow-500/10", borderColor: "border-yellow-500/30", icon: "PE" },
+  privilege_escalation: { color: "text-amber-400", bgColor: "bg-amber-500/10", borderColor: "border-amber-500/30", icon: "PR" },
+  defense_evasion: { color: "text-lime-400", bgColor: "bg-lime-500/10", borderColor: "border-lime-500/30", icon: "DE" },
+  credential_access: { color: "text-green-400", bgColor: "bg-green-500/10", borderColor: "border-green-500/30", icon: "CA" },
+  discovery: { color: "text-teal-400", bgColor: "bg-teal-500/10", borderColor: "border-teal-500/30", icon: "DI" },
+  lateral_movement: { color: "text-cyan-400", bgColor: "bg-cyan-500/10", borderColor: "border-cyan-500/30", icon: "LM" },
+  collection: { color: "text-blue-400", bgColor: "bg-blue-500/10", borderColor: "border-blue-500/30", icon: "CO" },
+  command_and_control: { color: "text-indigo-400", bgColor: "bg-indigo-500/10", borderColor: "border-indigo-500/30", icon: "C2" },
+  exfiltration: { color: "text-purple-400", bgColor: "bg-purple-500/10", borderColor: "border-purple-500/30", icon: "EF" },
+  impact: { color: "text-pink-400", bgColor: "bg-pink-500/10", borderColor: "border-pink-500/30", icon: "IM" },
 };
 
 const getStageConfig = (stage: string) => {

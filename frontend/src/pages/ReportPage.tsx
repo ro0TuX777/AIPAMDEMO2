@@ -296,7 +296,7 @@ export const ReportPage: React.FC = () => {
             onClick={handleExportPdf}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
           >
-            📄 Export PDF
+            Export PDF
           </button>
         </div>
 
@@ -354,7 +354,7 @@ export const ReportPage: React.FC = () => {
                       : "border-slate-700 bg-slate-800 text-slate-400 hover:text-white"
                   }`}
                 >
-                  {r.mode === "executive" ? "📋" : "🔬"} {r.mode} — {r.threat_level.toUpperCase()} ({new Date(r.created_at).toLocaleString()})
+                  {r.mode} — {r.threat_level.toUpperCase()} ({new Date(r.created_at).toLocaleString()})
                 </button>
               ))}
             </div>
@@ -363,7 +363,7 @@ export const ReportPage: React.FC = () => {
 
         {/* ── Generated Report View ── */}
         {viewMode === "generated" && activeReport && (
-          <Section title={activeReport.title} icon={activeReport.mode === "executive" ? "📋" : "🔬"}>
+          <Section title={activeReport.title}>
             <div className="space-y-3">
               <div className="flex gap-3 text-xs text-slate-400">
                 <span>Threat: <span className={`font-bold ${
@@ -445,7 +445,7 @@ export const ReportPage: React.FC = () => {
             {/* ═══════════════════════════════════════════════════════════════ */}
             {/*  1. EXECUTIVE SUMMARY                                         */}
             {/* ═══════════════════════════════════════════════════════════════ */}
-            <Section title="Executive Summary" icon="📋">
+            <Section title="Executive Summary">
               <div className="space-y-4">
                 {/* Threat level banner */}
                 <div className={`flex items-center gap-3 p-3 rounded-lg border ${
@@ -455,10 +455,10 @@ export const ReportPage: React.FC = () => {
                   threatLevel === "Low" ? "bg-blue-400/10 border-blue-400/30" :
                   "bg-green-400/10 border-green-400/30"
                 }`}>
-                  <span className="text-2xl">
-                    {threatLevel === "Critical" || threatLevel === "High" ? "🔴" :
-                     threatLevel === "Medium" ? "🟡" : threatLevel === "Low" ? "🔵" : "🟢"}
-                  </span>
+                  <span className={`inline-block w-3 h-3 rounded-full ${
+                    threatLevel === "Critical" || threatLevel === "High" ? "bg-red-500" :
+                    threatLevel === "Medium" ? "bg-amber-500" : threatLevel === "Low" ? "bg-blue-500" : "bg-green-500"
+                  }`} />
                   <div>
                     <p className="text-xs text-slate-400 uppercase tracking-wider print:text-gray-500">Overall Threat Level</p>
                     <p className={`text-xl font-bold ${threatColor} print:text-gray-900`}>{threatLevel}</p>
@@ -498,13 +498,12 @@ export const ReportPage: React.FC = () => {
             {/* ═══════════════════════════════════════════════════════════════ */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {[
-                { label: "Alerts", value: summary.alert_count ?? 0, color: "text-red-400", icon: "🚨" },
-                { label: "Findings", value: summary.finding_count ?? 0, color: "text-amber-400", icon: "🔍" },
-                { label: "IOCs", value: summary.ioc_count ?? 0, color: "text-orange-400", icon: "🎯" },
-                { label: "Hosts", value: summary.host_count ?? 0, color: "text-blue-400", icon: "🖥️" },
-              ].map(({ label, value, color, icon }) => (
+                { label: "Alerts", value: summary.alert_count ?? 0, color: "text-red-400" },
+                { label: "Findings", value: summary.finding_count ?? 0, color: "text-amber-400" },
+                { label: "IOCs", value: summary.ioc_count ?? 0, color: "text-orange-400" },
+                { label: "Hosts", value: summary.host_count ?? 0, color: "text-blue-400" },
+              ].map(({ label, value, color }) => (
                 <div key={label} className="stat-card-print bg-slate-900/60 border border-slate-800 rounded-lg p-4 text-center print:bg-gray-50 print:border-gray-300">
-                  <span className="text-lg no-print">{icon}</span>
                   <p className={`text-3xl font-bold ${color} print:text-gray-900`}>{value.toLocaleString()}</p>
                   <p className="text-xs text-slate-500 mt-1 uppercase tracking-wider print:text-gray-500">{label}</p>
                 </div>
@@ -515,7 +514,7 @@ export const ReportPage: React.FC = () => {
             {/*  3. ALERT ANALYSIS                                            */}
             {/* ═══════════════════════════════════════════════════════════════ */}
             {alerts.length > 0 && (
-              <Section title="Alert Analysis" icon="🚨">
+              <Section title="Alert Analysis">
                 <div className="space-y-5">
                   {/* Severity breakdown */}
                   <div>
@@ -576,7 +575,7 @@ export const ReportPage: React.FC = () => {
             {/*  4. DETAILED FINDINGS                                         */}
             {/* ═══════════════════════════════════════════════════════════════ */}
             {findings.length > 0 && (
-              <Section title="Detailed Findings" icon="🔍">
+              <Section title="Detailed Findings">
                 <div className="space-y-4">
                   {findings
                     .sort((a, b) => (SEV_ORDER[a.severity] ?? 5) - (SEV_ORDER[b.severity] ?? 5))
@@ -611,7 +610,7 @@ export const ReportPage: React.FC = () => {
             {/*  5. INDICATORS OF COMPROMISE                                  */}
             {/* ═══════════════════════════════════════════════════════════════ */}
             {iocs.length > 0 && (
-              <Section title="Indicators of Compromise (IOCs)" icon="🎯">
+              <Section title="Indicators of Compromise (IOCs)">
                 <Table
                   headers={["Type", "Value", "Severity", "Confidence", "Sources"]}
                   colClasses={["w-20", "", "w-20", "w-24 text-right", ""]}
@@ -632,7 +631,7 @@ export const ReportPage: React.FC = () => {
             {/*  6. HOST ANALYSIS                                             */}
             {/* ═══════════════════════════════════════════════════════════════ */}
             {hosts.length > 0 && (
-              <Section title="Host Analysis" icon="🖥️">
+              <Section title="Host Analysis">
                 <div className="space-y-5">
                   {/* Internal hosts */}
                   {internalHosts.length > 0 && (
@@ -695,7 +694,7 @@ export const ReportPage: React.FC = () => {
             {/*  7. TOP SIGNALS                                               */}
             {/* ═══════════════════════════════════════════════════════════════ */}
             {summary.top_signals && summary.top_signals.length > 0 && (
-              <Section title="Top Threat Signals" icon="⚠️">
+              <Section title="Top Threat Signals">
                 <div className="space-y-2">
                   {summary.top_signals.map((sig, i) => (
                     <div key={i} className="flex items-start gap-3 p-3 bg-amber-400/5 border border-amber-400/20 rounded-lg print:bg-yellow-50 print:border-yellow-200">
@@ -711,7 +710,7 @@ export const ReportPage: React.FC = () => {
             {/*  8. RECOMMENDATIONS                                           */}
             {/* ═══════════════════════════════════════════════════════════════ */}
             {summary.recommendations && summary.recommendations.length > 0 && (
-              <Section title="Recommendations" icon="💡">
+              <Section title="Recommendations">
                 <ol className="space-y-3">
                   {summary.recommendations.map((rec, i) => (
                     <li key={i} className="flex items-start gap-3">

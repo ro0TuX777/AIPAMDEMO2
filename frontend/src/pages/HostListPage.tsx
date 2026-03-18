@@ -102,7 +102,7 @@ export const HostListPage: React.FC = () => {
                       className="text-emerald-400/60 hover:text-emerald-400 transition-colors text-sm"
                       title={`Ask AI about ${h.ip}`}
                     >
-                      🤖
+                      Ask AI
                     </button>
                   </td>
                 </tr>

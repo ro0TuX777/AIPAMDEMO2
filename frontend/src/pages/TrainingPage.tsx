@@ -14,13 +14,13 @@ import {
 import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
 import { CardGridSkeleton } from "../components/SkeletonLoader";
 
-// Phase icon mapping
-const PHASE_ICONS: Record<string, string> = {
-    "6.1": "🛡️",
-    "6.2": "🔍",
-    "6.3": "⚡",
-    "6.4": "🔄",
-    "6.0": "📦",
+// Phase label prefix mapping
+const PHASE_LABELS: Record<string, string> = {
+    "6.1": "6.1",
+    "6.2": "6.2",
+    "6.3": "6.3",
+    "6.4": "6.4",
+    "6.0": "6.0",
 };
 
 const STATUS_COLORS: Record<string, string> = {
@@ -58,11 +58,11 @@ function formatDuration(seconds: number | null | undefined): string {
     return `${s}s`;
 }
 
-function getPhaseIcon(label: string): string {
-    for (const [key, icon] of Object.entries(PHASE_ICONS)) {
-        if (label.includes(key)) return icon;
+function getPhaseLabel(label: string): string {
+    for (const [key] of Object.entries(PHASE_LABELS)) {
+        if (label.includes(key)) return key;
     }
-    return "📋";
+    return "";
 }
 
 export const TrainingPage: React.FC = () => {
@@ -190,7 +190,7 @@ export const TrainingPage: React.FC = () => {
                     Training Intelligence
                 </h1>
                 <div className="border border-slate-800 rounded-xl p-12 text-center">
-                    <div className="text-4xl mb-4">🧠</div>
+                    <div className="text-lg font-semibold text-slate-400 mb-4">No Data</div>
                     <p className="text-slate-400 text-lg">
                         No training data yet.
                     </p>
@@ -209,7 +209,7 @@ export const TrainingPage: React.FC = () => {
                             jobStatus.type === 'success' ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-300' :
                                 'bg-red-500/10 border border-red-500/20 text-red-300'
                             }`}>
-                            <span>{jobStatus.type === 'loading' ? '⏳' : jobStatus.type === 'success' ? '✓' : '✗'} {jobStatus.message}</span>
+                            <span>{jobStatus.type === 'loading' ? '...' : jobStatus.type === 'success' ? '✓' : '✗'} {jobStatus.message}</span>
                             {jobStatus.type !== 'loading' && (
                                 <button onClick={() => setJobStatus({ type: 'idle', message: '' })} className="text-slate-500 hover:text-slate-300 ml-3">✕</button>
                             )}
@@ -272,7 +272,7 @@ export const TrainingPage: React.FC = () => {
                     jobStatus.type === 'success' ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-300' :
                         'bg-red-500/10 border border-red-500/20 text-red-300'
                     }`}>
-                    <span>{jobStatus.type === 'loading' ? '⏳' : jobStatus.type === 'success' ? '✓' : '✗'} {jobStatus.message}</span>
+                    <span>{jobStatus.type === 'loading' ? '...' : jobStatus.type === 'success' ? '✓' : '✗'} {jobStatus.message}</span>
                     {jobStatus.type !== 'loading' && (
                         <button onClick={() => setJobStatus({ type: 'idle', message: '' })} className="text-slate-500 hover:text-slate-300 ml-3">✕</button>
                     )}
@@ -378,7 +378,7 @@ export const TrainingPage: React.FC = () => {
                     <div className={`px-4 py-3 rounded-lg border ${exportDone ? 'border-emerald-500/30 bg-emerald-500/5' : exportFailed ? 'border-red-500/30 bg-red-500/5' : exportRunning ? 'border-purple-500/30 bg-purple-500/5' : 'border-slate-700/50 bg-slate-900/40'}`}>
                         <div className="flex items-center justify-between">
                             <div className="flex items-center gap-3">
-                                <span className="text-lg">{exportDone ? '✅' : exportRunning ? '⏳' : exportFailed ? '❌' : '🚀'}</span>
+                                <span className={`inline-block w-2.5 h-2.5 rounded-full ${exportDone ? 'bg-emerald-400' : exportRunning ? 'bg-blue-400 animate-pulse' : exportFailed ? 'bg-red-400' : 'bg-slate-500'}`} />
                                 <div>
                                     <h4 className="text-sm font-medium text-slate-200">
                                         {exportDone ? `Deployed: ${exportStatus?.model_name}` :
@@ -404,7 +404,7 @@ export const TrainingPage: React.FC = () => {
                                         disabled={exportTriggering || trainerStatus?.status === 'running'}
                                         className="rounded bg-purple-600 px-4 py-1.5 text-xs font-medium hover:bg-purple-500 flex items-center gap-2 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                                     >
-                                        {exportTriggering ? '⏳ Starting…' : '🚀 Merge & Deploy'}
+                                        {exportTriggering ? 'Starting…' : '✦ Merge & Deploy'}
                                     </button>
                                 )}
                                 {exportRunning && (
@@ -467,7 +467,7 @@ export const TrainingPage: React.FC = () => {
                     onClick={() => setDistillOpen(!distillOpen)}
                 >
                     <div className="flex items-center gap-3">
-                        <span className="text-xl">🧠</span>
+                        <span className="inline-block w-2.5 h-2.5 rounded-full bg-purple-400" />
                         <div>
                             <h2 className="text-sm font-semibold text-slate-100">Frontier Knowledge Distillation</h2>
                             <p className="text-xs text-slate-400 mt-0.5">
@@ -576,7 +576,7 @@ export const TrainingPage: React.FC = () => {
                                 disabled={distillTestStatus.type === 'loading'}
                                 className="px-4 py-2 rounded border border-slate-600 hover:border-slate-500 text-sm text-slate-300 transition-colors disabled:opacity-50"
                             >
-                                {distillTestStatus.type === 'loading' ? 'Testing…' : '🔗 Test Connection'}
+                                {distillTestStatus.type === 'loading' ? 'Testing…' : 'Test Connection'}
                             </button>
                             {distillTestStatus.type !== 'idle' && distillTestStatus.type !== 'loading' && (
                                 <span className={`text-xs ${distillTestStatus.type === 'success' ? 'text-emerald-400' : 'text-red-400'}`}>
@@ -723,7 +723,7 @@ export const TrainingPage: React.FC = () => {
             {summary.self_healing && (
                 <div className="border border-amber-500/20 bg-amber-500/5 rounded-xl px-6 py-4">
                     <div className="flex items-center gap-2 mb-3">
-                        <span className="text-lg">🔄</span>
+                        <span className="inline-block w-2.5 h-2.5 rounded-full bg-amber-400" />
                         <h2 className="text-lg font-semibold text-slate-200">
                             Self-Healing Loop
                         </h2>
@@ -841,13 +841,11 @@ const PhaseCard: React.FC<{ phase: string; stats: PhaseStats }> = ({
     phase,
     stats,
 }) => {
-    const icon = getPhaseIcon(phase);
     const hasFailures = stats.failed > 0;
 
     return (
         <div className="border border-slate-800 rounded-xl px-4 py-3 bg-slate-900/30 hover:bg-slate-900/50 transition-colors">
             <div className="flex items-center gap-2 mb-2">
-                <span className="text-base">{icon}</span>
                 <span className="text-sm font-medium text-slate-200 truncate">
                     {phase}
                 </span>

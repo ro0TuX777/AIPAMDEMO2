@@ -12,15 +12,15 @@ const CONFIDENCE_COLORS: Record<string, string> = {
   low: "bg-slate-800 text-slate-400 border-slate-600",
 };
 
-const HYPOTHESIS_ICONS: Record<string, string> = {
-  c2: "📡",
-  malware_delivery: "🦠",
-  recon: "🔍",
-  lateral_movement: "↔️",
-  exfiltration: "📤",
-  admin_tools: "🔧",
-  benign: "✅",
-  inconclusive: "❓",
+const HYPOTHESIS_LABELS: Record<string, string> = {
+  c2: "C2",
+  malware_delivery: "MAL",
+  recon: "RCN",
+  lateral_movement: "LAT",
+  exfiltration: "EXF",
+  admin_tools: "ADM",
+  benign: "OK",
+  inconclusive: "?",
 };
 
 function ScoreBar({ score }: { score: number }) {
@@ -36,15 +36,15 @@ function ScoreBar({ score }: { score: number }) {
   );
 }
 
-const EVIDENCE_TYPE_ICONS: Record<string, string> = {
-  alert: "🚨",
-  finding: "🔎",
-  ioc: "💀",
-  unknown: "❔",
+const EVIDENCE_TYPE_LABELS: Record<string, string> = {
+  alert: "ALR",
+  finding: "FND",
+  ioc: "IOC",
+  unknown: "—",
 };
 
 function EvidenceChip({ ref_, jobId, variant }: { ref_: EvidenceRef; jobId: string; variant: "supporting" | "contradicting" }) {
-  const icon = EVIDENCE_TYPE_ICONS[ref_.type] || "❔";
+  const label = EVIDENCE_TYPE_LABELS[ref_.type] || "—";
   const linkMap: Record<string, string> = {
     alert: `/jobs/${jobId}/alerts`,
     finding: `/jobs/${jobId}/findings`,
@@ -61,21 +61,21 @@ function EvidenceChip({ ref_, jobId, variant }: { ref_: EvidenceRef; jobId: stri
       className={`inline-flex items-center gap-1 px-1.5 py-0.5 text-xs rounded ${baseClass}`}
       title={`${ref_.type}: ${ref_.id}`}
     >
-      <span>{icon}</span>
+      <span className="font-mono text-[10px] opacity-70">{label}</span>
       <span className="truncate max-w-[200px]">{ref_.label}</span>
     </Link>
   );
 }
 
 function TheoryCard({ theory, jobId }: { theory: TheoryItem; jobId: string }) {
-  const icon = HYPOTHESIS_ICONS[theory.hypothesis_type] || "🔬";
+  const tag = HYPOTHESIS_LABELS[theory.hypothesis_type] || "UNK";
   const confClass = CONFIDENCE_COLORS[theory.confidence] || CONFIDENCE_COLORS.low;
 
   return (
     <div className="bg-slate-900 border border-slate-700 rounded-lg p-4 hover:border-slate-500 transition-colors">
       <div className="flex items-start justify-between gap-3">
         <div className="flex items-start gap-3 flex-1">
-          <span className="text-2xl">{icon}</span>
+          <span className="text-xs font-mono font-bold text-slate-400 bg-slate-800 rounded px-1.5 py-0.5">{tag}</span>
           <div className="flex-1">
             <div className="flex items-center gap-2 mb-1">
               <span className="text-xs text-slate-500 font-mono">#{theory.rank}</span>

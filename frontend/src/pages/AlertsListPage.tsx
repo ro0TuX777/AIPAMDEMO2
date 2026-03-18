@@ -109,7 +109,7 @@ export const AlertsListPage: React.FC = () => {
                       className="text-emerald-400/60 hover:text-emerald-400 transition-colors text-sm"
                       title={`Ask AI about this alert`}
                     >
-                      🤖
+                      Ask AI
                     </button>
                   </td>
                 </tr>

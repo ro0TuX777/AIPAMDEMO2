@@ -640,7 +640,7 @@ export const FindingsListPage: React.FC = () => {
                       className="px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider transition-colors border bg-slate-800 border-slate-700 text-emerald-400/60 hover:text-emerald-400 hover:border-emerald-500/30"
                       title="Ask AI about this finding"
                     >
-                      🤖 Ask AI
+                      Ask AI
                     </button>
                     <button
                       onClick={() => void handleExplain(f.finding_id)}

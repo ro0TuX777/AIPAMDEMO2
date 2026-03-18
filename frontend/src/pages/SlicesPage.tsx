@@ -14,13 +14,13 @@ const SEVERITY_COLORS: Record<string, string> = {
   info: "bg-slate-800 text-slate-500 border-slate-700",
 };
 
-const TYPE_ICONS: Record<string, string> = {
-  attack_thread: "🧵",
-  c2_session: "📡",
-  recon_phase: "🔍",
-  lateral: "↔️",
-  exfil: "📤",
-  misc: "📎",
+const TYPE_LABELS: Record<string, string> = {
+  attack_thread: "ATK",
+  c2_session: "C2",
+  recon_phase: "RCN",
+  lateral: "LAT",
+  exfil: "EXF",
+  misc: "MSC",
 };
 
 function ConfidenceBar({ confidence }: { confidence: number }) {
@@ -37,14 +37,14 @@ function ConfidenceBar({ confidence }: { confidence: number }) {
 }
 
 function SliceCard({ slice, jobId }: { slice: SliceItem; jobId: string }) {
-  const icon = TYPE_ICONS[slice.slice_type] || "🧵";
+  const tag = TYPE_LABELS[slice.slice_type] || "ATK";
   const sevClass = SEVERITY_COLORS[slice.severity] || SEVERITY_COLORS.info;
   const totalEvidence = slice.alert_ids.length + slice.finding_ids.length + slice.ioc_ids.length;
 
   return (
     <div className="bg-slate-900 border border-slate-700 rounded-lg p-4 hover:border-slate-500 transition-colors">
       <div className="flex items-start gap-3">
-        <span className="text-2xl">{icon}</span>
+        <span className="text-xs font-mono font-bold text-slate-400 bg-slate-800 rounded px-1.5 py-0.5">{tag}</span>
         <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 mb-1 flex-wrap">
             <span className="text-xs text-slate-500 font-mono">#{slice.rank}</span>
@@ -81,16 +81,16 @@ function SliceCard({ slice, jobId }: { slice: SliceItem; jobId: string }) {
           {/* Evidence counts */}
           <div className="flex gap-3 text-[10px] text-slate-500">
             {slice.alert_ids.length > 0 && (
-              <span>🚨 {slice.alert_ids.length} alert(s)</span>
+              <span>{slice.alert_ids.length} alert(s)</span>
             )}
             {slice.finding_ids.length > 0 && (
-              <span>🔎 {slice.finding_ids.length} finding(s)</span>
+              <span>{slice.finding_ids.length} finding(s)</span>
             )}
             {slice.ioc_ids.length > 0 && (
-              <span>⚠️ {slice.ioc_ids.length} IOC(s)</span>
+              <span>{slice.ioc_ids.length} IOC(s)</span>
             )}
             {slice.connection_ids.length > 0 && (
-              <span>🔗 {slice.connection_ids.length} conn(s)</span>
+              <span>{slice.connection_ids.length} conn(s)</span>
             )}
           </div>
 

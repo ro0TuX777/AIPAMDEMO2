@@ -58,7 +58,7 @@ export const HostDetailPage: React.FC = () => {
             className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/30 text-emerald-400 hover:text-emerald-300 text-sm rounded-lg transition-colors"
             title="Ask AI about this host"
           >
-            🤖 Ask AI
+            Ask AI
           </button>
         </div>
 

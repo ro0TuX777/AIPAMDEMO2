@@ -12,13 +12,13 @@ import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPan
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const DOC_ICONS: Record<string, string> = {
-  asset_inventory: "🖥️",
-  network_map: "🗺️",
-  baseline_profile: "📊",
-  threat_intel: "🔍",
-  soc_playbook: "📋",
-  other: "📄",
+const DOC_LABELS: Record<string, string> = {
+  asset_inventory: "INV",
+  network_map: "MAP",
+  baseline_profile: "BAS",
+  threat_intel: "TI",
+  soc_playbook: "SOC",
+  other: "DOC",
 };
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -172,7 +172,7 @@ export const ChatPage: React.FC = () => {
                 className="w-10 h-full bg-slate-900/80 border border-slate-800 rounded-lg flex flex-col items-center justify-center gap-2 hover:bg-slate-800/80 transition-colors group"
                 title="Open Knowledge Base"
               >
-                <span className="text-lg">📚</span>
+                <span className="text-xs font-bold text-slate-400">KB</span>
                 <span className="text-[10px] text-slate-500 group-hover:text-slate-300 writing-vertical" style={{ writingMode: "vertical-rl" }}>
                   Knowledge Base{kbDocs.length > 0 ? ` (${kbDocs.length})` : ""}
                 </span>
@@ -193,7 +193,7 @@ export const ChatPage: React.FC = () => {
         {/* Sidebar header */}
         <div className="flex items-center justify-between px-4 py-3 border-b border-slate-800 flex-shrink-0">
           <div className="flex items-center gap-2">
-            <span className="text-lg">📚</span>
+            <span className="text-xs font-bold text-slate-400">KB</span>
             <span className="text-sm font-semibold text-slate-300">Knowledge Base</span>
             {kbDocs.length > 0 && (
               <span className="text-[10px] bg-emerald-900/40 text-emerald-400 px-1.5 py-0.5 rounded">
@@ -253,7 +253,7 @@ export const ChatPage: React.FC = () => {
                 <label className="block mb-0.5 text-slate-400 text-[10px]">Content</label>
                 <div className="flex items-center gap-2 mb-1">
                   <label className="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-0.5 rounded border border-slate-600 cursor-pointer">
-                    📁 Load file
+                    Load file
                     <input type="file" accept=".csv,.txt,.json,.md,.log" className="hidden" onChange={handleKBFileRead} />
                   </label>
                   <span className="text-[10px] text-slate-500">Max 500KB</span>
@@ -281,7 +281,7 @@ export const ChatPage: React.FC = () => {
               {kbDocs.map((doc) => (
                 <div key={doc.id} className="flex items-start justify-between bg-slate-950/50 border border-slate-700/50 rounded-lg px-3 py-2 group">
                   <div className="flex items-start gap-2 min-w-0">
-                    <span className="text-sm mt-0.5">{DOC_ICONS[doc.doc_type] ?? "📄"}</span>
+                    <span className="text-[10px] font-mono font-bold text-slate-500 mt-0.5">{DOC_LABELS[doc.doc_type] ?? "DOC"}</span>
                     <div className="min-w-0">
                       <div className="text-xs font-medium text-slate-200 truncate">{doc.name}</div>
                       <div className="text-[10px] text-slate-500 flex items-center gap-1.5 mt-0.5">
@@ -298,7 +298,7 @@ export const ChatPage: React.FC = () => {
                   </div>
                   <button onClick={() => handleKBDelete(doc.id, doc.name)}
                     className="text-red-400/50 hover:text-red-400 text-xs px-1 py-0.5 rounded hover:bg-red-900/20 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
-                    title="Delete">🗑️</button>
+                    title="Delete">Del</button>
                 </div>
               ))}
             </div>

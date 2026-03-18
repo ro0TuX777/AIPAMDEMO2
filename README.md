@@ -1,24 +1,27 @@
-# AIPAM - AI-Powered Advanced Packet Analysis for Malware Detection
+# AIPAM — AI-Powered Advanced Packet Analysis for Malware Detection
 
 <p align="center">
   <img src="https://img.shields.io/badge/Version-2.0-blue" alt="Version">
   <img src="https://img.shields.io/badge/License-MIT-green" alt="License">
-  <img src="https://img.shields.io/badge/AI%20Model-Llama%203.1%208B-orange" alt="AI Model">
+  <img src="https://img.shields.io/badge/AI%20Model-Llama%203.1%208B%20(v9)-orange" alt="AI Model">
   <img src="https://img.shields.io/badge/API-V2%20(Sensors)-blueviolet" alt="API V2">
   <img src="https://img.shields.io/badge/Tests-110%20passing-brightgreen" alt="Tests">
+  <img src="https://img.shields.io/badge/Deployment-Air--Gapped-critical" alt="Deployment">
 </p>
 
-## 📋 Table of Contents
+## Table of Contents
 
 - [What is AIPAM?](#what-is-aipam)
 - [Key Features](#key-features)
 - [How It Works](#how-it-works)
 - [System Architecture](#system-architecture)
 - [Execution Profiles](#execution-profiles)
+- [Training System](#training-system)
 - [Supported Malware Families](#supported-malware-families)
 - [Training Data](#training-data)
 - [Benchmark Results](#benchmark-results)
 - [Getting Started](#getting-started)
+- [Air-Gapped Deployment](#air-gapped-deployment)
 - [Admin CLI (aipam-admin)](#admin-cli-aipam-admin)
 - [Environment Variables](#environment-variables)
 - [User Guide](#user-guide)
@@ -27,16 +30,19 @@
 
 ---
 
-## 🎯 What is AIPAM?
+## What is AIPAM?
 
-**AIPAM** (AI-Powered Advanced Packet Analysis for Malware Detection) is a cutting-edge security tool that uses artificial intelligence to analyze network traffic and detect malicious activity. Think of it as a smart security guard for your network that can:
+**AIPAM** (AI-Powered Advanced Packet Analysis for Malware Detection) is a security tool that uses artificial intelligence to analyze network traffic and detect malicious activity. It serves as an automated analyst for your network that can:
 
 - **Automatically detect malware** hiding in network traffic
 - **Identify the type of threat** (ransomware, banking trojan, infostealer, etc.)
 - **Explain what it found** in plain language
 - **Suggest what to do next** to protect your systems
+- **Continuously learn** from new data via an integrated fine-tuning pipeline
 
-Unlike traditional security tools that only match known signatures, AIPAM uses a specially trained AI model that understands the *patterns* and *behaviors* of malicious traffic—even detecting threats it hasn't seen before.
+Unlike traditional security tools that only match known signatures, AIPAM uses a specially trained AI model (fine-tuned Llama 3.1 8B, currently at **model version 9**) that understands the *patterns* and *behaviors* of malicious traffic — even detecting threats it hasn't seen before.
+
+AIPAM is designed for **air-gapped, offline environments**. No data ever leaves your network.
 
 ### Who Is This For?
 
@@ -48,74 +54,82 @@ Unlike traditional security tools that only match known signatures, AIPAM uses a
 
 ---
 
-## ✨ Key Features
+## Key Features
 
-### 🔍 Modular Sensor Pipeline (V2)
+### Modular Sensor Pipeline (V2)
 Upload any PCAP and AIPAM runs a **staged sensor pipeline** with Docker-isolated analysis:
 - **Zeek** + **Suricata** for protocol parsing and signature alerts
 - **Beaconing detector**, **TLS enrichment**, **YARA file triage**, **TI matcher**
 - Three **execution profiles**: triage (fast), standard, deep (comprehensive)
 
-### 📡 Real-Time Progress (SSE)
+### Real-Time Progress (SSE)
 Live updates via Server-Sent Events as each sensor completes:
 - Sensor status tracking with colored indicators
 - Pipeline stage progression
 - Auto-refreshing job detail view
 
-### 💬 AI-Assisted Investigation (Ask AI)
+### AI-Assisted Investigation (Ask AI)
 Context-aware AI chat available on **every page** — Alerts, Hosts, IOCs, Findings, and more:
-- 🤖 **One-click "Ask AI"** buttons generate a scoped prompt with full entity context
+- **One-click "Ask AI"** buttons generate a scoped prompt with full entity context
 - **3-source RAG** — Current case data + campaign correlations + forensic memory (ChromaDB)
 - *"What hosts are infected?"* · *"Is this alert a true positive?"* · *"What should I do next?"*
 
-### 🕸️ Evidence Graph
+### Evidence Graph
 Interactive **D3-based visualization** of all evidence relationships for a job:
 - **7 node types**: Hosts, Alerts, Findings, Theories, Slices, IOCs, Annotations
 - Click any node to inspect details and pin it to a Proof
 - Edge types: `triggered_on`, `correlated`, `belongs_to`, `annotates`, and more
 
-### 🏗️ Proof Builder
+### Proof Builder
 Build structured forensic arguments by **pinning evidence** from the graph:
-- **Role selection**: ✅ Supports / ❌ Contradicts / ℹ️ Context
+- **Role selection**: Supports / Contradicts / Context
 - **Analyst notes** on each pinned item
 - **Metadata editor** — status (draft/final/archived), severity, confidence slider
 - **Narrative rendering** — generates a Markdown report grouped by evidence role
 - **Copy to clipboard** for pasting into tickets or reports
 
-### 🧠 Theory of the Case
+### Theory of the Case
 Automated **hypothesis generation and ranking** (deterministic, no LLM):
 - Scores 10+ hypothesis types: C2 beaconing, data exfiltration, lateral movement, ransomware, credential theft, etc.
-- Supporting and contradicting evidence shown as human-readable chips (🚨 alerts, 💀 IOCs, 🔎 findings)
+- Supporting and contradicting evidence shown as human-readable chips
 - Confidence labels (High / Medium / Low) with numerical scores
 
-### 🔪 Incident Slices
+### Incident Slices
 Groups related alerts, findings, and connections into **logical attack threads**:
 - Seeded from `community_id` grouping, merged by host overlap + time proximity
 - Attached findings and IOCs per slice
 - Ranked by severity and evidence count
 
-### 📝 Why Unusual? (Annotations)
+### Why Unusual? (Annotations)
 Context annotations explaining **why specific traffic is anomalous**:
 - Links to related alerts, findings, and hosts
 - Analyst-readable explanations of what made the traffic stand out
 
-### 📊 Reports & Detection Rules
+### Reports and Detection Rules
 - **HTML + Markdown reports** — executive summary, per-host findings, IOC tables, MITRE mappings
 - **Detection-as-Code** — auto-generate Suricata and Sigma rules from findings
 - **Report generation** via API with customizable templates
 
-### 🌐 Global Hosts (Cross-Job Forensics)
+### Global Hosts (Cross-Job Forensics)
 Track hosts across **all jobs** to identify repeat offenders:
 - Aggregate view of every IP seen across analyses
 - Drill into per-host detail with connections, DNS, TLS, alerts, and files
 
-### 🔒 Air-Gapped Ready
-AIPAM runs completely offline—no data ever leaves your network. Perfect for sensitive environments.
+### Integrated Training System
+Fine-tune the AI model directly from the web UI:
+- **Host-native GPU training** — runs on bare metal for direct GPU access (NVIDIA CUDA or Apple Silicon Metal)
+- **4-phase training pipeline** — SFT, distillation, ORPO alignment, self-healing
+- **GGUF export and Ollama deployment** — merge LoRA, quantize, and hot-swap the model without downtime
+- **Training ledger** — DAWN-compliant immutable record of every training run
+
+### Air-Gapped Ready
+AIPAM runs completely offline — no data ever leaves your network. Perfect for sensitive environments.
 - Offline update bundles with SHA256 integrity verification
 - Support bundle export for offline debugging
 - All dependencies containerized
+- Pre-built migration packages for offline server deployment
 
-### 🛠️ Operational Tooling
+### Operational Tooling
 Built-in admin CLI (`aipam-admin`) for production maintenance:
 - **cleanup-jobs** — Automated retention policy enforcement
 - **support-bundle** — Diagnostic archive (excludes PCAPs and secrets)
@@ -124,7 +138,7 @@ Built-in admin CLI (`aipam-admin`) for production maintenance:
 
 ---
 
-## 🔄 How It Works
+## How It Works
 
 AIPAM V2 uses a **staged sensor pipeline** to analyze network traffic:
 
@@ -159,9 +173,9 @@ AIPAM V2 uses a **staged sensor pipeline** to analyze network traffic:
 
 ---
 
-## 🏗️ System Architecture
+## System Architecture
 
-AIPAM V2 is built as a containerized application with five main services:
+AIPAM V2 is built as a containerized application with five main services, plus an optional host-native training server:
 
 ```
 ┌──────────────────────────────────────────────────────────────────────────┐
@@ -191,13 +205,14 @@ AIPAM V2 is built as a containerized application with five main services:
 | **API Server** | REST API (30+ endpoints) + SSE event stream | Python FastAPI (V2) |
 | **Worker** | Pipeline orchestrator — runs sensor containers | Celery + Docker |
 | **Redis** | Celery broker + SSE event buffer | Redis 7 |
-| **Ollama** | Local LLM inference for chat + classification | Ollama + fine-tuned Llama 3.1 8B |
+| **Ollama** | Local LLM inference for chat + classification | Ollama + fine-tuned Llama 3.1 8B (v9) |
 | **ChromaDB** | Forensic memory — vector store for cross-case knowledge | ChromaDB |
 | **SQLite** | Jobs, sensors, findings, hosts, IOCs, proofs, theories, slices | SQLite with WAL mode |
+| **Host Trainer** | GPU-native fine-tuning server (optional, ports 8002/8003) | Unsloth (CUDA) or MLX (Apple Silicon) |
 
 ---
 
-## ⚡ Execution Profiles
+## Execution Profiles
 
 AIPAM V2 supports three analysis profiles that control which sensors run:
 
@@ -209,11 +224,68 @@ AIPAM V2 supports three analysis profiles that control which sensors run:
 
 ---
 
-## 🦠 Supported Malware Families
+## Training System
+
+AIPAM includes an integrated fine-tuning pipeline that runs **on the host** (outside Docker) for direct GPU access.
+
+### Architecture
+
+The training system consists of two host-native Python servers:
+
+| Component | Port | Purpose |
+|-----------|------|---------|
+| **Host Trainer** (`host_trainer.py`) | 8002 | Runs fine-tuning jobs, serves status/progress, manages the training ledger |
+| **Trainer Launcher** (`host_trainer_launcher.py`) | 8003 | Allows the web UI to start/restart the trainer process |
+
+### Starting the Trainer
+
+```bash
+# From the AIPAM project root:
+python3 finetuning/host_trainer.py &
+python3 finetuning/host_trainer_launcher.py &
+```
+
+### Training Pipeline Phases
+
+| Phase | Name | Description |
+|-------|------|-------------|
+| **6.1** | SFT (Supervised Fine-Tuning) | LoRA fine-tuning on curated traffic analysis Q&A pairs |
+| **6.2** | Distillation | Knowledge distillation from a teacher model (optional, requires API key) |
+| **6.3** | ORPO Alignment | Preference optimization for response quality |
+| **6.4** | Self-Healing | Automated error correction and validation |
+
+### Model Export and Deployment
+
+After training, the UI provides a one-click **Merge and Deploy** workflow:
+1. Merge LoRA adapter weights into the base model
+2. Quantize to GGUF format (Q4_K_M)
+3. Import into Ollama as a new model version
+4. Hot-swap the active model without restarting services
+
+### Training Ledger
+
+Every training run is recorded in an immutable JSONL ledger (`dawn_training_ledger.jsonl`) with:
+- Run ID, timestamp, phase, dataset hash
+- Hyperparameters (learning rate, epochs, batch size, LoRA rank)
+- Final loss, iteration count, duration
+- Platform and hardware information
+
+### Platform Support
+
+| Platform | GPU Framework | Training Script |
+|----------|---------------|-----------------|
+| **Linux (NVIDIA)** | CUDA via Unsloth/PyTorch | `finetune_llama.py` |
+| **macOS (Apple Silicon)** | Metal via MLX | `finetune_mlx.py` |
+
+The trainer automatically detects the platform and selects the appropriate backend. On Linux, it uses the `venv_unsloth` virtualenv if available.
+
+---
+
+## Supported Malware Families
 
 AIPAM is trained to recognize **40+ malware families** across multiple categories:
 
-### 🏦 Banking Trojans
+### Banking Trojans
 | Family | First Seen | What It Does |
 |--------|------------|--------------|
 | **Zeus** | 2007 | Steals banking credentials via keylogging and form grabbing |
@@ -224,7 +296,7 @@ AIPAM is trained to recognize **40+ malware families** across multiple categorie
 | **Dridex** | 2014 | Distributed via malicious Office documents |
 | **Ursnif/Gozi** | 2007 | Form grabbing and web injection attacks |
 
-### 🔐 Ransomware
+### Ransomware
 | Family | First Seen | What It Does |
 |--------|------------|--------------|
 | **Ryuk** | 2018 | Targeted ransomware with high ransom demands |
@@ -235,7 +307,7 @@ AIPAM is trained to recognize **40+ malware families** across multiple categorie
 | **Maze** | 2019 | Pioneered "name and shame" data leak tactics |
 | **DarkSide** | 2020 | Known for Colonial Pipeline attack |
 
-### 🕵️ Information Stealers
+### Information Stealers
 | Family | First Seen | What It Does |
 |--------|------------|--------------|
 | **AgentTesla** | 2014 | Keylogger targeting browsers, email, FTP |
@@ -245,7 +317,7 @@ AIPAM is trained to recognize **40+ malware families** across multiple categorie
 | **Lokibot** | 2015 | Password stealer targeting many applications |
 | **Snake Keylogger** | 2020 | .NET keylogger with multiple exfil methods |
 
-### 🎛️ Remote Access Trojans (RATs)
+### Remote Access Trojans (RATs)
 | Family | First Seen | What It Does |
 |--------|------------|--------------|
 | **Cobalt Strike** | 2012 | Legitimate tool abused for attacks |
@@ -253,13 +325,13 @@ AIPAM is trained to recognize **40+ malware families** across multiple categorie
 | **NjRAT** | 2012 | Full remote control capabilities |
 | **Remcos** | 2016 | Commercial RAT used maliciously |
 
-### 📦 Loaders & Droppers
+### Loaders and Droppers
 | Family | First Seen | What It Does |
 |--------|------------|--------------|
 | **BazarLoader** | 2020 | Delivers Ryuk/Conti ransomware |
 | **Nsis-ay** | 2014 | NSIS-based dropper for various payloads |
 
-### 🤖 Botnets & Other
+### Botnets and Other
 | Family | Type | What It Does |
 |--------|------|--------------|
 | **Neris** | Spam Bot | Sends spam and participates in DDoS |
@@ -269,7 +341,7 @@ AIPAM is trained to recognize **40+ malware families** across multiple categorie
 
 ---
 
-## 📚 Training Data
+## Training Data
 
 AIPAM's AI model was trained on a carefully curated dataset of **549,000+ network traffic samples**:
 
@@ -308,12 +380,14 @@ To teach AIPAM what *normal* traffic looks like, we included:
 | Version | Samples | What's New |
 |---------|---------|------------|
 | **V5** | 529,889 | Base malware dataset |
-| **V6** | 530,769 | Added MTA exercises & Q&A (+1,422) |
+| **V6** | 530,769 | Added MTA exercises and Q&A (+1,422) |
 | **V7** | 549,308 | Added benign samples (+18,539) |
+| **V8** | 549,308+ | Distillation and alignment refinements |
+| **V9** | 549,308+ | Current production model — ORPO alignment, self-healing corrections |
 
 ---
 
-## 📈 Benchmark Results
+## Benchmark Results
 
 We tested AIPAM on malware samples it had never seen during training:
 
@@ -327,31 +401,32 @@ We tested AIPAM on malware samples it had never seen during training:
 
 ### Key Insights
 
-✅ **Perfect Malware Detection** - AIPAM detected all malicious traffic in testing. If there's malware, AIPAM will find it.
+**Perfect Malware Detection** — AIPAM detected all malicious traffic in testing. If there's malware, AIPAM will find it.
 
-⚠️ **Type Classification** - The model correctly categorizes about 1/3 of threats by type (Loader, Stealer, RAT, etc.).
+**Type Classification** — The model correctly categorizes about 1/3 of threats by type (Loader, Stealer, RAT, etc.).
 
-📝 **Family Identification** - Exact family matching is challenging but improving with more training data.
+**Family Identification** — Exact family matching is challenging but improving with more training data.
 
 ### What This Means for You
 
 | Use Case | Reliability |
 |----------|-------------|
-| "Is this traffic malicious?" | ⭐⭐⭐⭐⭐ Excellent |
-| "What type of malware is it?" | ⭐⭐⭐ Good |
-| "Which exact malware family?" | ⭐⭐ Developing |
+| "Is this traffic malicious?" | Excellent |
+| "What type of malware is it?" | Good |
+| "Which exact malware family?" | Developing |
 
 **Recommendation**: Use AIPAM to flag suspicious traffic, then leverage its MITRE ATT&CK mappings for investigation regardless of the specific family name.
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### Prerequisites
 
 - **Docker** and **Docker Compose v2** installed
 - **8GB+ RAM** recommended (16GB+ for deep profile)
-- **NVIDIA GPU** (optional, for faster AI inference)
+- **NVIDIA GPU** (optional, for faster AI inference and training)
+- **Ollama** installed on the host for model serving
 
 ### Quick Installation
 
@@ -365,37 +440,114 @@ cp deploy/.env.example deploy/.env
 # Edit deploy/.env — set AIPAM_API_TOKEN to a secure value
 
 # 3. Start the full stack
-docker compose -f deploy/docker-compose.yml up -d
+docker compose up -d
 
-# 4. Import the AI model
-docker exec aipam-ollama ollama create aipam-trafficllm-v5 \
-  -f /models/Modelfile
+# 4. Import the AI model (v9)
+ollama create aipam-trafficllm-v9 -f deploy/Modelfile.v9
 
 # 5. Open the web interface
-open http://localhost   # Frontend on port 80
-# API available at http://localhost:8000/api/v1/docs
+open http://localhost:5173   # Frontend
+# API available at http://localhost:8000/docs
 ```
 
 ### Verifying Installation
 
 ```bash
 # Check all containers are running
-docker compose -f deploy/docker-compose.yml ps
+docker compose ps
 
 # Expected output:
 # aipam-api        Running (healthy)
 # aipam-worker     Running
 # aipam-frontend   Running
 # aipam-redis      Running (healthy)
-# aipam-ollama     Running (healthy)
+
+# Verify the model is loaded
+ollama list | grep aipam
 
 # Run the smoke test
 AIPAM_API_TOKEN=your-token python -m backend.app.cli smoke-test
 ```
 
+### Starting the Training System (Optional)
+
+```bash
+# Start the host-native trainer and launcher
+python3 finetuning/host_trainer.py &
+python3 finetuning/host_trainer_launcher.py &
+```
+
+The Training page in the web UI will show "Trainer Idle" once connected.
+
 ---
 
-## �️ Admin CLI (`aipam-admin`)
+## Air-Gapped Deployment
+
+AIPAM is designed for offline, air-gapped environments. A pre-built migration package is available in `dist/`.
+
+### Update Package Contents
+
+| File | Description |
+|------|-------------|
+| `repo.tar.gz` | Source code archive (excludes training data, models, and build artifacts) |
+| `docker-images.tar.gz` | Pre-built Docker images (frontend, backend, worker, redis) |
+| `Modelfile.v9` | Ollama model definition for the v9 fine-tuned model |
+| `update.sh` | Automated migration script (v1 to v2) |
+
+### Running the Update on an Offline Server
+
+```bash
+# Transfer the update package to the offline server, then:
+cd /path/to/aipam-v2-update-YYYYMMDD
+chmod +x update.sh
+./update.sh
+```
+
+The script will:
+1. Stop the current AIPAM stack
+2. Back up the existing installation
+3. Extract the updated source code
+4. Load pre-built Docker images
+5. Import the v9 model into Ollama
+6. Start the updated stack
+
+### Regenerating the Update Package
+
+From the development machine:
+
+```bash
+# 1. Build the source archive (excludes large data files)
+cd /path/to/parent && \
+tar -czf AIPAM/dist/aipam-v2-update-YYYYMMDD/repo.tar.gz \
+    --exclude='AIPAM/.git' \
+    --exclude='AIPAM/.venv' \
+    --exclude='AIPAM/venv_unsloth' \
+    --exclude='AIPAM/dist' \
+    --exclude='AIPAM/llama.cpp' \
+    --exclude='AIPAM/frontend/node_modules' \
+    --exclude='AIPAM/finetuning/data/training' \
+    --exclude='AIPAM/finetuning/aipam_gpu_training' \
+    --exclude='AIPAM/finetuning/trafficllm_training' \
+    --exclude='AIPAM/finetuning/trafficllm_datasets' \
+    --exclude='AIPAM/finetuning/models' \
+    --exclude='AIPAM/deploy/models' \
+    --exclude='AIPAM/trafficllm' \
+    --exclude='AIPAM/TrafficLLM*' \
+    --exclude='AIPAM/benchmark' \
+    --exclude='AIPAM/aipam-migrate-*' \
+    --exclude='AIPAM/unsloth_compiled_cache' \
+    --exclude='*.db' --exclude='*.log' --exclude='*.pyc' \
+    --exclude='*.zip' --exclude='*.pdf' \
+    AIPAM
+
+# 2. Save Docker images
+docker save aipam-frontend aipam-backend aipam-worker redis:7-alpine | \
+  gzip > AIPAM/dist/aipam-v2-update-YYYYMMDD/docker-images.tar.gz
+```
+
+---
+
+## Admin CLI (aipam-admin)
 
 All admin commands are run via `python -m backend.app.cli <command>`.
 
@@ -441,7 +593,7 @@ Verifies SHA256 checksums from the bundle's `manifest.json` before unpacking rul
 
 ---
 
-## ⚙️ Environment Variables
+## Environment Variables
 
 All settings are loaded from environment variables (or a `.env` file). Defined in `backend/app/config_v2.py`.
 
@@ -467,7 +619,7 @@ All settings are loaded from environment variables (or a `.env` file). Defined i
 
 ---
 
-## 📖 User Guide
+## User Guide
 
 ### Analyzing a PCAP File (V2)
 
@@ -485,11 +637,11 @@ All settings are loaded from environment variables (or a `.env` file). Defined i
 
 | Level | Color | Meaning |
 |-------|-------|---------|
-| **Critical** | 🔴 Red | Active attack, immediate action required |
-| **High** | 🟠 Orange | Confirmed malware, investigate immediately |
-| **Medium** | 🟡 Yellow | Suspicious activity, review recommended |
-| **Low** | 🟢 Green | Minor anomalies, monitor situation |
-| **Info** | ⚪ Gray | Normal traffic, no action needed |
+| **Critical** | Red | Active attack, immediate action required |
+| **High** | Orange | Confirmed malware, investigate immediately |
+| **Medium** | Yellow | Suspicious activity, review recommended |
+| **Low** | Green | Minor anomalies, monitor situation |
+| **Info** | Gray | Normal traffic, no action needed |
 
 #### MITRE ATT&CK Techniques
 
@@ -500,7 +652,7 @@ Each finding includes mapped MITRE ATT&CK techniques. For example:
 
 ### Using the AI Chat (Ask AI)
 
-Every evidence page has a 🤖 **Ask AI** button that jumps to the chat with a pre-filled, context-aware question. You can also open the chat page directly and ask free-form questions:
+Every evidence page has an **Ask AI** button that jumps to the chat with a pre-filled, context-aware question. You can also open the chat page directly and ask free-form questions:
 
 ```
 You: "What hosts were compromised?"
@@ -520,8 +672,8 @@ The chat uses **3-source RAG**: current job data, cross-job campaign correlation
 2. **Explore nodes** — click any host, alert, finding, theory, slice, IOC, or annotation
 3. **Toggle the Proof Builder** sidebar and create a new proof (e.g., "Remcos C2 Chain")
 4. **Pin evidence** — select a role (Supports / Contradicts / Context) and add analyst notes
-5. **Edit metadata** — set status, severity, and confidence via the ⚙ editor
-6. **Render Narrative** — click 📝 to generate a Markdown report, then 📋 copy it
+5. **Edit metadata** — set status, severity, and confidence via the metadata editor
+6. **Render Narrative** — generate a Markdown report, then copy it to clipboard
 
 ### Theory of the Case & Incident Slices
 
@@ -545,9 +697,9 @@ From any finding, generate **Suricata** or **Sigma** rules:
 
 ---
 
-## 🗺️ Roadmap
+## Roadmap
 
-### Phase 1 — MVP Delivery (Completed ✅)
+### Phase 1 — MVP Delivery (Complete)
 
 - [x] Web UI for PCAP upload and results visualization
 - [x] Backend APIs for ingestion, analysis job management, and report retrieval
@@ -557,7 +709,7 @@ From any finding, generate **Suricata** or **Sigma** rules:
 - [x] MITRE ATT&CK-aware reasoning and mapping
 - [x] Unit + integration testing
 
-### Phase 2 — DAWN Pipeline + Specialist Pyramid (Completed ✅)
+### Phase 2 — DAWN Pipeline + Specialist Pyramid (Complete)
 
 - [x] DAWN Deterministic Pipeline — Immutable ledger, cryptographic binding, meaning gates
 - [x] Source-Agnostic Ingest — Unified Flow IR from PCAP, Security Onion, and Arkime
@@ -568,7 +720,7 @@ From any finding, generate **Suricata** or **Sigma** rules:
 - [x] Automated Report Generation — Markdown + HTML
 - [x] Golden Scenario Test Harness
 
-### Phase 3 — Proactive Defense + Forensic Memory (Completed ✅)
+### Phase 3 — Proactive Defense + Forensic Memory (Complete)
 
 - [x] Forensic Memory — ChromaDB vector store for cross-case knowledge
 - [x] 3-Source RAG Chat — Current case + campaign correlations + forensic memory
@@ -578,7 +730,7 @@ From any finding, generate **Suricata** or **Sigma** rules:
 - [x] Closed-Loop Validation — 100% detection match rate
 - [x] HITL Review Gate + Trust Receipts
 
-### Sensors V2 Migration (Completed ✅)
+### Sensors V2 Migration (Complete)
 
 - [x] **Backend Foundation** — V2 models, schemas, database (SQLite + WAL), config
 - [x] **Sensor Pipeline** — Docker-based sensor runner, registry, orchestrator, preflight checks
@@ -589,32 +741,42 @@ From any finding, generate **Suricata** or **Sigma** rules:
 - [x] **Documentation** — Updated README, env var reference, CLI docs
 - [x] 110 tests passing (unit + integration)
 
-### Analyst Workbench (Completed ✅)
+### Analyst Workbench (Complete)
 
 - [x] **Evidence Graph** — D3 visualization of 7 entity types with relationship edges
 - [x] **Proof Builder** — Pin evidence with roles, analyst notes, metadata, and narrative rendering
 - [x] **Theory of the Case** — Deterministic hypothesis generation and ranking (10+ types)
 - [x] **Incident Slices** — Attack thread grouping by community_id, host overlap, and time proximity
 - [x] **Why Unusual? (Annotations)** — Context annotations for anomalous traffic
-- [x] **Ask AI Everywhere** — 🤖 contextual chat buttons on Alerts, Hosts, IOCs, Findings pages
+- [x] **Ask AI Everywhere** — contextual chat buttons on Alerts, Hosts, IOCs, Findings pages
 - [x] **Global Hosts** — Cross-job host tracking and forensics
 - [x] **TI Matcher** — Threat intelligence feed integration with confidence scoring
 - [x] **Knowledge Base** — Persistent forensic memory via ChromaDB
 - [x] **Reports** — HTML + Markdown report generation with executive summaries
 - [x] **Detection Rules** — Auto-generate Suricata and Sigma rules from findings
-- [x] **Human-readable Evidence** — Supporting evidence shown as chips (🚨 alerts, 💀 IOCs, 🔎 findings)
+- [x] **Human-readable Evidence** — Supporting evidence shown as labeled chips
+
+### Integrated Training and Air-Gap (Complete)
+
+- [x] **Host-Native Training** — GPU fine-tuning outside Docker (Unsloth/CUDA + MLX/Metal)
+- [x] **4-Phase Pipeline** — SFT, distillation, ORPO alignment, self-healing
+- [x] **Training Ledger** — DAWN-compliant immutable JSONL record of all runs
+- [x] **Model Export** — One-click LoRA merge, GGUF quantization, Ollama import
+- [x] **Air-Gapped Migration** — Offline update packages with automated `update.sh`
+- [x] **UI Professionalization** — Clean text-based interface suitable for enterprise SOC environments
+- [x] **Model v9** — Current production model with ORPO alignment
 
 ### Phase 4 — Enterprise Features (Future)
 
 - [ ] Multi-tenancy and RBAC
 - [ ] SIEM outputs (Elastic, Splunk, QRadar)
-- [ ] Webhooks & integration APIs
+- [ ] Webhooks and integration APIs
 - [ ] Kubernetes deployment option
 - [ ] PDF report generation
 
 ---
 
-## ❓ FAQ
+## FAQ
 
 ### General Questions
 
@@ -633,14 +795,15 @@ From any finding, generate **Suricata** or **Sigma** rules:
 ### Technical Questions
 
 **Q: What AI model does AIPAM use?**
-> AIPAM uses a fine-tuned **Llama 3.1 8B** model with **LoRA (Low-Rank Adaptation)** for efficient training. The model is served locally via Ollama.
+> AIPAM uses a fine-tuned **Llama 3.1 8B** model (currently **v9**) with **LoRA (Low-Rank Adaptation)** for efficient training. The model is quantized to GGUF (Q4_K_M) and served locally via Ollama.
 
 **Q: What are the hardware requirements?**
 > - **Minimum**: 8GB RAM, 4 CPU cores
 > - **Recommended**: 16GB RAM, 8 CPU cores, NVIDIA GPU with 8GB+ VRAM
+> - **For training**: NVIDIA GPU with 16GB+ VRAM (Linux) or Apple Silicon Mac with 16GB+ unified memory
 
 **Q: Can I train on my own data?**
-> Yes! The training pipeline is included. See `finetuning/README.md` for instructions.
+> Yes. The integrated training system is accessible from the web UI's Training page. Start the host trainer (`python3 finetuning/host_trainer.py`) and configure training from the browser.
 
 **Q: How do Zeek and Suricata fit in?**
 > - **Zeek** parses network protocols and extracts metadata (flows, DNS, HTTP, TLS, etc.)
@@ -656,11 +819,11 @@ From any finding, generate **Suricata** or **Sigma** rules:
 > Ensure Ollama is running and the model is loaded: `ollama list | grep aipam`
 
 **Q: Everything is classified as malware**
-> Older model versions had bias toward malware. Upgrade to V7 which includes benign training data.
+> Older model versions had bias toward malware. Upgrade to v9 which includes benign training data and alignment corrections.
 
 ---
 
-## 📞 Support & Contributing
+## Support and Contributing
 
 ### Getting Help
 - **Documentation**: [docs/](./docs/)

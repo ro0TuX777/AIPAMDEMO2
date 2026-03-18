@@ -13,17 +13,17 @@ const severityColors: Record<string, { bg: string; text: string; border: string;
   low: { bg: "bg-slate-800/50", text: "text-slate-400", border: "border-slate-600/50", glow: "" },
 };
 
-const categoryIcons: Record<string, string> = {
-  beacon: "📡",
-  dns_beacon: "🌐",
-  volume: "📊",
-  port_scan: "🔍",
-  lateral_movement: "🔀",
-  tls_anomaly: "🔒",
-  dns: "🌍",
-  entropy: "🎲",
-  temporal: "⏰",
-  connection: "🔗",
+const categoryLabels: Record<string, string> = {
+  beacon: "BCN",
+  dns_beacon: "DNS",
+  volume: "VOL",
+  port_scan: "SCN",
+  lateral_movement: "LAT",
+  tls_anomaly: "TLS",
+  dns: "DNS",
+  entropy: "ENT",
+  temporal: "TMP",
+  connection: "CON",
 };
 
 const likelihoodColors: Record<string, string> = {
@@ -84,7 +84,7 @@ export const AnomalyFindings: React.FC<AnomalyFindingsProps> = ({ anomalyReport,
       <div className="space-y-3">
         {findings.map((finding, index) => {
           const colors = severityColors[finding.severity] || severityColors.low;
-          const icon = categoryIcons[finding.category] || "⚠️";
+          const tag = categoryLabels[finding.category] || "—";
           const isExpanded = expandedIndex === index;
 
           return (
@@ -99,7 +99,7 @@ export const AnomalyFindings: React.FC<AnomalyFindingsProps> = ({ anomalyReport,
               >
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
-                    <span className="text-2xl">{icon}</span>
+                    <span className="text-xs font-mono font-bold text-slate-400 bg-slate-800 rounded px-1.5 py-0.5">{tag}</span>
                     <div>
                       <div className="flex items-center gap-2">
                         <span className={`text-xs font-bold uppercase tracking-wider ${colors.text}`}>
@@ -164,7 +164,7 @@ export const AnomalyFindings: React.FC<AnomalyFindingsProps> = ({ anomalyReport,
                   {/* Chain of Thought */}
                   {finding.chain_of_thought && (
                     <div>
-                      <div className="text-xs text-slate-500 uppercase tracking-wider mb-2">🔍 Forensic Analysis</div>
+                      <div className="text-xs text-slate-500 uppercase tracking-wider mb-2">Forensic Analysis</div>
                       <div className="bg-slate-950/50 border border-slate-800/50 rounded p-3 max-h-64 overflow-y-auto">
                         <pre className="text-xs text-slate-300 whitespace-pre-wrap font-mono leading-relaxed">
                           {finding.chain_of_thought}
