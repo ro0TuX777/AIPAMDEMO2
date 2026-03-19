@@ -39,6 +39,11 @@ const SEV_BORDER: Record<string, string> = {
     info: "#475569",
 };
 
+// Severity levels ordered from most to least severe (for filtering)
+const SEV_LEVELS = ["critical", "high", "medium", "low", "info"] as const;
+type SeverityLevel = typeof SEV_LEVELS[number];
+const SEV_RANK: Record<string, number> = { critical: 0, high: 1, medium: 2, low: 3, info: 4 };
+
 function nodeRadius(d: D3Node): number {
     if (d.type === "host") return 12;
     if (d.type === "theory" || d.type === "slice") return 10;
@@ -51,6 +56,23 @@ function nodeColor(d: D3Node): string {
     return base;
 }
 
+/** Map node type to D3 symbol for distinct shapes */
+const TYPE_SHAPE: Record<string, d3.SymbolType> = {
+    host: d3.symbolCircle,
+    alert: d3.symbolDiamond,
+    finding: d3.symbolSquare,
+    theory: d3.symbolTriangle,
+    slice: d3.symbolCross,
+    ioc: d3.symbolStar,
+    annotation: d3.symbolWye,
+    external: d3.symbolCircle,
+};
+
+function nodeSymbolSize(d: D3Node): number {
+    if (d.type === "host") return 350;
+    if (d.type === "theory" || d.type === "slice") return 250;
+    return 150;
+}
 
 function buildTooltip(d: D3Node): string {
     const lines = [`${d.type.toUpperCase()}: ${d.label}`];
@@ -63,6 +85,15 @@ function buildTooltip(d: D3Node): string {
     return lines.join("\n");
 }
 
+/** Check if a node passes the minimum severity filter.
+ *  Hosts and types without severity always pass. */
+function passesSeverityFilter(d: GraphNode, minSev: SeverityLevel): boolean {
+    // Hosts, theories, slices always shown (they derive severity from children)
+    if (d.type === "host" || d.type === "theory" || d.type === "slice" || d.type === "external") return true;
+    const nodeSev = d.severity || "info";
+    return (SEV_RANK[nodeSev] ?? 4) <= (SEV_RANK[minSev] ?? 4);
+}
+
 export const AttackGraphPage: React.FC = () => {
     const { jobId } = useParams<{ jobId: string }>();
     const svgRef = useRef<SVGSVGElement>(null);
@@ -71,6 +102,8 @@ export const AttackGraphPage: React.FC = () => {
     const [enabledTypes, setEnabledTypes] = useState<Set<string>>(
         new Set(NODE_TYPES.map(t => t.key))
     );
+    const [minSeverity, setMinSeverity] = useState<SeverityLevel>("medium");
+    const [zoomScale, setZoomScale] = useState(1);
 
     const topologyQuery = useQuery({
         queryKey: ["job", jobId, "graph"],
@@ -200,18 +233,30 @@ export const AttackGraphPage: React.FC = () => {
         const width = 900;
         const height = 650;
 
-        // Filter nodes/edges by enabled types
-        const filteredNodes = activeData.nodes.filter(n => enabledTypes.has(n.type));
+        // Filter nodes by enabled types AND severity
+        const filteredNodes = activeData.nodes.filter(
+            n => enabledTypes.has(n.type) && passesSeverityFilter(n, minSeverity)
+        );
         const filteredNodeIds = new Set(filteredNodes.map(n => n.id));
         const filteredEdges = activeData.edges.filter(
             e => filteredNodeIds.has(e.source as string) && filteredNodeIds.has(e.target as string)
         );
 
+        // Build adjacency map for neighbor highlight
+        const neighbors = new Map<string, Set<string>>();
+        for (const e of filteredEdges) {
+            const s = e.source as string;
+            const t = e.target as string;
+            if (!neighbors.has(s)) neighbors.set(s, new Set());
+            if (!neighbors.has(t)) neighbors.set(t, new Set());
+            neighbors.get(s)!.add(t);
+            neighbors.get(t)!.add(s);
+        }
+
         const svg = d3.select(svgRef.current);
         svg.selectAll("*").remove();
 
         const defs = svg.append("defs");
-        // Arrow marker for directed edges
         defs.append("marker")
             .attr("id", "arrowhead")
             .attr("viewBox", "0 -5 10 10")
@@ -226,10 +271,19 @@ export const AttackGraphPage: React.FC = () => {
 
         const g = svg.append("g");
 
+        let currentZoom = 1;
         const zoom = d3.zoom<SVGSVGElement, unknown>()
             .scaleExtent([0.2, 5])
             .on("zoom", (event) => {
                 g.attr("transform", event.transform);
+                currentZoom = event.transform.k;
+                setZoomScale(currentZoom);
+                // Semantic zoom: toggle label visibility
+                const showLabels = currentZoom >= 0.8;
+                labels.attr("visibility", showLabels ? "visible" : "hidden");
+                if (linkLabels) {
+                    linkLabels.attr("visibility", currentZoom >= 1.2 ? "visible" : "hidden");
+                }
             });
 
         svg.call(zoom);
@@ -244,6 +298,7 @@ export const AttackGraphPage: React.FC = () => {
 
         // Links
         const link = g.append("g")
+            .attr("class", "links")
             .attr("stroke-opacity", 0.5)
             .selectAll("line")
             .data(filteredEdges as D3Link[])
@@ -252,7 +307,7 @@ export const AttackGraphPage: React.FC = () => {
             .attr("stroke-width", d => Math.sqrt(d.weight || 1))
             .attr("marker-end", mode === "evidence" ? "url(#arrowhead)" : null);
 
-        // Link labels (evidence mode only)
+        // Link labels (evidence mode only) — hidden by default until zoom >= 1.2
         let linkLabels: d3.Selection<any, D3Link, SVGGElement, unknown> | null = null;
         if (mode === "evidence") {
             linkLabels = g.append("g")
@@ -263,35 +318,60 @@ export const AttackGraphPage: React.FC = () => {
                 .attr("font-size", "8px")
                 .attr("text-anchor", "middle")
                 .attr("pointer-events", "none")
+                .attr("visibility", "hidden")
                 .text(d => d.type.replace(/_/g, " "));
         }
 
-        // Nodes
-        const node = g.append("g")
-            .selectAll("circle")
+        // Nodes — render as distinct shapes using d3.symbol
+        const nodeGroup = g.append("g").attr("class", "nodes");
+        const node = nodeGroup
+            .selectAll<SVGPathElement, D3Node>("path")
             .data(filteredNodes as D3Node[])
-            .join("circle")
-            .attr("r", d => nodeRadius(d))
+            .join("path")
+            .attr("d", d => {
+                const sym = d3.symbol().type(TYPE_SHAPE[d.type] || d3.symbolCircle).size(nodeSymbolSize(d));
+                return sym() || "";
+            })
             .attr("fill", d => nodeColor(d))
             .attr("stroke", d => SEV_BORDER[d.severity || "info"] || "#475569")
             .attr("stroke-width", 2)
             .attr("cursor", "pointer")
             .on("click", (_event, d) => setSelectedNode(d))
+            .on("mouseenter", (_event, d) => {
+                // Neighbor highlight: dim non-neighbors
+                const neighborSet = neighbors.get(d.id) || new Set();
+                node.attr("opacity", n => n.id === d.id || neighborSet.has(n.id) ? 1 : 0.12);
+                link.attr("opacity", e => {
+                    const sId = typeof e.source === "string" ? e.source : (e.source as D3Node).id;
+                    const tId = typeof e.target === "string" ? e.target : (e.target as D3Node).id;
+                    return sId === d.id || tId === d.id ? 1 : 0.05;
+                });
+                labels.attr("opacity", n => n.id === d.id || neighborSet.has(n.id) ? 1 : 0.08);
+                if (linkLabels) linkLabels.attr("opacity", 0.08);
+            })
+            .on("mouseleave", () => {
+                // Restore all
+                node.attr("opacity", 1);
+                link.attr("opacity", 1);
+                labels.attr("opacity", 1);
+                if (linkLabels) linkLabels.attr("opacity", 1);
+            })
             .call(drag(simulation) as any);
 
         node.append("title").text(d => buildTooltip(d));
 
-        // Labels
+        // Labels — hidden by default until zoom >= 0.8 (semantic zoom)
         const labels = g.append("g")
             .selectAll("text")
             .data(filteredNodes as D3Node[])
             .join("text")
-            .attr("dx", d => nodeRadius(d) + 4)
+            .attr("dx", d => nodeRadius(d) + 6)
             .attr("dy", 4)
             .text(d => d.label.length > 30 ? d.label.slice(0, 28) + "…" : d.label)
             .attr("fill", "#cbd5e1")
             .attr("font-size", "10px")
-            .attr("pointer-events", "none");
+            .attr("pointer-events", "none")
+            .attr("visibility", "hidden");
 
         simulation.on("tick", () => {
             link
@@ -306,12 +386,13 @@ export const AttackGraphPage: React.FC = () => {
                     .attr("y", d => ((d.source as any).y + (d.target as any).y) / 2 - 4);
             }
 
-            node.attr("cx", d => d.x!).attr("cy", d => d.y!);
+            // Position shape nodes via transform (path elements use translate)
+            node.attr("transform", d => `translate(${d.x},${d.y})`);
             labels.attr("x", d => d.x!).attr("y", d => d.y!);
         });
 
         function drag(sim: d3.Simulation<D3Node, undefined>) {
-            return d3.drag<SVGCircleElement, D3Node>()
+            return d3.drag<SVGPathElement, D3Node>()
                 .on("start", (event) => {
                     if (!event.active) sim.alphaTarget(0.3).restart();
                     event.subject.fx = event.subject.x;
@@ -329,7 +410,7 @@ export const AttackGraphPage: React.FC = () => {
         }
 
         return () => { simulation.stop(); };
-    }, [activeData, enabledTypes, mode]);
+    }, [activeData, enabledTypes, mode, minSeverity]);
 
     // ── Node count summary ────────────────────────────────────────────────
     const typeCounts: Record<string, number> = {};
@@ -380,7 +461,7 @@ export const AttackGraphPage: React.FC = () => {
                 </div>
             </div>
 
-            {/* Legend / type filter (evidence mode) */}
+            {/* Legend / type filter + severity filter (evidence mode) */}
             {mode === "evidence" && (
                 <div className="flex items-center gap-3 flex-wrap text-xs">
                     {NODE_TYPES.filter(t => t.key !== "external").map(t => (
@@ -402,6 +483,22 @@ export const AttackGraphPage: React.FC = () => {
                             </span>
                         </button>
                     ))}
+                    {/* Severity filter */}
+                    <div className="ml-auto flex items-center gap-1.5">
+                        <span className="text-slate-500">Min severity:</span>
+                        <select
+                            value={minSeverity}
+                            onChange={e => setMinSeverity(e.target.value as SeverityLevel)}
+                            className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-slate-200 text-xs"
+                        >
+                            {SEV_LEVELS.map(s => (
+                                <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
+                            ))}
+                        </select>
+                        <span className="text-slate-600 ml-2">
+                            Zoom: {zoomScale.toFixed(1)}×
+                        </span>
+                    </div>
                 </div>
             )}
 
@@ -446,7 +543,15 @@ export const AttackGraphPage: React.FC = () => {
                     />
                     {activeData && (
                         <div className="absolute bottom-3 left-3 text-xs text-slate-500">
-                            {activeData.nodes.length} nodes · {activeData.edges.length} edges
+                            {(() => {
+                                const shown = activeData.nodes.filter(
+                                    n => enabledTypes.has(n.type) && passesSeverityFilter(n, minSeverity)
+                                ).length;
+                                return shown < activeData.nodes.length
+                                    ? `${shown} / ${activeData.nodes.length} nodes`
+                                    : `${activeData.nodes.length} nodes`;
+                            })()} · {activeData.edges.length} edges
+                            {zoomScale < 0.8 && <span className="ml-2 text-amber-500/70">Zoom in to see labels</span>}
                         </div>
                     )}
                 </div>
