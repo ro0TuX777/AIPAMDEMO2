@@ -21,7 +21,7 @@ class LLMConfig:
     endpoint: str
     model: str
     temperature: float = 0.1
-    max_tokens: int = 2000
+    max_tokens: int = 4096
     timeout_seconds: float = 600.0  # 10 minutes; local LLMs can be slow
     provider: LLMProvider = LLMProvider.OLLAMA
 
@@ -329,9 +329,9 @@ class LLMClient:
 
         if config is None:
             endpoint = os.getenv("LLM_ENDPOINT", "http://localhost:11434/v1/chat/completions")
-            model = os.getenv("LLM_MODEL_NAME", "aipam-trafficllm-v8")
+            model = os.getenv("LLM_MODEL_NAME", "aipam-trafficllm-v10")
             temperature = float(os.getenv("LLM_TEMPERATURE", "0.1"))
-            max_tokens = int(os.getenv("LLM_MAX_TOKENS", "2000"))
+            max_tokens = int(os.getenv("LLM_MAX_TOKENS", "4096"))
             timeout_seconds = float(os.getenv("LLM_TIMEOUT_SECONDS", "600"))
             provider_str = os.getenv("LLM_PROVIDER", "ollama").lower()
             provider = LLMProvider.TRAFFICLLM if provider_str == "trafficllm" else LLMProvider.OLLAMA
@@ -1832,8 +1832,7 @@ Provide your findings in a structured JSON format with this exact structure:
             "temperature": temperature if temperature is not None else self.config.temperature,
             "max_tokens": self.config.max_tokens,
             "messages": messages,
-            # Ollama-specific: shrink context window for faster inference
-            "options": {"num_ctx": 4096},
+            "options": {"num_ctx": 16384},
         }
 
         try:
@@ -1863,7 +1862,7 @@ Provide your findings in a structured JSON format with this exact structure:
             "max_tokens": self.config.max_tokens,
             "messages": messages,
             "stream": True,
-            "options": {"num_ctx": 4096},
+            "options": {"num_ctx": 16384},
         }
 
         try:
@@ -1987,7 +1986,7 @@ async def classify_traffic_with_trafficllm(
 
 def create_dual_llm_client(
     ollama_endpoint: str = "http://ollama:11434/v1/chat/completions",
-    ollama_model: str = "aipam-trafficllm-v8",
+    ollama_model: str = "aipam-trafficllm-v10",
     trafficllm_endpoint: Optional[str] = "http://trafficllm:8001/v1/chat/completions",
     use_trafficllm_for_detection: bool = True,
 ) -> LLMClient:

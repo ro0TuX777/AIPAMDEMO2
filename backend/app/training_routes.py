@@ -337,7 +337,6 @@ async def start_training_job():
         # Inside Docker without explicit root — try to derive from the
         # Docker-to-host volume convention:  ./finetuning -> /data/finetuning
         # The host path cannot be determined; fall back to a common default.
-        import subprocess
         try:
             # Ask the host trainer for its workspace root
             _ws_req = urllib.request.Request(f"{host_trainer_url}/health", method="GET")
@@ -602,7 +601,6 @@ from .distillation import (
     get_teacher_config,
     update_teacher_config,
     get_distill_stats,
-    distill_chunk,
 )
 
 

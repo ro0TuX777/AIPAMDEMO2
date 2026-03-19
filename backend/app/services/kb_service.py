@@ -12,13 +12,155 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+import csv
+import io
+
 import httpx
 
 logger = logging.getLogger("aipam.kb")
 
 # ── Chunking parameters ─────────────────────────────────────────────────
-_CHUNK_SIZE = 512      # chars per chunk
-_CHUNK_OVERLAP = 64    # overlap between consecutive chunks
+_CHUNK_SIZE = 1024     # chars per chunk
+_CHUNK_OVERLAP = 128   # overlap between consecutive chunks
+
+
+def _looks_like_csv(text: str) -> bool:
+    """Heuristic: does the text look like CSV/TSV data?"""
+    lines = text.strip().split("\n", 10)
+    if len(lines) < 2:
+        return False
+    # Check if most lines have a consistent delimiter count
+    for delim in (",", "\t"):
+        counts = [line.count(delim) for line in lines[:8] if line.strip()]
+        if counts and min(counts) >= 2 and max(counts) - min(counts) <= 2:
+            return True
+    return False
+
+
+def _infer_column_name(data_rows: list[list[str]], col_idx: int) -> str:
+    """Infer a meaningful column name from data values when the header cell is empty.
+
+    Samples up to 10 data values and checks for common patterns:
+    - IP addresses → "IP Address"
+    - MAC addresses → "MAC Address"
+    - Status keywords (Online/Offline/Active/Inactive/Up/Down) → "Status"
+    - Numeric-only → "Value"
+    - Date-like → "Date"
+    Falls back to "Column_N" if no pattern matches.
+    """
+    _IP_RE = re.compile(r"^[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}$")
+    _MAC_RE = re.compile(r"^([0-9a-fA-F]{2}[:\-]){5}[0-9a-fA-F]{2}$")
+    _STATUS_WORDS = {"online", "offline", "active", "inactive", "up", "down",
+                     "enabled", "disabled", "running", "stopped", "unknown"}
+    _DATE_RE = re.compile(
+        r"^[0-9]{1,4}[/\-][0-9]{1,2}[/\-][0-9]{1,4}$"
+    )
+
+    samples = []
+    for row in data_rows[:10]:
+        if col_idx < len(row) and row[col_idx].strip():
+            samples.append(row[col_idx].strip())
+
+    if not samples:
+        return f"Column_{col_idx + 1}"
+
+    ip_count = sum(1 for s in samples if _IP_RE.match(s))
+    if ip_count >= len(samples) * 0.6:
+        return "IP Address"
+
+    mac_count = sum(1 for s in samples if _MAC_RE.match(s))
+    if mac_count >= len(samples) * 0.6:
+        return "MAC Address"
+
+    status_count = sum(1 for s in samples if s.lower() in _STATUS_WORDS)
+    if status_count >= len(samples) * 0.6:
+        return "Status"
+
+    date_count = sum(1 for s in samples if _DATE_RE.match(s))
+    if date_count >= len(samples) * 0.6:
+        return "Date"
+
+    numeric_count = sum(1 for s in samples if s.replace(".", "", 1).replace("-", "", 1).isdigit())
+    if numeric_count >= len(samples) * 0.6:
+        return "Value"
+
+    return f"Column_{col_idx + 1}"
+
+
+def _enrich_csv_to_natural_language(text: str, doc_name: str = "") -> str:
+    """Convert CSV/TSV rows into natural-language sentences for better embedding.
+
+    Each row becomes a sentence like:
+      'Asset record — Hostname: tea-Platform-2, IP Address: 10.16.167.41, Vendor: VMware, Status: Online'
+    This embeds much better for semantic search than raw CSV text.
+    """
+    text = text.strip()
+    lines = text.split("\n")
+    if len(lines) < 2:
+        return text
+
+    # Detect delimiter
+    delim = ","
+    if lines[0].count("\t") > lines[0].count(","):
+        delim = "\t"
+
+    try:
+        reader = csv.reader(io.StringIO(text), delimiter=delim)
+        rows = list(reader)
+    except Exception:
+        return text
+
+    if len(rows) < 2:
+        return text
+
+    # Find header row — first row with mostly non-empty cells
+    header_idx = 0
+    headers = [h.strip() for h in rows[0]]
+    # If first row looks empty or like a title, try the next
+    non_empty = [h for h in headers if h]
+    if len(non_empty) < 2 and len(rows) > 2:
+        headers = [h.strip() for h in rows[1]]
+        header_idx = 1
+
+    # Detect column count mismatch: data rows may have more columns than
+    # the header row when text.strip() removed a leading delimiter.
+    data_rows = rows[header_idx + 1:]
+    if data_rows:
+        max_data_cols = max(len(r) for r in data_rows[:10])
+        if max_data_cols > len(headers):
+            # Pad headers at the front with empty strings so indices align
+            pad = max_data_cols - len(headers)
+            headers = [""] * pad + headers
+
+    # Clean up headers: infer names for empty header cells from data patterns
+    clean_headers = []
+    for i, h in enumerate(headers):
+        if h:
+            clean_headers.append(h)
+        else:
+            inferred = _infer_column_name(data_rows, i)
+            clean_headers.append(inferred)
+
+    enriched_lines = []
+    prefix = f"Asset record from '{doc_name}'" if doc_name else "Asset record"
+
+    for row in rows[header_idx + 1:]:
+        if not any(cell.strip() for cell in row):
+            continue  # skip empty rows
+        parts = []
+        for i, cell in enumerate(row):
+            cell = cell.strip()
+            if not cell:
+                continue
+            col_name = clean_headers[i] if i < len(clean_headers) else f"Column_{i + 1}"
+            parts.append(f"{col_name}: {cell}")
+        if parts:
+            enriched_lines.append(f"{prefix} — " + ", ".join(parts))
+
+    if not enriched_lines:
+        return text
+
+    return "\n".join(enriched_lines)
 
 
 def chunk_text(text: str, chunk_size: int = _CHUNK_SIZE, overlap: int = _CHUNK_OVERLAP) -> list[str]:
@@ -137,8 +279,16 @@ async def index_document(
     """Chunk a document, embed it, and store in ChromaDB.
 
     Returns the number of chunks indexed.
+    If the content looks like CSV/TSV data, it is first enriched into
+    natural-language sentences so that semantic search works well.
     """
-    chunks = chunk_text(content)
+    # Enrich CSV/TSV content into natural language for better embedding
+    indexable_content = content
+    if _looks_like_csv(content):
+        logger.info("Detected CSV/TSV content in '%s' — enriching for embedding", doc_name)
+        indexable_content = _enrich_csv_to_natural_language(content, doc_name=doc_name)
+
+    chunks = chunk_text(indexable_content)
     if not chunks:
         return 0
 

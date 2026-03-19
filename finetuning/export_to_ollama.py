@@ -61,7 +61,9 @@ def get_next_version(model_prefix: str, ollama_url: str) -> int:
 
 def create_modelfile(gguf_path: str, output_path: str) -> str:
     """Create an Ollama Modelfile pointing to the GGUF."""
-    modelfile_content = f"""FROM {gguf_path}
+    # Ollama requires absolute paths in the FROM directive
+    abs_gguf_path = os.path.abspath(gguf_path)
+    modelfile_content = f"""FROM {abs_gguf_path}
 
 TEMPLATE \"\"\"{{{{ if .System }}}}<|start_header_id|>system<|end_header_id|>
 
@@ -175,23 +177,90 @@ def main():
     # Step 4: Merge and export to GGUF
     gguf_dir = adapter_dir / "gguf_export"
     gguf_dir.mkdir(parents=True, exist_ok=True)
-    print(f"[EXPORT] Step 2/4: Merging LoRA + exporting GGUF to {gguf_dir}...")
-    model.save_pretrained_gguf(
-        str(gguf_dir),
-        tokenizer,
-        quantization_method=args.quantization,
-    )
-    print("[EXPORT] GGUF export complete.")
 
-    # Find the GGUF file
-    gguf_files = list(gguf_dir.glob("*.gguf"))
-    if not gguf_files:
-        # Unsloth may name it unsloth.Q4_K_M.gguf or model-unsloth.Q4_K_M.gguf
-        gguf_files = list(gguf_dir.glob("**/*.gguf"))
-    if not gguf_files:
-        print("[EXPORT] ERROR: No GGUF file found after export")
+    # Map string quantization types to numeric IDs for llama-quantize.
+    # Some builds of llama-quantize fail to parse string type names when an
+    # output filename is provided (stoi error), so we always use numeric IDs.
+    QUANT_TYPE_MAP = {
+        "q4_0": "2", "q4_1": "3", "q5_0": "8", "q5_1": "9",
+        "q2_k": "10", "q2_k_s": "21", "q3_k_s": "11", "q3_k_m": "12",
+        "q3_k_l": "13", "q4_k_s": "14", "q4_k_m": "15", "q4_k": "15",
+        "q5_k_s": "16", "q5_k_m": "17", "q5_k": "17", "q6_k": "18",
+        "q8_0": "7", "f16": "1", "bf16": "32", "f32": "0",
+    }
+
+    # Symlink llama.cpp so Unsloth's check_llama_cpp finds the binaries
+    project_llama_cpp = Path(__file__).resolve().parent.parent / "llama.cpp"
+    local_link = gguf_dir / "llama.cpp"
+    if project_llama_cpp.exists() and not local_link.exists():
+        local_link.symlink_to(project_llama_cpp)
+        print(f"[EXPORT] Symlinked llama.cpp -> {project_llama_cpp}")
+
+    # Step 2a: Use Unsloth to merge LoRA and convert to BF16 GGUF only.
+    # We skip Unsloth's quantization because the local llama-quantize build
+    # doesn't accept string type names in 4-arg mode (stoi bug).
+    print(f"[EXPORT] Step 2/4: Merging LoRA + exporting BF16 GGUF to {gguf_dir}...")
+    old_cwd = os.getcwd()
+    os.chdir(str(gguf_dir))
+    try:
+        model.save_pretrained_gguf(
+            str(gguf_dir),
+            tokenizer,
+            quantization_method="bf16",
+        )
+    finally:
+        os.chdir(old_cwd)
+    print("[EXPORT] BF16 GGUF export complete.")
+
+    # Find the BF16 GGUF file
+    bf16_files = list(gguf_dir.glob("*.BF16.gguf")) or list(gguf_dir.glob("*.gguf"))
+    if not bf16_files:
+        bf16_files = list(gguf_dir.glob("**/*.gguf"))
+    if not bf16_files:
+        print("[EXPORT] ERROR: No BF16 GGUF file found after merge")
         sys.exit(1)
-    gguf_path = str(gguf_files[0])
+    bf16_path = bf16_files[0]
+    print(f"[EXPORT] BF16 file: {bf16_path}")
+
+    # Step 2b: Quantize BF16 -> target quantization using llama-quantize
+    # with numeric type ID to avoid the stoi parsing bug.
+    quant_key = args.quantization.lower()
+    if quant_key == "bf16":
+        # Already BF16, no further quantization needed
+        gguf_path = str(bf16_path)
+    else:
+        quant_id = QUANT_TYPE_MAP.get(quant_key)
+        if quant_id is None:
+            print(f"[EXPORT] ERROR: Unknown quantization type '{args.quantization}'")
+            print(f"[EXPORT] Supported: {', '.join(sorted(QUANT_TYPE_MAP.keys()))}")
+            sys.exit(1)
+        quant_label = args.quantization.upper().replace("-", "_")
+        output_name = bf16_path.stem.replace(".BF16", "") + f".{quant_label}.gguf"
+        output_path = gguf_dir / output_name
+        quantizer = str(project_llama_cpp / "llama-quantize")
+        print(f"[EXPORT] Quantizing BF16 -> {quant_label} (type {quant_id})...")
+        try:
+            result = subprocess.run(
+                [quantizer, str(bf16_path), str(output_path), quant_id],
+                capture_output=True, text=True, timeout=600,
+            )
+            if result.returncode != 0:
+                print(f"[EXPORT] ERROR: llama-quantize failed (exit {result.returncode})")
+                print(f"[EXPORT] stderr: {result.stderr.strip()}")
+                sys.exit(1)
+            print(f"[EXPORT] Quantization complete.")
+        except subprocess.TimeoutExpired:
+            print("[EXPORT] ERROR: llama-quantize timed out after 600s")
+            sys.exit(1)
+        gguf_path = str(output_path)
+
+        # Remove the large BF16 intermediate file to save disk space
+        try:
+            bf16_path.unlink()
+            print(f"[EXPORT] Removed intermediate BF16 file")
+        except OSError:
+            pass
+
     print(f"[EXPORT] GGUF file: {gguf_path}")
 
     # Step 4: Create Modelfile

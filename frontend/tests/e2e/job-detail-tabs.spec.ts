@@ -1,94 +1,71 @@
 import { test, expect } from '@playwright/test';
 
-// Focused coverage for Job Detail tabs (Overview, Hosts, Raw JSON, Report).
+// Focused coverage for Job Detail page header, summary, and sub-page navigation links.
 
-test('job detail tabs render and switch correctly', async ({ page }) => {
+test('@requires-backend job detail page renders header and navigation links', async ({ page }) => {
   const jobId = 'e2e-job-tabs-001';
 
-  // Stub job status
+  // Stub job detail
   await page.route(`http://localhost:8000/api/v1/jobs/${jobId}`, async (route) => {
     const now = new Date().toISOString();
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        job_id: jobId,
-        status: 'completed',
-        created_at: now,
-        updated_at: now,
-        steps: [
-          { name: 'ingest', status: 'completed', message: 'ok' },
-          { name: 'parse', status: 'completed', message: 'ok' },
-          { name: 'aggregate', status: 'completed', message: 'ok' },
-          { name: 'llm_analysis', status: 'completed', message: 'ok' },
-          { name: 'report', status: 'completed', message: 'ok' },
-        ],
+        schema_version: '2.0',
+        job: {
+          job_id: jobId,
+          status: 'completed',
+          created_at: now,
+          started_at: now,
+          completed_at: now,
+          execution_profile: 'standard',
+          priority: 'normal',
+          pcap_filename: 'test.pcap',
+          stages: [],
+          sensors: [],
+          pcaps: [],
+          metrics: { durations: {}, pcap_stats: {} },
+        },
       }),
     });
   });
 
-  // Stub job result with hosts and report URLs
-  await page.route(`http://localhost:8000/api/v1/jobs/${jobId}/result`, async (route) => {
+  // Stub job summary (separate endpoint)
+  await page.route(`http://localhost:8000/api/v1/jobs/${jobId}/summary`, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
+        schema_version: '2.0',
         job_id: jobId,
-        status: 'completed',
-        summary: {
-          severity: 'high',
-          key_findings: [
-            { stage: 'initial_access', description: 'Phishing email with malicious attachment.' },
-          ],
-          mitre_techniques: [
-            { id: 'T1566', name: 'Phishing' },
-          ],
-        },
-        hosts: [
-          {
-            ip: '10.0.0.10',
-            role: 'victim',
-            findings: ['Suspected initial compromise via phishing.', 'Outbound C2 beaconing detected.'],
-          },
-        ],
-        raw: { some: 'raw-data' },
-        report_urls: {
-          html: '/reports/job-e2e-job-tabs-001.html',
-          markdown: '/reports/job-e2e-job-tabs-001.md',
-        },
+        headline: 'Test analysis complete.',
+        alert_count: 2,
+        finding_count: 5,
+        ioc_count: 1,
+        host_count: 3,
+        top_signals: ['Signal A'],
+        recommendations: ['Check host 10.0.0.1'],
       }),
     });
   });
 
   await page.goto(`/jobs/${jobId}`);
 
-  // Header basics still there
-  await expect(page.getByText('Analysis Report')).toBeVisible();
+  // Header
+  await expect(page.getByText('Job Detail')).toBeVisible();
   await expect(page.getByText(`ID: ${jobId}`)).toBeVisible();
 
-  // Overview tab is active by default
-  await expect(page.getByTestId('tab-panel-overview')).toBeVisible();
-  await expect(page.getByText('Executive Summary')).toBeVisible();
-  await expect(page.getByText('Overall Severity')).toBeVisible();
-  await expect(page.getByText('high', { exact: false })).toBeVisible();
+  // Summary card
+  await expect(page.getByText('Summary')).toBeVisible();
+  await expect(page.getByText('Test analysis complete.')).toBeVisible();
 
-  // Switch to Hosts tab and verify table content
-  await page.getByTestId('tab-hosts').click();
-  await expect(page.getByTestId('tab-panel-hosts')).toBeVisible();
-  await expect(page.getByText('Host Findings')).toBeVisible();
-  await expect(page.getByText('10.0.0.10')).toBeVisible();
-  await expect(page.getByText('victim')).toBeVisible();
-  await expect(page.getByText('Suspected initial compromise via phishing.')).toBeVisible();
-
-  // Raw JSON tab shows pretty-printed JSON
-  await page.getByTestId('tab-raw-json').click();
-  await expect(page.getByTestId('tab-panel-raw-json')).toBeVisible();
-  await expect(page.getByText('some')).toBeVisible();
-
-  // Report tab exposes links
-  await page.getByTestId('tab-report').click();
-  await expect(page.getByTestId('tab-panel-report')).toBeVisible();
-  await expect(page.getByTestId('link-report-html')).toBeVisible();
-  await expect(page.getByTestId('link-report-markdown')).toBeVisible();
+  // Sub-page navigation links exist (scoped to jobdetail-tabs to avoid nav sidebar matches)
+  const tabs = page.getByTestId('jobdetail-tabs');
+  await expect(tabs).toBeVisible();
+  await expect(tabs.getByRole('link', { name: 'Theories' })).toBeVisible();
+  await expect(tabs.getByRole('link', { name: 'Hosts' })).toBeVisible();
+  await expect(tabs.getByRole('link', { name: 'Alerts' })).toBeVisible();
+  await expect(tabs.getByRole('link', { name: 'Report' })).toBeVisible();
 });
 

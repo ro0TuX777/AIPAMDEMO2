@@ -24,60 +24,48 @@ export const PageHelpPanel: React.FC<PageHelpPanelProps> = ({
 }) => {
     const entry: PageHelpEntry | null = activeField ? getPageHelpEntry(activeField) : null;
 
+    /* Render nothing when collapsed — zero layout impact */
+    if (!activeField || !entry) return null;
+
     return (
         <div
-            className={`help-guide-panel ${activeField ? "help-guide-panel--open" : ""}`}
+            className="help-guide-panel help-guide-panel--open"
             data-testid="page-help-panel"
         >
-            {/* Collapsed state — vertical label */}
-            {!activeField && (
-                <div className="flex items-center justify-center h-full">
-                    <span
-                        className="text-xs text-slate-500 tracking-widest uppercase"
-                        style={{ writingMode: "vertical-rl", textOrientation: "mixed" }}
-                    >
-                        Click a heading for help
-                    </span>
-                </div>
-            )}
-
-            {/* Expanded state */}
-            {activeField && entry && (
-                <div className="help-guide-content animate-fadeIn">
-                    {/* Header */}
-                    <div className="flex items-start justify-between mb-4">
-                        <div className="flex-1 min-w-0">
-                            <span
-                                className={`inline-block text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border mb-2 ${sectionColors[entry.section] ?? "text-slate-400 bg-slate-400/10 border-slate-400/20"
-                                    }`}
-                            >
-                                {entry.section}
-                            </span>
-                            <h3 className="text-base font-semibold text-slate-50 leading-tight">
-                                {entry.title}
-                            </h3>
-                        </div>
-                        <button
-                            onClick={onClose}
-                            className="ml-2 mt-0.5 text-slate-500 hover:text-slate-200 transition-colors text-lg leading-none flex-shrink-0"
-                            aria-label="Close help panel"
-                            data-testid="btn-close-page-help"
+            <div className="help-guide-content animate-fadeIn">
+                {/* Header */}
+                <div className="flex items-start justify-between mb-4">
+                    <div className="flex-1 min-w-0">
+                        <span
+                            className={`inline-block text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded border mb-2 ${sectionColors[entry.section] ?? "text-slate-400 bg-slate-400/10 border-slate-400/20"
+                                }`}
                         >
-                            ×
-                        </button>
+                            {entry.section}
+                        </span>
+                        <h3 className="text-base font-semibold text-slate-50 leading-tight">
+                            {entry.title}
+                        </h3>
                     </div>
-
-                    {/* Description */}
-                    <div className="mb-4">
-                        <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
-                            What is this?
-                        </h4>
-                        <p className="text-sm text-slate-300 leading-relaxed">
-                            {entry.description}
-                        </p>
-                    </div>
+                    <button
+                        onClick={onClose}
+                        className="ml-2 mt-0.5 text-slate-500 hover:text-slate-200 transition-colors text-lg leading-none flex-shrink-0"
+                        aria-label="Close help panel"
+                        data-testid="btn-close-page-help"
+                    >
+                        ×
+                    </button>
                 </div>
-            )}
+
+                {/* Description */}
+                <div className="mb-4">
+                    <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-1.5">
+                        What is this?
+                    </h4>
+                    <p className="text-sm text-slate-300 leading-relaxed">
+                        {entry.description}
+                    </p>
+                </div>
+            </div>
         </div>
     );
 };

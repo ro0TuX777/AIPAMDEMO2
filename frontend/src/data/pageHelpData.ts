@@ -10,14 +10,6 @@ export interface PageHelpEntry {
 }
 
 export const pageHelpData: Record<string, PageHelpEntry> = {
-    /* ── Dashboard ─────────────────────────────────────── */
-    dashboard: {
-        title: "Dashboard",
-        description:
-            "The Dashboard provides a high-level overview of all analysis jobs across the system. It shows job counts by status (queued, running, completed, failed), recent activity, and quick links to start a new analysis. Use the Dashboard as your landing page to quickly assess the current state of all forensic investigations.",
-        section: "Navigation",
-    },
-
     /* ── Jobs ──────────────────────────────────────────── */
     jobs_list: {
         title: "Jobs",

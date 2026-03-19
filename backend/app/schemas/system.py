@@ -80,6 +80,21 @@ class ExplainLatencySummary(BaseModel):
     last_ms: int = 0
 
 
+class OllamaModelInfo(BaseModel):
+    """Information about a model available in Ollama."""
+    name: str
+    size: int = 0
+    family: str = "Unknown"
+    parameter_size: str = "N/A"
+    quantization: str = "Unknown"
+
+
+class AvailableModelsResponse(BaseModel):
+    """Response listing models available from Ollama."""
+    schema_version: str = SCHEMA_VERSION
+    models: list[OllamaModelInfo] = []
+
+
 class JobSummaryResponse(BaseModel):
     schema_version: str = SCHEMA_VERSION
     job_id: str

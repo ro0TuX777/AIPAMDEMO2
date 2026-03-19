@@ -16,7 +16,6 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.models.alert import Alert
-from backend.app.models.connection import Connection
 from backend.app.models.dns import DnsQuery
 from backend.app.models.file import File
 from backend.app.models.finding import Finding

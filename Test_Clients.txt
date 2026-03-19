@@ -1,0 +1,36 @@
+﻿
+	Descriptions	IP Address
+Online	iDRAC-4D4N1S2	10.16.169.8
+Online	bcadmin	10.16.169.33
+Online	00:50:56:91:82:a4	10.16.167.59
+Online	d0:94:66:01:d1:9b	10.16.167.3
+Online	tea-Platform-2	10.16.167.41
+Online	WalRemoteDev25	10.16.167.25
+Online	jenkins-waluigi	10.16.167.20
+Online	Pixel-9a	172.16.20.216
+Online	mail	169.254.221.52
+Online	MacBook-Pro-9	172.16.8.109
+Online	ubuntu	172.16.8.106
+Online	remotedevtemplate	172.16.9.127
+Online	WalRemoteElastic	
+Online	bcadmin-3	10.16.169.44
+Online	sensorvm	10.16.169.51
+Online	ubuntu1804-x64	
+Online	bc-Aegis-R2	172.16.20.192
+Online	kali	10.16.167.42
+Online	kali-testbox-20241	
+Online	Canon1bafd2	172.16.8.111
+Online	win1021h2	10.16.167.30
+Online	idrac-9V361T2	10.16.169.6
+Online	cc:c5:e5:86:6e:07	10.16.169.9
+Online	so-standalone	10.16.169.34
+Online	so-standalone-2	10.16.169.34
+Online	ansiblectrl	
+Online	DESKTOP-8587DMC	172.16.8.118
+Online	waluigi-remotedev21	10.16.167.21
+Online	cro-demo	10.16.167.11
+Online	c417fc88-f0f5-43ad-9db4-c10303ff0d0a	172.16.8.103
+Online	api-waluigi-28	10.16.167.28
+Online	00:50:56:91:58:be	10.16.167.47
+
+

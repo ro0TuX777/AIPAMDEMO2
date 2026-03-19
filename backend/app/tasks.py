@@ -14,7 +14,7 @@ from .anomaly_detector import AnomalyDetector
 from .connectors import ArkimeConnector, SecurityOnionConnector
 from .database import engine
 from .db_models import JobDB, JobResultDB, JobStepDB, PipelineCheckpointDB, FindingDB, EvidenceDB
-from .llm_client import LLMClient, LLMConfig, SYSTEM_PROMPT, analyze_chunks, classify_traffic_with_trafficllm
+from .llm_client import LLMClient, LLMConfig, analyze_chunks, classify_traffic_with_trafficllm
 from .models import JobResult, JobStatus, JobStepStatus
 from .settings_runtime import get_effective_settings
 from .reporting import jobresult_to_html, jobresult_to_markdown

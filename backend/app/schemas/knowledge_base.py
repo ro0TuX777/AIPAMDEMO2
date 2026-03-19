@@ -12,6 +12,10 @@ KBDocType = Literal[
     "baseline_profile",
     "threat_intel",
     "soc_playbook",
+    "policy",
+    "reference",
+    "user_guide",
+    "exploit_capability",
     "other",
 ]
 
@@ -21,7 +25,7 @@ class KBDocumentCreate(BaseModel):
     name: str = Field(..., min_length=1, max_length=255)
     doc_type: KBDocType
     description: str | None = None
-    content: str = Field(..., min_length=1, max_length=500_000)
+    content: str = Field(..., min_length=1, max_length=5_000_000)
 
 
 class KBDocumentOut(BaseModel):

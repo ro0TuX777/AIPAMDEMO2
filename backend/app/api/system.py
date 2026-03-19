@@ -20,10 +20,12 @@ from backend.app.api._state import (
 from backend.app.config_v2 import Settings, get_settings
 from backend.app.schemas.common import ExecutionProfile
 from backend.app.schemas.system import (
+    AvailableModelsResponse,
     DefaultLimits,
     ExplainConfiguration,
     ExplainTelemetryResponse,
     HealthResponse,
+    OllamaModelInfo,
     SystemConfigResponse,
 )
 
@@ -40,7 +42,7 @@ def _build_explain_configuration(settings: Settings) -> ExplainConfiguration:
     return ExplainConfiguration(
         mode="llm" if llm_enabled else "deterministic",
         llm_enabled=llm_enabled,
-        llm_model_name=os.getenv("LLM_MODEL_NAME", "aipam-trafficllm-v8"),
+        llm_model_name=os.getenv("LLM_MODEL_NAME", "aipam-trafficllm-v10"),
         llm_endpoint=os.getenv("LLM_ENDPOINT", f"{ollama_base}/v1/chat/completions"),
     )
 
@@ -166,4 +168,86 @@ async def reset_explain_telemetry(
         explain_response_counts=get_explain_response_counts(),
         explain_latency_ms=get_explain_latency_ms(),
     )
+
+
+@router.get("/models/available", response_model=AvailableModelsResponse)
+async def get_available_models(
+    response: Response,
+    request_id: str = Depends(get_request_id),
+    settings: Settings = Depends(get_settings),
+):
+    """List LLM models available in the local Ollama instance.
+
+    Tries multiple URL sources to be deployment-agnostic (bare metal, Docker,
+    any OS).  Priority:
+      1. AIPAM_OLLAMA_URL setting
+      2. LLM_ENDPOINT / OLLAMA_HOST environment variables (strip path suffix)
+      3. Common defaults (localhost, host.docker.internal)
+    """
+    import httpx
+    import logging
+    log = logging.getLogger(__name__)
+
+    response.headers["X-Request-Id"] = request_id
+
+    # -- Build ordered list of candidate base URLs --------------------------
+    candidate_urls: list[str] = []
+
+    # 1. From settings
+    ollama_base = settings.aipam_ollama_url.rstrip("/")
+    if ollama_base:
+        candidate_urls.append(ollama_base)
+
+    # 2. From environment variables
+    for env_key in ("LLM_ENDPOINT", "OLLAMA_HOST"):
+        env_val = os.environ.get(env_key, "")
+        if env_val:
+            base = env_val
+            for suffix in ("/v1/chat/completions", "/v1", "/api"):
+                if base.rstrip("/").endswith(suffix):
+                    base = base.rstrip("/")[: -len(suffix)]
+                    break
+            candidate_urls.append(base.rstrip("/"))
+
+    # 3. Common defaults
+    candidate_urls.extend([
+        "http://localhost:11434",
+        "http://host.docker.internal:11434",
+        "http://127.0.0.1:11434",
+    ])
+
+    # Deduplicate while preserving order
+    seen: set[str] = set()
+    unique_urls: list[str] = []
+    for u in candidate_urls:
+        if u not in seen:
+            seen.add(u)
+            unique_urls.append(u)
+
+    # -- Try each URL until one succeeds ------------------------------------
+    for base_url in unique_urls:
+        try:
+            async with httpx.AsyncClient(timeout=5.0) as client:
+                resp = await client.get(f"{base_url}/api/tags")
+            if resp.status_code != 200:
+                continue
+            data = resp.json()
+            raw_models = data.get("models", [])
+            models = [
+                OllamaModelInfo(
+                    name=m.get("name", ""),
+                    size=m.get("size", 0),
+                    family=m.get("details", {}).get("family", "Unknown"),
+                    parameter_size=m.get("details", {}).get("parameter_size", "N/A"),
+                    quantization=m.get("details", {}).get("quantization_level", "Unknown"),
+                )
+                for m in raw_models
+            ]
+            log.info("Found %d models from Ollama at %s", len(models), base_url)
+            return AvailableModelsResponse(models=models)
+        except Exception:
+            continue
+
+    log.warning("Could not reach Ollama at any of: %s", unique_urls)
+    return AvailableModelsResponse(models=[])
 

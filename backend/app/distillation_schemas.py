@@ -8,8 +8,8 @@ maps to exactly one output schema.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
-from typing import Any, Callable, Dict, List, Literal, Optional
+from dataclasses import dataclass
+from typing import Dict, List, Literal
 
 from pydantic import BaseModel, Field
 

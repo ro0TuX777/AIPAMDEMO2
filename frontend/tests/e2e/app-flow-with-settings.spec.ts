@@ -2,16 +2,51 @@ import { test, expect } from '@playwright/test';
 
 // Cross-page flow: Dashboard -> New Analysis (upload) -> Job Detail -> Settings.
 
-test('app flow: upload analysis then navigate to settings', async ({ page }) => {
+test('@requires-backend app flow: upload analysis then navigate to settings', async ({ page }) => {
   const jobId = 'e2e-nav-job-001';
 
-  // Stub backend APIs for upload job lifecycle.
-  await page.route('http://localhost:8000/api/v1/jobs', async (route) => {
+  const uploadId = 'e2e-upload-nav-001';
+
+  // Stub upload endpoint.
+  await page.route('**/api/v1/uploads', async (route) => {
+    if (route.request().method() === 'POST' && !route.request().url().includes('/validate')) {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          schema_version: '2.0',
+          upload_id: uploadId,
+          filename: 'dummy.pcap',
+          size_bytes: 1024,
+          sha256: 'abc123',
+        }),
+      });
+    } else {
+      await route.fallback();
+    }
+  });
+
+  // Stub upload validation.
+  await page.route(`**/api/v1/uploads/${uploadId}/validate`, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        schema_version: '2.0',
+        is_valid: true,
+        format: 'pcap',
+        packet_count: 100,
+      }),
+    });
+  });
+
+  // Stub job creation.
+  await page.route('**/api/v1/jobs', async (route) => {
     if (route.request().method() === 'POST') {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify({ job_id: jobId, status: 'queued' }),
+        body: JSON.stringify({ schema_version: '2.0', job_id: jobId }),
       });
     } else {
       await route.fallback();
@@ -24,36 +59,39 @@ test('app flow: upload analysis then navigate to settings', async ({ page }) => 
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
-        job_id: jobId,
-        status: 'completed',
-        created_at: now,
-        updated_at: now,
-        steps: [
-          { name: 'ingest', status: 'completed', message: 'ok' },
-          { name: 'parse', status: 'completed', message: 'ok' },
-          { name: 'aggregate', status: 'completed', message: 'ok' },
-          { name: 'llm_analysis', status: 'completed', message: 'ok' },
-          { name: 'report', status: 'completed', message: 'ok' },
-        ],
+        schema_version: '2.0',
+        job: {
+          job_id: jobId,
+          status: 'completed',
+          created_at: now,
+          started_at: now,
+          completed_at: now,
+          execution_profile: 'standard',
+          priority: 'normal',
+          pcap_filename: 'test.pcap',
+          stages: [],
+          sensors: [],
+          pcaps: [],
+          metrics: { durations: {}, pcap_stats: {} },
+        },
       }),
     });
   });
 
-  await page.route(`http://localhost:8000/api/v1/jobs/${jobId}/result`, async (route) => {
+  await page.route(`http://localhost:8000/api/v1/jobs/${jobId}/summary`, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
       body: JSON.stringify({
+        schema_version: '2.0',
         job_id: jobId,
-        status: 'completed',
-        summary: {
-          severity: 'low',
-          key_findings: [],
-          mitre_techniques: [],
-        },
-        hosts: [],
-        raw: {},
-        report_urls: {},
+        headline: 'Analysis complete.',
+        alert_count: 0,
+        finding_count: 0,
+        ioc_count: 0,
+        host_count: 0,
+        top_signals: [],
+        recommendations: [],
       }),
     });
   });
@@ -90,9 +128,9 @@ test('app flow: upload analysis then navigate to settings', async ({ page }) => 
     });
   });
 
-  // Start from Dashboard.
+  // Start from Jobs list.
   await page.goto('/');
-  await expect(page.getByTestId('nav-dashboard')).toBeVisible();
+  await expect(page.getByTestId('nav-jobs')).toBeVisible();
 
   // Navigate to New Analysis via nav.
   await page.getByTestId('nav-new-analysis').click();
@@ -100,12 +138,11 @@ test('app flow: upload analysis then navigate to settings', async ({ page }) => 
 
   // Run a minimal upload analysis.
   await page.getByTestId('input-pcap-files').setInputFiles('tests/fixtures/dummy.pcap');
-  await page.getByTestId('select-analysis-mode').selectOption('single_window');
   await page.getByTestId('btn-start-analysis').click();
 
   // Land on Job Detail.
   await page.waitForURL(`**/jobs/${jobId}`);
-  await expect(page.getByText('Analysis Report')).toBeVisible();
+  await expect(page.getByText('Job Detail')).toBeVisible();
 
   // From here, navigate to Settings using the main nav.
   await page.getByTestId('nav-settings').click();

@@ -9,7 +9,7 @@ services:
       - FILE_STORAGE_PATH=/data/storage
       - REDIS_URL=redis://redis:6379/0
       - LLM_ENDPOINT=http://host.docker.internal:11434/v1/chat/completions
-      - LLM_MODEL_NAME=aipam-trafficllm-v9
+      - LLM_MODEL_NAME=aipam-trafficllm-v10
       - LLM_PROVIDER=ollama
       - LLM_MAX_TOKENS=8000
       # TrafficLLM integration (connects to host-running TrafficLLM)
@@ -47,7 +47,7 @@ services:
       - FILE_STORAGE_PATH=/data/storage
       - REDIS_URL=redis://redis:6379/0
       - LLM_ENDPOINT=http://host.docker.internal:11434/v1/chat/completions
-      - LLM_MODEL_NAME=aipam-trafficllm-v9
+      - LLM_MODEL_NAME=aipam-trafficllm-v10
       - LLM_PROVIDER=ollama
       - LLM_MAX_TOKENS=8000
       - C_FORCE_ROOT=true

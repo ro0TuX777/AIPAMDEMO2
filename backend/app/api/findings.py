@@ -601,7 +601,7 @@ def _make_llm_client(settings: Settings) -> LLMClient:
     ollama_base = settings.aipam_ollama_url.rstrip("/")
     config = LLMConfig(
         endpoint=os.getenv("LLM_ENDPOINT", f"{ollama_base}/v1/chat/completions"),
-        model=os.getenv("LLM_MODEL_NAME", "aipam-trafficllm-v8"),
+        model=os.getenv("LLM_MODEL_NAME", "aipam-trafficllm-v10"),
         temperature=0.2,
         max_tokens=int(os.getenv("LLM_MAX_TOKENS", "1024")),
         timeout_seconds=float(os.getenv("LLM_TIMEOUT_SECONDS", "20")),

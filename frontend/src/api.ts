@@ -1341,25 +1341,6 @@ export const api = {
   // V1 LEGACY METHOD STUBS  (keep existing pages compiling until refactored)
   // ═══════════════════════════════════════════════════════════════════════
 
-  /** @deprecated V1 — returns flat array */
-  getJobs(): Promise<JobStatusResponse[]> { return get<JobStatusResponse[]>("/jobs"); },
-  /** @deprecated V1 — returns V1 shape. Shadows V2 getJobDetail for legacy pages. */
-  getJob(jobId: string): Promise<JobStatusResponse> { return get<JobStatusResponse>(`/jobs/${jobId}`); },
-  /** @deprecated V1 */
-  getJobResult(jobId: string): Promise<JobResultResponse> { return get<JobResultResponse>(`/jobs/${jobId}/result`); },
-  /** @deprecated V1 */
-  getPartialResult(jobId: string): Promise<PartialResultResponse> { return get<PartialResultResponse>(`/jobs/${jobId}/partial_result`); },
-  /** @deprecated V1 */
-  generateSimulation(jobId: string): Promise<any> { return post<any>(`/jobs/${jobId}/simulation`); },
-
-  /** @deprecated V1 multipart upload */
-  createJobUpload(files: File[], mode: string, meta?: Record<string, any>): Promise<{ job_id: string }> {
-    const form = new FormData();
-    files.forEach(f => form.append("pcap_files", f));
-    form.append("mode", mode);
-    if (meta) Object.entries(meta).forEach(([k, v]) => form.append(k, typeof v === "string" ? v : JSON.stringify(v)));
-    return request<{ job_id: string }>(`${API_BASE}/jobs`, { method: "POST", body: form });
-  },
   /** @deprecated V1 */
   createJobFromSecurityOnion(payload: any): Promise<{ job_id: string }> { return post<{ job_id: string }>("/jobs/from_security_onion", payload); },
   /** @deprecated V1 */
@@ -1389,6 +1370,14 @@ export const api = {
     return get<KBDocumentListOut>(`/jobs/${jobId}/kb/documents${qs}`);
   },
   uploadKBDocument(jobId: string, body: KBDocumentCreate): Promise<KBDocumentOut> { return post<KBDocumentOut>(`/jobs/${jobId}/kb/documents`, body); },
+  uploadKBBinaryFile(jobId: string, file: File, name: string, docType: string, description?: string): Promise<KBDocumentOut> {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("name", name);
+    form.append("doc_type", docType);
+    if (description) form.append("description", description);
+    return request<KBDocumentOut>(`${API_BASE}/jobs/${jobId}/kb/upload-binary`, { method: "POST", body: form });
+  },
   getKBDocument(jobId: string, docId: string): Promise<KBDocumentDetail> { return get<KBDocumentDetail>(`/jobs/${jobId}/kb/documents/${docId}`); },
   deleteKBDocument(jobId: string, docId: string): Promise<void> { return del<void>(`/jobs/${jobId}/kb/documents/${docId}`); },
   searchKB(jobId: string, query: string, nResults?: number, docType?: string): Promise<KBSearchResponse> {
@@ -1468,41 +1457,6 @@ export const api = {
 // V1 BACKWARD-COMPATIBLE ALIASES (to be removed when pages are refactored)
 // ═══════════════════════════════════════════════════════════════════════════
 
-/** @deprecated Use JobListItem / JobDetail instead */
-export interface JobStatusResponse {
-  job_id: string;
-  status: string;
-  created_at: string;
-  updated_at: string;
-  steps: { name: string; status: string; message?: string }[];
-  error_message?: string;
-}
-
-/** @deprecated Use JobResultResponse → JobSummaryResponse */
-export interface JobResultResponse {
-  job_id: string;
-  status: string;
-  summary: { classification?: string; severity: string; key_findings: any[]; mitre_techniques: any[] };
-  hosts: any[];
-  raw: { alerts?: any[]; llm_analysis_raw?: { chunks?: any[]; summary?: any }; anomaly_detection?: AnomalyReport | null };
-  report_urls: Record<string, string>;
-}
-
-/** @deprecated V1 anomaly types */
-export interface AnomalyFinding {
-  category: string; severity: string; description: string;
-  evidence: string[]; affected_hosts: string[]; confidence: number; chain_of_thought: string;
-}
-export interface AnomalyReport {
-  findings: AnomalyFinding[]; overall_anomaly_score: number; zero_day_likelihood: string; summary: string;
-}
-
-/** @deprecated */
-export interface PartialResultResponse {
-  flow_count: number; alert_count: number; top_alerts: any[];
-  host_summaries: any[]; anomaly_detection: AnomalyReport | null; trafficllm: any | null;
-}
-
 /** @deprecated Use SystemConfigResponse */
 export interface SettingsPayload { [key: string]: any }
 export interface EffectiveSettingsResponse { [key: string]: any }
@@ -1557,7 +1511,7 @@ export interface ToggleRulesRequest {
 }
 
 // ─── Knowledge Base types ───────────────────────────────────────────────────
-export type KBDocType = "asset_inventory" | "network_map" | "baseline_profile" | "threat_intel" | "soc_playbook" | "other";
+export type KBDocType = "asset_inventory" | "network_map" | "baseline_profile" | "threat_intel" | "soc_playbook" | "policy" | "reference" | "user_guide" | "exploit_capability" | "other";
 export interface KBDocumentCreate { name: string; doc_type: KBDocType; description?: string; content: string }
 export interface KBDocumentOut { id: string; job_id: string; name: string; doc_type: string; description?: string; filename?: string; chunk_count: number; status: string; error_message?: string; created_at: string; updated_at: string }
 export interface KBDocumentDetail extends KBDocumentOut { content: string }

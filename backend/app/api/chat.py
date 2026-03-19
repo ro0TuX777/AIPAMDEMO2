@@ -168,6 +168,8 @@ def _score_citation_relevance(citation: ChatCitationOut, query_terms: set[str]) 
         return 0
 
     score = term_score
+    if citation.type == "knowledge_base":
+        score += 6  # KB citations get strong boost — they represent user-uploaded authoritative data
     if citation.type == "alert":
         score += 1
     if citation.type == "finding":
@@ -446,7 +448,9 @@ def _build_sources_block(citations: list[ChatCitationOut]) -> str:
         return "\n".join(lines)
 
     for citation in safe_citations:
-        lines.append(f"- [{citation.type}] {citation.snippet}")
+        # Strip embedded newlines from snippets to prevent formatting breakage
+        clean_snippet = " ".join((citation.snippet or "").split())
+        lines.append(f"- [{citation.type}] {clean_snippet}")
     return "\n".join(lines)
 
 
@@ -718,7 +722,9 @@ def _build_job_citations(db: Session, job_id: str) -> list[ChatCitationOut]:
         conf_pct = f"{round(conf * 100)}%"
         snippet = f"[{finding.severity}|conf:{conf_pct}] {finding.title}"
         if finding.summary:
-            snippet += f": {finding.summary[:120]}"
+            # Collapse newlines to prevent formatting breakage in sources block
+            clean_summary = " ".join(finding.summary.split())
+            snippet += f": {clean_summary[:120]}"
         citations.append(ChatCitationOut(type="finding", id=citation_id, snippet=snippet[:200]))
 
     alerts = db.execute(
@@ -782,19 +788,19 @@ def _summarise_jsonl_line(raw: str, max_len: int = 500) -> str:
 # Hard cap on total context characters sent to the LLM.
 # 8B models lose focus beyond ~6-8k chars of context.
 # Budget: ~4000 for PCAP data + ~2000 for RAG context = 6000 total
-_MAX_CONTEXT_CHARS = 6000
-_MAX_PCAP_CHARS = 4000    # PCAP data budget
-_MAX_RAG_CHARS = 3000     # RAG context budget
-_MIN_RAG_BUDGET = 1500    # KB RAG always gets at least this much
-_MAX_HOST_SUMMARIES = 10
-_MAX_HOSTPAIRS = 15
-_MAX_ALERTS = 25
+_MAX_CONTEXT_CHARS = 14000
+_MAX_PCAP_CHARS = 8000    # PCAP data budget
+_MAX_RAG_CHARS = 6000     # RAG context budget
+_MIN_RAG_BUDGET = 3000    # KB RAG always gets at least this much
+_MAX_HOST_SUMMARIES = 25
+_MAX_HOSTPAIRS = 30
+_MAX_ALERTS = 50
 
 
 def _build_sensor_context(db: Session, job_id: str, settings: Settings) -> str:
     """Build context JSON matching the model's fine-tuning input schema.
 
-    The aipam-trafficllm-v8 model was trained on structured JSON with:
+    The aipam-trafficllm model was trained on structured JSON with:
       - host_summaries: per-host flow aggregates
       - hostpair_summaries: per-pair flow + alert data
       - alerts: flat list of signature alerts
@@ -1048,16 +1054,16 @@ async def _build_rag_context(
     settings: Settings,
     job_id: str = "",
     user_query: str = "",
-) -> str:
+) -> tuple[str, list[ChatCitationOut]]:
     """Retrieve relevant KB chunks using both IP context and user query.
 
-    Combines two retrieval strategies:
-    1. IP-based: finds host profiles, alerts, and findings related to IPs in the PCAP
-    2. Query-based: finds chunks semantically similar to the user's question
+    Combines three retrieval strategies:
+    1. Query-based: finds chunks semantically similar to the user's question
+    2. IP-based: finds host profiles, alerts, and findings related to IPs in the PCAP
+    3. KB-only: dedicated retrieval for user-uploaded documents (asset_inventory)
 
     Only retrieves documents belonging to the specified job_id.
-    Returns a formatted string with environmental context, or empty string
-    if no KB documents are available.
+    Returns a tuple of (formatted context string, KB citations).
     """
     try:
         ollama_url = settings.aipam_ollama_url.rstrip("/")
@@ -1100,11 +1106,49 @@ async def _build_rag_context(
                     seen_ids.add(cid)
                     all_chunks.append(c)
 
+        # Strategy 3: Dedicated retrieval for each user-uploaded doc type.
+        # Auto-indexed host_profiles (93k+) often drown out user-uploaded
+        # KB docs in general retrieval.  Do a dedicated pass per user-uploaded
+        # doc type so they always get representation in the context.
+        _USER_DOC_TYPES = [
+            "asset_inventory", "network_map", "baseline_profile",
+            "threat_intel", "soc_playbook", "policy", "reference",
+            "user_guide", "exploit_capability", "other",
+        ]
+        if user_query:
+            for udt in _USER_DOC_TYPES:
+                kb_only_chunks = await kb_retrieve(
+                    query=user_query,
+                    n_results=3,
+                    doc_type_filter=udt,
+                    job_id=job_id or None,
+                    ollama_url=ollama_url,
+                    embedding_model="mxbai-embed-large",
+                    persist_dir=persist_dir,
+                )
+                for c in kb_only_chunks:
+                    cid = c.get("doc_id", "") + c.get("text", "")[:50]
+                    if cid not in seen_ids:
+                        seen_ids.add(cid)
+                        all_chunks.append(c)
+
         if not all_chunks:
             return ""
 
-        # Sort by relevance score (highest first)
-        all_chunks.sort(key=lambda c: c.get("score", 0), reverse=True)
+        # Sort by relevance score (highest first), with a boost for
+        # user-uploaded KB docs so they aren't eclipsed by host profiles
+        # All user-uploaded doc types get a relevance boost over auto-indexed data
+        _KB_TYPES = {
+            "asset_inventory", "network_map", "baseline_profile",
+            "threat_intel", "soc_playbook", "policy", "reference",
+            "user_guide", "exploit_capability", "other",
+        }
+        for c in all_chunks:
+            if c.get("doc_type", "") in _KB_TYPES:
+                c["_sort_score"] = c.get("score", 0) + 0.05  # small boost
+            else:
+                c["_sort_score"] = c.get("score", 0)
+        all_chunks.sort(key=lambda c: c.get("_sort_score", 0), reverse=True)
 
         # Format RAG chunks within budget
         rag_parts: list[str] = []
@@ -1119,17 +1163,60 @@ async def _build_rag_context(
             total_len += len(entry)
 
         if not rag_parts:
-            return ""
+            return "", []
+
+        # Build KB citations from user-uploaded chunks that made it into the context
+        kb_citations: list[ChatCitationOut] = []
+        _KB_CITED_TYPES = {
+            "asset_inventory", "network_map", "baseline_profile",
+            "threat_intel", "soc_playbook", "policy", "reference",
+            "user_guide", "exploit_capability", "other",
+        }
+        for chunk in all_chunks:
+            if chunk.get("doc_type", "") in _KB_CITED_TYPES and chunk.get("score", 0) >= 0.25:
+                doc_name = chunk.get("doc_name", "Knowledge Base")
+                snippet = chunk.get("text", "")[:180]
+                kb_citations.append(ChatCitationOut(
+                    type="knowledge_base",
+                    id=chunk.get("doc_id", ""),
+                    snippet=f"[KB: {doc_name}] {snippet}",
+                ))
+                if len(kb_citations) >= 3:  # cap at 3 KB citations
+                    break
 
         return (
             "\n\n=== ANALYST-UPLOADED KNOWLEDGE BASE (authoritative for user/host/policy info) ===\n"
             + "\n---\n".join(rag_parts)
-            + "\n=== END KNOWLEDGE BASE ==="
+            + "\n=== END KNOWLEDGE BASE ===",
+            kb_citations,
         )
 
     except Exception as exc:
         logger.warning("RAG retrieval failed (non-fatal): %s", exc)
-        return ""
+        return "", []
+
+
+def _summarize_older_messages(msgs: list[dict]) -> str:
+    """Compress older conversation turns into a compact recap.
+
+    Extracts user questions verbatim (short) and truncates assistant answers
+    to ~120 chars each, producing a single system-message recap that uses
+    far fewer tokens than including the full messages.
+    """
+    lines = ["[CONVERSATION RECAP — earlier discussion summary]"]
+    for msg in msgs:
+        role = msg.get("role", "user")
+        content = msg.get("content", "")
+        # Collapse whitespace
+        content = " ".join(content.split())
+        if role == "user":
+            # User questions are usually short — keep up to 200 chars
+            lines.append(f"  User asked: {content[:200]}")
+        else:
+            # Assistant answers can be long — summarise aggressively
+            lines.append(f"  Assistant answered: {content[:120]}...")
+    lines.append("[END RECAP — answer only the NEW question below]")
+    return "\n".join(lines)
 
 
 def _get_conversation_history_msgs(db: Session, conv_id: str, limit: int = 10) -> list[dict]:
@@ -1189,17 +1276,26 @@ async def _build_chat_messages(
         _MAX_RAG_CHARS - len(scoped_context_str) - len(structured_context_str),
     )
     rag_context = ""
-    rag_context = await _build_rag_context(
+    kb_citations: list[ChatCitationOut] = []
+    rag_context, kb_citations = await _build_rag_context(
         sensor_context, settings, job_id=job_id, user_query=user_message
     )
     logger.info(
-        "RAG budget=%d rag_len=%d", remaining_rag_budget, len(rag_context),
+        "RAG budget=%d rag_len=%d kb_citations=%d",
+        remaining_rag_budget, len(rag_context), len(kb_citations),
     )
     # Trim RAG to budget
     if rag_context and len(rag_context) > remaining_rag_budget:
         rag_context = rag_context[:remaining_rag_budget]
 
     all_citations = _build_job_citations(db, job_id)
+
+    # When KB citations exist, they should dominate the Sources block
+    # because the KB is what actually answered the user's question.
+    # Put KB citations first so _select_relevant_citations picks them up.
+    if kb_citations:
+        all_citations = kb_citations + all_citations
+
     focus_citations = _select_relevant_citations(all_citations, user_message, limit=8)
     citations = focus_citations or all_citations
     focus_block = _build_primary_supporting_evidence_block(focus_citations, user_message)
@@ -1216,10 +1312,9 @@ async def _build_chat_messages(
     context_sections.append("=== END CURRENT JOB EVIDENCE ===")
     combined_context = "\n\n".join(context_sections)
 
-    history = _get_conversation_history_msgs(db, conv_id, limit=10)
+    history = _get_conversation_history_msgs(db, conv_id, limit=20)
     if history and history[-1]["content"] == user_message:
         history = history[:-1]
-    history = [msg for msg in history if msg.get("role") == "user"]
 
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -1236,7 +1331,19 @@ async def _build_chat_messages(
             ),
         },
     ]
-    messages.extend(history[-10:])
+
+    # Conversation summarization: if history is long, compress older messages
+    # into a compact recap to free context window for evidence.
+    _VERBATIM_TAIL = 6  # keep the last N messages verbatim
+    if len(history) > _VERBATIM_TAIL:
+        older = history[: len(history) - _VERBATIM_TAIL]
+        recent = history[len(history) - _VERBATIM_TAIL :]
+        recap = _summarize_older_messages(older)
+        messages.append({"role": "system", "content": recap})
+        messages.extend(recent)
+    else:
+        messages.extend(history)
+
     messages.append({"role": "user", "content": user_message})
     return messages, citations, combined_context
 
@@ -1300,7 +1407,8 @@ SYSTEM_PROMPT = (
     "1. **Primary Evidence** — live-queried host stats, alerts, and connection summaries from the analysis DB.\n"
     "2. **Environmental Context** — retrieved from the vector store: auto-indexed host profiles, alert groupings, "
     "and findings produced by the pipeline, plus any analyst-uploaded knowledge base documents "
-    "(asset inventories, network maps, baseline profiles, threat intel, SOC playbooks).\n"
+    "(asset inventories, network maps, baseline profiles, threat intel, SOC playbooks, "
+    "security policies, reference manuals, user guides, and exploit/capability documents).\n"
     "3. **Citations** — structured references to specific DB records you may cite.\n"
     "When answering, synthesize across ALL three sections. Environmental context often contains richer "
     "narrative summaries (e.g., 'Host X.X.X.X — internal, N connections, N critical alerts') that "
@@ -1321,12 +1429,14 @@ SYSTEM_PROMPT = (
     "5. When the user asks a question, answer conversationally using the "
     "provided data. Cite specific IPs, signatures, timestamps, and alert "
     "names as evidence.\n"
-    "6. When knowledge base documents (asset inventory, baseline, playbook) are available, "
-    "cross-reference them: flag hosts not in the asset inventory, deviations from baseline, "
-    "and recommend playbook steps that match observed activity.\n"
+    "6. When knowledge base documents (asset inventory, baseline, playbook, policy, user guide, "
+    "exploit capability) are available, cross-reference them: flag hosts not in the asset inventory, "
+    "deviations from baseline, recommend playbook steps that match observed activity, cite relevant "
+    "policy sections, and reference user guide procedures or exploit capabilities when applicable.\n"
     "7. **IMPORTANT — Knowledge Base Priority**: When analyst-uploaded knowledge base documents "
-    "(labeled [asset_inventory], [baseline], [threat_intel], etc.) provide host ownership, "
-    "user attribution, department, or security policy information, ALWAYS prefer that information "
+    "(labeled [asset_inventory], [baseline], [threat_intel], [policy], [user_guide], "
+    "[exploit_capability], [reference], etc.) provide host ownership, user attribution, department, "
+    "security policy rules, or operational procedures, ALWAYS prefer that information "
     "over auto-generated DB host summaries. Knowledge base documents are curated by analysts and "
     "represent ground-truth organizational context. For example, if a KB asset inventory says "
     "'10.6.26.101 is assigned to John Smith in Finance' but a DB host summary says 'user1 in Sales', "
@@ -1438,9 +1548,9 @@ def _make_llm_client(settings: Settings) -> LLMClient:
     ollama_base = settings.aipam_ollama_url.rstrip("/")
     config = LLMConfig(
         endpoint=os.getenv("LLM_ENDPOINT", f"{ollama_base}/v1/chat/completions"),
-        model=os.getenv("LLM_MODEL_NAME", "aipam-trafficllm-v8"),
+        model=os.getenv("LLM_MODEL_NAME", "aipam-trafficllm-v10"),
         temperature=0.3,
-        max_tokens=int(os.getenv("LLM_MAX_TOKENS", "2048")),
+        max_tokens=int(os.getenv("LLM_MAX_TOKENS", "4096")),
     )
     return LLMClient(config=config)
 
