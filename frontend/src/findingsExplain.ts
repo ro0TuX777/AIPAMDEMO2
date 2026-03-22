@@ -1,6 +1,13 @@
 import type { QueryClient } from "@tanstack/react-query";
 
-import { ApiError, type FindingExplainEvidenceItem, type FindingExplainFeedback, type FindingExplainSection, type FindingItem } from "./api";
+import {
+  ApiError,
+  type FindingExplainEvidenceItem,
+  type FindingExplainFeedback,
+  type FindingExplainResponse,
+  type FindingExplainSection,
+  type FindingItem,
+} from "./api";
 
 export type ExplainState = {
   loading?: boolean;
@@ -89,6 +96,74 @@ export const getExplainRetryMessage = (explainState: ExplainState | undefined, n
     : `LLM busy, retrying in ${remainingSeconds}s`;
 };
 
+export const buildExplainLoadingState = (prev: ExplainState | undefined, format: ExplainFormat): ExplainState => ({
+  ...(prev ?? {}),
+  loading: true,
+  error: undefined,
+  retry_status: undefined,
+  retry_at_ms: undefined,
+  copy_status: undefined,
+  download_status: undefined,
+  highlighted_citation: undefined,
+  feedback_error: undefined,
+  format,
+});
+
+export const buildExplainSuccessState = (
+  prev: ExplainState | undefined,
+  result: FindingExplainResponse,
+  updatedAt: string = new Date().toISOString(),
+): ExplainState => ({
+  ...(prev ?? {}),
+  loading: false,
+  error: undefined,
+  retry_status: undefined,
+  retry_at_ms: undefined,
+  content: result.content,
+  format: result.format,
+  source: result.source,
+  duration_ms: result.duration_ms,
+  updated_at: updatedAt,
+  copy_status: undefined,
+  download_status: undefined,
+  highlighted_citation: undefined,
+  warning: result.warning,
+  explanation_feedback: result.explanation_feedback,
+  feedback_error: undefined,
+  sections: result.sections,
+  evidence_items: result.evidence_items,
+});
+
+export const buildExplainErrorState = (
+  prev: ExplainState | undefined,
+  error: unknown,
+  nowMs: number = Date.now(),
+): ExplainState => {
+  const isRetryable = error instanceof ApiError && (error.status === 429 || error.status === 503);
+
+  return {
+    ...(prev ?? {}),
+    loading: false,
+    error: isRetryable
+      ? undefined
+      : error instanceof Error
+        ? error.message
+        : "Failed to explain finding.",
+    retry_status: isRetryable ? error.status as 429 | 503 : undefined,
+    retry_at_ms: isRetryable ? nowMs + getExplainRetryAfterSeconds(error) * 1000 : undefined,
+  };
+};
+
+export const buildExplainEvidenceIndex = (evidenceItems: FindingExplainEvidenceItem[] | undefined) => {
+  const indexByCitation = new Map<string, number>();
+  for (const [index, item] of (evidenceItems ?? []).entries()) {
+    if (!indexByCitation.has(item.citation)) {
+      indexByCitation.set(item.citation, index);
+    }
+  }
+  return indexByCitation;
+};
+
 export const hasExplainContent = (explainState: ExplainState | undefined) => Boolean(
   explainState?.content
   || (explainState?.sections?.length ?? 0) > 0
@@ -157,6 +232,33 @@ export const buildExplainMarkdownText = (finding: FindingItem, explainState: Exp
 
 export const buildExplainMarkdownFilename = (finding: FindingItem) => `finding-explanation-${finding.finding_id}.md`;
 
+export const copyExplainToClipboard = async (finding: FindingItem, explainState: ExplainState) => {
+  try {
+    await navigator.clipboard.writeText(buildExplainClipboardText(finding, explainState));
+    return "copied" as const;
+  } catch {
+    return "error" as const;
+  }
+};
+
+export const downloadExplainMarkdownFile = (finding: FindingItem, explainState: ExplainState) => {
+  try {
+    const markdown = buildExplainMarkdownText(finding, explainState);
+    const blob = new Blob([markdown], { type: "text/markdown" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = buildExplainMarkdownFilename(finding);
+    document.body.appendChild(anchor);
+    anchor.click();
+    document.body.removeChild(anchor);
+    URL.revokeObjectURL(url);
+    return "downloaded" as const;
+  } catch {
+    return "error" as const;
+  }
+};
+
 export const sanitizeExplainCitation = (citation: string) => {
   const sanitized = citation.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
   return sanitized || "citation";
@@ -164,6 +266,17 @@ export const sanitizeExplainCitation = (citation: string) => {
 
 export const buildExplainEvidenceTargetId = (findingId: string, citation: string) =>
   `explain-evidence-${findingId}-${sanitizeExplainCitation(citation)}`;
+
+export const scrollToExplainEvidenceTarget = (findingId: string, citation: string) => {
+  const target = document.getElementById(buildExplainEvidenceTargetId(findingId, citation));
+  if (!(target instanceof HTMLElement)) {
+    return false;
+  }
+
+  target.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  target.focus({ preventScroll: true });
+  return true;
+};
 
 export const buildExplainEvidenceTestId = (findingId: string, citation: string) =>
   `evidence-item-${findingId}-${sanitizeExplainCitation(citation)}`;

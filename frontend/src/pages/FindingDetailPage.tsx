@@ -4,7 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-import { api, ApiError, type FindingExplainFeedback, type FindingExplainSection } from "../api";
+import { api, type FindingExplainFeedback } from "../api";
+import { ConfidenceBadge, ExplainEvidenceList, ExplainSectionBlock } from "../components/findings/ExplainShared";
 import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
 import { CardGridSkeleton } from "../components/SkeletonLoader";
 import { useToast } from "../components/ToastProvider";
@@ -16,19 +17,19 @@ import {
   EXPLAIN_SOURCE_LABELS,
   type ExplainFormat,
   type ExplainState,
-  buildExplainCitationButtonTestId,
-  buildExplainClipboardText,
-  buildExplainEvidenceTargetId,
-  buildExplainEvidenceTestId,
-  buildExplainMarkdownFilename,
-  buildExplainMarkdownText,
+  buildExplainErrorState,
+  buildExplainEvidenceIndex,
+  buildExplainLoadingState,
+  buildExplainSuccessState,
+  copyExplainToClipboard,
+  downloadExplainMarkdownFile,
   formatExplainDuration,
   formatExplainUpdatedAt,
   getCachedFindingExplainState,
-  getExplainRetryAfterSeconds,
   getExplainRetryMessage,
   hasExplainContent,
   setCachedFindingExplainState,
+  scrollToExplainEvidenceTarget,
 } from "../findingsExplain";
 
 const SEV_COLORS: Record<string, string> = {
@@ -38,72 +39,6 @@ const SEV_COLORS: Record<string, string> = {
   low: "text-blue-400 bg-blue-400/10",
   info: "text-slate-400 bg-slate-400/10",
 };
-
-function ConfidenceBadge({ value }: { value: number }) {
-  const pct = Math.round(value * 100);
-  const color =
-    value >= 0.7
-      ? "text-emerald-400 bg-emerald-500/10 border-emerald-500/20"
-      : value >= 0.4
-        ? "text-amber-400 bg-amber-500/10 border-amber-500/20"
-        : "text-red-400 bg-red-500/10 border-red-500/20";
-
-  return (
-    <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-medium border ${color}`} title={`Confidence: ${pct}%`}>
-      {pct}% confidence
-    </span>
-  );
-}
-
-const renderExplainSection = (
-  section: FindingExplainSection,
-  options: {
-    findingId: string;
-    actionableCitations: Set<string>;
-    onCitationClick: (citation: string) => void;
-  },
-) => (
-  <section key={section.id} className="space-y-2">
-    <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400">{section.title}</h4>
-    {section.body && <p className="text-sm leading-6 text-slate-300">{section.body}</p>}
-    {section.bullets.length > 0 && (
-      <ul className="space-y-2">
-        {section.bullets.map((bullet) => (
-          <li key={bullet} className="flex items-start gap-2 text-sm leading-6 text-slate-300">
-            <span className="mt-1 text-slate-500">•</span>
-            <span>{bullet}</span>
-          </li>
-        ))}
-      </ul>
-    )}
-    {section.citations.length > 0 && (
-      <div className="flex flex-wrap gap-1.5 pt-1">
-        {section.citations.map((citation) => {
-          const actionable = options.actionableCitations.has(citation);
-          if (!actionable) {
-            return (
-              <span key={`${section.id}:${citation}`} className="rounded border border-slate-800 bg-slate-900/60 px-1.5 py-0.5 text-[10px] font-mono text-slate-500">
-                {citation}
-              </span>
-            );
-          }
-
-          return (
-            <button
-              key={`${section.id}:${citation}`}
-              type="button"
-              onClick={() => options.onCitationClick(citation)}
-              data-testid={buildExplainCitationButtonTestId(options.findingId, citation)}
-              className="rounded border border-cyan-500/20 bg-cyan-500/10 px-1.5 py-0.5 text-[10px] font-mono text-cyan-300 transition-colors hover:border-cyan-400/40 hover:bg-cyan-500/15"
-            >
-              {citation}
-            </button>
-          );
-        })}
-      </div>
-    )}
-  </section>
-);
 
 const formatDateTime = (value?: string | null) => {
   if (!value) return "—";
@@ -190,60 +125,13 @@ export const FindingDetailPage: React.FC = () => {
     if (existing?.loading) return;
     if (!options?.force && existing?.content) return;
 
-    updateExplainState((prev) => ({
-      ...(prev ?? {}),
-      loading: true,
-      error: undefined,
-      retry_status: undefined,
-      retry_at_ms: undefined,
-      copy_status: undefined,
-      download_status: undefined,
-      highlighted_citation: undefined,
-      feedback_error: undefined,
-      format: requestedFormat,
-    }));
+    updateExplainState((prev) => buildExplainLoadingState(prev, requestedFormat));
 
     try {
       const result = await api.explainFinding(jobId, findingId, { format: requestedFormat });
-      updateExplainState((prev) => ({
-        ...(prev ?? {}),
-        loading: false,
-        error: undefined,
-        retry_status: undefined,
-        retry_at_ms: undefined,
-        content: result.content,
-        format: result.format,
-        source: result.source,
-        duration_ms: result.duration_ms,
-        updated_at: new Date().toISOString(),
-        copy_status: undefined,
-        download_status: undefined,
-        highlighted_citation: undefined,
-        warning: result.warning,
-        explanation_feedback: result.explanation_feedback,
-        feedback_error: undefined,
-        sections: result.sections,
-        evidence_items: result.evidence_items,
-      }));
+      updateExplainState((prev) => buildExplainSuccessState(prev, result));
     } catch (err) {
-      updateExplainState((prev) => ({
-        ...(prev ?? {}),
-        loading: false,
-        error:
-          err instanceof ApiError && (err.status === 429 || err.status === 503)
-            ? undefined
-            : err instanceof Error
-              ? err.message
-              : "Failed to explain finding.",
-        retry_status:
-          err instanceof ApiError && (err.status === 429 || err.status === 503)
-            ? err.status as 429 | 503
-            : undefined,
-        retry_at_ms:
-          err instanceof ApiError && (err.status === 429 || err.status === 503)
-            ? Date.now() + getExplainRetryAfterSeconds(err) * 1000
-            : undefined,
-      }));
+      updateExplainState((prev) => buildExplainErrorState(prev, err));
     }
   };
 
@@ -288,51 +176,26 @@ export const FindingDetailPage: React.FC = () => {
   const explainModelName = systemConfig?.explain_configuration?.llm_model_name ?? null;
   const explainRetryMessage = getExplainRetryMessage(explainState, retryClockMs);
   const explainFeedbackSaving = explainFeedbackMut.isPending;
-  const explainEvidenceTargetIndexByCitation = new Map<string, number>();
-  for (const [index, item] of (explainState?.evidence_items ?? []).entries()) {
-    if (!explainEvidenceTargetIndexByCitation.has(item.citation)) {
-      explainEvidenceTargetIndexByCitation.set(item.citation, index);
-    }
-  }
+  const explainEvidenceTargetIndexByCitation = buildExplainEvidenceIndex(explainState?.evidence_items);
   const explainEvidenceCitations = new Set(explainEvidenceTargetIndexByCitation.keys());
   const highlightedExplainCitation = explainState?.highlighted_citation;
 
   const handleExplainCopy = async () => {
     if (!hasExplainContent(explainState)) return;
-    try {
-      await navigator.clipboard.writeText(buildExplainClipboardText(finding, explainState!));
-      updateExplainState((prev) => ({ ...(prev ?? {}), copy_status: "copied" }));
-    } catch {
-      updateExplainState((prev) => ({ ...(prev ?? {}), copy_status: "error" }));
-    }
+    const copyStatus = await copyExplainToClipboard(finding, explainState);
+    updateExplainState((prev) => ({ ...(prev ?? {}), copy_status: copyStatus }));
   };
 
   const handleExplainDownload = async () => {
     if (!hasExplainContent(explainState)) return;
-    try {
-      const markdown = buildExplainMarkdownText(finding, explainState!);
-      const blob = new Blob([markdown], { type: "text/markdown" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = buildExplainMarkdownFilename(finding);
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      URL.revokeObjectURL(url);
-      updateExplainState((prev) => ({ ...(prev ?? {}), download_status: "downloaded" }));
-    } catch {
-      updateExplainState((prev) => ({ ...(prev ?? {}), download_status: "error" }));
-    }
+    const downloadStatus = downloadExplainMarkdownFile(finding, explainState);
+    updateExplainState((prev) => ({ ...(prev ?? {}), download_status: downloadStatus }));
   };
 
   const handleExplainCitationJump = (citation: string) => {
-    const target = document.getElementById(buildExplainEvidenceTargetId(finding.finding_id, citation));
-    if (!(target instanceof HTMLElement)) return;
+    if (!scrollToExplainEvidenceTarget(finding.finding_id, citation)) return;
 
     updateExplainState((prev) => ({ ...(prev ?? {}), highlighted_citation: citation }));
-    target.scrollIntoView({ behavior: "smooth", block: "nearest" });
-    target.focus({ preventScroll: true });
   };
 
   return (
@@ -359,7 +222,7 @@ export const FindingDetailPage: React.FC = () => {
                   {finding.category}
                 </span>
               )}
-              <ConfidenceBadge value={finding.confidence} />
+              <ConfidenceBadge value={finding.confidence} showLabel />
             </div>
             <h1 className={`text-2xl font-semibold ${labelHint("finding_detail", activeHelpField)}`} onClick={() => toggleHelp("finding_detail")}>
               {finding.title}
@@ -548,37 +411,22 @@ export const FindingDetailPage: React.FC = () => {
 
           {((explainState?.sections?.length ?? 0) > 0 || (explainState?.evidence_items?.length ?? 0) > 0) && (
             <div className="space-y-4">
-              {explainState?.sections?.map((section) => renderExplainSection(section, {
-                findingId: finding.finding_id,
-                actionableCitations: explainEvidenceCitations,
-                onCitationClick: handleExplainCitationJump,
-              }))}
+              {explainState?.sections?.map((section) => (
+                <ExplainSectionBlock
+                  key={section.id}
+                  section={section}
+                  findingId={finding.finding_id}
+                  actionableCitations={explainEvidenceCitations}
+                  onCitationClick={handleExplainCitationJump}
+                />
+              ))}
 
-              <section className="space-y-2">
-                <h4 className="text-xs font-semibold uppercase tracking-wider text-slate-400">Supporting evidence</h4>
-                {(explainState?.evidence_items?.length ?? 0) > 0 ? (
-                  <ul className="space-y-2">
-                    {explainState?.evidence_items?.map((item, index) => {
-                      const isPrimaryEvidenceTarget = explainEvidenceTargetIndexByCitation.get(item.citation) === index;
-                      const isHighlighted = highlightedExplainCitation === item.citation;
-                      return (
-                        <li
-                          key={`${item.citation}:${item.label}`}
-                          id={isPrimaryEvidenceTarget ? buildExplainEvidenceTargetId(finding.finding_id, item.citation) : undefined}
-                          tabIndex={isPrimaryEvidenceTarget ? -1 : undefined}
-                          data-testid={isPrimaryEvidenceTarget ? buildExplainEvidenceTestId(finding.finding_id, item.citation) : undefined}
-                          className={`rounded border p-3 transition-colors ${isHighlighted ? "border-cyan-500/40 bg-cyan-500/10" : "border-slate-800 bg-slate-900/60"}`}
-                        >
-                          <p className="text-sm leading-6 text-slate-300"><span className="font-medium text-slate-200">{item.label}:</span> {item.value}</p>
-                          <div className="mt-1 font-mono text-[10px] text-slate-500">{item.citation}</div>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                ) : (
-                  <p className="text-sm text-slate-500">No structured evidence was stored for this finding.</p>
-                )}
-              </section>
+              <ExplainEvidenceList
+                findingId={finding.finding_id}
+                evidenceItems={explainState?.evidence_items}
+                citationIndexByCitation={explainEvidenceTargetIndexByCitation}
+                highlightedCitation={highlightedExplainCitation}
+              />
             </div>
           )}
 
