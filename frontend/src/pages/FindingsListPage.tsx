@@ -2,9 +2,30 @@ import React, { useEffect, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
+  EXPLAIN_FORMAT_LABELS,
+  EXPLAIN_MODE_DESCRIPTIONS,
+  EXPLAIN_MODE_LABELS,
+  EXPLAIN_SOURCE_DESCRIPTIONS,
+  EXPLAIN_SOURCE_LABELS,
+  type ExplainFormat,
+  type ExplainState,
+  buildExplainCitationButtonTestId,
+  buildExplainClipboardText,
+  buildExplainEvidenceTargetId,
+  buildExplainEvidenceTestId,
+  buildExplainMarkdownFilename,
+  buildExplainMarkdownText,
+  formatExplainDuration,
+  formatExplainUpdatedAt,
+  getCachedFindingExplainState,
+  getExplainRetryAfterSeconds,
+  getExplainRetryMessage,
+  hasExplainContent,
+  setCachedFindingExplainState,
+} from "../findingsExplain";
+import {
   api,
   ApiError,
-  type FindingExplainEvidenceItem,
   type FindingExplainFeedback,
   type FindingExplainSection,
   type FindingItem,
@@ -13,28 +34,6 @@ import {
 import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
 import { useToast } from "../components/ToastProvider";
 import { CardGridSkeleton } from "../components/SkeletonLoader";
-
-type ExplainState = {
-  loading?: boolean;
-  error?: string;
-  retry_status?: 429 | 503;
-  retry_at_ms?: number;
-  content?: string;
-  format?: "markdown" | "text";
-  source?: "deterministic" | "llm" | "fallback";
-  duration_ms?: number;
-  updated_at?: string;
-  copy_status?: "copied" | "error";
-  download_status?: "downloaded" | "error";
-  highlighted_citation?: string;
-  warning?: string | null;
-  explanation_feedback?: FindingExplainFeedback | null;
-  feedback_error?: string;
-  sections?: FindingExplainSection[];
-  evidence_items?: FindingExplainEvidenceItem[];
-};
-
-type ExplainFormat = "markdown" | "text";
 
 const SEV_COLORS: Record<string, string> = {
   critical: "text-red-500 bg-red-500/10",
@@ -62,173 +61,6 @@ function ConfidenceBadge({ value }: { value: number }) {
     </span>
   );
 }
-
-const EXPLAIN_SOURCE_LABELS: Record<"deterministic" | "llm" | "fallback", string> = {
-  deterministic: "Deterministic grounded response",
-  llm: "LLM-grounded response",
-  fallback: "Fallback grounded response",
-};
-
-const EXPLAIN_SOURCE_DESCRIPTIONS: Record<"deterministic" | "llm" | "fallback", string> = {
-  deterministic: "This specific explanation came from the deterministic grounded path.",
-  llm: "This specific explanation came from the LLM-grounded path.",
-  fallback: "This specific explanation used deterministic fallback after the LLM path returned an invalid or unavailable response.",
-};
-
-const EXPLAIN_FORMAT_LABELS: Record<ExplainFormat, string> = {
-  markdown: "Markdown",
-  text: "Text",
-};
-
-const EXPLAIN_MODE_LABELS: Record<"deterministic" | "llm", string> = {
-  deterministic: "Deterministic only",
-  llm: "LLM-enabled",
-};
-
-const EXPLAIN_MODE_DESCRIPTIONS: Record<"deterministic" | "llm", string> = {
-  deterministic: "Finding explanations are currently generated using deterministic grounded output only.",
-  llm: "Finding explanations will try the configured LLM first and fall back to deterministic grounded output on invalid or unavailable responses.",
-};
-
-const EXPLAIN_UPDATED_AT_FORMATTER = new Intl.DateTimeFormat(undefined, {
-  dateStyle: "medium",
-  timeStyle: "medium",
-});
-
-const formatExplainUpdatedAt = (value: string) => {
-  const parsed = new Date(value);
-  if (Number.isNaN(parsed.getTime())) {
-    return value;
-  }
-  return EXPLAIN_UPDATED_AT_FORMATTER.format(parsed);
-};
-
-const formatExplainDuration = (durationMs: number) => `${durationMs.toLocaleString()} ms`;
-
-const getExplainRetryAfterSeconds = (error: ApiError) => {
-  if (typeof error.retryAfter === "number" && Number.isFinite(error.retryAfter) && error.retryAfter > 0) {
-    return Math.max(1, Math.round(error.retryAfter));
-  }
-  return error.status === 503 ? 5 : 2;
-};
-
-const getExplainRetrySecondsRemaining = (explainState: ExplainState | undefined, nowMs: number) => {
-  if (typeof explainState?.retry_at_ms !== "number") {
-    return null;
-  }
-  return Math.max(1, Math.ceil((explainState.retry_at_ms - nowMs) / 1000));
-};
-
-const getExplainRetryMessage = (explainState: ExplainState | undefined, nowMs: number) => {
-  const remainingSeconds = getExplainRetrySecondsRemaining(explainState, nowMs);
-  if (!remainingSeconds || !explainState?.retry_status) {
-    return null;
-  }
-  if (explainState.retry_status === 503) {
-    return `Analysis queue full, retrying in ${remainingSeconds}s`;
-  }
-  return `LLM busy, retrying in ${remainingSeconds}s`;
-};
-
-const buildExplainClipboardText = (finding: FindingItem, explainState: ExplainState) => {
-  const lines: string[] = [
-    `Finding: ${finding.title}`,
-    `Severity: ${finding.severity}`,
-  ];
-
-  if (finding.category) lines.push(`Category: ${finding.category}`);
-  if (finding.sensor) lines.push(`Sensor: ${finding.sensor}`);
-  if (finding.summary) lines.push(`Summary: ${finding.summary}`);
-  if (explainState.source) lines.push(`Response source: ${EXPLAIN_SOURCE_LABELS[explainState.source]}`);
-  if (typeof explainState.duration_ms === "number") lines.push(`Duration: ${formatExplainDuration(explainState.duration_ms)}`);
-  if (explainState.updated_at) lines.push(`Updated: ${explainState.updated_at}`);
-  if (explainState.warning) lines.push(`Warning: ${explainState.warning}`);
-
-  lines.push("");
-
-  if ((explainState.sections?.length ?? 0) > 0) {
-    for (const section of explainState.sections ?? []) {
-      lines.push(section.title);
-      if (section.body) lines.push(section.body);
-      for (const bullet of section.bullets) lines.push(`- ${bullet}`);
-      if (section.citations.length > 0) lines.push(`Citations: ${section.citations.join(", ")}`);
-      lines.push("");
-    }
-  } else if (explainState.content) {
-    lines.push(explainState.content);
-    lines.push("");
-  }
-
-  lines.push("Supporting evidence");
-  if ((explainState.evidence_items?.length ?? 0) > 0) {
-    for (const item of explainState.evidence_items ?? []) {
-      lines.push(`- ${item.label}: ${item.value} (${item.citation})`);
-    }
-  } else {
-    lines.push("- No structured evidence was stored for this finding.");
-  }
-
-  return lines.join("\n").trim();
-};
-
-const buildExplainMarkdownText = (finding: FindingItem, explainState: ExplainState) => {
-  const lines: string[] = [
-    "# Finding explanation",
-    "",
-    `**Finding:** ${finding.title}`,
-    `**Severity:** ${finding.severity}`,
-  ];
-
-  if (finding.category) lines.push(`**Category:** ${finding.category}`);
-  if (finding.sensor) lines.push(`**Sensor:** ${finding.sensor}`);
-  if (finding.summary) lines.push(`**Summary:** ${finding.summary}`);
-  if (explainState.source) lines.push(`**Response source:** ${EXPLAIN_SOURCE_LABELS[explainState.source]}`);
-  if (typeof explainState.duration_ms === "number") lines.push(`**Duration:** ${formatExplainDuration(explainState.duration_ms)}`);
-  if (explainState.updated_at) lines.push(`**Updated:** ${explainState.updated_at}`);
-  if (explainState.warning) lines.push(`**Warning:** ${explainState.warning}`);
-
-  lines.push("");
-
-  if ((explainState.sections?.length ?? 0) > 0) {
-    for (const section of explainState.sections ?? []) {
-      lines.push(`## ${section.title}`);
-      lines.push("");
-      if (section.body) lines.push(section.body, "");
-      for (const bullet of section.bullets) lines.push(`- ${bullet}`);
-      if (section.bullets.length > 0) lines.push("");
-      if (section.citations.length > 0) lines.push(`Citations: ${section.citations.join(", ")}`, "");
-    }
-  } else if (explainState.content) {
-    lines.push("## Explanation", "", explainState.content, "");
-  }
-
-  lines.push("## Supporting evidence", "");
-  if ((explainState.evidence_items?.length ?? 0) > 0) {
-    for (const item of explainState.evidence_items ?? []) {
-      lines.push(`- **${item.label}:** ${item.value} _(${item.citation})_`);
-    }
-  } else {
-    lines.push("- No structured evidence was stored for this finding.");
-  }
-
-  return lines.join("\n").trim();
-};
-
-const buildExplainMarkdownFilename = (finding: FindingItem) => `finding-explanation-${finding.finding_id}.md`;
-
-const sanitizeExplainCitation = (citation: string) => {
-  const sanitized = citation.toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-+|-+$/g, "");
-  return sanitized || "citation";
-};
-
-const buildExplainEvidenceTargetId = (findingId: string, citation: string) =>
-  `explain-evidence-${findingId}-${sanitizeExplainCitation(citation)}`;
-
-const buildExplainEvidenceTestId = (findingId: string, citation: string) =>
-  `evidence-item-${findingId}-${sanitizeExplainCitation(citation)}`;
-
-const buildExplainCitationButtonTestId = (findingId: string, citation: string) =>
-  `btn-explain-citation-${findingId}-${sanitizeExplainCitation(citation)}`;
 
 const renderExplainSection = (
   section: FindingExplainSection,
@@ -316,6 +148,7 @@ export const FindingsListPage: React.FC = () => {
       api.updateFindingFeedback(jobId!, id, val),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["job", jobId, "findings"] });
+      queryClient.invalidateQueries({ queryKey: ["job", jobId, "finding"] });
       addToast({ severity: "info", title: "Feedback saved", duration: 3000 });
     },
     onError: () => addToast({ severity: "high", title: "Failed to save feedback" }),
@@ -324,22 +157,16 @@ export const FindingsListPage: React.FC = () => {
     mutationFn: ({ id, val }: { id: string; val: FindingExplainFeedback | null }) =>
       api.updateFindingExplainFeedback(jobId!, id, val),
     onSuccess: (result, variables) => {
-      setExplanations((prev) => ({
-        ...prev,
-        [variables.id]: {
-          ...(prev[variables.id] ?? {}),
+      setExplainStateForFinding(variables.id, (prev) => ({
+          ...(prev ?? {}),
           explanation_feedback: result.explanation_feedback,
           feedback_error: undefined,
-        },
       }));
     },
     onError: (err, variables) => {
-      setExplanations((prev) => ({
-        ...prev,
-        [variables.id]: {
-          ...(prev[variables.id] ?? {}),
+      setExplainStateForFinding(variables.id, (prev) => ({
+          ...(prev ?? {}),
           feedback_error: err instanceof Error ? err.message : "Failed to save explanation feedback.",
-        },
       }));
     },
   });
@@ -357,16 +184,52 @@ export const FindingsListPage: React.FC = () => {
     : null;
   const explainModelName = explainConfiguration?.llm_model_name ?? null;
 
+  const setExplainStateForFinding = (findingId: string, updater: (prev: ExplainState | undefined) => ExplainState) => {
+    setExplanations((prev) => {
+      const nextState = updater(prev[findingId]);
+      if (jobId) {
+        setCachedFindingExplainState(queryClient, jobId, findingId, nextState);
+      }
+      return {
+        ...prev,
+        [findingId]: nextState,
+      };
+    });
+  };
+
+  useEffect(() => {
+    if (!jobId || findings.length === 0) {
+      return;
+    }
+
+    setExplanations((prev) => {
+      let changed = false;
+      const next = { ...prev };
+
+      for (const finding of findings) {
+        if (next[finding.finding_id]) {
+          continue;
+        }
+
+        const cached = getCachedFindingExplainState(queryClient, jobId, finding.finding_id);
+        if (cached) {
+          next[finding.finding_id] = cached;
+          changed = true;
+        }
+      }
+
+      return changed ? next : prev;
+    });
+  }, [findings, jobId, queryClient]);
+
   const requestExplain = async (findingId: string, options?: { force?: boolean; format?: ExplainFormat }) => {
     const existing = explanations[findingId];
     const requestedFormat = options?.format ?? existing?.format ?? "markdown";
     if (existing?.loading) return;
     if (!options?.force && existing?.content) return;
 
-    setExplanations((prev) => ({
-      ...prev,
-      [findingId]: {
-        ...(prev[findingId] ?? {}),
+    setExplainStateForFinding(findingId, (prev) => ({
+        ...(prev ?? {}),
         loading: true,
         error: undefined,
         retry_status: undefined,
@@ -376,15 +239,12 @@ export const FindingsListPage: React.FC = () => {
         highlighted_citation: undefined,
         feedback_error: undefined,
         format: requestedFormat,
-      },
-    }));
+      }));
 
     try {
       const result = await api.explainFinding(jobId!, findingId, { format: requestedFormat });
-      setExplanations((prev) => ({
-        ...prev,
-        [findingId]: {
-          ...(prev[findingId] ?? {}),
+      setExplainStateForFinding(findingId, (prev) => ({
+          ...(prev ?? {}),
           loading: false,
           error: undefined,
           retry_status: undefined,
@@ -402,13 +262,10 @@ export const FindingsListPage: React.FC = () => {
           feedback_error: undefined,
           sections: result.sections,
           evidence_items: result.evidence_items,
-        },
       }));
     } catch (err) {
-      setExplanations((prev) => ({
-        ...prev,
-        [findingId]: {
-          ...(prev[findingId] ?? {}),
+      setExplainStateForFinding(findingId, (prev) => ({
+          ...(prev ?? {}),
           loading: false,
           error:
             err instanceof ApiError && (err.status === 429 || err.status === 503)
@@ -424,7 +281,6 @@ export const FindingsListPage: React.FC = () => {
             err instanceof ApiError && (err.status === 429 || err.status === 503)
               ? Date.now() + getExplainRetryAfterSeconds(err) * 1000
               : undefined,
-        },
       }));
     }
   };
@@ -475,20 +331,14 @@ export const FindingsListPage: React.FC = () => {
 
     try {
       await navigator.clipboard.writeText(buildExplainClipboardText(finding, explainState));
-      setExplanations((prev) => ({
-        ...prev,
-        [finding.finding_id]: {
-          ...(prev[finding.finding_id] ?? {}),
+      setExplainStateForFinding(finding.finding_id, (prev) => ({
+          ...(prev ?? {}),
           copy_status: "copied",
-        },
       }));
     } catch {
-      setExplanations((prev) => ({
-        ...prev,
-        [finding.finding_id]: {
-          ...(prev[finding.finding_id] ?? {}),
+      setExplainStateForFinding(finding.finding_id, (prev) => ({
+          ...(prev ?? {}),
           copy_status: "error",
-        },
       }));
     }
   };
@@ -509,20 +359,14 @@ export const FindingsListPage: React.FC = () => {
       document.body.removeChild(a);
       URL.revokeObjectURL(url);
 
-      setExplanations((prev) => ({
-        ...prev,
-        [finding.finding_id]: {
-          ...(prev[finding.finding_id] ?? {}),
+      setExplainStateForFinding(finding.finding_id, (prev) => ({
+          ...(prev ?? {}),
           download_status: "downloaded",
-        },
       }));
     } catch {
-      setExplanations((prev) => ({
-        ...prev,
-        [finding.finding_id]: {
-          ...(prev[finding.finding_id] ?? {}),
+      setExplainStateForFinding(finding.finding_id, (prev) => ({
+          ...(prev ?? {}),
           download_status: "error",
-        },
       }));
     }
   };
@@ -531,12 +375,9 @@ export const FindingsListPage: React.FC = () => {
     const target = document.getElementById(buildExplainEvidenceTargetId(findingId, citation));
     if (!(target instanceof HTMLElement)) return;
 
-    setExplanations((prev) => ({
-      ...prev,
-      [findingId]: {
-        ...(prev[findingId] ?? {}),
+    setExplainStateForFinding(findingId, (prev) => ({
+        ...(prev ?? {}),
         highlighted_citation: citation,
-      },
     }));
 
     target.scrollIntoView({ behavior: "smooth", block: "nearest" });
@@ -576,6 +417,10 @@ export const FindingsListPage: React.FC = () => {
         </div>
       </div>
 
+      <p className="text-sm text-slate-500">
+        Use the queue for rapid triage and Quick Look explanations. Open a finding detail page for deeper forensic pivots and related entity review.
+      </p>
+
       {isLoading && <CardGridSkeleton count={4} />}
       {error && <p className="text-red-400">Failed to load findings.</p>}
 
@@ -598,11 +443,10 @@ export const FindingsListPage: React.FC = () => {
             }
             const explainEvidenceCitations = new Set(explainEvidenceTargetIndexByCitation.keys());
             const highlightedExplainCitation = explainState?.highlighted_citation;
-            const hasExplainContent = Boolean(
-              explainState?.content
-              || (explainState?.sections?.length ?? 0) > 0
-              || (explainState?.evidence_items?.length ?? 0) > 0,
-            );
+            const alertCount = typeof f.evidence?.["alert_count"] === "number" ? f.evidence["alert_count"] : null;
+            const affectedHostCount = Array.isArray(f.evidence?.["affected_hosts"]) ? f.evidence["affected_hosts"].length : null;
+            const sampleTs = typeof f.evidence?.["sample_ts"] === "string" ? f.evidence["sample_ts"] : null;
+            const hasExplainContentForFinding = hasExplainContent(explainState);
             const hasExplainDuration = typeof explainState?.duration_ms === "number";
             const explainRetryMessage = getExplainRetryMessage(explainState, retryClockMs);
 
@@ -629,12 +473,26 @@ export const FindingsListPage: React.FC = () => {
                     </div>
                   )}
                   {f.summary && <p className="text-xs text-slate-400 mt-1 line-clamp-2">{f.summary}</p>}
+                  {(alertCount !== null || affectedHostCount !== null || sampleTs) && (
+                    <div className="mt-2 flex flex-wrap gap-1.5">
+                      {alertCount !== null && <span className="rounded border border-slate-800 bg-slate-950/60 px-2 py-1 text-[10px] uppercase tracking-wider text-slate-400">{alertCount} alerts</span>}
+                      {affectedHostCount !== null && <span className="rounded border border-slate-800 bg-slate-950/60 px-2 py-1 text-[10px] uppercase tracking-wider text-slate-400">{affectedHostCount} hosts</span>}
+                      {sampleTs && <span className="rounded border border-slate-800 bg-slate-950/60 px-2 py-1 text-[10px] uppercase tracking-wider text-slate-400">sample {new Date(sampleTs).toLocaleString()}</span>}
+                    </div>
+                  )}
                 </div>
 
                 <div className="flex flex-col items-end gap-2 shrink-0">
                   <span className="text-xs text-slate-600 font-mono">{f.finding_id.slice(0, 8)}</span>
 
                   <div className="flex items-center gap-1.5 mt-1">
+                    <Link
+                      to={`/jobs/${jobId}/findings/${f.finding_id}`}
+                      data-testid={`link-finding-detail-${f.finding_id}`}
+                      className="px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider transition-colors border bg-slate-800 border-slate-700 text-blue-300 hover:text-blue-200 hover:border-blue-500/30"
+                    >
+                      View detail
+                    </Link>
                     <button
                       onClick={() => navigate(`/jobs/${jobId}/chat?ask=${encodeURIComponent(`Analyze finding "${f.title}" (severity: ${f.severity}). ${f.summary ? f.summary + ' ' : ''}What does this mean, what is the impact, and what should an analyst do next?`)}&hint=${encodeURIComponent(`finding:${f.finding_id}`)}`)}
                       className="px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider transition-colors border bg-slate-800 border-slate-700 text-emerald-400/60 hover:text-emerald-400 hover:border-emerald-500/30"
@@ -685,7 +543,7 @@ export const FindingsListPage: React.FC = () => {
                   className="mt-3 rounded-md border border-slate-800 bg-slate-950/70 p-3"
                 >
                   <div className="mb-2 flex items-center justify-between gap-2">
-                    <h4 className="text-xs font-semibold uppercase tracking-wider text-cyan-300">Finding explanation</h4>
+                    <h4 className="text-xs font-semibold uppercase tracking-wider text-cyan-300">Quick look explanation</h4>
                     <div className="flex items-center gap-2 flex-wrap justify-end">
                       <div className="flex items-center gap-1 rounded border border-slate-800 bg-slate-900/60 p-1">
                         {(Object.keys(EXPLAIN_FORMAT_LABELS) as ExplainFormat[]).map((format) => (
@@ -708,7 +566,7 @@ export const FindingsListPage: React.FC = () => {
                           ? EXPLAIN_SOURCE_LABELS[explainState.source]
                           : `${EXPLAIN_FORMAT_LABELS[currentExplainFormat]} response`}
                       </span>
-                      {!explainState?.loading && hasExplainContent && (
+                      {!explainState?.loading && hasExplainContentForFinding && (
                         <button
                           onClick={() => void handleExplainCopy(f)}
                           data-testid={`btn-explain-copy-${f.finding_id}`}
@@ -717,7 +575,7 @@ export const FindingsListPage: React.FC = () => {
                           Copy
                         </button>
                       )}
-                      {!explainState?.loading && hasExplainContent && (
+                      {!explainState?.loading && hasExplainContentForFinding && (
                         <button
                           onClick={() => void handleExplainDownload(f)}
                           data-testid={`btn-explain-download-${f.finding_id}`}
@@ -726,7 +584,7 @@ export const FindingsListPage: React.FC = () => {
                           Download
                         </button>
                       )}
-                      {!explainState?.loading && (hasExplainContent || explainState?.error || explainState?.retry_at_ms) && (
+                      {!explainState?.loading && (hasExplainContentForFinding || explainState?.error || explainState?.retry_at_ms) && (
                         <button
                           onClick={() => void requestExplain(f.finding_id, { force: true, format: currentExplainFormat })}
                           data-testid={`btn-explain-regenerate-${f.finding_id}`}
@@ -841,7 +699,7 @@ export const FindingsListPage: React.FC = () => {
 
                   {explainState?.loading && (
                     <p className="text-xs text-slate-400 animate-pulse">
-                      {hasExplainContent
+                      {hasExplainContentForFinding
                         ? `Regenerating ${EXPLAIN_FORMAT_LABELS[currentExplainFormat].toLowerCase()} grounded explanation…`
                         : `Generating ${EXPLAIN_FORMAT_LABELS[currentExplainFormat].toLowerCase()} grounded explanation…`}
                     </p>
@@ -864,7 +722,7 @@ export const FindingsListPage: React.FC = () => {
                     <p className="text-xs text-red-400">{explainState.error}</p>
                   )}
 
-                  {!explainState?.loading && hasExplainContent && (
+                  {!explainState?.loading && hasExplainContentForFinding && (
                     <section className="mb-3 space-y-2 rounded border border-slate-800 bg-slate-900/40 p-2.5">
                       <div className="flex items-center justify-between gap-2">
                         <h5 className="text-[11px] font-semibold uppercase tracking-wider text-slate-400">

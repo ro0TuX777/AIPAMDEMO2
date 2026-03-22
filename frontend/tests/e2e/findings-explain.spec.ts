@@ -3,6 +3,7 @@ import { test, expect } from '@playwright/test';
 const jobId = 'e2e-findings-job-001';
 const findingId = 'finding-explain-001';
 const findingsUrl = `http://localhost:8000/api/v1/jobs/${jobId}/findings?limit=200`;
+const findingDetailUrl = `http://localhost:8000/api/v1/jobs/${jobId}/findings/${findingId}`;
 const explainUrl = `http://localhost:8000/api/v1/jobs/${jobId}/findings/${findingId}/explain`;
 
 function buildExplainResponse(format: 'markdown' | 'text', requestNumber: number) {
@@ -72,6 +73,32 @@ async function mockFindingsList(page: Parameters<typeof test>[0]['page']) {
   });
 }
 
+async function mockFindingDetail(page: Parameters<typeof test>[0]['page']) {
+  await page.route(findingDetailUrl, async (route) => {
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        finding_id: findingId,
+        title: 'Suspicious beaconing activity',
+        severity: 'medium',
+        category: 'command_and_control',
+        sensor: 'suricata',
+        pcap_label: 'sample.pcap',
+        summary: 'Beaconing pattern detected.',
+        evidence: { example: 'value' },
+        feedback: null,
+        confidence: 0.72,
+        community_id: '1:abc',
+        explanation_feedback: null,
+        related_hosts: [],
+        related_alerts: [],
+        related_connections: [],
+      }),
+    });
+  });
+}
+
 function buildBusyExplainError(status: 429 | 503, retryAfterSeconds: number) {
   return {
     status,
@@ -127,6 +154,40 @@ test('findings explain supports format switching and regenerate reuses selected 
   await expect(explainPanel.getByText('TEXT explanation request 2', { exact: true })).toBeVisible();
   await expect(explainPanel.getByText('TEXT explanation request 3', { exact: true })).toBeVisible();
   expect(explainFormats).toEqual(['markdown', 'text', 'text']);
+});
+
+test('finding detail reuses cached explanation across queue navigation', async ({ page }) => {
+  let requestCount = 0;
+
+  await mockFindingsList(page);
+  await mockFindingDetail(page);
+
+  await page.route(explainUrl, async (route) => {
+    requestCount += 1;
+    const body = route.request().postDataJSON() as { format: 'markdown' | 'text' };
+    await route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(buildExplainResponse(body.format, requestCount)),
+    });
+  });
+
+  await page.goto(`/jobs/${jobId}/findings`);
+  await page.getByTestId(`btn-explain-${findingId}`).click();
+  await expect(page.getByText('MARKDOWN explanation request 1', { exact: true })).toBeVisible();
+  expect(requestCount).toBe(1);
+
+  await page.getByTestId(`link-finding-detail-${findingId}`).click();
+  await expect(page).toHaveURL(new RegExp(`/jobs/${jobId}/findings/${findingId}$`));
+  await expect(page.getByText('Grounded explanation')).toBeVisible();
+  await expect(page.getByText('MARKDOWN explanation request 1', { exact: true })).toBeVisible();
+  expect(requestCount).toBe(1);
+
+  await page.getByRole('link', { name: 'Back to queue' }).click();
+  await expect(page).toHaveURL(new RegExp(`/jobs/${jobId}/findings$`));
+  await page.getByTestId(`btn-explain-${findingId}`).click();
+  await expect(page.getByText('MARKDOWN explanation request 1', { exact: true })).toBeVisible();
+  expect(requestCount).toBe(1);
 });
 
 test('findings explain auto-retries on 429 busy responses with countdown messaging', async ({ page }) => {

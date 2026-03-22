@@ -474,6 +474,49 @@ export interface FindingItem {
 
 export type FindingExplainFeedback = "useful" | "not_useful";
 
+export interface FindingRelatedHost {
+  ip: string;
+  role?: string | null;
+  conn_count?: number | null;
+  alert_count?: number | null;
+  finding_count?: number | null;
+}
+
+export interface FindingRelatedAlert {
+  alert_id: string;
+  ts: string;
+  severity: Severity;
+  signature: string;
+  category?: string | null;
+  host_ip?: string | null;
+  src_ip?: string | null;
+  src_port?: number | null;
+  dest_ip?: string | null;
+  dest_port?: number | null;
+  proto?: string | null;
+  pcap_label?: string | null;
+}
+
+export interface FindingRelatedConnection {
+  connection_id: string;
+  src_ip: string;
+  src_port?: number | null;
+  dest_ip: string;
+  dest_port?: number | null;
+  proto: string;
+  service?: string | null;
+  ts: string;
+  pcap_label?: string | null;
+}
+
+export interface FindingDetailResponse extends FindingItem {
+  community_id?: string | null;
+  explanation_feedback?: FindingExplainFeedback | null;
+  related_hosts: FindingRelatedHost[];
+  related_alerts: FindingRelatedAlert[];
+  related_connections: FindingRelatedConnection[];
+}
+
 export interface FindingListResponse {
   schema_version: string;
   items: FindingItem[];
@@ -1178,6 +1221,9 @@ export const api = {
   // ── Findings ───────────────────────────────────────────────────────────
   listFindings(jobId: string, p: FindingListParams = {}): Promise<FindingListResponse> {
     return get<FindingListResponse>(`/jobs/${jobId}/findings${qs(p)}`);
+  },
+  getFinding(jobId: string, findingId: string): Promise<FindingDetailResponse> {
+    return get<FindingDetailResponse>(`/jobs/${jobId}/findings/${findingId}`);
   },
   explainFinding(jobId: string, findingId: string, body: FindingExplainRequest): Promise<FindingExplainResponse> {
     return post<FindingExplainResponse>(`/jobs/${jobId}/findings/${findingId}/explain`, body);

@@ -8,6 +8,8 @@ POST /jobs/{jobId}/findings/{findingId}/explain – grounded explain
 import asyncio
 import json
 import os
+import re
+from ipaddress import ip_address
 from time import perf_counter
 from typing import Any
 
@@ -24,10 +26,14 @@ from backend.app.api.deps import get_db, get_request_id, verify_token
 from backend.app.api.pagination import paginate
 from backend.app.config_v2 import Settings, get_settings
 from backend.app.llm_client import LLMClient, LLMConfig
+from backend.app.models.alert import Alert
+from backend.app.models.connection import Connection
 from backend.app.models.finding import Finding
+from backend.app.models.host import Host
 from backend.app.models.job import Job
 from backend.app.schemas.common import Severity
 from backend.app.schemas.finding import (
+    FindingDetailResponse,
     FindingExplainFeedbackRequest,
     FindingExplainFeedbackResponse,
     FindingExplainEvidenceItem,
@@ -47,6 +53,11 @@ _EXPLAIN_BUSY_RETRY_AFTER_SECONDS = 2
 _EXPLAIN_QUEUE_FULL_RETRY_AFTER_SECONDS = 5
 _EXPLAIN_QUEUE_WAIT_SECONDS = 1.0
 _EXPLAIN_MAX_QUEUE_WAITERS = 1
+_MAX_FINDING_RELATED_ALERTS = 10
+_MAX_FINDING_RELATED_CONNECTIONS = 10
+_MAX_FINDING_RELATED_HOSTS = 12
+_MAX_RELATED_IP_VALUES = 40
+_IPV4_CANDIDATE_PATTERN = re.compile(r"(?:\d{1,3}\.){3}\d{1,3}")
 
 
 def _require_job(db: Session, job_id: str) -> Job:
@@ -100,6 +111,228 @@ def _finding_to_item(f: Finding) -> FindingItem:
         evidence=evidence,
         feedback=f.feedback,
         confidence=getattr(f, "confidence", 0.0) or 0.0,
+    )
+
+
+def _serialize_related_host(host: Host) -> dict[str, Any]:
+    return {
+        "ip": host.ip,
+        "role": host.role,
+        "conn_count": host.conn_count,
+        "alert_count": host.alert_count,
+        "finding_count": host.finding_count,
+    }
+
+
+def _serialize_related_alert(alert: Alert) -> dict[str, Any]:
+    return {
+        "alert_id": alert.alert_id,
+        "ts": alert.ts,
+        "severity": alert.severity,
+        "signature": alert.signature,
+        "category": alert.category,
+        "host_ip": alert.host_ip,
+        "src_ip": alert.src_ip,
+        "src_port": alert.src_port,
+        "dest_ip": alert.dest_ip,
+        "dest_port": alert.dest_port,
+        "proto": alert.proto,
+        "pcap_label": alert.pcap_label,
+    }
+
+
+def _serialize_related_connection(connection: Connection) -> dict[str, Any]:
+    return {
+        "connection_id": connection.connection_id,
+        "src_ip": connection.src_ip,
+        "src_port": connection.src_port,
+        "dest_ip": connection.dest_ip,
+        "dest_port": connection.dest_port,
+        "proto": connection.proto,
+        "service": connection.service,
+        "ts": connection.ts,
+        "pcap_label": connection.pcap_label,
+    }
+
+
+def _is_ip_literal(value: str) -> bool:
+    try:
+        ip_address(value)
+    except ValueError:
+        return False
+    return True
+
+
+def _collect_related_ips(value: Any, sink: set[str]) -> None:
+    if len(sink) >= _MAX_RELATED_IP_VALUES or value is None:
+        return
+
+    if isinstance(value, str):
+        stripped = value.strip().strip("[](){}<>,;\"'")
+        if stripped and _is_ip_literal(stripped):
+            sink.add(stripped)
+            return
+
+        for candidate in _IPV4_CANDIDATE_PATTERN.findall(value):
+            if _is_ip_literal(candidate):
+                sink.add(candidate)
+                if len(sink) >= _MAX_RELATED_IP_VALUES:
+                    break
+        return
+
+    if isinstance(value, list):
+        for item in value[:_MAX_RELATED_IP_VALUES]:
+            _collect_related_ips(item, sink)
+            if len(sink) >= _MAX_RELATED_IP_VALUES:
+                break
+        return
+
+    if isinstance(value, dict):
+        for idx, item in enumerate(value.values()):
+            if idx >= _MAX_RELATED_IP_VALUES:
+                break
+            _collect_related_ips(item, sink)
+            if len(sink) >= _MAX_RELATED_IP_VALUES:
+                break
+
+
+def _fetch_related_alerts(
+    db: Session,
+    job_id: str,
+    community_id: str | None,
+    related_ips: set[str],
+) -> list[Alert]:
+    alerts: list[Alert] = []
+    seen_alert_ids: set[str] = set()
+
+    def _append(rows: list[Alert]) -> None:
+        for row in rows:
+            if row.alert_id in seen_alert_ids:
+                continue
+            seen_alert_ids.add(row.alert_id)
+            alerts.append(row)
+            if len(alerts) >= _MAX_FINDING_RELATED_ALERTS:
+                break
+
+    if community_id:
+        rows = db.execute(
+            select(Alert)
+            .where(Alert.job_id == job_id, Alert.community_id == community_id)
+            .order_by(Alert.ts.desc(), Alert.id.desc())
+            .limit(_MAX_FINDING_RELATED_ALERTS)
+        ).scalars().all()
+        _append(rows)
+
+    if related_ips and len(alerts) < _MAX_FINDING_RELATED_ALERTS:
+        rows = db.execute(
+            select(Alert)
+            .where(
+                Alert.job_id == job_id,
+                or_(
+                    Alert.host_ip.in_(sorted(related_ips)),
+                    Alert.src_ip.in_(sorted(related_ips)),
+                    Alert.dest_ip.in_(sorted(related_ips)),
+                ),
+            )
+            .order_by(Alert.ts.desc(), Alert.id.desc())
+            .limit(_MAX_FINDING_RELATED_ALERTS)
+        ).scalars().all()
+        _append(rows)
+
+    return alerts[:_MAX_FINDING_RELATED_ALERTS]
+
+
+def _fetch_related_connections(
+    db: Session,
+    job_id: str,
+    community_id: str | None,
+    related_ips: set[str],
+) -> list[Connection]:
+    connections: list[Connection] = []
+    seen_connection_ids: set[str] = set()
+
+    def _append(rows: list[Connection]) -> None:
+        for row in rows:
+            if row.connection_id in seen_connection_ids:
+                continue
+            seen_connection_ids.add(row.connection_id)
+            connections.append(row)
+            if len(connections) >= _MAX_FINDING_RELATED_CONNECTIONS:
+                break
+
+    if community_id:
+        rows = db.execute(
+            select(Connection)
+            .where(Connection.job_id == job_id, Connection.community_id == community_id)
+            .order_by(Connection.ts.desc(), Connection.id.desc())
+            .limit(_MAX_FINDING_RELATED_CONNECTIONS)
+        ).scalars().all()
+        _append(rows)
+
+    if related_ips and len(connections) < _MAX_FINDING_RELATED_CONNECTIONS:
+        rows = db.execute(
+            select(Connection)
+            .where(
+                Connection.job_id == job_id,
+                or_(
+                    Connection.host_ip.in_(sorted(related_ips)),
+                    Connection.src_ip.in_(sorted(related_ips)),
+                    Connection.dest_ip.in_(sorted(related_ips)),
+                ),
+            )
+            .order_by(Connection.ts.desc(), Connection.id.desc())
+            .limit(_MAX_FINDING_RELATED_CONNECTIONS)
+        ).scalars().all()
+        _append(rows)
+
+    return connections[:_MAX_FINDING_RELATED_CONNECTIONS]
+
+
+def _fetch_related_hosts(db: Session, job_id: str, related_ips: set[str]) -> list[Host]:
+    if not related_ips:
+        return []
+    return db.execute(
+        select(Host)
+        .where(Host.job_id == job_id, Host.ip.in_(sorted(related_ips)))
+        .order_by(Host.ip.asc())
+        .limit(_MAX_FINDING_RELATED_HOSTS)
+    ).scalars().all()
+
+
+def _finding_to_detail(db: Session, finding: Finding) -> FindingDetailResponse:
+    evidence = _parse_finding_evidence(finding)
+    related_ips: set[str] = set()
+    _collect_related_ips(evidence, related_ips)
+
+    related_alerts = _fetch_related_alerts(db, finding.job_id, finding.community_id, related_ips)
+    related_connections = _fetch_related_connections(db, finding.job_id, finding.community_id, related_ips)
+
+    for alert in related_alerts:
+        _collect_related_ips(alert.host_ip, related_ips)
+        _collect_related_ips(alert.src_ip, related_ips)
+        _collect_related_ips(alert.dest_ip, related_ips)
+    for connection in related_connections:
+        _collect_related_ips(connection.host_ip, related_ips)
+        _collect_related_ips(connection.src_ip, related_ips)
+        _collect_related_ips(connection.dest_ip, related_ips)
+
+    related_hosts = _fetch_related_hosts(db, finding.job_id, related_ips)
+    return FindingDetailResponse(
+        finding_id=finding.finding_id,
+        title=finding.title,
+        severity=finding.severity,
+        category=finding.category,
+        sensor=finding.sensor,
+        pcap_label=finding.pcap_label,
+        summary=finding.summary,
+        evidence=evidence,
+        feedback=finding.feedback,
+        confidence=getattr(finding, "confidence", 0.0) or 0.0,
+        community_id=finding.community_id,
+        explanation_feedback=finding.explanation_feedback,
+        related_hosts=[_serialize_related_host(host) for host in related_hosts],
+        related_alerts=[_serialize_related_alert(alert) for alert in related_alerts],
+        related_connections=[_serialize_related_connection(connection) for connection in related_connections],
     )
 
 
@@ -712,6 +945,26 @@ async def list_findings(
         items=[_finding_to_item(f) for f in items],
         page=page,
     )
+
+
+@router.get("/jobs/{job_id}/findings/{finding_id}", response_model=FindingDetailResponse)
+async def get_finding(
+    job_id: str,
+    finding_id: str,
+    response: Response,
+    request_id: str = Depends(get_request_id),
+    db: Session = Depends(get_db),
+):
+    _require_job(db, job_id)
+    response.headers["X-Request-Id"] = request_id
+
+    finding = db.execute(
+        select(Finding).where(Finding.job_id == job_id, Finding.finding_id == finding_id)
+    ).scalar_one_or_none()
+    if not finding:
+        raise HTTPException(status_code=404, detail="Finding not found")
+
+    return _finding_to_detail(db, finding)
 
 
 @router.post("/jobs/{job_id}/findings/{finding_id}/explain", response_model=FindingExplainResponse)

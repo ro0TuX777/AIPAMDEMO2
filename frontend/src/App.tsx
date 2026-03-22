@@ -8,6 +8,7 @@ import { HostDetailPage, HostSubTab } from "./pages/HostDetailPage";
 import { AlertsListPage } from "./pages/AlertsListPage";
 import { AlertDetailPage } from "./pages/AlertDetailPage";
 import { FindingsListPage } from "./pages/FindingsListPage";
+import { FindingDetailPage } from "./pages/FindingDetailPage";
 import { TimelinePage } from "./pages/TimelinePage";
 import { IocsListPage } from "./pages/IocsListPage";
 import { FilesListPage } from "./pages/FilesListPage";
@@ -150,6 +151,7 @@ export const App: React.FC = () => {
           <Route path="/jobs/:jobId/alerts" element={<AlertsListPage />} />
           <Route path="/jobs/:jobId/alerts/:alertId" element={<AlertDetailPage />} />
           <Route path="/jobs/:jobId/findings" element={<FindingsListPage />} />
+          <Route path="/jobs/:jobId/findings/:findingId" element={<FindingDetailPage />} />
           <Route path="/jobs/:jobId/timeline" element={<TimelinePage />} />
           <Route path="/jobs/:jobId/iocs" element={<IocsListPage />} />
           <Route path="/jobs/:jobId/files" element={<FilesListPage />} />
