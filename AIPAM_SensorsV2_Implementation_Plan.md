@@ -1422,16 +1422,16 @@ Implementation: every `community_id` renders as a clickable chip that navigates 
 
 The build is considered "mature" when ALL of the following are true:
 
-- [ ] Every list view is deep-linkable via URL params
-- [ ] Every long list is paginated server-side and does not freeze on large jobs
-- [ ] SSE reconnect never loses events (Last-Event-ID replay supported)
-- [ ] Every failure mode has a human-readable error + suggested next action
-- [ ] Evidence package can be generated on demand and is discoverable via SSE + artifacts list
-- [ ] No external requests occur in an air-gapped network (verified by automated build scan)
-- [ ] Breadcrumbs show full navigation path (Jobs > job > Hosts > IP > Tab)
-- [ ] Community ID click navigates to filtered connection view
-- [ ] LLM explain gracefully handles rate limiting with user feedback
-- [ ] All tables support server-side sorting where applicable
+- [x] Every list view is deep-linkable via URL params
+- [x] Every long list is paginated server-side and does not freeze on large jobs
+- [x] SSE reconnect never loses events (Last-Event-ID replay supported)
+- [x] Every failure mode has a human-readable error + suggested next action
+- [x] Evidence package can be generated on demand and is discoverable via SSE + artifacts list
+- [x] No external requests occur in an air-gapped network (verified by automated build scan)
+- [x] Breadcrumbs show full navigation path (Jobs > job > Hosts > IP > Tab)
+- [x] Community ID click navigates to filtered connection view
+- [x] LLM explain gracefully handles rate limiting with user feedback
+- [x] All tables support server-side sorting where applicable
 
 ---
 
