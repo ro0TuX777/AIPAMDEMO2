@@ -83,11 +83,11 @@ Response:
 
 ### Deliverables
 - [x] Vector database integration (LanceDB)
-- [ ] Embedding pipeline for normalized summaries
-- [ ] RAG retrieval with anomaly-ranked chunking
-- [ ] Chat API endpoint
-- [ ] Chat UI component
-- [ ] Conversation persistence
+- [x] Embedding pipeline for normalized summaries
+- [x] RAG retrieval with anomaly-ranked chunking
+- [x] Chat API endpoint
+- [x] Chat UI component
+- [x] Conversation persistence
 
 ---
 
@@ -229,14 +229,14 @@ ws.onmessage = (event) => {
 - "Analysis in progress" indicator with ETA
 
 ### Deliverables
-- [ ] TrafficLLM parallel execution pipeline
-- [ ] Rule-based vs LLM decision matrix implementation
-- [ ] Confidence scoring model and calculation
-- [ ] Confidence display in UI (badges, filters)
-- [ ] Confidence injection into LLM prompts
-- [ ] WebSocket endpoint for job progress
-- [ ] Real-time progress UI components
-- [ ] High-severity alert notifications
+- [x] TrafficLLM parallel execution pipeline
+- [x] Rule-based vs LLM decision matrix implementation
+- [x] Confidence scoring model and calculation
+- [x] Confidence display in UI (badges, filters)
+- [x] Confidence injection into LLM prompts
+- [x] WebSocket endpoint for job progress (implemented as SSE)
+- [x] Real-time progress UI components
+- [x] High-severity alert notifications
 
 ---
 
@@ -308,13 +308,13 @@ ws.onmessage = (event) => {
 ## Success Criteria
 
 ### Phase 1
-- [ ] Analyst can ask "What malware was on host X?" and get accurate, cited answer
-- [ ] Chat uses same anomaly-ranked data as auto-analysis
-- [ ] Response time < 5 seconds for typical queries
-- [ ] Citations link back to source evidence
+- [x] Analyst can ask "What malware was on host X?" and get accurate, cited answer
+- [x] Chat uses same anomaly-ranked data as auto-analysis
+- [x] Response time < 5 seconds for typical queries
+- [x] Citations link back to source evidence
 
 ### Phase 2
-- [ ] TrafficLLM results directly influence LLM reasoning
-- [ ] Confidence scores visible in UI for all findings
-- [ ] Real-time progress updates via WebSocket
-- [ ] High-severity alerts shown within 30s of detection
+- [x] TrafficLLM results directly influence LLM reasoning
+- [x] Confidence scores visible in UI for all findings
+- [x] Real-time progress updates via WebSocket (implemented as SSE)
+- [x] High-severity alerts shown within 30s of detection
