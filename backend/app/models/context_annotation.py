@@ -38,6 +38,8 @@ class ContextAnnotation(Base):
     related_alert_ids_json = Column(Text, nullable=True)
     related_finding_ids_json = Column(Text, nullable=True)
 
+    pcap_label = Column(String, nullable=True)  # which PCAP phase generated this annotation (e.g. "before", "after")
+
     created_at = Column(String, nullable=False)
 
     __table_args__ = (
@@ -45,6 +47,7 @@ class ContextAnnotation(Base):
         Index("idx_annotations_host", "job_id", "host_ip"),
         Index("idx_annotations_severity", "job_id", "severity"),
         Index("idx_annotations_metric", "job_id", "metric_name"),
+        Index("idx_annotations_pcap_label", "job_id", "pcap_label"),
     )
 
     def __repr__(self) -> str:

@@ -16,6 +16,7 @@ class HostListItem(BaseModel):
     alert_count: int = 0
     finding_count: int = 0
     top_domains: list[str] = []
+    pcap_label: str | None = None
 
 
 class DnsSummary(BaseModel):

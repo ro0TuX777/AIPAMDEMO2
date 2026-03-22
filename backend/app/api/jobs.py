@@ -25,6 +25,7 @@ from pathlib import Path
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import FileResponse, StreamingResponse
+from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
@@ -389,10 +390,10 @@ async def add_job_pcap(
     body: PcapUploadItem,
     db: Session = Depends(get_db),
 ):
-    """Attach an additional PCAP to an existing job (must be queued)."""
+    """Attach an additional PCAP to an existing job (queued, completed, or failed)."""
     job = _require_job(db, job_id)
-    if job.status not in ("queued",):
-        raise HTTPException(status_code=409, detail="Can only add PCAPs to queued jobs")
+    if job.status not in ("queued", "completed", "completed_with_errors", "failed"):
+        raise HTTPException(status_code=409, detail="Can only add PCAPs to queued, completed, or failed jobs")
 
     upload: Upload | None = db.get(Upload, body.upload_id)
     if upload is None:
@@ -404,6 +405,15 @@ async def add_job_pcap(
     ).scalar() or 0
     if count >= MAX_PCAPS_PER_JOB:
         raise HTTPException(status_code=400, detail=f"Max {MAX_PCAPS_PER_JOB} PCAPs per job")
+
+    # Auto-label existing unlabeled PCAPs as "before" when adding a labeled PCAP
+    if body.label:
+        unlabeled = db.execute(
+            select(JobPcap).where(JobPcap.job_id == job_id, JobPcap.label.is_(None))
+        ).scalars().all()
+        if unlabeled:
+            for p in unlabeled:
+                p.label = "before"
 
     pcap_rec = JobPcap(
         job_id=job_id,
@@ -422,6 +432,69 @@ async def add_job_pcap(
     db.commit()
 
     return JobPcapItem.model_validate(pcap_rec)
+
+
+# ---------- POST /jobs/{jobId}/reanalyze ----------
+
+class ReanalyzeRequest(BaseModel):
+    """Request body for re-analysis of specific PCAP labels."""
+    pcap_label: str = Field(..., description="The PCAP label/phase to re-analyze (e.g. 'after')")
+
+
+@router.post("/jobs/{job_id}/reanalyze", status_code=status.HTTP_202_ACCEPTED)
+async def reanalyze_job(
+    job_id: str,
+    body: ReanalyzeRequest,
+    response: Response,
+    request_id: str = Depends(get_request_id),
+    db: Session = Depends(get_db),
+):
+    """Trigger re-analysis on PCAPs with a specific label within a completed job.
+
+    This allows temporal "Before/After" analysis: after adding new PCAPs
+    labeled "after" to a completed job, this endpoint triggers the pipeline
+    on just those PCAPs, producing evidence tagged with the given pcap_label.
+    """
+    job = _require_job(db, job_id)
+    response.headers["X-Request-Id"] = request_id
+
+    if job.status not in ("completed", "completed_with_errors", "failed"):
+        raise HTTPException(
+            status_code=409,
+            detail=f"Can only re-analyze completed or failed jobs (current: {job.status})"
+        )
+
+    # Verify PCAPs with this label exist
+    label_count = db.execute(
+        select(func.count()).select_from(JobPcap).where(
+            JobPcap.job_id == job_id,
+            JobPcap.label == body.pcap_label,
+        )
+    ).scalar() or 0
+
+    if label_count == 0:
+        raise HTTPException(
+            status_code=400,
+            detail=f"No PCAPs with label '{body.pcap_label}' found for this job"
+        )
+
+    # Update job status to re-running
+    job.status = "running"
+    job.error_summary = None
+    db.commit()
+
+    # Dispatch with pcap_label so the worker knows to only process that phase
+    try:
+        from backend.app.worker import run_job_phase
+        run_job_phase.delay(job_id, body.pcap_label)
+    except Exception as exc:
+        _logger.warning("Failed to dispatch reanalyze for job %s: %s", job_id, exc)
+        job.status = "failed"
+        job.error_summary = f"Failed to dispatch re-analysis: {exc}"
+        db.commit()
+        raise HTTPException(status_code=500, detail="Failed to dispatch re-analysis task")
+
+    return {"job_id": job_id, "pcap_label": body.pcap_label, "status": "running", "pcap_count": label_count}
 
 
 # ---------- POST /jobs/batch ----------
@@ -637,6 +710,7 @@ async def job_iocs(
     cursor: str | None = Query(None),
     limit: int = Query(50, ge=1, le=200),
     ioc_type: str | None = Query(None, alias="type"),
+    pcap_label: str | None = Query(None, description="Filter by PCAP label (before/after)"),
 ):
     """List IOCs extracted from a job."""
     _require_job(db, job_id)
@@ -645,6 +719,8 @@ async def job_iocs(
     q = select(Ioc).where(Ioc.job_id == job_id)
     if ioc_type:
         q = q.where(Ioc.ioc_type == ioc_type)
+    if pcap_label:
+        q = q.where(Ioc.pcap_label == pcap_label)
 
     items, page = paginate(db, q, Ioc.id, Ioc.id, cursor, limit)
 

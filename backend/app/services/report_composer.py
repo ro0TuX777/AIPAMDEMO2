@@ -412,25 +412,39 @@ def _generate_recommendations(
 
 # ── Main entry point ─────────────────────────────────────────────────────
 
-def generate_report(db: Session, job_id: str, mode: str = "analyst") -> Report:
+def generate_report(db: Session, job_id: str, mode: str = "analyst", pcap_label: str | None = None) -> Report:
     """
     Generate a report for the given job.
 
-    Deletes any existing report of the same mode, then creates a fresh one.
+    Deletes any existing report of the same mode (and pcap_label), then creates a fresh one.
     Returns the persisted Report ORM object.
     """
     job = db.get(Job, job_id)
     if not job:
         raise ValueError(f"Job {job_id} not found")
 
-    # Fetch all evidence
-    theories = list(db.execute(select(Theory).where(Theory.job_id == job_id).order_by(Theory.rank)).scalars())
-    slices = list(db.execute(select(IncidentSlice).where(IncidentSlice.job_id == job_id).order_by(IncidentSlice.rank)).scalars())
-    annotations = list(db.execute(select(ContextAnnotation).where(ContextAnnotation.job_id == job_id)).scalars())
-    findings = list(db.execute(select(Finding).where(Finding.job_id == job_id)).scalars())
-    alerts = list(db.execute(select(Alert).where(Alert.job_id == job_id)).scalars())
-    iocs = list(db.execute(select(Ioc).where(Ioc.job_id == job_id)).scalars())
-    hosts = list(db.execute(select(Host).where(Host.job_id == job_id)).scalars())
+    # Fetch evidence, filtered by pcap_label if provided
+    tq = select(Theory).where(Theory.job_id == job_id).order_by(Theory.rank)
+    sq = select(IncidentSlice).where(IncidentSlice.job_id == job_id).order_by(IncidentSlice.rank)
+    aq = select(ContextAnnotation).where(ContextAnnotation.job_id == job_id)
+    fq = select(Finding).where(Finding.job_id == job_id)
+    alq = select(Alert).where(Alert.job_id == job_id)
+    ioq = select(Ioc).where(Ioc.job_id == job_id)
+    hq = select(Host).where(Host.job_id == job_id)
+    if pcap_label:
+        tq = tq.where(Theory.pcap_label == pcap_label)
+        sq = sq.where(IncidentSlice.pcap_label == pcap_label)
+        aq = aq.where(ContextAnnotation.pcap_label == pcap_label)
+        fq = fq.where(Finding.pcap_label == pcap_label)
+        alq = alq.where(Alert.pcap_label == pcap_label)
+        hq = hq.where(Host.pcap_label == pcap_label)
+    theories = list(db.execute(tq).scalars())
+    slices = list(db.execute(sq).scalars())
+    annotations = list(db.execute(aq).scalars())
+    findings = list(db.execute(fq).scalars())
+    alerts = list(db.execute(alq).scalars())
+    iocs = list(db.execute(ioq).scalars())
+    hosts = list(db.execute(hq).scalars())
 
     # Build sections
     if mode == "executive":
@@ -451,8 +465,13 @@ def generate_report(db: Session, job_id: str, mode: str = "analyst") -> Report:
     evidence_refs.extend(f.finding_id for f in findings)
     evidence_refs.extend(ioc.ioc_id for ioc in iocs)
 
-    # Delete existing report of same mode
-    db.execute(delete(Report).where(Report.job_id == job_id, Report.mode == mode))
+    # Delete existing report of same mode + pcap_label
+    del_stmt = delete(Report).where(Report.job_id == job_id, Report.mode == mode)
+    if pcap_label:
+        del_stmt = del_stmt.where(Report.pcap_label == pcap_label)
+    else:
+        del_stmt = del_stmt.where(Report.pcap_label.is_(None))
+    db.execute(del_stmt)
     db.flush()
 
     report = Report(
@@ -472,6 +491,7 @@ def generate_report(db: Session, job_id: str, mode: str = "analyst") -> Report:
         host_count=len(hosts),
         annotation_count=len(annotations),
         evidence_refs_json=json.dumps(evidence_refs),
+        pcap_label=pcap_label,
         created_at=_now(),
     )
     db.add(report)

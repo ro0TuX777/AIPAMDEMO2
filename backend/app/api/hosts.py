@@ -96,11 +96,14 @@ async def list_hosts(
     limit: int = Query(50, ge=1, le=200),
     order: str = Query("desc"),
     role: str | None = Query(None),
+    pcap_label: str | None = Query(None, description="Filter by PCAP label (before/after)"),
 ):
     _require_job(db, job_id)
     response.headers["X-Request-Id"] = request_id
 
     q = select(Host).where(Host.job_id == job_id)
+    if pcap_label:
+        q = q.where(Host.pcap_label == pcap_label)
     if role:
         q = q.where(Host.role == role)
 

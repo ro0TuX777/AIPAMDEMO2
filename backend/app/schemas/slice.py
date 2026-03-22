@@ -35,6 +35,7 @@ class SliceItem(BaseModel):
     connection_ids: list[str] = Field(default_factory=list)
     summary: str | None = None
     rank: int
+    pcap_label: str | None = None
     created_at: str
 
 

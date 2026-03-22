@@ -133,7 +133,7 @@ def build_evidence_graph(
         ).scalars().all())
         for a in alerts:
             _add_node(f"alert:{a.alert_id}", a.signature[:60] if a.signature else a.alert_id,
-                       NODE_ALERT, _sev(a.severity))
+                       NODE_ALERT, _sev(a.severity), {"ts": a.ts} if a.ts else None)
             # Edge: alert → host
             host_key = f"host:{a.host_ip}"
             if host_key in node_ids:
@@ -171,6 +171,7 @@ def build_evidence_graph(
                        NODE_THEORY, _sev(t.confidence), {
                            "hypothesis_type": t.hypothesis_type,
                            "score": t.score,
+                           **({"ts": t.created_at} if t.created_at else {}),
                        })
             # Edge: theory → host (host-scoped)
             if t.scope_type == "host" and t.scope_id:
@@ -216,6 +217,7 @@ def build_evidence_graph(
                        NODE_SLICE, _sev(s.severity), {
                            "slice_type": s.slice_type,
                            "confidence": s.confidence,
+                           **({"ts": s.time_start or s.created_at} if (s.time_start or s.created_at) else {}),
                        })
             # Edges: slice → member hosts
             for ip in _parse_json_list(s.host_ips_json):

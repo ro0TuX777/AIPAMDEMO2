@@ -22,6 +22,7 @@ class ConnectionItem(BaseModel):
     service: str | None = None
     alerts: list[str] = []
     iocs: list[str] = []
+    pcap_label: str | None = None
 
 
 class ConnectionListResponse(BaseModel):

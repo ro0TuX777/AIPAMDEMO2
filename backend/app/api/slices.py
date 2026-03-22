@@ -9,7 +9,7 @@ POST /jobs/{jobId}/slices/generate     – trigger slice generation
 import json
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -66,16 +66,17 @@ async def list_slices(
     response: Response,
     request_id: str = Depends(get_request_id),
     db: Session = Depends(get_db),
+    pcap_label: str | None = Query(None, description="Filter by PCAP label (before/after)"),
 ):
     """List all incident slices for a job, ranked by significance."""
     _require_job(db, job_id)
     response.headers["X-Request-Id"] = request_id
 
-    slices = db.execute(
-        select(IncidentSlice)
-        .where(IncidentSlice.job_id == job_id)
-        .order_by(IncidentSlice.rank.asc())
-    ).scalars().all()
+    q = select(IncidentSlice).where(IncidentSlice.job_id == job_id)
+    if pcap_label:
+        q = q.where(IncidentSlice.pcap_label == pcap_label)
+    q = q.order_by(IncidentSlice.rank.asc())
+    slices = db.execute(q).scalars().all()
 
     return SliceListResponse(
         items=[_slice_to_item(s) for s in slices],

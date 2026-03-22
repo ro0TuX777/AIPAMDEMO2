@@ -63,8 +63,18 @@ def _seed_job(db, status="completed", **kwargs):
 
 def _seed_host(db, job_id, ip="10.0.0.1", **kwargs):
     from backend.app.models.host import Host
-    host = Host(job_id=job_id, ip=ip, role="internal", conn_count=10,
-                alert_count=2, finding_count=1, first_seen=_now(), last_seen=_now(), **kwargs)
+    payload = {
+        "job_id": job_id,
+        "ip": ip,
+        "role": "internal",
+        "conn_count": 10,
+        "alert_count": 2,
+        "finding_count": 1,
+        "first_seen": _now(),
+        "last_seen": _now(),
+    }
+    payload.update(kwargs)
+    host = Host(**payload)
     db.add(host)
     db.commit()
     return host
@@ -72,8 +82,16 @@ def _seed_host(db, job_id, ip="10.0.0.1", **kwargs):
 
 def _seed_alert(db, job_id, host_ip="10.0.0.1", severity="high", **kwargs):
     from backend.app.models.alert import Alert
-    a = Alert(job_id=job_id, alert_id=_uuid(), host_ip=host_ip, severity=severity,
-              signature="ET MALWARE Test", ts=_now(), **kwargs)
+    payload = {
+        "job_id": job_id,
+        "alert_id": _uuid(),
+        "host_ip": host_ip,
+        "severity": severity,
+        "signature": "ET MALWARE Test",
+        "ts": _now(),
+    }
+    payload.update(kwargs)
+    a = Alert(**payload)
     db.add(a)
     db.commit()
     return a
@@ -113,11 +131,21 @@ def _seed_ioc(db, job_id, **kwargs):
     return i
 
 
-def _seed_connection(db, job_id, host_ip="10.0.0.1"):
+def _seed_connection(db, job_id, host_ip="10.0.0.1", **kwargs):
     from backend.app.models.connection import Connection
-    c = Connection(job_id=job_id, connection_id=_uuid(), host_ip=host_ip,
-                   src_ip=host_ip, dest_ip="8.8.8.8", src_port=12345, dest_port=443,
-                   proto="tcp", ts=_now())
+    payload = {
+        "job_id": job_id,
+        "connection_id": _uuid(),
+        "host_ip": host_ip,
+        "src_ip": host_ip,
+        "dest_ip": "8.8.8.8",
+        "src_port": 12345,
+        "dest_port": 443,
+        "proto": "tcp",
+        "ts": _now(),
+    }
+    payload.update(kwargs)
+    c = Connection(**payload)
     db.add(c)
     db.commit()
     return c
@@ -131,6 +159,53 @@ def _seed_timeline(db, job_id, **kwargs):
     db.add(t)
     db.commit()
     return t
+
+
+def _seed_dns(db, job_id, host_ip="10.0.0.1", **kwargs):
+    from backend.app.models.dns import DnsQuery
+    payload = {
+        "job_id": job_id,
+        "dns_id": _uuid(),
+        "host_ip": host_ip,
+        "src_ip": host_ip,
+        "query": "example.com",
+        "qtype": "A",
+        "ts": _now(),
+    }
+    payload.update(kwargs)
+    d = DnsQuery(**payload)
+    db.add(d)
+    db.commit()
+    return d
+
+
+def _seed_job_pcap(db, job_id, label="before", **kwargs):
+    from backend.app.models.job_pcap import JobPcap
+    from backend.app.models.upload import Upload
+    upload_id = kwargs.pop("upload_id", _uuid())
+    # Create the Upload record first to satisfy the FK constraint
+    upload = Upload(
+        upload_id=upload_id,
+        filename=f"test-{label}.pcap",
+        size_bytes=1024,
+        sha256=_uuid(),
+        created_at=_now(),
+    )
+    db.add(upload)
+    db.flush()
+    payload = {
+        "job_id": job_id,
+        "upload_id": upload_id,
+        "label": label,
+        "filename": f"test-{label}.pcap",
+        "ordinal": 0,
+        "size_bytes": 1024,
+    }
+    payload.update(kwargs)
+    p = JobPcap(**payload)
+    db.add(p)
+    db.commit()
+    return p
 
 
 def _seed_sensor(db, job_id, sensor="suricata", status="completed"):
@@ -401,6 +476,89 @@ class TestFindingsEndpoints:
         assert r.status_code == 200
         assert len(r.json()["items"]) == 1
         assert r.json()["items"][0]["pcap_label"] == "capture-b"
+
+    def test_get_finding_detail_returns_related_hosts_alerts_and_connections(self, app_client):
+        client, db = app_client
+        job = _seed_job(db)
+        _seed_host(db, job.job_id, ip="10.0.0.1", role="client", conn_count=7, alert_count=3, finding_count=2)
+        _seed_host(db, job.job_id, ip="8.8.8.8", role="external", conn_count=2, alert_count=1, finding_count=0)
+        alert = _seed_alert(
+            db,
+            job.job_id,
+            host_ip="10.0.0.1",
+            severity="high",
+            community_id="1:abc",
+            signature="Beacon alert",
+            category="command_and_control",
+            src_ip="10.0.0.1",
+            src_port=51515,
+            dest_ip="8.8.8.8",
+            dest_port=443,
+            proto="tcp",
+            pcap_label="capture-a",
+        )
+        connection = _seed_connection(
+            db,
+            job.job_id,
+            host_ip="10.0.0.1",
+            community_id="1:abc",
+            src_ip="10.0.0.1",
+            src_port=51515,
+            dest_ip="8.8.8.8",
+            dest_port=443,
+            proto="tcp",
+            service="tls",
+            pcap_label="capture-a",
+        )
+        finding = _seed_finding(
+            db,
+            job.job_id,
+            severity="high",
+            community_id="1:abc",
+            category="command_and_control",
+            pcap_label="capture-a",
+            evidence_json=json.dumps({
+                "affected_hosts": ["10.0.0.1", "8.8.8.8"],
+                "sample_ts": "2026-03-11T10:15:00Z",
+            }),
+        )
+
+        r = client.get(f"/api/v1/jobs/{job.job_id}/findings/{finding.finding_id}", headers=AUTH)
+        assert r.status_code == 200
+        body = r.json()
+        assert body["finding_id"] == finding.finding_id
+        assert body["community_id"] == "1:abc"
+        assert body["pcap_label"] == "capture-a"
+        assert {item["ip"] for item in body["related_hosts"]} == {"10.0.0.1", "8.8.8.8"}
+        assert body["related_alerts"] == [
+            {
+                "alert_id": alert.alert_id,
+                "ts": alert.ts,
+                "severity": "high",
+                "signature": "Beacon alert",
+                "category": "command_and_control",
+                "host_ip": "10.0.0.1",
+                "src_ip": "10.0.0.1",
+                "src_port": 51515,
+                "dest_ip": "8.8.8.8",
+                "dest_port": 443,
+                "proto": "tcp",
+                "pcap_label": "capture-a",
+            }
+        ]
+        assert body["related_connections"] == [
+            {
+                "connection_id": connection.connection_id,
+                "src_ip": "10.0.0.1",
+                "src_port": 51515,
+                "dest_ip": "8.8.8.8",
+                "dest_port": 443,
+                "proto": "tcp",
+                "service": "tls",
+                "ts": connection.ts,
+                "pcap_label": "capture-a",
+            }
+        ]
 
     def test_explain_finding_returns_grounded_markdown_with_evidence(self, app_client):
         client, db = app_client
@@ -1083,3 +1241,211 @@ class TestSSEEvents:
         r = client.get(f"/api/v1/jobs/{_uuid()}/events", headers=AUTH)
         assert r.status_code == 404
 
+
+
+# ===== Temporal Analysis Endpoint Tests =====
+
+class TestTemporalEndpoints:
+    """Tests for the temporal before/after comparison endpoints."""
+
+    def _setup_temporal_job(self, db):
+        """Create a job with before/after PCAP labels and seed data."""
+        job = _seed_job(db)
+        _seed_job_pcap(db, job.job_id, label="before", ordinal=0)
+        _seed_job_pcap(db, job.job_id, label="after", ordinal=1)
+        return job
+
+    # ── temporal-delta ──
+
+    def test_delta_returns_host_diffs(self, app_client):
+        client, db = app_client
+        job = self._setup_temporal_job(db)
+
+        # before: 10.0.0.1 only; after: 10.0.0.2 only
+        _seed_host(db, job.job_id, ip="10.0.0.1", pcap_label="before", conn_count=5, alert_count=1)
+        _seed_host(db, job.job_id, ip="10.0.0.2", pcap_label="after", conn_count=3, alert_count=0)
+
+        r = client.get(f"/api/v1/jobs/{job.job_id}/temporal-delta", headers=AUTH)
+        assert r.status_code == 200
+        body = r.json()
+        assert body["summary"]["hosts"]["before"] == 1
+        assert body["summary"]["hosts"]["after"] == 1
+        assert body["summary"]["hosts"]["new"] == 1
+        assert body["summary"]["hosts"]["removed"] == 1
+        assert len(body["hosts"]["added"]) == 1
+        assert body["hosts"]["added"][0]["ip"] == "10.0.0.2"
+        assert len(body["hosts"]["removed"]) == 1
+        assert body["hosts"]["removed"][0]["ip"] == "10.0.0.1"
+
+    def test_delta_returns_changed_hosts(self, app_client):
+        client, db = app_client
+        job = self._setup_temporal_job(db)
+
+        _seed_host(db, job.job_id, ip="10.0.0.1", pcap_label="before", conn_count=5, alert_count=1)
+        _seed_host(db, job.job_id, ip="10.0.0.1", pcap_label="after", conn_count=10, alert_count=3)
+
+        r = client.get(f"/api/v1/jobs/{job.job_id}/temporal-delta", headers=AUTH)
+        assert r.status_code == 200
+        body = r.json()
+        assert len(body["hosts"]["changed"]) == 1
+        changed = body["hosts"]["changed"][0]
+        assert changed["ip"] == "10.0.0.1"
+        assert changed["conn_before"] == 5
+        assert changed["conn_after"] == 10
+        assert changed["alert_before"] == 1
+        assert changed["alert_after"] == 3
+
+    def test_delta_returns_alert_diffs(self, app_client):
+        client, db = app_client
+        job = self._setup_temporal_job(db)
+
+        _seed_alert(db, job.job_id, signature="ET MALWARE Known Bad", severity="high", pcap_label="before")
+        _seed_alert(db, job.job_id, signature="ET MALWARE New Threat", severity="critical", pcap_label="after")
+
+        r = client.get(f"/api/v1/jobs/{job.job_id}/temporal-delta", headers=AUTH)
+        assert r.status_code == 200
+        body = r.json()
+        sigs = {a["signature"]: a for a in body["alerts"]}
+        assert sigs["ET MALWARE Known Bad"]["status"] == "removed"
+        assert sigs["ET MALWARE New Threat"]["status"] == "new"
+        assert body["summary"]["alerts"]["new_signatures"] == 1
+        assert body["summary"]["alerts"]["removed_signatures"] == 1
+
+    def test_delta_returns_finding_diffs(self, app_client):
+        client, db = app_client
+        job = self._setup_temporal_job(db)
+
+        _seed_finding(db, job.job_id, title="Old finding", severity="medium", pcap_label="before")
+        _seed_finding(db, job.job_id, title="New finding", severity="high", pcap_label="after")
+
+        r = client.get(f"/api/v1/jobs/{job.job_id}/temporal-delta", headers=AUTH)
+        assert r.status_code == 200
+        body = r.json()
+        titles = {f["title"]: f for f in body["findings"]}
+        assert titles["Old finding"]["status"] == "removed"
+        assert titles["New finding"]["status"] == "new"
+
+    def test_delta_returns_ioc_diffs(self, app_client):
+        client, db = app_client
+        job = self._setup_temporal_job(db)
+
+        _seed_ioc(db, job.job_id, value="1.2.3.4", pcap_label="before")
+        _seed_ioc(db, job.job_id, value="5.6.7.8", pcap_label="after")
+
+        r = client.get(f"/api/v1/jobs/{job.job_id}/temporal-delta", headers=AUTH)
+        assert r.status_code == 200
+        body = r.json()
+        assert "5.6.7.8" in body["iocs"]["added"]
+        assert "1.2.3.4" in body["iocs"]["removed"]
+
+    def test_delta_returns_dns_diffs(self, app_client):
+        client, db = app_client
+        job = self._setup_temporal_job(db)
+
+        _seed_dns(db, job.job_id, query="old-domain.com", pcap_label="before")
+        _seed_dns(db, job.job_id, query="new-domain.com", pcap_label="after")
+
+        r = client.get(f"/api/v1/jobs/{job.job_id}/temporal-delta", headers=AUTH)
+        assert r.status_code == 200
+        body = r.json()
+        assert "new-domain.com" in body["dns"]["added"]
+        assert "old-domain.com" in body["dns"]["removed"]
+
+    def test_delta_returns_traffic_stats(self, app_client):
+        client, db = app_client
+        job = self._setup_temporal_job(db)
+
+        _seed_connection(db, job.job_id, pcap_label="before", bytes_sent=100, bytes_recv=200)
+        _seed_connection(db, job.job_id, pcap_label="after", bytes_sent=500, bytes_recv=600)
+        _seed_connection(db, job.job_id, pcap_label="after", bytes_sent=50, bytes_recv=50,
+                         dest_ip="1.2.3.4", dest_port=80)
+
+        r = client.get(f"/api/v1/jobs/{job.job_id}/temporal-delta", headers=AUTH)
+        assert r.status_code == 200
+        body = r.json()
+        assert body["summary"]["traffic"]["before"]["connections"] == 1
+        assert body["summary"]["traffic"]["after"]["connections"] == 2
+        assert body["summary"]["traffic"]["before"]["bytes_sent"] == 100
+        assert body["summary"]["traffic"]["after"]["bytes_sent"] == 550
+
+    def test_delta_400_without_both_phases(self, app_client):
+        client, db = app_client
+        job = _seed_job(db)
+        _seed_job_pcap(db, job.job_id, label="before")
+        # no "after" pcap
+
+        r = client.get(f"/api/v1/jobs/{job.job_id}/temporal-delta", headers=AUTH)
+        assert r.status_code == 400
+
+    def test_delta_404_missing_job(self, app_client):
+        client, db = app_client
+        r = client.get(f"/api/v1/jobs/{_uuid()}/temporal-delta", headers=AUTH)
+        assert r.status_code == 404
+
+    # ── temporal-flows ──
+
+    def test_flows_returns_new_flows(self, app_client):
+        client, db = app_client
+        job = self._setup_temporal_job(db)
+
+        # before: 10.0.0.1 -> 8.8.8.8:443
+        _seed_connection(db, job.job_id, pcap_label="before",
+                         src_ip="10.0.0.1", dest_ip="8.8.8.8", dest_port=443, proto="tcp")
+        # after: same flow (should not appear) + new flow
+        _seed_connection(db, job.job_id, pcap_label="after",
+                         src_ip="10.0.0.1", dest_ip="8.8.8.8", dest_port=443, proto="tcp")
+        _seed_connection(db, job.job_id, pcap_label="after",
+                         src_ip="10.0.0.1", dest_ip="1.2.3.4", dest_port=80, proto="tcp",
+                         bytes_sent=100, bytes_recv=200)
+        _seed_connection(db, job.job_id, pcap_label="after",
+                         src_ip="10.0.0.1", dest_ip="1.2.3.4", dest_port=80, proto="tcp",
+                         bytes_sent=50, bytes_recv=75)
+
+        r = client.get(f"/api/v1/jobs/{job.job_id}/temporal-flows", headers=AUTH)
+        assert r.status_code == 200
+        body = r.json()
+        assert body["total_new_flows"] == 1
+        flow = body["flows"][0]
+        assert flow["dest_ip"] == "1.2.3.4"
+        assert flow["dest_port"] == 80
+        assert flow["count"] == 2
+        assert flow["total_bytes_sent"] == 150
+        assert flow["total_bytes_recv"] == 275
+
+    def test_flows_empty_when_no_new_flows(self, app_client):
+        client, db = app_client
+        job = self._setup_temporal_job(db)
+
+        _seed_connection(db, job.job_id, pcap_label="before",
+                         src_ip="10.0.0.1", dest_ip="8.8.8.8", dest_port=443, proto="tcp")
+        _seed_connection(db, job.job_id, pcap_label="after",
+                         src_ip="10.0.0.1", dest_ip="8.8.8.8", dest_port=443, proto="tcp")
+
+        r = client.get(f"/api/v1/jobs/{job.job_id}/temporal-flows", headers=AUTH)
+        assert r.status_code == 200
+        assert r.json()["total_new_flows"] == 0
+        assert r.json()["flows"] == []
+
+    # ── temporal-narrative ──
+
+    def test_narrative_returns_markdown(self, app_client):
+        client, db = app_client
+        job = self._setup_temporal_job(db)
+
+        _seed_host(db, job.job_id, ip="10.0.0.1", pcap_label="before")
+        _seed_host(db, job.job_id, ip="10.0.0.1", pcap_label="after")
+        _seed_host(db, job.job_id, ip="10.0.0.2", pcap_label="after")
+        _seed_alert(db, job.job_id, signature="New Sig", pcap_label="after")
+
+        r = client.post(f"/api/v1/jobs/{job.job_id}/temporal-narrative", headers=AUTH)
+        assert r.status_code == 200
+        body = r.json()
+        md = body["narrative_markdown"]
+        assert "# Temporal Analysis Narrative" in md
+        assert "**1** new host(s) appeared" in md
+        assert "**1** new alert signature(s)" in md
+
+    def test_narrative_404_missing_job(self, app_client):
+        client, db = app_client
+        r = client.post(f"/api/v1/jobs/{_uuid()}/temporal-narrative", headers=AUTH)
+        assert r.status_code == 404

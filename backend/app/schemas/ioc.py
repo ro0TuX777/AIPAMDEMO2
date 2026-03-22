@@ -15,6 +15,7 @@ class IocItem(BaseModel):
     confidence: float | None = None
     sources: list[str] = []
     context: str | None = None
+    pcap_label: str | None = None
 
 
 class IocListResponse(BaseModel):

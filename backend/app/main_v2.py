@@ -26,6 +26,7 @@ from backend.app.api import (
     reports,
     slices,
     system,
+    temporal,
     theories,
     uploads,
 )
@@ -105,6 +106,7 @@ def create_app() -> FastAPI:
     app.include_router(slices.router, prefix="/api/v1")
     app.include_router(annotations.router, prefix="/api/v1")
     app.include_router(reports.router, prefix="/api/v1")
+    app.include_router(temporal.router, prefix="/api/v1")
     app.include_router(proofs.router, prefix="/api/v1")
 
     # Training Intelligence routes (V1 — router already has /api/v1/training prefix)

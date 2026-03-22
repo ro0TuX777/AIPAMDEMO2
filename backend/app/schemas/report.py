@@ -28,6 +28,7 @@ class ReportItem(BaseModel):
     host_count: int = 0
     annotation_count: int = 0
     evidence_refs: list[str] = Field(default_factory=list)
+    pcap_label: str | None = None
     created_at: str
 
     @field_validator("content_json", mode="before")
@@ -53,6 +54,7 @@ class ReportItem(BaseModel):
 
 class ReportGenerateRequest(BaseModel):
     mode: ReportMode = "analyst"
+    pcap_label: str | None = None
 
 
 class ReportListResponse(BaseModel):

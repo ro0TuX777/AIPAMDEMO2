@@ -293,7 +293,7 @@ def _generate_summary(proto: _ProtoSlice) -> str:
 
 # ── Public API ───────────────────────────────────────────────────────
 
-def generate_slices(db: Session, job_id: str) -> list[IncidentSlice]:
+def generate_slices(db: Session, job_id: str, pcap_label: str | None = None) -> list[IncidentSlice]:
     """Generate incident slices for a job.
 
     Main entry point. Steps:
@@ -304,15 +304,25 @@ def generate_slices(db: Session, job_id: str) -> list[IncidentSlice]:
       5. Attach findings and IOCs to slices.
       6. Rank, persist, and return.
     """
-    # Delete existing slices for this job (re-generation)
-    db.query(IncidentSlice).filter(IncidentSlice.job_id == job_id).delete()
+    # Delete existing slices for this job + label (re-generation)
+    del_q = db.query(IncidentSlice).filter(IncidentSlice.job_id == job_id)
+    if pcap_label:
+        del_q = del_q.filter(IncidentSlice.pcap_label == pcap_label)
+    del_q.delete()
     db.flush()
 
-    # Gather evidence
-    alerts = db.execute(select(Alert).where(Alert.job_id == job_id)).scalars().all()
-    connections = db.execute(select(Connection).where(Connection.job_id == job_id)).scalars().all()
-    findings = db.execute(select(Finding).where(Finding.job_id == job_id)).scalars().all()
-    iocs = db.execute(select(Ioc).where(Ioc.job_id == job_id)).scalars().all()
+    # Gather evidence (filtered by pcap_label if provided)
+    aq = select(Alert).where(Alert.job_id == job_id)
+    cq = select(Connection).where(Connection.job_id == job_id)
+    fq = select(Finding).where(Finding.job_id == job_id)
+    ioq = select(Ioc).where(Ioc.job_id == job_id)
+    if pcap_label:
+        aq = aq.where(Alert.pcap_label == pcap_label)
+        fq = fq.where(Finding.pcap_label == pcap_label)
+    alerts = db.execute(aq).scalars().all()
+    connections = db.execute(cq).scalars().all()
+    findings = db.execute(fq).scalars().all()
+    iocs = db.execute(ioq).scalars().all()
 
     if not alerts and not connections:
         logger.info("No alerts or connections for job=%s, skipping slice generation", job_id)
@@ -394,6 +404,7 @@ def generate_slices(db: Session, job_id: str) -> list[IncidentSlice]:
             connection_ids_json=json.dumps(proto.connection_ids) if proto.connection_ids else None,
             summary=_generate_summary(proto),
             rank=rank,
+            pcap_label=pcap_label,
             created_at=now,
         )
         db.add(incident_slice)

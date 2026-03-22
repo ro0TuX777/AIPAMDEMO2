@@ -298,15 +298,16 @@ def _attach_related_evidence(
     return alert_ids, finding_ids
 
 
-def generate_annotations(db: Session, job_id: str) -> list[ContextAnnotation]:
+def generate_annotations(db: Session, job_id: str, pcap_label: str | None = None) -> list[ContextAnnotation]:
     """Main entry point: compute baselines, find outliers, persist annotations.
 
-    Deletes any existing annotations for the job before regenerating.
+    Deletes any existing annotations for the job (and pcap_label if given) before regenerating.
     """
-    # Delete existing annotations
-    db.execute(
-        delete(ContextAnnotation).where(ContextAnnotation.job_id == job_id)
-    )
+    # Delete existing annotations for this label
+    del_stmt = delete(ContextAnnotation).where(ContextAnnotation.job_id == job_id)
+    if pcap_label:
+        del_stmt = del_stmt.where(ContextAnnotation.pcap_label == pcap_label)
+    db.execute(del_stmt)
     db.flush()
 
     # Compute per-host metrics
@@ -353,6 +354,7 @@ def generate_annotations(db: Session, job_id: str) -> list[ContextAnnotation]:
             why_unusual=outlier["why_unusual"],
             related_alert_ids_json=json.dumps(alert_ids) if alert_ids else None,
             related_finding_ids_json=json.dumps(finding_ids) if finding_ids else None,
+            pcap_label=pcap_label,
             created_at=_now_iso(),
         )
         db.add(ann)

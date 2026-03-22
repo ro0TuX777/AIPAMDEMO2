@@ -32,12 +32,15 @@ class Theory(Base):
     explanation = Column(Text, nullable=True)
     next_steps_json = Column(Text, nullable=True)  # JSON array of strings
 
+    pcap_label = Column(String, nullable=True)  # which PCAP phase generated this theory (e.g. "before", "after")
+
     created_at = Column(String, nullable=False)
 
     __table_args__ = (
         Index("idx_theories_job", "job_id"),
         Index("idx_theories_scope", "job_id", "scope_type", "scope_id"),
         Index("idx_theories_rank", "job_id", "scope_type", "scope_id", "rank"),
+        Index("idx_theories_pcap_label", "job_id", "pcap_label"),
     )
 
     def __repr__(self) -> str:

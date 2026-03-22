@@ -108,6 +108,56 @@ def run_job(self, job_id: str) -> str:
         db.close()
 
 
+@celery_app.task(bind=True, name="aipam.run_job_phase", max_retries=0)
+def run_job_phase(self, job_id: str, pcap_label: str) -> str:
+    """Re-run the pipeline for a specific PCAP label (temporal phase).
+
+    This allows "Before/After" analysis: only PCAPs with the given label
+    are processed, and all resulting evidence is tagged with pcap_label.
+
+    Returns:
+        Final job status string.
+    """
+    import docker
+
+    from backend.app.database_v2 import get_session_factory, init_v2_db
+    from backend.app.pipeline.orchestrator import run_pipeline
+
+    logger.info("Worker received phase re-analysis: job=%s label=%s", job_id, pcap_label)
+
+    settings = get_settings()
+    init_v2_db()
+
+    session_factory = get_session_factory()
+    db = session_factory()
+
+    try:
+        docker_client = docker.from_env()
+    except Exception:
+        logger.warning("Docker not available — sensor containers will fail")
+        docker_client = None  # type: ignore[assignment]
+
+    try:
+        status = run_pipeline(
+            job_id=job_id,
+            db=db,
+            docker_client=docker_client,
+            job_root=settings.aipam_job_root,
+            upload_root=settings.aipam_upload_root,
+            sensor_config_dir=settings.aipam_sensor_config_dir,
+            max_job_disk_bytes=settings.aipam_max_job_disk_bytes,
+            preflight_multiplier=settings.aipam_preflight_multiplier,
+            pcap_label=pcap_label,
+        )
+        logger.info("Phase re-analysis job=%s label=%s finished: %s", job_id, pcap_label, status)
+        return status
+    except Exception:
+        logger.exception("Phase re-analysis job=%s label=%s failed", job_id, pcap_label)
+        raise
+    finally:
+        db.close()
+
+
 @celery_app.task(name="aipam.prune_old_jobs")
 def prune_old_jobs() -> dict:
     """Scheduled task to delete jobs older than the retention period (§1.6)."""

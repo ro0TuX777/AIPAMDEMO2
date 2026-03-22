@@ -23,6 +23,7 @@ class TlsSessionItem(BaseModel):
     cert_fingerprint_sha1: str | None = None
     community_id: str | None = None
     iocs: list[str] = []
+    pcap_label: str | None = None
 
 
 class TlsSessionListResponse(BaseModel):

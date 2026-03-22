@@ -181,13 +181,13 @@ export const FindingDetailPage: React.FC = () => {
   const highlightedExplainCitation = explainState?.highlighted_citation;
 
   const handleExplainCopy = async () => {
-    if (!hasExplainContent(explainState)) return;
+    if (!hasExplainContent(explainState) || !explainState) return;
     const copyStatus = await copyExplainToClipboard(finding, explainState);
     updateExplainState((prev) => ({ ...(prev ?? {}), copy_status: copyStatus }));
   };
 
   const handleExplainDownload = async () => {
-    if (!hasExplainContent(explainState)) return;
+    if (!hasExplainContent(explainState) || !explainState) return;
     const downloadStatus = downloadExplainMarkdownFile(finding, explainState);
     updateExplainState((prev) => ({ ...(prev ?? {}), download_status: downloadStatus }));
   };

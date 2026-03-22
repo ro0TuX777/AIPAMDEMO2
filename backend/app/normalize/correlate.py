@@ -26,6 +26,7 @@ from typing import Any
 
 import ipaddress
 
+from sqlalchemy import select as sa_select
 from sqlalchemy.orm import Session
 
 from backend.app.models.alert import Alert
@@ -750,10 +751,27 @@ def correlate_job(
         for ip in affected_ips:
             hosts.observe_ip(ip, finding_count=1)
 
-    # Persist host aggregates
+    # Persist host aggregates — use merge for re-analysis (same IP may exist)
     host_rows = hosts.to_db_rows(job_id)
     for h in host_rows:
-        db.add(h)
+        existing = db.execute(
+            sa_select(Host).where(Host.job_id == job_id, Host.ip == h.ip)
+        ).scalar_one_or_none()
+        if existing:
+            # Merge labels and accumulate counts
+            old_labels = set((existing.pcap_label or "").split(",")) - {""}
+            new_labels = set((h.pcap_label or "").split(",")) - {""}
+            merged = sorted(old_labels | new_labels)
+            existing.pcap_label = ",".join(merged) if merged else None
+            existing.conn_count = (existing.conn_count or 0) + (h.conn_count or 0)
+            existing.alert_count = (existing.alert_count or 0) + (h.alert_count or 0)
+            existing.finding_count = (existing.finding_count or 0) + (h.finding_count or 0)
+            if h.bytes_sent:
+                existing.bytes_sent = (existing.bytes_sent or 0) + h.bytes_sent
+            if h.bytes_recv:
+                existing.bytes_recv = (existing.bytes_recv or 0) + h.bytes_recv
+        else:
+            db.add(h)
     counts["hosts"] = len(host_rows)
 
     db.flush()

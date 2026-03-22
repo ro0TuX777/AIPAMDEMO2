@@ -1,4 +1,4 @@
-import React, { useCallback, useState } from "react";
+import React, { useCallback, useRef, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -61,6 +61,12 @@ export const JobDetailPage: React.FC = () => {
   const navigate = useNavigate();
   const queryClient = useQueryClient();
   const [showRerun, setShowRerun] = useState(false);
+  const [showAddPcap, setShowAddPcap] = useState(false);
+  const [afterLabel, setAfterLabel] = useState("after");
+  const [uploadPct, setUploadPct] = useState(0);
+  const [uploadStep, setUploadStep] = useState<"idle" | "uploading" | "validating" | "attaching" | "analyzing" | "done" | "error">("idle");
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ── Data fetching ──
   const isTerminal = (s?: string) => TERMINAL_STATUSES.has(s ?? "");
@@ -140,6 +146,38 @@ export const JobDetailPage: React.FC = () => {
     onError: () => addToast({ severity: "high", title: "Failed to re-run job" }),
   });
 
+  // ── Add After PCAP + Re-analyze flow ──
+  const handleAddAfterPcap = async (file: File) => {
+    if (!jobId) return;
+    try {
+      setUploadError(null);
+      setUploadStep("uploading");
+      setUploadPct(0);
+      const upload = await api.uploadPcap(file, (pct) => setUploadPct(pct));
+
+      setUploadStep("validating");
+      const validation = await api.validateUpload(upload.upload_id);
+      if (!validation.is_valid) {
+        setUploadError(`Validation failed: ${validation.warnings?.join(", ") ?? "Invalid PCAP"}`);
+        setUploadStep("error");
+        return;
+      }
+
+      setUploadStep("attaching");
+      await api.addJobPcap(jobId, { upload_id: upload.upload_id, label: afterLabel || "after" });
+
+      setUploadStep("analyzing");
+      await api.reanalyzeJob(jobId, afterLabel || "after");
+
+      setUploadStep("done");
+      queryClient.invalidateQueries({ queryKey: ["job", jobId] });
+      addToast({ severity: "info", title: "After PCAP added", body: `Re-analysis started for "${afterLabel}" phase.` });
+    } catch (err: any) {
+      setUploadError(err?.message ?? "Upload failed");
+      setUploadStep("error");
+    }
+  };
+
   // ── Loading / Error states ──
   if (jobQ.isLoading) {
     return <DetailSkeleton />;
@@ -218,6 +256,13 @@ export const JobDetailPage: React.FC = () => {
                 className="px-3 py-1.5 text-sm rounded border border-blue-500/40 text-blue-400 hover:bg-blue-500/10">
                 Rerun
               </button>
+              <button onClick={() => { setShowAddPcap(!showAddPcap); setUploadStep("idle"); setUploadError(null); }}
+                className="px-3 py-1.5 text-sm rounded border border-cyan-500/40 text-cyan-400 hover:bg-cyan-500/10 flex items-center gap-1.5">
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+                </svg>
+                Add After PCAP
+              </button>
               <button onClick={() => { if (confirm("Delete this job? This cannot be undone.")) deleteMut.mutate(); }}
                 disabled={deleteMut.isPending}
                 className="px-3 py-1.5 text-sm rounded border border-red-500/40 text-red-400 hover:bg-red-500/10 disabled:opacity-50">
@@ -239,6 +284,102 @@ export const JobDetailPage: React.FC = () => {
             </button>
           ))}
           {rerunMut.isPending && <span className="text-slate-400 animate-pulse">Creating…</span>}
+        </div>
+      )}
+
+      {/* Add After PCAP panel */}
+      {showAddPcap && (
+        <div className="bg-slate-800/60 border border-cyan-500/20 rounded-lg p-4 space-y-3">
+          <div className="flex items-center justify-between">
+            <h3 className="text-sm font-semibold text-cyan-300 flex items-center gap-2">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              Temporal Analysis — Add "After" PCAP
+            </h3>
+            <button onClick={() => setShowAddPcap(false)} className="text-slate-500 hover:text-white text-xs">✕ Close</button>
+          </div>
+          <p className="text-xs text-slate-400">
+            Upload a new PCAP captured after the original analysis. It will be analyzed within this same job
+            so you can compare <span className="text-cyan-300 font-medium">Before</span> vs <span className="text-orange-300 font-medium">After</span> on the Report page.
+          </p>
+          {uploadStep === "idle" && (
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-2">
+                <label className="text-xs text-slate-400">Phase label:</label>
+                <input
+                  type="text"
+                  value={afterLabel}
+                  onChange={e => setAfterLabel(e.target.value)}
+                  className="bg-slate-900 border border-slate-700 text-slate-200 text-xs rounded px-2 py-1 w-24"
+                  placeholder="after"
+                />
+              </div>
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept=".pcap,.pcapng,.cap"
+                className="hidden"
+                onChange={(e) => {
+                  const f = e.target.files?.[0];
+                  if (f) handleAddAfterPcap(f);
+                }}
+              />
+              <button
+                onClick={() => fileInputRef.current?.click()}
+                className="px-4 py-1.5 bg-cyan-600 hover:bg-cyan-700 text-white text-sm font-medium rounded transition-colors flex items-center gap-2"
+              >
+                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12" />
+                </svg>
+                Choose PCAP File
+              </button>
+            </div>
+          )}
+          {uploadStep !== "idle" && uploadStep !== "error" && (
+            <div className="space-y-2">
+              <div className="flex items-center gap-3 text-xs">
+                {uploadStep === "done" ? (
+                  <span className="text-emerald-400 font-medium">✓ Re-analysis started! Check the Report page to compare phases.</span>
+                ) : (
+                  <>
+                    <span className="w-2 h-2 rounded-full bg-cyan-500 animate-pulse" />
+                    <span className="text-slate-300 capitalize">
+                      {uploadStep === "uploading" ? `Uploading… ${uploadPct}%` :
+                       uploadStep === "validating" ? "Validating PCAP…" :
+                       uploadStep === "attaching" ? "Attaching to job…" :
+                       "Triggering re-analysis…"}
+                    </span>
+                  </>
+                )}
+              </div>
+              {uploadStep === "uploading" && (
+                <div className="h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                  <div className="h-full bg-cyan-500 rounded-full transition-all duration-300" style={{ width: `${uploadPct}%` }} />
+                </div>
+              )}
+              {uploadStep === "done" && (
+                <div className="flex gap-2">
+                  <button onClick={() => { setUploadStep("idle"); setShowAddPcap(false); }}
+                    className="px-3 py-1 text-xs rounded bg-slate-700 hover:bg-slate-600 text-slate-200">
+                    Close
+                  </button>
+                  <Link to={`/jobs/${jobId}/report`}
+                    className="px-3 py-1 text-xs rounded bg-cyan-600 hover:bg-cyan-700 text-white">
+                    Go to Report →
+                  </Link>
+                </div>
+              )}
+            </div>
+          )}
+          {uploadStep === "error" && (
+            <div className="text-xs text-red-400 flex items-center gap-2">
+              <span>⚠ {uploadError}</span>
+              <button onClick={() => setUploadStep("idle")} className="px-2 py-0.5 rounded bg-slate-700 hover:bg-slate-600 text-slate-200">
+                Try Again
+              </button>
+            </div>
+          )}
         </div>
       )}
 

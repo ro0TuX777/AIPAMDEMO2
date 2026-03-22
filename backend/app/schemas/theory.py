@@ -43,6 +43,7 @@ class TheoryItem(BaseModel):
     contradicting_evidence: list[EvidenceRef] = Field(default_factory=list)
     explanation: str | None = None
     next_steps: list[str] = Field(default_factory=list)
+    pcap_label: str | None = None
     created_at: str
 
 

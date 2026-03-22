@@ -27,7 +27,7 @@ class Host(Base):
     pcap_label = Column(String, nullable=True)  # which PCAP this host was observed in
 
     __table_args__ = (
-        UniqueConstraint("job_id", "ip"),
+        UniqueConstraint("job_id", "ip", "pcap_label"),
         Index("idx_hosts_job", "job_id"),
         Index("idx_hosts_role", "job_id", "role"),
     )

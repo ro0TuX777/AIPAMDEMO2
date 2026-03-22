@@ -68,18 +68,35 @@ def _update_job_status(db: Session, job: Job, status: str, error: str | None = N
 
 
 def _record_sensor_result(db: Session, job_id: str, result: SensorResult) -> None:
-    """Persist a SensorResult into the job_sensors table."""
-    sensor_row = JobSensor(
-        job_id=job_id,
-        sensor=result.sensor,
-        status=result.status,
-        started_at=result.started_at,
-        completed_at=result.completed_at,
-        duration_ms=result.duration_ms,
-        error=result.error,
-        error_code=result.error_code,
-    )
-    db.add(sensor_row)
+    """Persist a SensorResult into the job_sensors table (upsert on re-analysis)."""
+    from sqlalchemy import select as sa_select
+
+    existing = db.execute(
+        sa_select(JobSensor).where(
+            JobSensor.job_id == job_id,
+            JobSensor.sensor == result.sensor,
+        )
+    ).scalar_one_or_none()
+
+    if existing:
+        existing.status = result.status
+        existing.started_at = result.started_at
+        existing.completed_at = result.completed_at
+        existing.duration_ms = result.duration_ms
+        existing.error = result.error
+        existing.error_code = result.error_code
+    else:
+        sensor_row = JobSensor(
+            job_id=job_id,
+            sensor=result.sensor,
+            status=result.status,
+            started_at=result.started_at,
+            completed_at=result.completed_at,
+            duration_ms=result.duration_ms,
+            error=result.error,
+            error_code=result.error_code,
+        )
+        db.add(sensor_row)
     db.commit()
 
 
@@ -216,6 +233,7 @@ def run_pipeline(
     sensor_config_dir: Path | None = None,
     max_job_disk_bytes: int = 53_687_091_200,
     preflight_multiplier: int = 4,
+    pcap_label: str | None = None,
 ) -> str:
     """Execute the full analysis pipeline for a job.
 
@@ -228,6 +246,7 @@ def run_pipeline(
         sensor_config_dir: Sensor-specific config directory.
         max_job_disk_bytes: Per-job disk quota.
         preflight_multiplier: Multiplier for preflight disk check.
+        pcap_label: If set, only process PCAPs with this label (temporal re-analysis).
 
     Returns:
         Final job status string.
@@ -251,9 +270,11 @@ def run_pipeline(
         from backend.app.pipeline.job_dir import compute_pcap_sha256
 
         # Look up JobPcap records for multi-PCAP support
-        pcap_records = db.execute(
-            sa_select(JobPcap).where(JobPcap.job_id == job_id).order_by(JobPcap.ordinal)
-        ).scalars().all()
+        pcap_query = sa_select(JobPcap).where(JobPcap.job_id == job_id)
+        if pcap_label:
+            pcap_query = pcap_query.where(JobPcap.label == pcap_label)
+        pcap_query = pcap_query.order_by(JobPcap.ordinal)
+        pcap_records = db.execute(pcap_query).scalars().all()
 
         total_pcap_size = 0
 
@@ -266,7 +287,7 @@ def run_pipeline(
                     raise FileNotFoundError(f"No PCAP found in {upload_dir} for upload {rec.upload_id}")
                 pcap_source = found[0]
                 total_pcap_size += pcap_source.stat().st_size
-                label = rec.label or rec.filename.rsplit(".", 1)[0] or f"pcap_{rec.ordinal}"
+                label = rec.label or "before"
                 link_pcap_labeled(job_dir, pcap_source, label)
             logger.info("Linked %d PCAPs for job %s", len(pcap_records), job_id)
         else:
@@ -308,6 +329,34 @@ def run_pipeline(
         logger.error("Pipeline setup failed for job %s: %s", job_id, exc)
         _update_job_status(db, job, "failed", str(exc))
         return "failed"
+
+    # --- Re-analysis isolation ---
+    # When re-analysing a single phase:
+    #   1. Hide non-target PCAPs so sensors only process the target file
+    #   2. Clean old sensor output dirs so the correlator doesn't re-ingest
+    #      "before" data that's already persisted in the DB
+    _hidden_pcaps: list[tuple[Path, Path]] = []
+    if pcap_label:
+        import shutil as _shutil
+
+        input_dir = job_dir / "input"
+        safe_label = "".join(c if c.isalnum() or c in "-_" else "_" for c in pcap_label)
+        for p in sorted(input_dir.iterdir()):
+            if p.is_symlink():
+                continue
+            if p.suffix.lower() in (".pcap", ".pcapng") and p.stem != safe_label:
+                hidden = p.with_suffix(p.suffix + ".hidden")
+                p.rename(hidden)
+                _hidden_pcaps.append((hidden, p))
+                logger.info("Hid non-target PCAP %s during re-analysis", p.name)
+
+        # Clean old sensor output directories so correlator only sees new data
+        sensors_dir = job_dir / "sensors"
+        if sensors_dir.exists():
+            for sd in sensors_dir.iterdir():
+                if sd.is_dir():
+                    _shutil.rmtree(sd)
+                    logger.info("Cleaned old sensor output: %s", sd.name)
 
     # --- Step 2-3: Run stages (Zeek, Suricata) ---
     stages = get_stages_for_profile(profile)
@@ -402,6 +451,12 @@ def run_pipeline(
             has_errors = True
             break
 
+    # --- Restore hidden PCAPs after sensors complete ---
+    for hidden, original in _hidden_pcaps:
+        if hidden.exists():
+            hidden.rename(original)
+            logger.info("Restored hidden PCAP %s", original.name)
+
     # --- Write extraction manifest (§3.3) ---
     _write_extraction_manifest(job_dir)
 
@@ -460,7 +515,7 @@ def run_pipeline(
     try:
         from backend.app.services.theory_engine import generate_all_theories
 
-        theory_counts = generate_all_theories(db, job_id)
+        theory_counts = generate_all_theories(db, job_id, pcap_label=pcap_label)
         logger.info("Theory generation for job %s: %s", job_id, theory_counts)
         _emit(job_id, "stage.status", stage="theories", status="completed",
               step=step_num, total_steps=total_steps,
@@ -477,7 +532,7 @@ def run_pipeline(
     try:
         from backend.app.services.slicer import generate_slices
 
-        slices = generate_slices(db, job_id)
+        slices = generate_slices(db, job_id, pcap_label=pcap_label)
         logger.info("Slice generation for job %s: %d slices", job_id, len(slices))
         _emit(job_id, "stage.status", stage="slices", status="completed",
               step=step_num, total_steps=total_steps,
@@ -494,7 +549,7 @@ def run_pipeline(
     try:
         from backend.app.services.contextualizer import generate_annotations
 
-        anns = generate_annotations(db, job_id)
+        anns = generate_annotations(db, job_id, pcap_label=pcap_label)
         logger.info("Annotation generation for job %s: %d annotations", job_id, len(anns))
         _emit(job_id, "stage.status", stage="annotations", status="completed",
               step=step_num, total_steps=total_steps,

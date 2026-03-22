@@ -65,10 +65,12 @@ _SEVERITY_WEIGHT = {"critical": 1.0, "high": 0.8, "medium": 0.5, "low": 0.2, "in
 
 # ── Evidence gathering ────────────────────────────────────────────────
 
-def _gather_evidence(db: Session, job_id: str, host_ip: str | None = None) -> dict[str, Any]:
+def _gather_evidence(db: Session, job_id: str, host_ip: str | None = None, pcap_label: str | None = None) -> dict[str, Any]:
     """Collect alerts, findings, and IOCs for a job or specific host."""
     # Findings
     fq = select(Finding).where(Finding.job_id == job_id)
+    if pcap_label:
+        fq = fq.where(Finding.pcap_label == pcap_label)
     if host_ip:
         fq = fq.where(or_(
             Finding.title.contains(host_ip),
@@ -79,6 +81,8 @@ def _gather_evidence(db: Session, job_id: str, host_ip: str | None = None) -> di
 
     # Alerts
     aq = select(Alert).where(Alert.job_id == job_id)
+    if pcap_label:
+        aq = aq.where(Alert.pcap_label == pcap_label)
     if host_ip:
         aq = aq.where(or_(
             Alert.src_ip == host_ip,
@@ -183,6 +187,7 @@ def generate_theories(
     db: Session,
     job_id: str,
     host_ip: str | None = None,
+    pcap_label: str | None = None,
 ) -> list[Theory]:
     """Generate ranked hypotheses for a job or specific host.
 
@@ -198,15 +203,18 @@ def generate_theories(
     scope_type = "host" if host_ip else "job"
     scope_id = host_ip or job_id
 
-    # Delete any existing theories for this scope (re-generation)
-    db.query(Theory).filter(
+    # Delete any existing theories for this scope + label (re-generation)
+    del_q = db.query(Theory).filter(
         Theory.job_id == job_id,
         Theory.scope_type == scope_type,
         Theory.scope_id == scope_id,
-    ).delete()
+    )
+    if pcap_label:
+        del_q = del_q.filter(Theory.pcap_label == pcap_label)
+    del_q.delete()
     db.flush()
 
-    evidence = _gather_evidence(db, job_id, host_ip)
+    evidence = _gather_evidence(db, job_id, host_ip, pcap_label=pcap_label)
 
     # Score all hypothesis types
     scored: list[tuple[str, float, list[str], list[str]]] = []
@@ -244,6 +252,7 @@ def generate_theories(
             rank=rank,
             supporting_evidence_json=json.dumps(supporting) if supporting else None,
             contradicting_evidence_json=json.dumps(contradicting) if contradicting else None,
+            pcap_label=pcap_label,
             created_at=now,
         )
         db.add(theory)
@@ -259,22 +268,23 @@ def generate_theories(
     return theories
 
 
-def generate_all_theories(db: Session, job_id: str) -> dict[str, int]:
+def generate_all_theories(db: Session, job_id: str, pcap_label: str | None = None) -> dict[str, int]:
     """Generate theories for the entire job and for each host.
 
     Returns counts: {"job": N, "hosts": M, "total": N+M}
     """
     # Job-level theories
-    job_theories = generate_theories(db, job_id)
+    job_theories = generate_theories(db, job_id, pcap_label=pcap_label)
 
     # Per-host theories
-    hosts = db.execute(
-        select(Host.ip).where(Host.job_id == job_id)
-    ).scalars().all()
+    host_q = select(Host.ip).where(Host.job_id == job_id)
+    if pcap_label:
+        host_q = host_q.where(Host.pcap_label == pcap_label)
+    hosts = db.execute(host_q).scalars().all()
 
     host_theory_count = 0
     for ip in hosts:
-        host_theories = generate_theories(db, job_id, host_ip=ip)
+        host_theories = generate_theories(db, job_id, host_ip=ip, pcap_label=pcap_label)
         host_theory_count += len(host_theories)
 
     return {

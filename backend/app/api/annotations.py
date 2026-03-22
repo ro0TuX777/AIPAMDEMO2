@@ -58,6 +58,7 @@ async def list_annotations(
     job_id: str,
     response: Response,
     host_ip: str | None = Query(None, description="Filter by host IP"),
+    pcap_label: str | None = Query(None, description="Filter by PCAP label (before/after)"),
     request_id: str = Depends(get_request_id),
     db: Session = Depends(get_db),
 ):
@@ -66,6 +67,8 @@ async def list_annotations(
     response.headers["X-Request-Id"] = request_id
 
     query = select(ContextAnnotation).where(ContextAnnotation.job_id == job_id)
+    if pcap_label:
+        query = query.where(ContextAnnotation.pcap_label == pcap_label)
     if host_ip:
         query = query.where(ContextAnnotation.host_ip == host_ip)
     query = query.order_by(ContextAnnotation.severity.desc())

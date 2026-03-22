@@ -20,6 +20,7 @@ class DnsQueryItem(BaseModel):
     community_id: str | None = None
     iocs: list[str] = []
     related_community_ids: list[str] = []
+    pcap_label: str | None = None
 
 
 class DnsQueryListResponse(BaseModel):

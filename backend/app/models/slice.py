@@ -43,12 +43,15 @@ class IncidentSlice(Base):
     # Rank within the job (1 = most significant)
     rank = Column(Integer, nullable=False, default=0)
 
+    pcap_label = Column(String, nullable=True)  # which PCAP phase generated this slice (e.g. "before", "after")
+
     created_at = Column(String, nullable=False)
 
     __table_args__ = (
         Index("idx_slices_job", "job_id"),
         Index("idx_slices_rank", "job_id", "rank"),
         Index("idx_slices_severity", "job_id", "severity"),
+        Index("idx_slices_pcap_label", "job_id", "pcap_label"),
     )
 
     def __repr__(self) -> str:

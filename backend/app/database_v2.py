@@ -118,6 +118,21 @@ def init_v2_db() -> None:
                     text("ALTER TABLE findings ADD COLUMN confidence REAL DEFAULT 0.0")
                 )
 
+    # Add pcap_label column to tables that need temporal analysis support
+    _pcap_label_tables = [
+        "theories", "incident_slices", "context_annotations", "reports",
+        "alerts", "findings", "hosts", "connections", "iocs",
+        "files", "dns_queries", "tls_sessions", "timeline_events",
+    ]
+    for table_name in _pcap_label_tables:
+        if inspector.has_table(table_name):
+            cols = {c["name"] for c in inspector.get_columns(table_name)}
+            if "pcap_label" not in cols:
+                with engine.begin() as connection:
+                    connection.execute(
+                        text(f"ALTER TABLE {table_name} ADD COLUMN pcap_label VARCHAR")
+                    )
+
 def reset_engine() -> None:
     """Reset engine and session factory. Used in tests."""
     global _engine, _SessionLocal

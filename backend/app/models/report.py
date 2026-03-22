@@ -14,6 +14,8 @@ class Report(Base):
 
     # Report mode: "executive" or "analyst"
     mode = Column(String, nullable=False, default="analyst")
+    # PCAP phase label for temporal analysis (e.g. "before", "after")
+    pcap_label = Column(String, nullable=True)
 
     # Report metadata
     title = Column(Text, nullable=False)
@@ -41,6 +43,7 @@ class Report(Base):
     __table_args__ = (
         Index("idx_reports_job", "job_id"),
         Index("idx_reports_mode", "job_id", "mode"),
+        Index("idx_reports_pcap_label", "job_id", "pcap_label"),
     )
 
     def __repr__(self) -> str:

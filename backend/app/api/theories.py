@@ -9,7 +9,7 @@ POST /jobs/{jobId}/theories/generate     – trigger theory generation
 import json
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -107,16 +107,17 @@ async def list_job_theories(
     response: Response,
     request_id: str = Depends(get_request_id),
     db: Session = Depends(get_db),
+    pcap_label: str | None = Query(None, description="Filter by PCAP label (before/after)"),
 ):
     """List job-level theories (ranked hypotheses)."""
     _require_job(db, job_id)
     response.headers["X-Request-Id"] = request_id
 
-    theories = db.execute(
-        select(Theory)
-        .where(Theory.job_id == job_id, Theory.scope_type == "job")
-        .order_by(Theory.rank.asc())
-    ).scalars().all()
+    q = select(Theory).where(Theory.job_id == job_id, Theory.scope_type == "job")
+    if pcap_label:
+        q = q.where(Theory.pcap_label == pcap_label)
+    q = q.order_by(Theory.rank.asc())
+    theories = db.execute(q).scalars().all()
 
     return TheoryListResponse(
         items=[_theory_to_item(t, db) for t in theories],

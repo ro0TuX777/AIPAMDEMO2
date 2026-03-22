@@ -694,6 +694,7 @@ export interface ReportItem {
   title: string;
   threat_level: string;
   confidence: number;
+  pcap_label?: string | null;
   content_markdown: string;
   content_json: Record<string, unknown>;
   theory_count: number;
@@ -945,6 +946,7 @@ export interface JobListParams extends PaginationParams {
 export interface HostListParams extends PaginationParams {
   role?: HostRole;
   q?: string;
+  pcap_label?: string;
 }
 
 export interface ConnectionListParams extends PaginationParams {
@@ -953,6 +955,7 @@ export interface ConnectionListParams extends PaginationParams {
   dest_ip?: string;
   dest_port?: number;
   service?: string;
+  pcap_label?: string;
   community_id?: string;
   start_ts?: string;
   end_ts?: string;
@@ -964,6 +967,7 @@ export interface DnsListParams extends PaginationParams {
   qtype?: string;
   community_id?: string;
   start_ts?: string;
+  pcap_label?: string;
   end_ts?: string;
 }
 
@@ -973,6 +977,7 @@ export interface TlsListParams extends PaginationParams {
   issuer?: string;
   community_id?: string;
   start_ts?: string;
+  pcap_label?: string;
   end_ts?: string;
 }
 
@@ -982,6 +987,7 @@ export interface AlertListParams extends PaginationParams {
   sid?: string;
   community_id?: string;
   start_ts?: string;
+  pcap_label?: string;
   end_ts?: string;
 }
 
@@ -999,6 +1005,7 @@ export interface FindingListParams extends PaginationParams {
   category?: string;
   sensor?: string;
   q?: string;
+  pcap_label?: string;
 }
 
 export interface TimelineListParams extends PaginationParams {
@@ -1012,7 +1019,45 @@ export interface IocListParams extends PaginationParams {
   type?: IocType;
   severity?: Severity;
   q?: string;
+  pcap_label?: string;
 }
+
+// ─── Temporal Analysis ──────────────────────────────────────────────────────
+
+export interface CountDelta { before: number; after: number; new: number; removed: number; }
+export interface AlertCountDelta { before: number; after: number; new_signatures: number; removed_signatures: number; }
+export interface TrafficSnapshot { connections: number; bytes_sent: number; bytes_recv: number; }
+export interface TrafficDelta { before: TrafficSnapshot; after: TrafficSnapshot; }
+export interface SeverityCounts { critical: number; high: number; medium: number; low: number; info: number; }
+
+export interface TemporalSummary {
+  hosts: CountDelta; alerts: AlertCountDelta; findings: CountDelta;
+  iocs: CountDelta; dns_domains: CountDelta; traffic: TrafficDelta;
+  theories: CountDelta; tls_sessions: CountDelta;
+  severity_before: SeverityCounts; severity_after: SeverityCounts;
+}
+
+export interface HostDiffItem { ip: string; role: string; conn_count: number; alert_count: number; }
+export interface HostChangedItem { ip: string; role: string; conn_before: number; conn_after: number; alert_before: number; alert_after: number; }
+export interface HostDiffs { added: HostDiffItem[]; removed: HostDiffItem[]; changed: HostChangedItem[]; }
+export interface AlertDiffItem { signature: string; severity: string; status: string; before_count: number; after_count: number; }
+export interface FindingDiffItem { title: string; severity: string; sensor?: string | null; status: string; }
+export interface IocDiffs { added: string[]; removed: string[]; }
+export interface DnsDiffs { added: string[]; removed: string[]; }
+
+export interface TemporalDeltaResponse {
+  schema_version: string; summary: TemporalSummary;
+  hosts: HostDiffs; alerts: AlertDiffItem[]; findings: FindingDiffItem[];
+  iocs: IocDiffs; dns: DnsDiffs;
+}
+
+export interface TemporalFlowItem {
+  src_ip: string; dest_ip: string; dest_port?: number | null;
+  proto: string; service?: string | null; count: number;
+  total_bytes_sent: number; total_bytes_recv: number;
+}
+export interface TemporalFlowsResponse { schema_version: string; flows: TemporalFlowItem[]; total_new_flows: number; }
+export interface TemporalNarrativeResponse { schema_version: string; narrative_markdown: string; }
 
 // ─── API Error ──────────────────────────────────────────────────────────────
 
@@ -1230,8 +1275,8 @@ export const api = {
   },
 
   // ── Theories ───────────────────────────────────────────────────────────
-  listJobTheories(jobId: string): Promise<TheoryListResponse> {
-    return get<TheoryListResponse>(`/jobs/${jobId}/theories`);
+  listJobTheories(jobId: string, p: { pcap_label?: string } = {}): Promise<TheoryListResponse> {
+    return get<TheoryListResponse>(`/jobs/${jobId}/theories${qs(p)}`);
   },
   listHostTheories(jobId: string, ip: string): Promise<TheoryListResponse> {
     return get<TheoryListResponse>(`/jobs/${jobId}/hosts/${encodeURIComponent(ip)}/theories`);
@@ -1241,8 +1286,8 @@ export const api = {
   },
 
   // ── Slices ────────────────────────────────────────────────────────────
-  listSlices(jobId: string): Promise<SliceListResponse> {
-    return get<SliceListResponse>(`/jobs/${jobId}/slices`);
+  listSlices(jobId: string, p: { pcap_label?: string } = {}): Promise<SliceListResponse> {
+    return get<SliceListResponse>(`/jobs/${jobId}/slices${qs(p)}`);
   },
   getSlice(jobId: string, sliceId: string): Promise<SliceDetailResponse> {
     return get<SliceDetailResponse>(`/jobs/${jobId}/slices/${encodeURIComponent(sliceId)}`);
@@ -1252,9 +1297,11 @@ export const api = {
   },
 
   // ── Annotations (Why Unusual?) ─────────────────────────────────────────
-  listAnnotations(jobId: string, hostIp?: string): Promise<ContextAnnotationListResponse> {
-    const params = hostIp ? `?host_ip=${encodeURIComponent(hostIp)}` : "";
-    return get<ContextAnnotationListResponse>(`/jobs/${jobId}/annotations${params}`);
+  listAnnotations(jobId: string, hostIp?: string, pcapLabel?: string): Promise<ContextAnnotationListResponse> {
+    const p: Record<string, string> = {};
+    if (hostIp) p.host_ip = hostIp;
+    if (pcapLabel) p.pcap_label = pcapLabel;
+    return get<ContextAnnotationListResponse>(`/jobs/${jobId}/annotations${qs(p)}`);
   },
   generateAnnotations(jobId: string): Promise<ContextAnnotationListResponse> {
     return post<ContextAnnotationListResponse>(`/jobs/${jobId}/annotations/generate`);
@@ -1267,8 +1314,10 @@ export const api = {
   getReport(jobId: string, reportId: string): Promise<ReportDetailResponse> {
     return get<ReportDetailResponse>(`/jobs/${jobId}/reports/${reportId}`);
   },
-  generateReport(jobId: string, mode: "executive" | "analyst" = "analyst"): Promise<ReportDetailResponse> {
-    return post<ReportDetailResponse>(`/jobs/${jobId}/reports/generate`, { mode });
+  generateReport(jobId: string, mode: "executive" | "analyst" = "analyst", pcapLabel?: string): Promise<ReportDetailResponse> {
+    const body: Record<string, string> = { mode };
+    if (pcapLabel) body.pcap_label = pcapLabel;
+    return post<ReportDetailResponse>(`/jobs/${jobId}/reports/generate`, body);
   },
 
   // ── Proofs ──────────────────────────────────────────────────────────
@@ -1381,6 +1430,25 @@ export const api = {
     const url = `${API_BASE}/jobs/${jobId}/events${tokenQs}`;
     const es = new EventSource(url);
     return es;
+  },
+
+  // ── Temporal Analysis ────────────────────────────────────────────────
+  getTemporalDelta(jobId: string): Promise<TemporalDeltaResponse> {
+    return get<TemporalDeltaResponse>(`/jobs/${jobId}/temporal-delta`);
+  },
+  getTemporalFlows(jobId: string): Promise<TemporalFlowsResponse> {
+    return get<TemporalFlowsResponse>(`/jobs/${jobId}/temporal-flows`);
+  },
+  generateTemporalNarrative(jobId: string): Promise<TemporalNarrativeResponse> {
+    return post<TemporalNarrativeResponse>(`/jobs/${jobId}/temporal-narrative`);
+  },
+
+  // ── PCAP Management ─────────────────────────────────────────────────
+  addJobPcap(jobId: string, body: { upload_id: string; label: string }): Promise<void> {
+    return post<void>(`/jobs/${jobId}/pcaps`, body);
+  },
+  reanalyzeJob(jobId: string, pcapLabel: string): Promise<{ job_id: string; pcap_label: string; status: string }> {
+    return post<{ job_id: string; pcap_label: string; status: string }>(`/jobs/${jobId}/reanalyze`, { pcap_label: pcapLabel });
   },
 
   // ═══════════════════════════════════════════════════════════════════════

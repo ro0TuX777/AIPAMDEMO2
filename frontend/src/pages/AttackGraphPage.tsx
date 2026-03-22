@@ -15,6 +15,7 @@ interface D3Link extends d3.SimulationLinkDatum<D3Node> {
 }
 
 type ViewMode = "topology" | "evidence";
+type LayoutMode = "force" | "hierarchical";
 
 const NODE_TYPES = [
     { key: "host", label: "Host", color: "#3b82f6", shape: "circle" },
@@ -85,13 +86,71 @@ function buildTooltip(d: D3Node): string {
     return lines.join("\n");
 }
 
-/** Check if a node passes the minimum severity filter.
- *  Hosts and types without severity always pass. */
+/** Check if a node passes the minimum severity filter. */
 function passesSeverityFilter(d: GraphNode, minSev: SeverityLevel): boolean {
-    // Hosts, theories, slices always shown (they derive severity from children)
     if (d.type === "host" || d.type === "theory" || d.type === "slice" || d.type === "external") return true;
     const nodeSev = d.severity || "info";
     return (SEV_RANK[nodeSev] ?? 4) <= (SEV_RANK[minSev] ?? 4);
+}
+
+/** Extract /24 subnet from an IP string, or null. */
+function extractSubnet(label: string): string | null {
+    const m = label.match(/^([0-9]+\.[0-9]+\.[0-9]+)\.[0-9]+$/);
+    return m ? m[1] + ".0/24" : null;
+}
+
+/** Hierarchical Y-position by type (top → bottom). */
+const TYPE_TIER: Record<string, number> = {
+    theory: 0, slice: 1, finding: 2, alert: 3, ioc: 3,
+    annotation: 4, host: 5, external: 6,
+};
+
+/** Collapse external nodes into a super-node if more than threshold. */
+function collapseExternals(
+    nodes: GraphNode[], edges: GraphEdge[], threshold = 5,
+): { nodes: GraphNode[]; edges: GraphEdge[]; collapsedIds: Set<string> } {
+    const externalNodes = nodes.filter(n => n.type === "external");
+    if (externalNodes.length <= threshold) return { nodes, edges, collapsedIds: new Set() };
+    const collapsedIds = new Set(externalNodes.map(n => n.id));
+    const superNode: GraphNode = {
+        id: "__external_super__",
+        label: `External (${externalNodes.length})`,
+        type: "external",
+        severity: "info",
+        meta: { count: externalNodes.length },
+    };
+    const newNodes = nodes.filter(n => n.type !== "external").concat(superNode);
+    // Re-route edges
+    const newEdges = edges.map(e => {
+        const src = collapsedIds.has(e.source as string) ? "__external_super__" : e.source;
+        const tgt = collapsedIds.has(e.target as string) ? "__external_super__" : e.target;
+        return { ...e, source: src, target: tgt };
+    });
+    // Deduplicate edges to the super node
+    const seen = new Set<string>();
+    const deduped = newEdges.filter(e => {
+        const key = `${e.source}→${e.target}→${e.type}`;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+    return { nodes: newNodes, edges: deduped, collapsedIds };
+}
+
+/** Bundle parallel edges between the same pair of nodes. */
+function bundleEdges(edges: GraphEdge[]): (GraphEdge & { _count?: number })[] {
+    const map = new Map<string, GraphEdge & { _count?: number }>();
+    for (const e of edges) {
+        const key = [e.source, e.target].sort().join("||");
+        if (map.has(key)) {
+            const existing = map.get(key)!;
+            existing._count = (existing._count || 1) + 1;
+            existing.weight = (existing.weight || 1) + (e.weight || 1);
+        } else {
+            map.set(key, { ...e, _count: 1 });
+        }
+    }
+    return Array.from(map.values());
 }
 
 export const AttackGraphPage: React.FC = () => {
@@ -104,6 +163,13 @@ export const AttackGraphPage: React.FC = () => {
     );
     const [minSeverity, setMinSeverity] = useState<SeverityLevel>("medium");
     const [zoomScale, setZoomScale] = useState(1);
+    const [layoutMode, setLayoutMode] = useState<LayoutMode>("force");
+    const [searchQuery, setSearchQuery] = useState("");
+    const [timeRange, setTimeRange] = useState<[number, number] | null>(null);
+    const [collapseExternalsEnabled, setCollapseExternalsEnabled] = useState(true);
+    const [bundleEdgesEnabled, setBundleEdgesEnabled] = useState(true);
+    const zoomRef = useRef<d3.ZoomBehavior<SVGSVGElement, unknown> | null>(null);
+    const gRef = useRef<d3.Selection<SVGGElement, unknown, null, undefined> | null>(null);
 
     const topologyQuery = useQuery({
         queryKey: ["job", jobId, "graph"],
@@ -226,6 +292,61 @@ export const AttackGraphPage: React.FC = () => {
         });
     }, []);
 
+    // ── Search / Focus callback ────────────────────────────────────────────
+    const focusOnSearch = useCallback(() => {
+        if (!searchQuery.trim() || !svgRef.current || !zoomRef.current || !gRef.current) return;
+        const q = searchQuery.trim().toLowerCase();
+        const allNodes = gRef.current.selectAll<SVGPathElement, D3Node>("path.graph-node");
+        let found: D3Node | null = null;
+        allNodes.each(function (d) {
+            if (d.label.toLowerCase().includes(q) || d.id.toLowerCase().includes(q)) {
+                found = d;
+            }
+        });
+        if (found && (found as D3Node).x != null) {
+            const fn = found as D3Node;
+            const transform = d3.zoomIdentity.translate(450 - fn.x! * 2, 325 - fn.y! * 2).scale(2);
+            d3.select(svgRef.current).transition().duration(750).call(zoomRef.current.transform as any, transform);
+            // Highlight matched node
+            allNodes.attr("stroke-width", n => n.id === fn.id ? 5 : 2)
+                .attr("stroke", n => n.id === fn.id ? "#facc15" : (SEV_BORDER[n.severity || "info"] || "#475569"));
+            setSelectedNode(fn);
+        }
+    }, [searchQuery]);
+
+    // ── Export SVG/PNG ─────────────────────────────────────────────────────
+    const exportGraph = useCallback((format: "svg" | "png") => {
+        if (!svgRef.current) return;
+        const svgEl = svgRef.current;
+        const serializer = new XMLSerializer();
+        const svgString = serializer.serializeToString(svgEl);
+        if (format === "svg") {
+            const blob = new Blob([svgString], { type: "image/svg+xml" });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url; a.download = "evidence-graph.svg"; a.click();
+            URL.revokeObjectURL(url);
+        } else {
+            const canvas = document.createElement("canvas");
+            canvas.width = 1800; canvas.height = 1300;
+            const ctx = canvas.getContext("2d")!;
+            ctx.fillStyle = "#020617";
+            ctx.fillRect(0, 0, 1800, 1300);
+            const img = new Image();
+            img.onload = () => {
+                ctx.drawImage(img, 0, 0, 1800, 1300);
+                canvas.toBlob(blob => {
+                    if (!blob) return;
+                    const url = URL.createObjectURL(blob);
+                    const a = document.createElement("a");
+                    a.href = url; a.download = "evidence-graph.png"; a.click();
+                    URL.revokeObjectURL(url);
+                }, "image/png");
+            };
+            img.src = "data:image/svg+xml;base64," + btoa(unescape(encodeURIComponent(svgString)));
+        }
+    }, []);
+
     // ── D3 rendering ─────────────────────────────────────────────────────────
     useEffect(() => {
         if (!activeData || !svgRef.current) return;
@@ -234,13 +355,37 @@ export const AttackGraphPage: React.FC = () => {
         const height = 650;
 
         // Filter nodes by enabled types AND severity
-        const filteredNodes = activeData.nodes.filter(
+        let filteredNodes = activeData.nodes.filter(
             n => enabledTypes.has(n.type) && passesSeverityFilter(n, minSeverity)
         );
-        const filteredNodeIds = new Set(filteredNodes.map(n => n.id));
-        const filteredEdges = activeData.edges.filter(
+
+        // Time range filter
+        if (timeRange) {
+            filteredNodes = filteredNodes.filter(n => {
+                const ts = n.meta?.ts;
+                if (!ts) return true; // nodes without timestamps always pass
+                const t = new Date(ts).getTime();
+                return t >= timeRange[0] && t <= timeRange[1];
+            });
+        }
+
+        let filteredNodeIds = new Set(filteredNodes.map(n => n.id));
+        let filteredEdges = activeData.edges.filter(
             e => filteredNodeIds.has(e.source as string) && filteredNodeIds.has(e.target as string)
         );
+
+        // Collapse externals
+        if (collapseExternalsEnabled) {
+            const result = collapseExternals(filteredNodes, filteredEdges);
+            filteredNodes = result.nodes;
+            filteredEdges = result.edges;
+            filteredNodeIds = new Set(filteredNodes.map(n => n.id));
+        }
+
+        // Edge bundling
+        if (bundleEdgesEnabled) {
+            filteredEdges = bundleEdges(filteredEdges);
+        }
 
         // Build adjacency map for neighbor highlight
         const neighbors = new Map<string, Set<string>>();
@@ -270,6 +415,7 @@ export const AttackGraphPage: React.FC = () => {
             .attr("fill", "#475569");
 
         const g = svg.append("g");
+        gRef.current = g;
 
         let currentZoom = 1;
         const zoom = d3.zoom<SVGSVGElement, unknown>()
@@ -278,23 +424,39 @@ export const AttackGraphPage: React.FC = () => {
                 g.attr("transform", event.transform);
                 currentZoom = event.transform.k;
                 setZoomScale(currentZoom);
-                // Semantic zoom: toggle label visibility
                 const showLabels = currentZoom >= 0.8;
                 labels.attr("visibility", showLabels ? "visible" : "hidden");
                 if (linkLabels) {
                     linkLabels.attr("visibility", currentZoom >= 1.2 ? "visible" : "hidden");
                 }
+                // Update minimap viewport indicator
+                minimapViewport
+                    .attr("x", -event.transform.x / event.transform.k * minimapScale)
+                    .attr("y", -event.transform.y / event.transform.k * minimapScale)
+                    .attr("width", width / event.transform.k * minimapScale)
+                    .attr("height", height / event.transform.k * minimapScale);
             });
 
         svg.call(zoom);
+        zoomRef.current = zoom;
+
+        // Hierarchical layout: assign fixed Y by type tier
+        const useHierarchical = layoutMode === "hierarchical";
+        const tierSpacing = height / 7;
 
         const simulation = d3.forceSimulation<D3Node>(filteredNodes as D3Node[])
             .force("link", d3.forceLink<D3Node, D3Link>(filteredEdges as D3Link[])
                 .id(d => d.id)
-                .distance(mode === "evidence" ? 120 : 100))
+                .distance(mode === "evidence" ? (useHierarchical ? 80 : 120) : 100))
             .force("charge", d3.forceManyBody().strength(mode === "evidence" ? -400 : -300))
-            .force("center", d3.forceCenter(width / 2, height / 2))
+            .force("center", useHierarchical ? null : d3.forceCenter(width / 2, height / 2))
             .force("collision", d3.forceCollide().radius(d => nodeRadius(d as D3Node) + 8));
+
+        if (useHierarchical) {
+            // Fix Y based on type tier, spread X
+            simulation.force("x", d3.forceX(width / 2).strength(0.05));
+            simulation.force("y", d3.forceY<D3Node>(d => (TYPE_TIER[d.type] ?? 5) * tierSpacing + 40).strength(0.8));
+        }
 
         // Links
         const link = g.append("g")
@@ -304,8 +466,27 @@ export const AttackGraphPage: React.FC = () => {
             .data(filteredEdges as D3Link[])
             .join("line")
             .attr("stroke", "#475569")
-            .attr("stroke-width", d => Math.sqrt(d.weight || 1))
+            .attr("stroke-width", d => Math.min(Math.sqrt(d.weight || 1) * (bundleEdgesEnabled ? 1.5 : 1), 8))
             .attr("marker-end", mode === "evidence" ? "url(#arrowhead)" : null);
+
+        // Edge count badges for bundled edges
+        let edgeBadges: d3.Selection<any, D3Link & { _count?: number }, SVGGElement, unknown> | null = null;
+        if (bundleEdgesEnabled) {
+            const bundled = (filteredEdges as (D3Link & { _count?: number })[]).filter(e => (e._count || 1) > 1);
+            if (bundled.length > 0) {
+                edgeBadges = g.append("g")
+                    .selectAll("text")
+                    .data(bundled)
+                    .join("text")
+                    .attr("fill", "#94a3b8")
+                    .attr("font-size", "9px")
+                    .attr("font-weight", "bold")
+                    .attr("text-anchor", "middle")
+                    .attr("pointer-events", "none")
+                    .attr("visibility", "hidden")
+                    .text(d => `×${d._count}`);
+            }
+        }
 
         // Link labels (evidence mode only) — hidden by default until zoom >= 1.2
         let linkLabels: d3.Selection<any, D3Link, SVGGElement, unknown> | null = null;
@@ -322,12 +503,32 @@ export const AttackGraphPage: React.FC = () => {
                 .text(d => d.type.replace(/_/g, " "));
         }
 
+        // Subnet cluster hulls (evidence mode only)
+        const subnetGroups = new Map<string, D3Node[]>();
+        let hullSubnets: [string, D3Node[]][] = [];
+        const hullColors = ["#3b82f640", "#10b98140", "#f59e0b40", "#8b5cf640", "#ef444440", "#06b6d440"];
+        const hullGroup = g.append("g").attr("class", "hulls");
+        if (mode === "evidence") {
+            for (const n of filteredNodes as D3Node[]) {
+                if (n.type === "host" || n.type === "external") {
+                    const subnet = extractSubnet(n.label);
+                    if (subnet) {
+                        if (!subnetGroups.has(subnet)) subnetGroups.set(subnet, []);
+                        subnetGroups.get(subnet)!.push(n);
+                    }
+                }
+            }
+            // Only draw hulls for subnets with 2+ hosts
+            hullSubnets = Array.from(subnetGroups.entries()).filter(([, nodes]) => nodes.length >= 2);
+        }
+
         // Nodes — render as distinct shapes using d3.symbol
         const nodeGroup = g.append("g").attr("class", "nodes");
         const node = nodeGroup
             .selectAll<SVGPathElement, D3Node>("path")
             .data(filteredNodes as D3Node[])
             .join("path")
+            .attr("class", "graph-node")
             .attr("d", d => {
                 const sym = d3.symbol().type(TYPE_SHAPE[d.type] || d3.symbolCircle).size(nodeSymbolSize(d));
                 return sym() || "";
@@ -338,7 +539,6 @@ export const AttackGraphPage: React.FC = () => {
             .attr("cursor", "pointer")
             .on("click", (_event, d) => setSelectedNode(d))
             .on("mouseenter", (_event, d) => {
-                // Neighbor highlight: dim non-neighbors
                 const neighborSet = neighbors.get(d.id) || new Set();
                 node.attr("opacity", n => n.id === d.id || neighborSet.has(n.id) ? 1 : 0.12);
                 link.attr("opacity", e => {
@@ -350,7 +550,6 @@ export const AttackGraphPage: React.FC = () => {
                 if (linkLabels) linkLabels.attr("opacity", 0.08);
             })
             .on("mouseleave", () => {
-                // Restore all
                 node.attr("opacity", 1);
                 link.attr("opacity", 1);
                 labels.attr("opacity", 1);
@@ -373,6 +572,22 @@ export const AttackGraphPage: React.FC = () => {
             .attr("pointer-events", "none")
             .attr("visibility", "hidden");
 
+        // ── Minimap ─────────────────────────────────────────────────
+        const minimapW = 140, minimapH = 100;
+        const minimapScale = minimapW / width;
+        const minimap = svg.append("g")
+            .attr("transform", `translate(${width - minimapW - 10}, ${height - minimapH - 10})`);
+        minimap.append("rect")
+            .attr("width", minimapW).attr("height", minimapH)
+            .attr("fill", "#0f172a").attr("stroke", "#334155")
+            .attr("stroke-width", 1).attr("rx", 4).attr("opacity", 0.85);
+        // Mini-nodes
+        const miniNodes = minimap.append("g");
+        const minimapViewport = minimap.append("rect")
+            .attr("width", minimapW).attr("height", minimapH)
+            .attr("fill", "none").attr("stroke", "#38bdf8")
+            .attr("stroke-width", 1.5).attr("rx", 2);
+
         simulation.on("tick", () => {
             link
                 .attr("x1", d => (d.source as any).x)
@@ -386,9 +601,43 @@ export const AttackGraphPage: React.FC = () => {
                     .attr("y", d => ((d.source as any).y + (d.target as any).y) / 2 - 4);
             }
 
-            // Position shape nodes via transform (path elements use translate)
+            if (edgeBadges) {
+                edgeBadges
+                    .attr("x", d => ((d.source as any).x + (d.target as any).x) / 2)
+                    .attr("y", d => ((d.source as any).y + (d.target as any).y) / 2 - 8);
+            }
+
             node.attr("transform", d => `translate(${d.x},${d.y})`);
             labels.attr("x", d => d.x!).attr("y", d => d.y!);
+
+            // Subnet hull paths
+            hullGroup.selectAll("path").remove();
+            for (let hi = 0; hi < hullSubnets.length; hi++) {
+                const [subnet, snodes] = hullSubnets[hi];
+                const points: [number, number][] = snodes
+                    .filter(n => n.x != null && n.y != null)
+                    .map(n => [n.x!, n.y!] as [number, number]);
+                if (points.length < 2) continue;
+                const hull = d3.polygonHull(points.length >= 3 ? points : [...points, [points[0][0] + 1, points[0][1] + 1]]);
+                if (hull) {
+                    hullGroup.append("path")
+                        .attr("d", `M${hull.map(p => p.join(",")).join("L")}Z`)
+                        .attr("fill", hullColors[hi % hullColors.length])
+                        .attr("stroke", hullColors[hi % hullColors.length].replace("40", "80"))
+                        .attr("stroke-width", 1.5);
+                }
+            }
+
+            // Update minimap dots
+            miniNodes.selectAll("circle").remove();
+            for (const n of filteredNodes as D3Node[]) {
+                if (n.x == null || n.y == null) continue;
+                miniNodes.append("circle")
+                    .attr("cx", n.x * minimapScale)
+                    .attr("cy", n.y * minimapScale)
+                    .attr("r", 1.5)
+                    .attr("fill", TYPE_COLOR[n.type] || "#94a3b8");
+            }
         });
 
         function drag(sim: d3.Simulation<D3Node, undefined>) {
@@ -410,15 +659,22 @@ export const AttackGraphPage: React.FC = () => {
         }
 
         return () => { simulation.stop(); };
-    }, [activeData, enabledTypes, mode, minSeverity]);
+    }, [activeData, enabledTypes, mode, minSeverity, layoutMode, timeRange, collapseExternalsEnabled, bundleEdgesEnabled]);
 
     // ── Node count summary ────────────────────────────────────────────────
     const typeCounts: Record<string, number> = {};
+    const allTimestamps: number[] = [];
     if (activeData) {
         for (const n of activeData.nodes) {
             typeCounts[n.type] = (typeCounts[n.type] || 0) + 1;
+            if (n.meta?.ts) {
+                const t = new Date(n.meta.ts).getTime();
+                if (!isNaN(t)) allTimestamps.push(t);
+            }
         }
     }
+    const timeMin = allTimestamps.length > 0 ? Math.min(...allTimestamps) : 0;
+    const timeMax = allTimestamps.length > 0 ? Math.max(...allTimestamps) : 0;
 
     const { activeHelpField, setActiveHelpField, toggleHelp } = usePageHelp();
 
@@ -463,59 +719,171 @@ export const AttackGraphPage: React.FC = () => {
 
             {/* Legend / type filter + severity filter (evidence mode) */}
             {mode === "evidence" && (
-                <div className="flex items-center gap-3 flex-wrap text-xs">
-                    {NODE_TYPES.filter(t => t.key !== "external").map(t => (
-                        <button
-                            key={t.key}
-                            onClick={() => toggleType(t.key)}
-                            className={`flex items-center gap-1.5 px-2 py-1 rounded border transition-colors ${enabledTypes.has(t.key)
-                                ? "border-slate-600 bg-slate-800"
-                                : "border-slate-700 bg-slate-900 opacity-40"
-                                }`}
-                        >
-                            <div
-                                className="w-3 h-3 rounded-full"
-                                style={{ backgroundColor: t.color }}
-                            />
-                            <span className="text-slate-300">
-                                {t.label}
-                                {typeCounts[t.key] ? ` (${typeCounts[t.key]})` : ""}
+                <div className="space-y-2">
+                    <div className="flex items-center gap-3 flex-wrap text-xs">
+                        {NODE_TYPES.filter(t => t.key !== "external").map(t => (
+                            <button
+                                key={t.key}
+                                onClick={() => toggleType(t.key)}
+                                className={`flex items-center gap-1.5 px-2 py-1 rounded border transition-colors ${enabledTypes.has(t.key)
+                                    ? "border-slate-600 bg-slate-800"
+                                    : "border-slate-700 bg-slate-900 opacity-40"
+                                    }`}
+                            >
+                                <div
+                                    className="w-3 h-3 rounded-full"
+                                    style={{ backgroundColor: t.color }}
+                                />
+                                <span className="text-slate-300">
+                                    {t.label}
+                                    {typeCounts[t.key] ? ` (${typeCounts[t.key]})` : ""}
+                                </span>
+                            </button>
+                        ))}
+                        {/* Severity filter */}
+                        <div className="ml-auto flex items-center gap-1.5">
+                            <span className="text-slate-500">Min severity:</span>
+                            <select
+                                value={minSeverity}
+                                onChange={e => setMinSeverity(e.target.value as SeverityLevel)}
+                                className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-slate-200 text-xs"
+                            >
+                                {SEV_LEVELS.map(s => (
+                                    <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
+                                ))}
+                            </select>
+                            <span className="text-slate-600 ml-2">
+                                Zoom: {zoomScale.toFixed(1)}×
                             </span>
-                        </button>
-                    ))}
-                    {/* Severity filter */}
-                    <div className="ml-auto flex items-center gap-1.5">
-                        <span className="text-slate-500">Min severity:</span>
-                        <select
-                            value={minSeverity}
-                            onChange={e => setMinSeverity(e.target.value as SeverityLevel)}
-                            className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-slate-200 text-xs"
-                        >
-                            {SEV_LEVELS.map(s => (
-                                <option key={s} value={s}>{s.charAt(0).toUpperCase() + s.slice(1)}</option>
-                            ))}
-                        </select>
-                        <span className="text-slate-600 ml-2">
-                            Zoom: {zoomScale.toFixed(1)}×
-                        </span>
+                        </div>
+                    </div>
+                    {/* Phase 2 toolbar: layout, search, toggles, time slider, export */}
+                    <div className="flex items-center gap-3 flex-wrap text-xs">
+                        {/* Layout toggle */}
+                        <div className="flex bg-slate-800 rounded-lg p-0.5">
+                            <button onClick={() => setLayoutMode("force")}
+                                className={`px-2 py-0.5 rounded text-[10px] font-medium ${layoutMode === "force" ? "bg-slate-600 text-white" : "text-slate-400 hover:text-white"}`}>
+                                Force
+                            </button>
+                            <button onClick={() => setLayoutMode("hierarchical")}
+                                className={`px-2 py-0.5 rounded text-[10px] font-medium ${layoutMode === "hierarchical" ? "bg-slate-600 text-white" : "text-slate-400 hover:text-white"}`}>
+                                Hierarchical
+                            </button>
+                        </div>
+
+                        {/* Search / Focus */}
+                        <div className="flex items-center gap-1">
+                            <input
+                                value={searchQuery}
+                                onChange={e => setSearchQuery(e.target.value)}
+                                onKeyDown={e => e.key === "Enter" && focusOnSearch()}
+                                placeholder="Search node…"
+                                className="w-32 bg-slate-800 border border-slate-700 rounded px-2 py-0.5 text-slate-200 text-[10px] placeholder-slate-500"
+                            />
+                            <button onClick={focusOnSearch}
+                                className="px-1.5 py-0.5 rounded bg-slate-700 text-slate-300 hover:bg-slate-600 text-[10px]">
+                                Go
+                            </button>
+                        </div>
+
+                        {/* Collapse externals toggle */}
+                        <label className="flex items-center gap-1 text-slate-400 cursor-pointer">
+                            <input type="checkbox" checked={collapseExternalsEnabled}
+                                onChange={e => setCollapseExternalsEnabled(e.target.checked)}
+                                className="w-3 h-3 rounded" />
+                            <span className="text-[10px]">Collapse externals</span>
+                        </label>
+
+                        {/* Edge bundling toggle */}
+                        <label className="flex items-center gap-1 text-slate-400 cursor-pointer">
+                            <input type="checkbox" checked={bundleEdgesEnabled}
+                                onChange={e => setBundleEdgesEnabled(e.target.checked)}
+                                className="w-3 h-3 rounded" />
+                            <span className="text-[10px]">Bundle edges</span>
+                        </label>
+
+                        {/* Time slider */}
+                        {allTimestamps.length > 1 && timeMin < timeMax && (
+                            <div className="flex items-center gap-1">
+                                <span className="text-slate-500 text-[10px]">Time:</span>
+                                <input type="range" min={timeMin} max={timeMax}
+                                    value={timeRange ? timeRange[1] : timeMax}
+                                    onChange={e => setTimeRange([timeMin, Number(e.target.value)])}
+                                    className="w-24 h-2" />
+                                <span className="text-[10px] text-slate-400">
+                                    {timeRange
+                                        ? new Date(timeRange[1]).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+                                        : "All"}
+                                </span>
+                                {timeRange && (
+                                    <button onClick={() => setTimeRange(null)}
+                                        className="text-[10px] text-slate-500 hover:text-white">Reset</button>
+                                )}
+                            </div>
+                        )}
+
+                        {/* Export */}
+                        <div className="ml-auto flex items-center gap-1">
+                            <button onClick={() => exportGraph("svg")}
+                                className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 text-[10px]">
+                                SVG
+                            </button>
+                            <button onClick={() => exportGraph("png")}
+                                className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 text-[10px]">
+                                PNG
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}
 
-            {/* Topology mode legend */}
+            {/* Topology mode legend + toolbar */}
             {mode === "topology" && (
-                <div className="flex items-center gap-4 text-xs">
-                    <div className="flex items-center gap-1.5">
-                        <div className="w-3 h-3 rounded-full bg-blue-500" />
-                        <span className="text-slate-400">Internal Host</span>
+                <div className="space-y-2">
+                    <div className="flex items-center gap-4 text-xs">
+                        <div className="flex items-center gap-1.5">
+                            <div className="w-3 h-3 rounded-full bg-blue-500" />
+                            <span className="text-slate-400">Internal Host</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                            <div className="w-3 h-3 rounded-full bg-rose-500" />
+                            <span className="text-slate-400">High Risk</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                            <div className="w-3 h-3 rounded-full bg-slate-400" />
+                            <span className="text-slate-400">External</span>
+                        </div>
+                        <span className="text-slate-600 ml-auto">
+                            Zoom: {zoomScale.toFixed(1)}×
+                        </span>
                     </div>
-                    <div className="flex items-center gap-1.5">
-                        <div className="w-3 h-3 rounded-full bg-rose-500" />
-                        <span className="text-slate-400">High Risk</span>
-                    </div>
-                    <div className="flex items-center gap-1.5">
-                        <div className="w-3 h-3 rounded-full bg-slate-400" />
-                        <span className="text-slate-400">External</span>
+                    <div className="flex items-center gap-3 flex-wrap text-xs">
+                        {/* Search / Focus */}
+                        <div className="flex items-center gap-1">
+                            <input
+                                value={searchQuery}
+                                onChange={e => setSearchQuery(e.target.value)}
+                                onKeyDown={e => e.key === "Enter" && focusOnSearch()}
+                                placeholder="Search host…"
+                                className="w-32 bg-slate-800 border border-slate-700 rounded px-2 py-0.5 text-slate-200 text-[10px] placeholder-slate-500"
+                            />
+                            <button onClick={focusOnSearch}
+                                className="px-1.5 py-0.5 rounded bg-slate-700 text-slate-300 hover:bg-slate-600 text-[10px]">
+                                Go
+                            </button>
+                        </div>
+
+                        {/* Export */}
+                        <div className="ml-auto flex items-center gap-1">
+                            <button onClick={() => exportGraph("svg")}
+                                className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 text-[10px]">
+                                SVG
+                            </button>
+                            <button onClick={() => exportGraph("png")}
+                                className="px-2 py-0.5 rounded bg-slate-800 border border-slate-700 text-slate-300 hover:bg-slate-700 text-[10px]">
+                                PNG
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

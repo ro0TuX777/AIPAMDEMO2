@@ -40,12 +40,15 @@ async def list_alerts(
     signature: str | None = Query(None),
     src_ip: str | None = Query(None),
     dest_ip: str | None = Query(None),
+    pcap_label: str | None = Query(None, description="Filter by PCAP label (before/after)"),
 ):
     """List all alerts for a job, optionally filtered."""
     _require_job(db, job_id)
     response.headers["X-Request-Id"] = request_id
 
     q = select(Alert).where(Alert.job_id == job_id)
+    if pcap_label:
+        q = q.where(Alert.pcap_label == pcap_label)
     if severity:
         q = q.where(Alert.severity == severity.value)
     if signature:

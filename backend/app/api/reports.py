@@ -8,7 +8,7 @@ POST /jobs/{jobId}/reports/generate     – generate a new report
 
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Response
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -52,6 +52,7 @@ def _report_to_item(r: Report) -> ReportItem:
         host_count=r.host_count,
         annotation_count=r.annotation_count,
         evidence_refs=r.evidence_refs_json,
+        pcap_label=r.pcap_label,
         created_at=r.created_at,
     )
 
@@ -62,14 +63,17 @@ async def list_reports(
     response: Response,
     request_id: str = Depends(get_request_id),
     db: Session = Depends(get_db),
+    pcap_label: str | None = Query(None, description="Filter by PCAP label (before/after)"),
 ):
     """List all generated reports for a job."""
     _require_job(db, job_id)
     response.headers["X-Request-Id"] = request_id
 
-    reports = db.execute(
-        select(Report).where(Report.job_id == job_id).order_by(Report.created_at.desc())
-    ).scalars().all()
+    q = select(Report).where(Report.job_id == job_id)
+    if pcap_label:
+        q = q.where(Report.pcap_label == pcap_label)
+    q = q.order_by(Report.created_at.desc())
+    reports = db.execute(q).scalars().all()
 
     return ReportListResponse(
         items=[_report_to_item(r) for r in reports],
@@ -116,7 +120,7 @@ async def generate_report_endpoint(
 
     from backend.app.services.report_composer import generate_report
 
-    report = generate_report(db, job_id, mode=body.mode)
+    report = generate_report(db, job_id, mode=body.mode, pcap_label=body.pcap_label)
     logger.info("Generated %s report %s for job %s", body.mode, report.report_id, job_id)
 
     return ReportDetailResponse(

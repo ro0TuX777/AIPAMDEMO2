@@ -23,6 +23,7 @@ class AlertItem(BaseModel):
     community_id: str | None = None
     refs: list[str] = []
     tags: list[str] = []
+    pcap_label: str | None = None
 
 
 class AlertListResponse(BaseModel):

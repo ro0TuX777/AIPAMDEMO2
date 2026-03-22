@@ -25,6 +25,7 @@ class ContextAnnotationItem(BaseModel):
     why_unusual: str
     related_alert_ids: list[str] = Field(default_factory=list)
     related_finding_ids: list[str] = Field(default_factory=list)
+    pcap_label: str | None = None
     created_at: str
 
     @field_validator("related_alert_ids", mode="before")
