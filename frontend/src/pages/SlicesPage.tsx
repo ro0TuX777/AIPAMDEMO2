@@ -6,6 +6,9 @@ import {
   type SliceItem,
   type SliceType,
   type TheoryItem,
+  type AlertItem,
+  type FindingItem,
+  type IocItem,
 } from "../api";
 import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
 import { useToast } from "../components/ToastProvider";
@@ -97,8 +100,13 @@ function ConfidenceBar({ confidence }: { confidence: number }) {
   );
 }
 
-// 2️⃣ Clickable evidence chips with deep links
-function EvidenceChips({ ids, type, jobId }: { ids: string[]; type: "alert" | "finding" | "ioc"; jobId: string }) {
+// Lookup maps for friendly names
+type NameMap = Record<string, string>;
+
+// 2️⃣ Clickable evidence chips with deep links & friendly names
+function EvidenceChips({ ids, type, jobId, nameMap }: {
+  ids: string[]; type: "alert" | "finding" | "ioc"; jobId: string; nameMap: NameMap;
+}) {
   if (!ids.length) return null;
   const label = type === "alert" ? "ALR" : type === "finding" ? "FND" : "IOC";
   const maxShow = 5;
@@ -110,12 +118,13 @@ function EvidenceChips({ ids, type, jobId }: { ids: string[]; type: "alert" | "f
         const href = type === "alert" ? `/jobs/${jobId}/alerts/${encodeURIComponent(id)}`
           : type === "finding" ? `/jobs/${jobId}/findings/${encodeURIComponent(id)}`
           : `/jobs/${jobId}/iocs`;
+        const friendlyName = nameMap[id] || id;
         return (
           <Link key={id} to={href}
             className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700"
-            title={`${type}: ${id}`}>
+            title={friendlyName}>
             <span className="font-mono opacity-60">{label}</span>
-            <span className="truncate max-w-[120px]">{id}</span>
+            <span className="truncate max-w-[180px]">{friendlyName}</span>
           </Link>
         );
       })}
@@ -241,8 +250,9 @@ function RelatedTheories({ slice, theories, jobId }: { slice: SliceItem; theorie
 
 
 // 1️⃣ Collapsible slice card
-function SliceCard({ slice, jobId, theories, defaultExpanded }: {
+function SliceCard({ slice, jobId, theories, defaultExpanded, alertNameMap, findingNameMap, iocNameMap }: {
   slice: SliceItem; jobId: string; theories: TheoryItem[]; defaultExpanded: boolean;
+  alertNameMap: NameMap; findingNameMap: NameMap; iocNameMap: NameMap;
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const tag = TYPE_LABELS[slice.slice_type] || "ATK";
@@ -311,19 +321,19 @@ function SliceCard({ slice, jobId, theories, defaultExpanded }: {
           {slice.alert_ids.length > 0 && (
             <div>
               <span className="text-xs text-slate-500 uppercase">Alerts</span>
-              <div className="mt-1"><EvidenceChips ids={slice.alert_ids} type="alert" jobId={jobId} /></div>
+              <div className="mt-1"><EvidenceChips ids={slice.alert_ids} type="alert" jobId={jobId} nameMap={alertNameMap} /></div>
             </div>
           )}
           {slice.finding_ids.length > 0 && (
             <div>
               <span className="text-xs text-slate-500 uppercase">Findings</span>
-              <div className="mt-1"><EvidenceChips ids={slice.finding_ids} type="finding" jobId={jobId} /></div>
+              <div className="mt-1"><EvidenceChips ids={slice.finding_ids} type="finding" jobId={jobId} nameMap={findingNameMap} /></div>
             </div>
           )}
           {slice.ioc_ids.length > 0 && (
             <div>
               <span className="text-xs text-slate-500 uppercase">IOCs</span>
-              <div className="mt-1"><EvidenceChips ids={slice.ioc_ids} type="ioc" jobId={jobId} /></div>
+              <div className="mt-1"><EvidenceChips ids={slice.ioc_ids} type="ioc" jobId={jobId} nameMap={iocNameMap} /></div>
             </div>
           )}
 
@@ -378,6 +388,40 @@ export function SlicesPage() {
     queryFn: () => api.listJobTheories(jobId!),
     enabled: !!jobId,
   });
+
+  // Fetch alerts, findings, IOCs for friendly name display
+  const { data: alertData } = useQuery({
+    queryKey: ["alerts", jobId],
+    queryFn: () => api.listAlerts(jobId!, { limit: 200 }),
+    enabled: !!jobId,
+  });
+  const { data: findingData } = useQuery({
+    queryKey: ["findings", jobId],
+    queryFn: () => api.listFindings(jobId!, { limit: 200 }),
+    enabled: !!jobId,
+  });
+  const { data: iocData } = useQuery({
+    queryKey: ["iocs", jobId],
+    queryFn: () => api.listIocs(jobId!, { limit: 200 }),
+    enabled: !!jobId,
+  });
+
+  // Build lookup maps: id → friendly name
+  const alertNameMap = useMemo<NameMap>(() => {
+    const m: NameMap = {};
+    for (const a of alertData?.items ?? []) m[a.alert_id] = a.signature;
+    return m;
+  }, [alertData]);
+  const findingNameMap = useMemo<NameMap>(() => {
+    const m: NameMap = {};
+    for (const f of findingData?.items ?? []) m[f.finding_id] = f.title;
+    return m;
+  }, [findingData]);
+  const iocNameMap = useMemo<NameMap>(() => {
+    const m: NameMap = {};
+    for (const i of iocData?.items ?? []) m[i.ioc_id] = `${i.type}: ${i.value}`;
+    return m;
+  }, [iocData]);
 
   const theories: TheoryItem[] = theoryData?.items ?? [];
   const allSlices: SliceItem[] = data?.items ?? [];
@@ -480,7 +524,7 @@ export function SlicesPage() {
             <div className="space-y-3">
               {slices.map((s, i) => (
                 <SliceCard key={s.slice_id} slice={s} jobId={jobId!} theories={theories}
-                  defaultExpanded={i < 2} />
+                  defaultExpanded={i < 2} alertNameMap={alertNameMap} findingNameMap={findingNameMap} iocNameMap={iocNameMap} />
               ))}
             </div>
           </>

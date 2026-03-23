@@ -7,6 +7,8 @@ import {
   type ContextAnnotationListResponse,
   type TheoryItem,
   type SliceItem,
+  type AlertItem,
+  type FindingItem,
 } from "../api";
 import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
 import { useToast } from "../components/ToastProvider";
@@ -51,9 +53,12 @@ function fmtValue(metric: string, value: number | null): string {
   return String(Math.round(value));
 }
 
+// Lookup maps for friendly names
+type NameMap = Record<string, string>;
+
 // ── 2️⃣ Deep-linked evidence chips ──────────────────────────────────────────
 
-function EvidenceChips({ ids, type, jobId }: { ids: string[]; type: "alert" | "finding"; jobId: string }) {
+function EvidenceChips({ ids, type, jobId, nameMap }: { ids: string[]; type: "alert" | "finding"; jobId: string; nameMap: NameMap }) {
   if (!ids.length) return null;
   const label = type === "alert" ? "ALR" : "FND";
   const maxShow = 4;
@@ -65,12 +70,13 @@ function EvidenceChips({ ids, type, jobId }: { ids: string[]; type: "alert" | "f
         const href = type === "alert"
           ? `/jobs/${jobId}/alerts/${encodeURIComponent(id)}`
           : `/jobs/${jobId}/findings/${encodeURIComponent(id)}`;
+        const friendlyName = nameMap[id] || id;
         return (
           <Link key={id} to={href}
             className="inline-flex items-center gap-1 px-1.5 py-0.5 text-[10px] rounded bg-slate-800 text-slate-300 hover:bg-slate-700 border border-slate-700"
-            title={`${type}: ${id}`}>
+            title={friendlyName}>
             <span className="font-mono opacity-60">{label}</span>
-            <span className="truncate max-w-[120px]">{id}</span>
+            <span className="truncate max-w-[180px]">{friendlyName}</span>
           </Link>
         );
       })}
@@ -223,10 +229,11 @@ function RelatedLinks({ hostIp, theories, slices, jobId }: {
 
 // ── 1️⃣ Collapsible annotation card ─────────────────────────────────────────
 
-function AnnotationCard({ ann, jobId, theories, slices, defaultExpanded = false }: {
+function AnnotationCard({ ann, jobId, theories, slices, defaultExpanded = false, alertNameMap, findingNameMap }: {
   ann: ContextAnnotationItem; jobId: string;
   theories: TheoryItem[]; slices: SliceItem[];
   defaultExpanded?: boolean;
+  alertNameMap: NameMap; findingNameMap: NameMap;
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const tag = CATEGORY_LABELS[ann.metric_category] || "TRF";
@@ -282,13 +289,13 @@ function AnnotationCard({ ann, jobId, theories, slices, defaultExpanded = false 
           {ann.related_alert_ids.length > 0 && (
             <div>
               <span className="text-[10px] text-slate-500 block mb-0.5">Related Alerts</span>
-              <EvidenceChips ids={ann.related_alert_ids} type="alert" jobId={jobId} />
+              <EvidenceChips ids={ann.related_alert_ids} type="alert" jobId={jobId} nameMap={alertNameMap} />
             </div>
           )}
           {ann.related_finding_ids.length > 0 && (
             <div>
               <span className="text-[10px] text-slate-500 block mb-0.5">Related Findings</span>
-              <EvidenceChips ids={ann.related_finding_ids} type="finding" jobId={jobId} />
+              <EvidenceChips ids={ann.related_finding_ids} type="finding" jobId={jobId} nameMap={findingNameMap} />
             </div>
           )}
 
@@ -350,6 +357,30 @@ export function AnnotationsPage() {
     enabled: !!jobId,
   });
 
+  // Fetch alerts & findings for friendly name display
+  const { data: alertData } = useQuery({
+    queryKey: ["alerts", jobId],
+    queryFn: () => api.listAlerts(jobId!, { limit: 200 }),
+    enabled: !!jobId,
+  });
+  const { data: findingData } = useQuery({
+    queryKey: ["findings", jobId],
+    queryFn: () => api.listFindings(jobId!, { limit: 200 }),
+    enabled: !!jobId,
+  });
+
+  // Build lookup maps: id → friendly name
+  const alertNameMap = useMemo<NameMap>(() => {
+    const m: NameMap = {};
+    for (const a of alertData?.items ?? []) m[a.alert_id] = a.signature;
+    return m;
+  }, [alertData]);
+  const findingNameMap = useMemo<NameMap>(() => {
+    const m: NameMap = {};
+    for (const f of findingData?.items ?? []) m[f.finding_id] = f.title;
+    return m;
+  }, [findingData]);
+
   const theories: TheoryItem[] = theoryData?.items ?? [];
   const allSlices: SliceItem[] = sliceData?.items ?? [];
   const allAnnotations = data?.items ?? [];
@@ -402,7 +433,8 @@ export function AnnotationsPage() {
     <div className="space-y-3">
       {items.map((a, i) => (
         <AnnotationCard key={a.annotation_id} ann={a} jobId={jobId!}
-          theories={theories} slices={allSlices} defaultExpanded={i < startExpanded} />
+          theories={theories} slices={allSlices} defaultExpanded={i < startExpanded}
+          alertNameMap={alertNameMap} findingNameMap={findingNameMap} />
       ))}
     </div>
   );

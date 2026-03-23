@@ -41,6 +41,7 @@ from backend.app.models.job import Job
 from backend.app.models.job_pcap import JobPcap
 from backend.app.models.sensor import JobSensor
 from backend.app.models.timeline import TimelineEvent
+from backend.app.models.theory import Theory
 from backend.app.models.upload import Upload
 from backend.app.schemas.common import (
     ExecutionProfile,
@@ -600,12 +601,38 @@ async def job_summary(
 
     headline = f"Analysis found {alert_count} alerts, {finding_count} findings, {ioc_count} IOCs across {host_count} hosts."
 
+    # Generate recommendations based on evidence
+    from backend.app.services.report_composer import _generate_recommendations
+    theories = db.execute(
+        select(Theory).where(Theory.job_id == job_id)
+    ).scalars().all()
+    findings = db.execute(
+        select(Finding).where(Finding.job_id == job_id)
+    ).scalars().all()
+    iocs_all = db.execute(
+        select(Ioc).where(Ioc.job_id == job_id)
+    ).scalars().all()
+    # Determine threat level from alert severities
+    has_critical = db.scalar(
+        select(func.count()).select_from(Alert).where(
+            Alert.job_id == job_id, Alert.severity == "critical"
+        )
+    ) or 0
+    has_high = db.scalar(
+        select(func.count()).select_from(Alert).where(
+            Alert.job_id == job_id, Alert.severity == "high"
+        )
+    ) or 0
+    threat = "critical" if has_critical else "high" if has_high else "medium"
+    recommendations = _generate_recommendations(threat, theories, findings, iocs_all)
+
     return JobSummaryResponse(
         job_id=job_id,
         headline=headline,
         top_signals=list(top_alerts),
         top_hosts=top_hosts,
         top_iocs=top_iocs,
+        recommendations=recommendations,
         alert_count=alert_count,
         finding_count=finding_count,
         ioc_count=ioc_count,

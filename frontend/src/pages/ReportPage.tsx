@@ -452,10 +452,10 @@ export const ReportPage: React.FC = () => {
     if (iocs.length > 0) entries.push({ id: "sec-iocs", label: "IOCs", icon: "🎯" });
     if (annotations.length > 0) entries.push({ id: "sec-annotations", label: "Anomalies", icon: "⚡" });
     if (hosts.length > 0) entries.push({ id: "sec-hosts", label: "Host Analysis", icon: "🖥️" });
-    entries.push({ id: "sec-signals", label: "Top Signals", icon: "📡" });
-    entries.push({ id: "sec-recommendations", label: "Recommendations", icon: "✅" });
+    if (summary?.top_signals && summary.top_signals.length > 0) entries.push({ id: "sec-signals", label: "Top Signals", icon: "📡" });
+    if (summary?.recommendations && summary.recommendations.length > 0) entries.push({ id: "sec-recommendations", label: "Recommendations", icon: "✅" });
     return entries;
-  }, [alerts.length, theories.length, slices.length, findings.length, iocs.length, annotations.length, hosts.length]);
+  }, [alerts.length, theories.length, slices.length, findings.length, iocs.length, annotations.length, hosts.length, summary]);
 
   // ── PDF Export ──
   const handleExportPdf = useCallback(() => {
