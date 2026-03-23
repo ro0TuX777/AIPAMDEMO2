@@ -9,9 +9,17 @@ const LABEL_PRESETS = ["", "before", "during", "after", "baseline", "exploit"];
 const MAX_PCAPS = 10;
 const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024; // 2 GB
 
+const fmtSize = (bytes: number) => bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${(bytes / 1e6).toFixed(1)} MB`;
+
 interface PcapEntry {
   file: File;
   label: string;
+}
+
+interface RejectedFile {
+  name: string;
+  size: number;
+  reason: string;
 }
 
 export const NewAnalysisPage: React.FC = () => {
@@ -50,20 +58,32 @@ export const NewAnalysisPage: React.FC = () => {
   const [arkimeNotes, setArkimeNotes] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
+  const [rejectedFiles, setRejectedFiles] = useState<RejectedFile[]>([]);
+
   // ── Multi-file helpers ──────────────────────────────────────────────────
   const addFiles = (files: FileList | File[]) => {
     const arr = Array.from(files).filter(f => /\.(pcap|pcapng|cap)$/i.test(f.name));
+    const newRejected: RejectedFile[] = [];
     setEntries(prev => {
       const next = [...prev];
       for (const f of arr) {
-        if (next.length >= MAX_PCAPS) break;
-        if (f.size > MAX_FILE_SIZE) continue;
+        if (next.length >= MAX_PCAPS) {
+          newRejected.push({ name: f.name, size: f.size, reason: `Exceeds max file count (${MAX_PCAPS})` });
+          continue;
+        }
+        if (f.size > MAX_FILE_SIZE) {
+          newRejected.push({ name: f.name, size: f.size, reason: `File too large (${fmtSize(f.size)} — max ${fmtSize(MAX_FILE_SIZE)})` });
+          continue;
+        }
         if (!next.some(e => e.file.name === f.name && e.file.size === f.size)) {
           next.push({ file: f, label: "" });
         }
       }
       return next;
     });
+    if (newRejected.length > 0) {
+      setRejectedFiles(prev => [...prev, ...newRejected]);
+    }
   };
 
   const removeEntry = (idx: number) => setEntries(prev => prev.filter((_, i) => i !== idx));
@@ -188,6 +208,23 @@ export const NewAnalysisPage: React.FC = () => {
         {mode === "upload" && (
           <div className="space-y-4" data-testid="form-upload">
             <p className="text-xs text-slate-500">Upload one or more PCAP files. Optional labels help compare snapshots (e.g. before/during/after).</p>
+            <p className="text-xs text-slate-500">
+              Max <strong>{fmtSize(MAX_FILE_SIZE)}</strong> per file &middot; up to <strong>{MAX_PCAPS}</strong> files per job
+            </p>
+
+            {rejectedFiles.length > 0 && (
+              <div className="text-amber-400 text-sm bg-amber-400/10 border border-amber-400/30 rounded p-3 space-y-1">
+                <div className="font-medium flex items-center justify-between">
+                  <span>⚠ {rejectedFiles.length} file{rejectedFiles.length !== 1 ? "s" : ""} rejected</span>
+                  <button className="text-xs text-amber-300 hover:text-amber-100 underline" onClick={() => setRejectedFiles([])}>Dismiss</button>
+                </div>
+                {rejectedFiles.map((r, i) => (
+                  <div key={i} className="text-xs text-amber-300">
+                    <span className="font-mono">{r.name}</span> ({fmtSize(r.size)}) — {r.reason}
+                  </div>
+                ))}
+              </div>
+            )}
 
             {step === "error" && (
               <div className="text-red-400 text-sm bg-red-400/10 rounded p-2">{error}

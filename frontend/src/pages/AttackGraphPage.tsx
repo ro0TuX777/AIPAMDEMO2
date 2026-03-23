@@ -413,15 +413,75 @@ export const AttackGraphPage: React.FC = () => {
             .append("path")
             .attr("d", "M0,-5L10,0L0,5")
             .attr("fill", "#475569");
+        defs.append("clipPath")
+            .attr("id", "graph-minimap-clip")
+            .append("rect")
+            .attr("width", 140)
+            .attr("height", 100)
+            .attr("rx", 4);
 
         const g = svg.append("g");
         gRef.current = g;
 
+        const minimapW = 140, minimapH = 100;
         let currentZoom = 1;
+        let currentTransform = d3.zoomIdentity;
+        let miniNodes: d3.Selection<SVGGElement, unknown, null, undefined> | null = null;
+        let minimapViewport: d3.Selection<SVGRectElement, unknown, null, undefined> | null = null;
+        const clamp = (value: number, min: number, max: number) => Math.max(min, Math.min(max, value));
+        const getMinimapBounds = () => {
+            const positionedNodes = (filteredNodes as D3Node[]).filter(n => n.x != null && n.y != null);
+            if (positionedNodes.length === 0) {
+                return { minX: 0, minY: 0, spanX: width, spanY: height };
+            }
+            const pad = 40;
+            const minX = Math.min(0, ...positionedNodes.map(n => n.x! - pad));
+            const minY = Math.min(0, ...positionedNodes.map(n => n.y! - pad));
+            const maxX = Math.max(width, ...positionedNodes.map(n => n.x! + pad));
+            const maxY = Math.max(height, ...positionedNodes.map(n => n.y! + pad));
+            return {
+                minX,
+                minY,
+                spanX: Math.max(1, maxX - minX),
+                spanY: Math.max(1, maxY - minY),
+            };
+        };
+        const syncMinimap = () => {
+            if (!miniNodes || !minimapViewport) return;
+            const { minX, minY, spanX, spanY } = getMinimapBounds();
+            const scaleX = minimapW / spanX;
+            const scaleY = minimapH / spanY;
+            const worldLeft = -currentTransform.x / currentTransform.k;
+            const worldTop = -currentTransform.y / currentTransform.k;
+            const worldRight = worldLeft + width / currentTransform.k;
+            const worldBottom = worldTop + height / currentTransform.k;
+
+            const vx1 = clamp((worldLeft - minX) * scaleX, 0, minimapW);
+            const vy1 = clamp((worldTop - minY) * scaleY, 0, minimapH);
+            const vx2 = clamp((worldRight - minX) * scaleX, 0, minimapW);
+            const vy2 = clamp((worldBottom - minY) * scaleY, 0, minimapH);
+
+            minimapViewport
+                .attr("x", vx1)
+                .attr("y", vy1)
+                .attr("width", Math.max(0, vx2 - vx1))
+                .attr("height", Math.max(0, vy2 - vy1));
+
+            miniNodes.selectAll("circle").remove();
+            for (const n of filteredNodes as D3Node[]) {
+                if (n.x == null || n.y == null) continue;
+                miniNodes.append("circle")
+                    .attr("cx", (n.x - minX) * scaleX)
+                    .attr("cy", (n.y - minY) * scaleY)
+                    .attr("r", 1.5)
+                    .attr("fill", TYPE_COLOR[n.type] || "#94a3b8");
+            }
+        };
         const zoom = d3.zoom<SVGSVGElement, unknown>()
             .scaleExtent([0.2, 5])
             .on("zoom", (event) => {
                 g.attr("transform", event.transform);
+                currentTransform = event.transform;
                 currentZoom = event.transform.k;
                 setZoomScale(currentZoom);
                 const showLabels = currentZoom >= 0.8;
@@ -429,12 +489,7 @@ export const AttackGraphPage: React.FC = () => {
                 if (linkLabels) {
                     linkLabels.attr("visibility", currentZoom >= 1.2 ? "visible" : "hidden");
                 }
-                // Update minimap viewport indicator
-                minimapViewport
-                    .attr("x", -event.transform.x / event.transform.k * minimapScale)
-                    .attr("y", -event.transform.y / event.transform.k * minimapScale)
-                    .attr("width", width / event.transform.k * minimapScale)
-                    .attr("height", height / event.transform.k * minimapScale);
+                syncMinimap();
             });
 
         svg.call(zoom);
@@ -573,17 +628,16 @@ export const AttackGraphPage: React.FC = () => {
             .attr("visibility", "hidden");
 
         // ── Minimap ─────────────────────────────────────────────────
-        const minimapW = 140, minimapH = 100;
-        const minimapScale = minimapW / width;
         const minimap = svg.append("g")
             .attr("transform", `translate(${width - minimapW - 10}, ${height - minimapH - 10})`);
         minimap.append("rect")
             .attr("width", minimapW).attr("height", minimapH)
             .attr("fill", "#0f172a").attr("stroke", "#334155")
             .attr("stroke-width", 1).attr("rx", 4).attr("opacity", 0.85);
-        // Mini-nodes
-        const miniNodes = minimap.append("g");
-        const minimapViewport = minimap.append("rect")
+        const minimapContent = minimap.append("g")
+            .attr("clip-path", "url(#graph-minimap-clip)");
+        miniNodes = minimapContent.append("g");
+        minimapViewport = minimapContent.append("rect")
             .attr("width", minimapW).attr("height", minimapH)
             .attr("fill", "none").attr("stroke", "#38bdf8")
             .attr("stroke-width", 1.5).attr("rx", 2);
@@ -628,16 +682,7 @@ export const AttackGraphPage: React.FC = () => {
                 }
             }
 
-            // Update minimap dots
-            miniNodes.selectAll("circle").remove();
-            for (const n of filteredNodes as D3Node[]) {
-                if (n.x == null || n.y == null) continue;
-                miniNodes.append("circle")
-                    .attr("cx", n.x * minimapScale)
-                    .attr("cy", n.y * minimapScale)
-                    .attr("r", 1.5)
-                    .attr("fill", TYPE_COLOR[n.type] || "#94a3b8");
-            }
+            syncMinimap();
         });
 
         function drag(sim: d3.Simulation<D3Node, undefined>) {
