@@ -10,7 +10,7 @@ import logging
 from collections import Counter
 
 from fastapi import APIRouter, Depends, HTTPException, Response
-from sqlalchemy import func, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.api.deps import get_db, get_request_id, verify_token
@@ -303,39 +303,39 @@ async def generate_temporal_narrative(
     s = delta.summary
 
     lines: list[str] = ["# Temporal Analysis Narrative\n"]
-    lines.append(f"## Overview\n")
+    lines.append("## Overview\n")
     lines.append(f"Comparing **before** ({s.hosts.before} hosts, {s.alerts.before} alerts) "
                  f"with **after** ({s.hosts.after} hosts, {s.alerts.after} alerts).\n")
 
     if s.hosts.new or s.hosts.removed:
-        lines.append(f"### Host Changes\n")
+        lines.append("### Host Changes\n")
         if s.hosts.new:
             lines.append(f"- **{s.hosts.new}** new host(s) appeared\n")
         if s.hosts.removed:
             lines.append(f"- **{s.hosts.removed}** host(s) disappeared\n")
 
     if s.alerts.new_signatures or s.alerts.removed_signatures:
-        lines.append(f"### Alert Signature Changes\n")
+        lines.append("### Alert Signature Changes\n")
         if s.alerts.new_signatures:
             lines.append(f"- **{s.alerts.new_signatures}** new alert signature(s)\n")
         if s.alerts.removed_signatures:
             lines.append(f"- **{s.alerts.removed_signatures}** alert signature(s) no longer seen\n")
 
     if s.findings.new or s.findings.removed:
-        lines.append(f"### Finding Changes\n")
+        lines.append("### Finding Changes\n")
         lines.append(f"- {s.findings.new} new, {s.findings.removed} removed\n")
 
     if s.iocs.new or s.iocs.removed:
-        lines.append(f"### IOC Changes\n")
+        lines.append("### IOC Changes\n")
         lines.append(f"- {s.iocs.new} new IOC(s), {s.iocs.removed} removed\n")
 
     if s.dns_domains.new or s.dns_domains.removed:
-        lines.append(f"### DNS Changes\n")
+        lines.append("### DNS Changes\n")
         lines.append(f"- {s.dns_domains.new} new domain(s) queried, {s.dns_domains.removed} removed\n")
 
     tb, ta = s.traffic.before, s.traffic.after
     if tb.connections or ta.connections:
-        lines.append(f"### Traffic\n")
+        lines.append("### Traffic\n")
         lines.append(f"- Before: {tb.connections} connections ({tb.bytes_sent + tb.bytes_recv} bytes total)\n")
         lines.append(f"- After: {ta.connections} connections ({ta.bytes_sent + ta.bytes_recv} bytes total)\n")
 
