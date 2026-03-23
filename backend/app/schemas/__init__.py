@@ -3,7 +3,7 @@
 All schemas match the openapi.yaml component definitions.
 """
 
-from backend.app.schemas.theory import EvidenceRef, TheoryItem, TheoryListResponse
+from backend.app.schemas.theory import EvidenceRef, ScoreBreakdown, TheoryExplainRequest, TheoryExplainResponse, TheoryItem, TheoryListResponse
 from backend.app.schemas.slice import SliceItem, SliceListResponse, SliceDetailResponse
 from backend.app.schemas.context_annotation import ContextAnnotationItem, ContextAnnotationListResponse
 from backend.app.schemas.report import ReportItem, ReportListResponse, ReportDetailResponse, ReportGenerateRequest
@@ -68,6 +68,9 @@ __all__ = [
     "SensorStatus",
     "Severity",
     "EvidenceRef",
+    "ScoreBreakdown",
+    "TheoryExplainRequest",
+    "TheoryExplainResponse",
     "TheoryItem",
     "TheoryListResponse",
     "SliceItem",

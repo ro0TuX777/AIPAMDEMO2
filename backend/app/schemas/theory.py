@@ -28,6 +28,17 @@ class EvidenceRef(BaseModel):
     label: str  # Human-readable label
 
 
+class ScoreBreakdown(BaseModel):
+    """Component-level breakdown of how a theory score was computed."""
+    findings: float = 0.0
+    alerts: float = 0.0
+    iocs: float = 0.0
+    finding_count: int = 0
+    alert_count: int = 0
+    ioc_count: int = 0
+    reason: str | None = None  # for benign/inconclusive
+
+
 class TheoryItem(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -41,6 +52,7 @@ class TheoryItem(BaseModel):
     rank: int
     supporting_evidence: list[EvidenceRef] = Field(default_factory=list)
     contradicting_evidence: list[EvidenceRef] = Field(default_factory=list)
+    score_breakdown: ScoreBreakdown | None = None
     explanation: str | None = None
     next_steps: list[str] = Field(default_factory=list)
     pcap_label: str | None = None
@@ -53,4 +65,16 @@ class TheoryListResponse(BaseModel):
     job_id: str
     scope_type: str
     scope_id: str | None = None
+
+
+class TheoryExplainRequest(BaseModel):
+    format: str = "markdown"  # "markdown" | "text"
+
+
+class TheoryExplainResponse(BaseModel):
+    schema_version: str = SCHEMA_VERSION
+    theory_id: str
+    explanation: str
+    source: str  # "deterministic" | "llm" | "fallback"
+    warning: str | None = None
 

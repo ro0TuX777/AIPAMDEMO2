@@ -109,11 +109,20 @@ def _score_hypothesis(
     hyp_type: str,
     patterns: list[str],
     evidence: dict[str, Any],
-) -> tuple[float, list[str], list[str]]:
-    """Score a hypothesis against collected evidence. Returns (score, supporting_ids, contradicting_ids)."""
+) -> tuple[float, list[str], list[str], dict[str, Any]]:
+    """Score a hypothesis against collected evidence.
+
+    Returns (score, supporting_ids, contradicting_ids, breakdown).
+    breakdown contains per-category score contributions and counts.
+    """
     supporting: list[str] = []
     contradicting: list[str] = []
-    score = 0.0
+    findings_score = 0.0
+    alerts_score = 0.0
+    iocs_score = 0.0
+    finding_count = 0
+    alert_count = 0
+    ioc_count = 0
 
     compiled = [re.compile(p, re.IGNORECASE) for p in patterns]
 
@@ -124,7 +133,9 @@ def _score_hypothesis(
         if matched:
             sev_w = _SEVERITY_WEIGHT.get(f.severity, 0.1)
             conf = getattr(f, "confidence", 0.5) or 0.5
-            score += sev_w * conf * 0.4
+            contribution = sev_w * conf * 0.4
+            findings_score += contribution
+            finding_count += 1
             supporting.append(f.finding_id)
         # High-confidence benign finding contradicts malicious hypotheses
         elif hyp_type != "benign" and f.severity == "info" and (getattr(f, "confidence", 0) or 0) > 0.7:
@@ -136,7 +147,9 @@ def _score_hypothesis(
         matched = any(rx.search(text) for rx in compiled)
         if matched:
             sev_w = _SEVERITY_WEIGHT.get(a.severity, 0.1)
-            score += sev_w * 0.3
+            contribution = sev_w * 0.3
+            alerts_score += contribution
+            alert_count += 1
             supporting.append(a.alert_id)
 
     # Score IOCs
@@ -145,12 +158,25 @@ def _score_hypothesis(
         matched = any(rx.search(text) for rx in compiled)
         if matched:
             ioc_conf = ioc.confidence or 0.5
-            score += ioc_conf * 0.2
+            contribution = ioc_conf * 0.2
+            iocs_score += contribution
+            ioc_count += 1
             supporting.append(ioc.ioc_id)
 
+    raw_score = findings_score + alerts_score + iocs_score
     # Normalize to 0-1 range (cap at 1.0)
-    score = min(round(score, 3), 1.0)
-    return score, supporting, contradicting
+    score = min(round(raw_score, 3), 1.0)
+
+    breakdown = {
+        "findings": round(findings_score, 3),
+        "alerts": round(alerts_score, 3),
+        "iocs": round(iocs_score, 3),
+        "finding_count": finding_count,
+        "alert_count": alert_count,
+        "ioc_count": ioc_count,
+    }
+
+    return score, supporting, contradicting, breakdown
 
 
 def _confidence_label(score: float) -> str:
@@ -162,7 +188,7 @@ def _confidence_label(score: float) -> str:
     return "low"
 
 
-def _score_benign(evidence: dict[str, Any]) -> tuple[float, list[str], list[str]]:
+def _score_benign(evidence: dict[str, Any]) -> tuple[float, list[str], list[str], dict[str, Any]]:
     """Score the 'benign' hypothesis — high if no serious alerts/findings."""
     findings = evidence["findings"]
     alerts = evidence["alerts"]
@@ -173,14 +199,25 @@ def _score_benign(evidence: dict[str, Any]) -> tuple[float, list[str], list[str]
         1 for a in alerts if a.severity in ("critical", "high")
     )
 
+    breakdown: dict[str, Any] = {
+        "findings": 0.0, "alerts": 0.0, "iocs": 0.0,
+        "finding_count": 0, "alert_count": 0, "ioc_count": 0,
+        "reason": "",
+    }
+
     if high_sev_count == 0 and len(findings) <= 2 and len(alerts) <= 3:
-        # Looks benign
         supporting = [f.finding_id for f in findings if f.severity in ("info", "low")]
-        return 0.7, supporting, []
+        breakdown["reason"] = "No high-severity evidence detected"
+        breakdown["finding_count"] = len(supporting)
+        return 0.7, supporting, [], breakdown
     elif high_sev_count <= 1:
-        return 0.3, [], [f.finding_id for f in findings if f.severity in ("critical", "high")]
+        contra = [f.finding_id for f in findings if f.severity in ("critical", "high")]
+        breakdown["reason"] = f"{high_sev_count} high-severity item found"
+        return 0.3, [], contra, breakdown
     else:
-        return 0.1, [], [f.finding_id for f in findings if f.severity in ("critical", "high")]
+        contra = [f.finding_id for f in findings if f.severity in ("critical", "high")]
+        breakdown["reason"] = f"{high_sev_count} high-severity items found"
+        return 0.1, [], contra, breakdown
 
 
 def generate_theories(
@@ -217,20 +254,24 @@ def generate_theories(
     evidence = _gather_evidence(db, job_id, host_ip, pcap_label=pcap_label)
 
     # Score all hypothesis types
-    scored: list[tuple[str, float, list[str], list[str]]] = []
+    scored: list[tuple[str, float, list[str], list[str], dict[str, Any]]] = []
 
     for hyp_type, patterns in _HYPOTHESIS_PATTERNS.items():
-        score, supporting, contradicting = _score_hypothesis(hyp_type, patterns, evidence)
+        score, supporting, contradicting, breakdown = _score_hypothesis(hyp_type, patterns, evidence)
         if score > 0.01:  # skip zero-score hypotheses
-            scored.append((hyp_type, score, supporting, contradicting))
+            scored.append((hyp_type, score, supporting, contradicting, breakdown))
 
     # Score benign separately (uses different logic)
-    benign_score, benign_sup, benign_contra = _score_benign(evidence)
-    scored.append(("benign", benign_score, benign_sup, benign_contra))
+    benign_score, benign_sup, benign_contra, benign_bd = _score_benign(evidence)
+    scored.append(("benign", benign_score, benign_sup, benign_contra, benign_bd))
 
     # Always add inconclusive as fallback
     if not scored or max(s[1] for s in scored) < 0.2:
-        scored.append(("inconclusive", 0.15, [], []))
+        scored.append(("inconclusive", 0.15, [], [], {
+            "findings": 0.0, "alerts": 0.0, "iocs": 0.0,
+            "finding_count": 0, "alert_count": 0, "ioc_count": 0,
+            "reason": "Insufficient evidence for any hypothesis",
+        }))
 
     # Sort by score descending
     scored.sort(key=lambda x: x[1], reverse=True)
@@ -238,7 +279,7 @@ def generate_theories(
     # Create Theory records
     now = datetime.now(timezone.utc).isoformat()
     theories: list[Theory] = []
-    for rank, (hyp_type, score, supporting, contradicting) in enumerate(scored, 1):
+    for rank, (hyp_type, score, supporting, contradicting, breakdown) in enumerate(scored, 1):
         label = _HYPOTHESIS_LABELS.get(hyp_type, hyp_type.replace("_", " ").title())
         theory = Theory(
             job_id=job_id,
@@ -252,6 +293,7 @@ def generate_theories(
             rank=rank,
             supporting_evidence_json=json.dumps(supporting) if supporting else None,
             contradicting_evidence_json=json.dumps(contradicting) if contradicting else None,
+            score_breakdown_json=json.dumps(breakdown),
             pcap_label=pcap_label,
             created_at=now,
         )

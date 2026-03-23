@@ -131,7 +131,7 @@ class TestScoreHypothesis:
     def test_c2_matches_beacon_finding(self, db_session, c2_job):
         evidence = _gather_evidence(db_session, c2_job.job_id)
         patterns = [r"beacon", r"command.and.control", r"c2", r"cobalt.?strike"]
-        score, supporting, contradicting = _score_hypothesis("c2", patterns, evidence)
+        score, supporting, contradicting, breakdown = _score_hypothesis("c2", patterns, evidence)
         assert score > 0.0
         assert "F-001" in supporting
         assert "A-001" in supporting
@@ -140,21 +140,21 @@ class TestScoreHypothesis:
     def test_c2_contradicting_evidence(self, db_session, c2_job):
         evidence = _gather_evidence(db_session, c2_job.job_id)
         patterns = [r"beacon", r"command.and.control", r"c2", r"cobalt.?strike"]
-        _, _, contradicting = _score_hypothesis("c2", patterns, evidence)
+        _, _, contradicting, _ = _score_hypothesis("c2", patterns, evidence)
         # F-002 is info severity with confidence > 0.7 → contradicts malicious
         assert "F-002" in contradicting
 
     def test_no_match_yields_zero(self, db_session, benign_job):
         evidence = _gather_evidence(db_session, benign_job.job_id)
         patterns = [r"beacon", r"command.and.control", r"c2"]
-        score, supporting, _ = _score_hypothesis("c2", patterns, evidence)
+        score, supporting, _, _ = _score_hypothesis("c2", patterns, evidence)
         assert score == 0.0
         assert supporting == []
 
     def test_recon_matches_scan_evidence(self, db_session, recon_job):
         evidence = _gather_evidence(db_session, recon_job.job_id)
         patterns = [r"scan", r"recon", r"enumerat", r"port.?scan"]
-        score, supporting, _ = _score_hypothesis("recon", patterns, evidence)
+        score, supporting, _, _ = _score_hypothesis("recon", patterns, evidence)
         assert score > 0.0
         assert "A-020" in supporting
         assert "F-020" in supporting
@@ -167,13 +167,13 @@ class TestScoreHypothesis:
 class TestScoreBenign:
     def test_benign_high_when_no_threats(self, db_session, benign_job):
         evidence = _gather_evidence(db_session, benign_job.job_id)
-        score, supporting, contradicting = _score_benign(evidence)
+        score, supporting, contradicting, _ = _score_benign(evidence)
         assert score == 0.7
         assert contradicting == []
 
     def test_benign_low_when_threats_present(self, db_session, c2_job):
         evidence = _gather_evidence(db_session, c2_job.job_id)
-        score, _, contradicting = _score_benign(evidence)
+        score, _, contradicting, _ = _score_benign(evidence)
         assert score <= 0.3
         assert len(contradicting) > 0
 

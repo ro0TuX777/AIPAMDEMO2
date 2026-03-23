@@ -28,6 +28,9 @@ class Theory(Base):
     supporting_evidence_json = Column(Text, nullable=True)  # ["F-102", "A-55", "IOC-21"]
     contradicting_evidence_json = Column(Text, nullable=True)  # ["F-220"]
 
+    # Score component breakdown (JSON dict)
+    score_breakdown_json = Column(Text, nullable=True)  # {"findings": 0.48, "alerts": 0.18, "iocs": 0.12, "finding_count": 3, ...}
+
     # LLM-generated explanations
     explanation = Column(Text, nullable=True)
     next_steps_json = Column(Text, nullable=True)  # JSON array of strings

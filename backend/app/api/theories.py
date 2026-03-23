@@ -1,13 +1,15 @@
 """
 Theory of the Case API endpoints.
 
-GET  /jobs/{jobId}/theories              – list job-level theories
-GET  /jobs/{jobId}/hosts/{ip}/theories   – list host-level theories
-POST /jobs/{jobId}/theories/generate     – trigger theory generation
+GET  /jobs/{jobId}/theories                          – list job-level theories
+GET  /jobs/{jobId}/hosts/{ip}/theories               – list host-level theories
+POST /jobs/{jobId}/theories/generate                 – trigger theory generation
+POST /jobs/{jobId}/theories/{theoryId}/explain       – LLM-powered explanation
 """
 
 import json
 import logging
+import os
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import select
@@ -19,7 +21,14 @@ from backend.app.models.finding import Finding
 from backend.app.models.ioc import Ioc
 from backend.app.models.job import Job
 from backend.app.models.theory import Theory
-from backend.app.schemas.theory import EvidenceRef, TheoryItem, TheoryListResponse
+from backend.app.schemas.theory import (
+    EvidenceRef,
+    ScoreBreakdown,
+    TheoryExplainRequest,
+    TheoryExplainResponse,
+    TheoryItem,
+    TheoryListResponse,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +92,12 @@ def _theory_to_item(t: Theory, db: Session) -> TheoryItem:
             next_steps = json.loads(t.next_steps_json)
         except Exception:
             pass
+    breakdown: ScoreBreakdown | None = None
+    if t.score_breakdown_json:
+        try:
+            breakdown = ScoreBreakdown(**json.loads(t.score_breakdown_json))
+        except Exception:
+            pass
 
     return TheoryItem(
         theory_id=t.theory_id,
@@ -95,8 +110,10 @@ def _theory_to_item(t: Theory, db: Session) -> TheoryItem:
         rank=t.rank,
         supporting_evidence=_resolve_evidence_ids(db, t.job_id, supporting_ids),
         contradicting_evidence=_resolve_evidence_ids(db, t.job_id, contradicting_ids),
+        score_breakdown=breakdown,
         explanation=t.explanation,
         next_steps=next_steps,
+        pcap_label=t.pcap_label,
         created_at=t.created_at,
     )
 
@@ -181,3 +198,159 @@ async def generate_theories_endpoint(
         scope_type="job",
     )
 
+
+
+# ── LLM-powered theory explanation ───────────────────────────────────────────
+
+def _llm_explain_enabled() -> bool:
+    return os.getenv("AIPAM_EXPLAIN_FINDING_USE_LLM", "").strip().lower() in {"1", "true", "yes", "on"}
+
+
+def _build_theory_explain_prompt(theory: Theory, evidence_context: str) -> list[dict[str, str]]:
+    """Build LLM prompt for narrating a theory's deterministic evidence."""
+    breakdown_info = ""
+    if theory.score_breakdown_json:
+        try:
+            bd = json.loads(theory.score_breakdown_json)
+            breakdown_info = (
+                f"\nScore breakdown: "
+                f"Findings contribution: {bd.get('findings', 0):.3f} ({bd.get('finding_count', 0)} items), "
+                f"Alerts contribution: {bd.get('alerts', 0):.3f} ({bd.get('alert_count', 0)} items), "
+                f"IOCs contribution: {bd.get('iocs', 0):.3f} ({bd.get('ioc_count', 0)} items)"
+            )
+            if bd.get("reason"):
+                breakdown_info += f"\nReason: {bd['reason']}"
+        except Exception:
+            pass
+
+    return [
+        {
+            "role": "system",
+            "content": (
+                "You are a senior SOC analyst writing a concise, grounded explanation of a security hypothesis. "
+                "Use only the evidence provided. Do not speculate beyond the data. "
+                "Write 2-4 sentences explaining what the evidence shows, why it matters, and what an analyst should do next. "
+                "Be specific about the evidence — reference finding IDs, alert signatures, or IOC values where possible."
+            ),
+        },
+        {
+            "role": "user",
+            "content": (
+                f"Hypothesis: {theory.label}\n"
+                f"Type: {theory.hypothesis_type}\n"
+                f"Score: {theory.score:.0%} ({theory.confidence} confidence)\n"
+                f"Rank: #{theory.rank}"
+                f"{breakdown_info}\n\n"
+                f"Evidence context:\n{evidence_context}\n\n"
+                "Write a concise analyst-facing explanation of this hypothesis based on the evidence above."
+            ),
+        },
+    ]
+
+
+@router.post("/jobs/{job_id}/theories/{theory_id}/explain", response_model=TheoryExplainResponse)
+async def explain_theory(
+    job_id: str,
+    theory_id: str,
+    body: TheoryExplainRequest,
+    response: Response,
+    request_id: str = Depends(get_request_id),
+    db: Session = Depends(get_db),
+):
+    """Generate an LLM-powered narrative explanation for a theory."""
+    _require_job(db, job_id)
+    response.headers["X-Request-Id"] = request_id
+
+    theory = db.execute(
+        select(Theory).where(Theory.job_id == job_id, Theory.theory_id == theory_id)
+    ).scalar_one_or_none()
+    if not theory:
+        raise HTTPException(status_code=404, detail="Theory not found")
+
+    # Build evidence context using the evidence bundle service
+    from backend.app.services.evidence_bundles import build_scoped_bundle
+    bundle = build_scoped_bundle(db, job_id, scope_type="theory", scope_id=theory_id)
+    evidence_context = bundle.to_context(max_chars=3000)
+
+    # Build deterministic fallback
+    breakdown_parts = []
+    if theory.score_breakdown_json:
+        try:
+            bd = json.loads(theory.score_breakdown_json)
+            if bd.get("finding_count"):
+                breakdown_parts.append(f"{bd['finding_count']} finding(s) contributing {bd['findings']:.1%}")
+            if bd.get("alert_count"):
+                breakdown_parts.append(f"{bd['alert_count']} alert(s) contributing {bd['alerts']:.1%}")
+            if bd.get("ioc_count"):
+                breakdown_parts.append(f"{bd['ioc_count']} IOC(s) contributing {bd['iocs']:.1%}")
+            if bd.get("reason"):
+                breakdown_parts.append(bd["reason"])
+        except Exception:
+            pass
+
+    fallback = (
+        f"This {theory.confidence}-confidence hypothesis ({theory.label}) "
+        f"scored {theory.score:.0%} based on deterministic evidence matching. "
+    )
+    if breakdown_parts:
+        fallback += "Score components: " + "; ".join(breakdown_parts) + "."
+    else:
+        fallback += "No detailed breakdown available."
+
+    if not _llm_explain_enabled():
+        # Store deterministic explanation
+        theory.explanation = fallback
+        db.commit()
+        return TheoryExplainResponse(
+            theory_id=theory_id,
+            explanation=fallback,
+            source="deterministic",
+        )
+
+    # Try LLM
+    try:
+        from backend.app.config_v2 import get_settings
+        from backend.app.llm_client import LLMClient, LLMConfig
+
+        settings = get_settings()
+        ollama_base = settings.aipam_ollama_url.rstrip("/")
+        config = LLMConfig(
+            endpoint=os.getenv("LLM_ENDPOINT", f"{ollama_base}/v1/chat/completions"),
+            model=os.getenv("LLM_MODEL_NAME", "aipam-trafficllm-v10"),
+            temperature=0.2,
+            max_tokens=int(os.getenv("LLM_MAX_TOKENS", "1024")),
+            timeout_seconds=float(os.getenv("LLM_TIMEOUT_SECONDS", "20")),
+        )
+        client = LLMClient(config=config)
+        prompt = _build_theory_explain_prompt(theory, evidence_context)
+        llm_response = await client.chat_completion(prompt, temperature=0.2)
+        explanation = llm_response.strip() if llm_response else ""
+    except Exception:
+        logger.warning("LLM explain failed for theory %s, using fallback", theory_id, exc_info=True)
+        theory.explanation = fallback
+        db.commit()
+        return TheoryExplainResponse(
+            theory_id=theory_id,
+            explanation=fallback,
+            source="fallback",
+            warning="LLM unavailable; returned deterministic explanation.",
+        )
+
+    if not explanation:
+        theory.explanation = fallback
+        db.commit()
+        return TheoryExplainResponse(
+            theory_id=theory_id,
+            explanation=fallback,
+            source="fallback",
+            warning="LLM returned empty response; returned deterministic explanation.",
+        )
+
+    # Store LLM explanation
+    theory.explanation = explanation
+    db.commit()
+    return TheoryExplainResponse(
+        theory_id=theory_id,
+        explanation=explanation,
+        source="llm",
+    )

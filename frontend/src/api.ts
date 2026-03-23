@@ -594,6 +594,16 @@ export interface EvidenceRef {
   label: string;
 }
 
+export interface ScoreBreakdown {
+  findings: number;
+  alerts: number;
+  iocs: number;
+  finding_count: number;
+  alert_count: number;
+  ioc_count: number;
+  reason?: string | null;
+}
+
 export interface TheoryItem {
   theory_id: string;
   scope_type: string;
@@ -605,8 +615,10 @@ export interface TheoryItem {
   rank: number;
   supporting_evidence: EvidenceRef[];
   contradicting_evidence: EvidenceRef[];
+  score_breakdown?: ScoreBreakdown | null;
   explanation?: string | null;
   next_steps: string[];
+  pcap_label?: string | null;
   created_at: string;
 }
 
@@ -616,6 +628,14 @@ export interface TheoryListResponse {
   job_id: string;
   scope_type: string;
   scope_id?: string | null;
+}
+
+export interface TheoryExplainResponse {
+  schema_version: string;
+  theory_id: string;
+  explanation: string;
+  source: "deterministic" | "llm" | "fallback";
+  warning?: string | null;
 }
 
 // ─── Incident Slices ────────────────────────────────────────────────────────
@@ -1283,6 +1303,9 @@ export const api = {
   },
   generateTheories(jobId: string): Promise<TheoryListResponse> {
     return post<TheoryListResponse>(`/jobs/${jobId}/theories/generate`);
+  },
+  explainTheory(jobId: string, theoryId: string): Promise<TheoryExplainResponse> {
+    return post<TheoryExplainResponse>(`/jobs/${jobId}/theories/${encodeURIComponent(theoryId)}/explain`, { format: "markdown" });
   },
 
   // ── Slices ────────────────────────────────────────────────────────────

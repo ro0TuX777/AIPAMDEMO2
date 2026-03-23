@@ -133,6 +133,15 @@ def init_v2_db() -> None:
                         text(f"ALTER TABLE {table_name} ADD COLUMN pcap_label VARCHAR")
                     )
 
+    # Add score_breakdown_json to theories if missing
+    if inspector.has_table("theories"):
+        theory_cols = {c["name"] for c in inspector.get_columns("theories")}
+        if "score_breakdown_json" not in theory_cols:
+            with engine.begin() as connection:
+                connection.execute(
+                    text("ALTER TABLE theories ADD COLUMN score_breakdown_json TEXT")
+                )
+
 def reset_engine() -> None:
     """Reset engine and session factory. Used in tests."""
     global _engine, _SessionLocal
