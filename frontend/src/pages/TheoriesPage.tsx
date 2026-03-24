@@ -10,6 +10,7 @@ import {
   type HostListItem,
 } from "../api";
 import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
+import { InfoTooltip } from "../components/InfoTooltip";
 import { useToast } from "../components/ToastProvider";
 import { CardGridSkeleton } from "../components/SkeletonLoader";
 
@@ -240,7 +241,9 @@ function TheoryCard({ theory, jobId, slices, defaultExpanded, highlightId }: {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <span className={`px-2 py-0.5 text-xs rounded border ${confClass}`}>{theory.confidence}</span>
+          <InfoTooltip text="Theory confidence: high = strong evidence, medium = partial, low = speculative.">
+            <span className={`px-2 py-0.5 text-xs rounded border ${confClass}`}>{theory.confidence}</span>
+          </InfoTooltip>
           <span className="text-slate-500 text-xs">{expanded ? "▲" : "▼"}</span>
         </div>
       </button>
@@ -260,7 +263,7 @@ function TheoryCard({ theory, jobId, slices, defaultExpanded, highlightId }: {
 
           {theory.supporting_evidence.length > 0 && (
             <div>
-              <span className="text-xs text-slate-500 uppercase">Supporting Evidence</span>
+              <span className="text-xs text-slate-500 uppercase">Supporting Evidence <InfoTooltip text="Findings, alerts, and IOCs that corroborate this theory." /></span>
               <div className="flex flex-wrap gap-1 mt-1">
                 {theory.supporting_evidence.map(ref => (
                   <EvidenceChip key={ref.id} ref_={ref} jobId={jobId} variant="supporting" />
@@ -271,7 +274,7 @@ function TheoryCard({ theory, jobId, slices, defaultExpanded, highlightId }: {
 
           {theory.contradicting_evidence.length > 0 && (
             <div>
-              <span className="text-xs text-slate-500 uppercase">Contradicting</span>
+              <span className="text-xs text-slate-500 uppercase">Contradicting <InfoTooltip text="Evidence that weakens this theory. Fewer contradictions = stronger hypothesis." /></span>
               <div className="flex flex-wrap gap-1 mt-1">
                 {theory.contradicting_evidence.map(ref => (
                   <EvidenceChip key={ref.id} ref_={ref} jobId={jobId} variant="contradicting" />

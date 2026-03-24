@@ -440,6 +440,7 @@ def get_evidence_bundle(
 
     # Determine the host IPs to use for cross-referencing
     host_ips: list[str] = []
+    evidence_ref_ids: list[str] = []
 
     if source_type == "finding":
         finding = db.execute(
@@ -461,20 +462,82 @@ def get_evidence_bundle(
         theory = db.execute(
             select(Theory).where(Theory.job_id == job_id, Theory.theory_id == source_id)
         ).scalar_one_or_none()
-        if theory and theory.scope_type == "host" and theory.scope_id:
-            host_ips = [theory.scope_id]
+        if theory:
+            if theory.scope_type == "host" and theory.scope_id:
+                host_ips = [theory.scope_id]
+            # Parse supporting evidence refs (finding/alert IDs)
+            evidence_ref_ids: list[str] = []
+            if theory.supporting_evidence_json:
+                try:
+                    refs = _json.loads(theory.supporting_evidence_json)
+                    if isinstance(refs, list):
+                        evidence_ref_ids = [r for r in refs if isinstance(r, str)]
+                except (ValueError, TypeError):
+                    pass
 
     host_ips = list(set(host_ips))
 
-    # Related findings
-    related_findings = []
+    # Related findings — from supporting evidence refs (theories) or host IP matching
+    related_findings: list[dict[str, Any]] = []
+    related_alerts: list[dict[str, Any]] = []
+    seen_finding_ids: set[str] = set()
+    seen_alert_ids: set[str] = set()
+
+    # First: direct evidence refs (for theories with supporting_evidence_json)
+    evidence_ref_ids_resolved: list[str] = evidence_ref_ids if source_type == "theory" else []
+    if evidence_ref_ids_resolved:
+        ref_findings = db.query(Finding).filter(
+            Finding.job_id == job_id,
+            Finding.finding_id.in_(evidence_ref_ids_resolved),
+        ).all()
+        for f in ref_findings:
+            seen_finding_ids.add(f.finding_id)
+            related_findings.append({
+                "finding_id": f.finding_id,
+                "title": f.title,
+                "severity": f.severity,
+                "confidence": f.confidence,
+                "category": f.category,
+            })
+            # Also harvest host IPs from referenced findings for connection/timeline lookup
+            if f.evidence_json:
+                try:
+                    ev = _json.loads(f.evidence_json)
+                    if isinstance(ev, dict):
+                        for h in ev.get("affected_hosts", []):
+                            if h and h not in host_ips:
+                                host_ips.append(h)
+                except (ValueError, TypeError):
+                    pass
+
+        # Also check if any refs are alert IDs
+        ref_alerts = db.query(Alert).filter(
+            Alert.job_id == job_id,
+            Alert.alert_id.in_(evidence_ref_ids_resolved),
+        ).all()
+        for a in ref_alerts:
+            seen_alert_ids.add(a.alert_id)
+            related_alerts.append({
+                "alert_id": a.alert_id,
+                "signature": a.signature,
+                "severity": a.severity,
+                "src_ip": a.src_ip,
+                "dest_ip": a.dest_ip,
+                "ts": a.ts,
+            })
+            for h in [a.src_ip, a.dest_ip, a.host_ip]:
+                if h and h not in host_ips:
+                    host_ips.append(h)
+
+    # Second: host IP cross-reference (works for all source types)
     if host_ips:
         for ip in host_ips:
             for f in db.query(Finding).filter(
                 Finding.job_id == job_id,
                 Finding.evidence_json.contains(ip),
             ).all():
-                if f"finding:{f.finding_id}" != item_id:
+                if f.finding_id not in seen_finding_ids and f"finding:{f.finding_id}" != item_id:
+                    seen_finding_ids.add(f.finding_id)
                     related_findings.append({
                         "finding_id": f.finding_id,
                         "title": f.title,
@@ -483,15 +546,14 @@ def get_evidence_bundle(
                         "category": f.category,
                     })
 
-    # Related alerts
-    related_alerts = []
     if host_ips:
         alerts = db.query(Alert).filter(
             Alert.job_id == job_id,
             or_(Alert.src_ip.in_(host_ips), Alert.dest_ip.in_(host_ips)),
         ).all()
         for a in alerts:
-            if f"alert:{a.alert_id}" != item_id:
+            if a.alert_id not in seen_alert_ids and f"alert:{a.alert_id}" != item_id:
+                seen_alert_ids.add(a.alert_id)
                 related_alerts.append({
                     "alert_id": a.alert_id,
                     "signature": a.signature,
@@ -539,12 +601,6 @@ def get_evidence_bundle(
                     "severity": te.severity,
                     "details": details,
                 })
-
-    # Deduplicate
-    seen_f: set[str] = set()
-    related_findings = [f for f in related_findings if not (f["finding_id"] in seen_f or seen_f.add(f["finding_id"]))]  # type: ignore[func-returns-value]
-    seen_a: set[str] = set()
-    related_alerts = [a for a in related_alerts if not (a["alert_id"] in seen_a or seen_a.add(a["alert_id"]))]  # type: ignore[func-returns-value]
 
     return {
         "related_findings": related_findings,

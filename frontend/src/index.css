@@ -131,3 +131,104 @@ html.light .border-slate-800 { border-color: rgb(226 232 240) !important; }
 .animate-slide-in-right {
   animation: slideInRight 0.3s cubic-bezier(0.22, 1, 0.36, 1) forwards;
 }
+
+
+/* ── Info Tooltip ────────────────────────────────── */
+
+.info-tooltip-trigger {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  cursor: help;
+}
+
+.info-tooltip-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 9999px;
+  background: rgb(51 65 85 / 0.6);
+  color: rgb(148 163 184);
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  margin-left: 4px;
+  flex-shrink: 0;
+  border: 1px solid rgb(71 85 105 / 0.5);
+  transition: background 0.15s, color 0.15s;
+}
+
+.info-tooltip-trigger:hover .info-tooltip-icon,
+.info-tooltip-trigger:focus .info-tooltip-icon {
+  background: rgb(71 85 105 / 0.8);
+  color: rgb(226 232 240);
+}
+
+.info-tooltip-popup {
+  /* position/transform/z-index set inline via JS (portal to body) */
+  background: rgb(15 23 42 / 0.97);
+  border: 1px solid rgb(71 85 105 / 0.6);
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 11px;
+  font-weight: 400;
+  line-height: 1.5;
+  color: rgb(203 213 225);
+  white-space: normal;
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.4);
+  pointer-events: none;
+  animation: tooltipFadeIn 0.15s ease-out forwards;
+}
+
+/* Arrow */
+.info-tooltip-popup::before {
+  content: "";
+  position: absolute;
+  bottom: -4px;
+  left: 50%;
+  transform: translateX(-50%) rotate(45deg);
+  width: 8px;
+  height: 8px;
+  background: rgb(15 23 42 / 0.97);
+  border-right: 1px solid rgb(71 85 105 / 0.6);
+  border-bottom: 1px solid rgb(71 85 105 / 0.6);
+}
+
+.info-tooltip-popup--bottom::before {
+  bottom: auto;
+  top: -4px;
+  border-right: none;
+  border-bottom: none;
+  border-left: 1px solid rgb(71 85 105 / 0.6);
+  border-top: 1px solid rgb(71 85 105 / 0.6);
+}
+
+@keyframes tooltipFadeIn {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+/* Light mode */
+html.light .info-tooltip-icon {
+  background: rgb(226 232 240);
+  color: rgb(100 116 139);
+  border-color: rgb(203 213 225);
+}
+html.light .info-tooltip-popup {
+  background: rgb(255 255 255 / 0.97);
+  border-color: rgb(203 213 225);
+  color: rgb(51 65 85);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 0.12);
+}
+html.light .info-tooltip-popup::before {
+  background: rgb(255 255 255 / 0.97);
+  border-color: rgb(203 213 225);
+}

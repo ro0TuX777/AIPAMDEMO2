@@ -3,6 +3,7 @@ import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api, type AlertItem, type Severity } from "../api";
 import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
+import { InfoTooltip } from "../components/InfoTooltip";
 
 const SEV_COLORS: Record<string, string> = {
   critical: "text-red-500 bg-red-500/10",
@@ -63,11 +64,11 @@ export const AlertsListPage: React.FC = () => {
             <thead className="text-xs uppercase text-slate-500 border-b border-slate-800">
               <tr>
                 <th className="px-3 py-2">Time</th>
-                <th className="px-3 py-2">Severity</th>
-                <th className="px-3 py-2">Signature</th>
+                <th className="px-3 py-2">Severity <InfoTooltip text="Alert priority from the Suricata rule (1 = critical, 2 = high, 3 = medium)." /></th>
+                <th className="px-3 py-2">Signature <InfoTooltip text="The Suricata rule name that triggered this alert." /></th>
                 <th className="px-3 py-2">Category</th>
-                <th className="px-3 py-2">Source</th>
-                <th className="px-3 py-2">Destination</th>
+                <th className="px-3 py-2">Source <InfoTooltip text="Source IP:port — the origin of the suspicious traffic." /></th>
+                <th className="px-3 py-2">Destination <InfoTooltip text="Destination IP:port — the target of the suspicious traffic." /></th>
                 <th className="px-3 py-2">Proto</th>
                 <th className="px-3 py-2 text-center">AI</th>
               </tr>

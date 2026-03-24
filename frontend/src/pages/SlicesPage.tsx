@@ -11,6 +11,7 @@ import {
   type IocItem,
 } from "../api";
 import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
+import { InfoTooltip } from "../components/InfoTooltip";
 import { useToast } from "../components/ToastProvider";
 import { CardGridSkeleton } from "../components/SkeletonLoader";
 
@@ -275,7 +276,7 @@ function SliceCard({ slice, jobId, theories, defaultExpanded, alertNameMap, find
           </div>
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
-              <span className="text-[10px] text-slate-500">Confidence:</span>
+              <span className="text-[10px] text-slate-500">Confidence <InfoTooltip text="How strongly the evidence groups into this attack thread. Higher = tighter correlation." />:</span>
               <ConfidenceBar confidence={slice.confidence} />
             </div>
             {/* Evidence count summary */}

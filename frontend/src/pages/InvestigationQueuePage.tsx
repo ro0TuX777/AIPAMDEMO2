@@ -11,6 +11,7 @@ import {
 import { useToast } from "../components/ToastProvider";
 import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
 import { EvidenceDrawer } from "../components/EvidenceDrawer";
+import { InfoTooltip } from "../components/InfoTooltip";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -53,24 +54,42 @@ const SOURCE_ICONS: Record<string, string> = {
 // ─── Badge helpers ────────────────────────────────────────────────────────────
 
 function ItemBadges({ item }: { item: InvestigationQueueItem }) {
-  const badges: { label: string; cls: string }[] = [];
+  const badges: { label: string; cls: string; tooltip?: string }[] = [];
   if (item.pcap_label === "after") {
     badges.push({ label: "New in After", cls: "bg-purple-700/60 text-purple-200 border-purple-600/40" });
   }
   if (item.corroborating_count > 0) {
-    badges.push({ label: `${item.corroborating_count} corroborating`, cls: "bg-cyan-700/60 text-cyan-200 border-cyan-600/40" });
+    badges.push({
+      label: `${item.corroborating_count} corroborating`,
+      cls: "bg-cyan-700/60 text-cyan-200 border-cyan-600/40",
+      tooltip: "Other findings/alerts sharing evidence with this item. More corroboration = higher confidence it's real.",
+    });
   }
   if (item.affected_hosts_count >= 3) {
-    badges.push({ label: `${item.affected_hosts_count} hosts`, cls: "bg-amber-700/60 text-amber-200 border-amber-600/40" });
+    badges.push({
+      label: `${item.affected_hosts_count} hosts`,
+      cls: "bg-amber-700/60 text-amber-200 border-amber-600/40",
+      tooltip: "Blast radius — number of distinct hosts affected. High blast radius suggests lateral movement or widespread impact.",
+    });
   }
   if (item.mitre_ids.length > 0) {
-    badges.push({ label: item.mitre_ids[0], cls: "bg-indigo-700/60 text-indigo-200 border-indigo-600/40" });
+    badges.push({
+      label: item.mitre_ids[0],
+      cls: "bg-indigo-700/60 text-indigo-200 border-indigo-600/40",
+      tooltip: "MITRE ATT&CK technique ID mapping this behavior to a known adversary tactic.",
+    });
   }
   if (badges.length === 0) return null;
   return (
     <span className="inline-flex gap-1 ml-2">
       {badges.map(b => (
-        <span key={b.label} className={`text-[9px] px-1 py-0.5 rounded border ${b.cls}`}>{b.label}</span>
+        b.tooltip ? (
+          <InfoTooltip key={b.label} text={b.tooltip}>
+            <span className={`text-[9px] px-1 py-0.5 rounded border ${b.cls}`}>{b.label}</span>
+          </InfoTooltip>
+        ) : (
+          <span key={b.label} className={`text-[9px] px-1 py-0.5 rounded border ${b.cls}`}>{b.label}</span>
+        )
       ))}
     </span>
   );
@@ -190,7 +209,8 @@ export const InvestigationQueuePage: React.FC = () => {
       <div className="flex items-center justify-between">
         <div>
           <Link to={`/jobs/${jobId}`} className="text-xs text-slate-500 hover:text-slate-300">← Job Detail</Link>
-          <h1 className="text-xl font-semibold text-slate-100">Investigation Queue</h1>
+          <h1 className={`text-xl font-semibold text-slate-100 ${labelHint("investigation_queue", activeHelpField)}`}
+            onClick={() => toggleHelp("investigation_queue")}>Investigation Queue</h1>
         </div>
         <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
       </div>
@@ -283,11 +303,11 @@ export const InvestigationQueuePage: React.FC = () => {
                   <input type="checkbox" checked={selectedItems.size === items.length && items.length > 0} onChange={toggleSelectAll} />
                 </th>
                 <th className="p-2 w-10">#</th>
-                <th className="p-2 w-16">Score</th>
+                <th className="p-2 w-16">Score <InfoTooltip text="Composite priority (0–100) from Severity 30%, Confidence 25%, Corroboration 20%, Blast Radius 15%, Recency 10%." /></th>
                 <th className="p-2 w-10">Type</th>
                 <th className="p-2 w-20">Severity</th>
                 <th className="p-2">Title</th>
-                <th className="p-2 w-24">Confidence</th>
+                <th className="p-2 w-24">Confidence <InfoTooltip text="How certain the engine is this represents a real threat (0–100%). Higher = more reliable detection." /></th>
                 <th className="p-2 w-28">Status</th>
                 <th className="p-2 w-32">Actions</th>
               </tr>
