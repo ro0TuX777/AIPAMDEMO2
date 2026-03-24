@@ -1,6 +1,6 @@
 """Alert model (§12.5)."""
 
-from sqlalchemy import Column, ForeignKey, Index, Integer, String, Text, UniqueConstraint
+from sqlalchemy import Column, ForeignKey, Index, Integer, String, Text, UniqueConstraint  # noqa: F401
 
 from backend.app.database_v2 import Base
 
@@ -28,11 +28,17 @@ class Alert(Base):
     ts = Column(String, nullable=False)
     pcap_label = Column(String, nullable=True)  # which PCAP generated this alert
 
+    # Investigation Queue: analyst review status
+    analyst_status = Column(String, nullable=True, default="unreviewed")  # unreviewed, confirmed, false_positive, deferred
+    analyst_notes = Column(Text, nullable=True)
+    reviewed_at = Column(String, nullable=True)  # ISO-8601 timestamp
+
     __table_args__ = (
         UniqueConstraint("job_id", "alert_id"),
         Index("idx_alerts_job_host", "job_id", "host_ip"),
         Index("idx_alerts_community", "job_id", "community_id"),
         Index("idx_alerts_severity", "job_id", "severity"),
+        Index("idx_alerts_analyst_status", "job_id", "analyst_status"),
     )
 
     def __repr__(self) -> str:

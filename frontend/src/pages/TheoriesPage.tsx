@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from "react";
-import { useParams, Link } from "react-router-dom";
+import React, { useState, useMemo, useEffect, useRef } from "react";
+import { useParams, Link, useLocation } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   api,
@@ -10,6 +10,7 @@ import {
   type HostListItem,
 } from "../api";
 import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
+import { InfoTooltip } from "../components/InfoTooltip";
 import { useToast } from "../components/ToastProvider";
 import { CardGridSkeleton } from "../components/SkeletonLoader";
 
@@ -193,10 +194,19 @@ function RelatedSliceLinks({ theory, slices, jobId }: { theory: TheoryItem; slic
 }
 
 // 3️⃣ + 5️⃣ Collapsible theory card with LLM explain
-function TheoryCard({ theory, jobId, slices, defaultExpanded }: {
-  theory: TheoryItem; jobId: string; slices: SliceItem[]; defaultExpanded: boolean;
+function TheoryCard({ theory, jobId, slices, defaultExpanded, highlightId }: {
+  theory: TheoryItem; jobId: string; slices: SliceItem[]; defaultExpanded: boolean; highlightId?: string | null;
 }) {
-  const [expanded, setExpanded] = useState(defaultExpanded);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const isHighlighted = highlightId === theory.theory_id;
+  const [expanded, setExpanded] = useState(defaultExpanded || isHighlighted);
+
+  useEffect(() => {
+    if (isHighlighted && cardRef.current) {
+      cardRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+      setExpanded(true);
+    }
+  }, [isHighlighted]);
   const { addToast } = useToast();
   const queryClient = useQueryClient();
 
@@ -214,7 +224,7 @@ function TheoryCard({ theory, jobId, slices, defaultExpanded }: {
   const mitre = MITRE_MAP[theory.hypothesis_type];
 
   return (
-    <div className="bg-slate-900 border border-slate-700 rounded-lg hover:border-slate-500 transition-colors">
+    <div ref={cardRef} id={`theory-${theory.theory_id}`} className={`bg-slate-900 border rounded-lg hover:border-slate-500 transition-colors ${isHighlighted ? "border-amber-500 ring-1 ring-amber-500/30" : "border-slate-700"}`}>
       {/* Compact header — always visible */}
       <button className="w-full text-left p-4 flex items-start justify-between gap-3"
         onClick={() => setExpanded(e => !e)}>
@@ -231,7 +241,9 @@ function TheoryCard({ theory, jobId, slices, defaultExpanded }: {
           </div>
         </div>
         <div className="flex items-center gap-2">
-          <span className={`px-2 py-0.5 text-xs rounded border ${confClass}`}>{theory.confidence}</span>
+          <InfoTooltip text="Theory confidence: high = strong evidence, medium = partial, low = speculative.">
+            <span className={`px-2 py-0.5 text-xs rounded border ${confClass}`}>{theory.confidence}</span>
+          </InfoTooltip>
           <span className="text-slate-500 text-xs">{expanded ? "▲" : "▼"}</span>
         </div>
       </button>
@@ -251,7 +263,7 @@ function TheoryCard({ theory, jobId, slices, defaultExpanded }: {
 
           {theory.supporting_evidence.length > 0 && (
             <div>
-              <span className="text-xs text-slate-500 uppercase">Supporting Evidence</span>
+              <span className="text-xs text-slate-500 uppercase">Supporting Evidence <InfoTooltip text="Findings, alerts, and IOCs that corroborate this theory." /></span>
               <div className="flex flex-wrap gap-1 mt-1">
                 {theory.supporting_evidence.map(ref => (
                   <EvidenceChip key={ref.id} ref_={ref} jobId={jobId} variant="supporting" />
@@ -262,7 +274,7 @@ function TheoryCard({ theory, jobId, slices, defaultExpanded }: {
 
           {theory.contradicting_evidence.length > 0 && (
             <div>
-              <span className="text-xs text-slate-500 uppercase">Contradicting</span>
+              <span className="text-xs text-slate-500 uppercase">Contradicting <InfoTooltip text="Evidence that weakens this theory. Fewer contradictions = stronger hypothesis." /></span>
               <div className="flex flex-wrap gap-1 mt-1">
                 {theory.contradicting_evidence.map(ref => (
                   <EvidenceChip key={ref.id} ref_={ref} jobId={jobId} variant="contradicting" />
@@ -297,8 +309,15 @@ function TheoryCard({ theory, jobId, slices, defaultExpanded }: {
 
 export const TheoriesPage: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
+  const location = useLocation();
   const queryClient = useQueryClient();
   const { activeHelpField, setActiveHelpField, toggleHelp } = usePageHelp();
+
+  // Extract theory ID from hash fragment (e.g. #theory-abc123)
+  const highlightId = useMemo(() => {
+    const h = location.hash.replace(/^#theory-/, "");
+    return h && h !== location.hash ? h : null;
+  }, [location.hash]);
   const { addToast } = useToast();
 
   // 4️⃣ Scope toggle: job vs host
@@ -451,7 +470,7 @@ export const TheoriesPage: React.FC = () => {
             <div className="space-y-3">
               {theories.map((t, i) => (
                 <TheoryCard key={t.theory_id} theory={t} jobId={jobId!} slices={slices}
-                  defaultExpanded={i < 2} />
+                  defaultExpanded={i < 2} highlightId={highlightId} />
               ))}
             </div>
           </>

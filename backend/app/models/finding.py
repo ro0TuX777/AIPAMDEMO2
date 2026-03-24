@@ -23,11 +23,17 @@ class Finding(Base):
     explanation_feedback = Column(String, nullable=True)  # useful, not_useful
     confidence = Column(Float, nullable=False, default=0.0, server_default="0.0")  # 0.0–1.0
 
+    # Investigation Queue: analyst review status
+    analyst_status = Column(String, nullable=True, default="unreviewed")  # unreviewed, confirmed, false_positive, deferred
+    analyst_notes = Column(Text, nullable=True)
+    reviewed_at = Column(String, nullable=True)  # ISO-8601 timestamp
+
     __table_args__ = (
         UniqueConstraint("job_id", "finding_id"),
         Index("idx_findings_job", "job_id"),
         Index("idx_findings_severity", "job_id", "severity"),
         Index("idx_findings_sensor", "job_id", "sensor"),
+        Index("idx_findings_analyst_status", "job_id", "analyst_status"),
     )
 
     def __repr__(self) -> str:

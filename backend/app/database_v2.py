@@ -142,6 +142,23 @@ def init_v2_db() -> None:
                     text("ALTER TABLE theories ADD COLUMN score_breakdown_json TEXT")
                 )
 
+    # Investigation Queue: add analyst_status, analyst_notes, reviewed_at columns
+    _investigation_tables = ["findings", "alerts", "theories"]
+    _investigation_cols = [
+        ("analyst_status", "VARCHAR DEFAULT 'unreviewed'"),
+        ("analyst_notes", "TEXT"),
+        ("reviewed_at", "VARCHAR"),
+    ]
+    for table_name in _investigation_tables:
+        if inspector.has_table(table_name):
+            cols = {c["name"] for c in inspector.get_columns(table_name)}
+            for col_name, col_type in _investigation_cols:
+                if col_name not in cols:
+                    with engine.begin() as connection:
+                        connection.execute(
+                            text(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_type}")
+                        )
+
 def reset_engine() -> None:
     """Reset engine and session factory. Used in tests."""
     global _engine, _SessionLocal

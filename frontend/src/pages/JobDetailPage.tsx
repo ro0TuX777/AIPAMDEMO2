@@ -41,6 +41,7 @@ const TERMINAL_STATUSES = new Set<string>([
 ]);
 
 const SUB_TABS = [
+  { label: "🔎 Investigate", path: "investigation" },
   { label: "Theories", path: "theories" },
   { label: "Slices", path: "slices" },
   { label: "Why Unusual?", path: "annotations" },

@@ -65,6 +65,23 @@ export const PageHelpPanel: React.FC<PageHelpPanelProps> = ({
                         {entry.description}
                     </p>
                 </div>
+
+                {/* Field Glossary */}
+                {entry.fields && entry.fields.length > 0 && (
+                    <div>
+                        <h4 className="text-[10px] font-bold uppercase tracking-wider text-slate-500 mb-2">
+                            Field Guide
+                        </h4>
+                        <dl className="space-y-2">
+                            {entry.fields.map((f) => (
+                                <div key={f.label} className="bg-slate-800/50 rounded px-3 py-2 border border-slate-700/50">
+                                    <dt className="text-xs font-semibold text-slate-200">{f.label}</dt>
+                                    <dd className="text-xs text-slate-400 leading-relaxed mt-0.5">{f.description}</dd>
+                                </div>
+                            ))}
+                        </dl>
+                    </div>
+                )}
             </div>
         </div>
     );
