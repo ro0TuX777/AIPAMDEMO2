@@ -18,6 +18,7 @@ from backend.app.api import (
     chat,
     findings,
     hosts,
+    investigation,
     jobs,
     knowledge_base,
     proofs,
@@ -108,6 +109,7 @@ def create_app() -> FastAPI:
     app.include_router(reports.router, prefix="/api/v1")
     app.include_router(temporal.router, prefix="/api/v1")
     app.include_router(proofs.router, prefix="/api/v1")
+    app.include_router(investigation.router, prefix="/api/v1")
 
     # Training Intelligence routes (V1 — router already has /api/v1/training prefix)
     from backend.app.training_routes import router as training_router

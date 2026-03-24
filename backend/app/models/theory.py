@@ -39,11 +39,17 @@ class Theory(Base):
 
     created_at = Column(String, nullable=False)
 
+    # Investigation Queue: analyst review status
+    analyst_status = Column(String, nullable=True, default="unreviewed")  # unreviewed, confirmed, false_positive, deferred
+    analyst_notes = Column(Text, nullable=True)
+    reviewed_at = Column(String, nullable=True)  # ISO-8601 timestamp
+
     __table_args__ = (
         Index("idx_theories_job", "job_id"),
         Index("idx_theories_scope", "job_id", "scope_type", "scope_id"),
         Index("idx_theories_rank", "job_id", "scope_type", "scope_id", "rank"),
         Index("idx_theories_pcap_label", "job_id", "pcap_label"),
+        Index("idx_theories_analyst_status", "job_id", "analyst_status"),
     )
 
     def __repr__(self) -> str:

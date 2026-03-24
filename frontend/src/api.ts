@@ -1079,6 +1079,85 @@ export interface TemporalFlowItem {
 export interface TemporalFlowsResponse { schema_version: string; flows: TemporalFlowItem[]; total_new_flows: number; }
 export interface TemporalNarrativeResponse { schema_version: string; narrative_markdown: string; }
 
+// ─── Investigation Queue ─────────────────────────────────────────────────────
+
+export type AnalystStatus = "unreviewed" | "confirmed" | "false_positive" | "deferred";
+export type QueueItemSource = "finding" | "alert" | "theory";
+
+export interface InvestigationQueueItem {
+  item_id: string;
+  source_type: QueueItemSource;
+  source_id: string;
+  job_id: string;
+  title: string;
+  severity: Severity;
+  confidence: number;
+  category: string | null;
+  sensor: string | null;
+  description: string | null;
+  pcap_label: string | null;
+  rank_score: number;
+  rank_position: number;
+  // Sprint 2: enriched metadata
+  corroborating_count: number;
+  affected_hosts: string[];
+  affected_hosts_count: number;
+  mitre_ids: string[];
+  analyst_status: AnalystStatus;
+  analyst_notes: string | null;
+  reviewed_at: string | null;
+  extra: Record<string, any>;
+}
+
+export interface EvidenceBundleResponse {
+  schema_version: string;
+  item: InvestigationQueueItem;
+  related_findings: Record<string, any>[];
+  related_alerts: Record<string, any>[];
+  related_connections: Record<string, any>[];
+  timeline_events: Record<string, any>[];
+}
+
+export interface QueueSummary {
+  total: number;
+  unreviewed: number;
+  confirmed: number;
+  false_positive: number;
+  deferred: number;
+}
+
+export interface InvestigationQueueResponse {
+  schema_version: string;
+  items: InvestigationQueueItem[];
+  page: PageInfo;
+  summary: QueueSummary;
+}
+
+export interface StatusUpdateRequest {
+  analyst_status: AnalystStatus;
+  analyst_notes?: string | null;
+}
+
+export interface StatusUpdateResponse {
+  schema_version: string;
+  item_id: string;
+  analyst_status: AnalystStatus;
+  analyst_notes: string | null;
+  reviewed_at: string;
+}
+
+export interface BulkStatusUpdateRequest {
+  item_ids: string[];
+  analyst_status: AnalystStatus;
+  analyst_notes?: string | null;
+}
+
+export interface BulkStatusUpdateResponse {
+  schema_version: string;
+  updated: string[];
+  failed: string[];
+}
+
 // ─── API Error ──────────────────────────────────────────────────────────────
 
 export class ApiError extends Error {
@@ -1588,6 +1667,36 @@ export const api = {
   // ── Merge & Deploy (LoRA → GGUF → Ollama) ──
   exportModel(): Promise<any> { return post<any>("/training/export"); },
   getExportStatus(): Promise<ExportStatus> { return get<ExportStatus>("/training/export/status"); },
+
+  // ── Investigation Queue ──
+  getInvestigationQueue(jobId: string, params?: {
+    status?: AnalystStatus; source?: QueueItemSource; severity?: string;
+    q?: string; offset?: number; limit?: number;
+    host?: string; mitre_id?: string; has_corroboration?: boolean; reviewed?: boolean;
+  }): Promise<InvestigationQueueResponse> {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    if (params?.source) qs.set("source", params.source);
+    if (params?.severity) qs.set("severity", params.severity);
+    if (params?.q) qs.set("q", params.q);
+    if (params?.offset != null) qs.set("offset", String(params.offset));
+    if (params?.limit != null) qs.set("limit", String(params.limit));
+    if (params?.host) qs.set("host", params.host);
+    if (params?.mitre_id) qs.set("mitre_id", params.mitre_id);
+    if (params?.has_corroboration != null) qs.set("has_corroboration", String(params.has_corroboration));
+    if (params?.reviewed != null) qs.set("reviewed", String(params.reviewed));
+    const q = qs.toString();
+    return get<InvestigationQueueResponse>(`/jobs/${jobId}/investigation-queue${q ? `?${q}` : ""}`);
+  },
+  getEvidenceBundle(jobId: string, itemId: string): Promise<EvidenceBundleResponse> {
+    return get<EvidenceBundleResponse>(`/jobs/${jobId}/investigation-queue/${encodeURIComponent(itemId)}/evidence-bundle`);
+  },
+  updateQueueItemStatus(jobId: string, itemId: string, body: StatusUpdateRequest): Promise<StatusUpdateResponse> {
+    return patch<StatusUpdateResponse>(`/jobs/${jobId}/investigation-queue/${encodeURIComponent(itemId)}/status`, body);
+  },
+  bulkUpdateQueueStatus(jobId: string, body: BulkStatusUpdateRequest): Promise<BulkStatusUpdateResponse> {
+    return post<BulkStatusUpdateResponse>(`/jobs/${jobId}/investigation-queue/bulk-status`, body);
+  },
 };
 
 // ═══════════════════════════════════════════════════════════════════════════

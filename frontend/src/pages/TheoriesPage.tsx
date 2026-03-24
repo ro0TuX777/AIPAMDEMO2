@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from "react";
-import { useParams, Link } from "react-router-dom";
+import React, { useState, useMemo, useEffect, useRef } from "react";
+import { useParams, Link, useLocation } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   api,
@@ -193,10 +193,19 @@ function RelatedSliceLinks({ theory, slices, jobId }: { theory: TheoryItem; slic
 }
 
 // 3️⃣ + 5️⃣ Collapsible theory card with LLM explain
-function TheoryCard({ theory, jobId, slices, defaultExpanded }: {
-  theory: TheoryItem; jobId: string; slices: SliceItem[]; defaultExpanded: boolean;
+function TheoryCard({ theory, jobId, slices, defaultExpanded, highlightId }: {
+  theory: TheoryItem; jobId: string; slices: SliceItem[]; defaultExpanded: boolean; highlightId?: string | null;
 }) {
-  const [expanded, setExpanded] = useState(defaultExpanded);
+  const cardRef = useRef<HTMLDivElement>(null);
+  const isHighlighted = highlightId === theory.theory_id;
+  const [expanded, setExpanded] = useState(defaultExpanded || isHighlighted);
+
+  useEffect(() => {
+    if (isHighlighted && cardRef.current) {
+      cardRef.current.scrollIntoView({ behavior: "smooth", block: "center" });
+      setExpanded(true);
+    }
+  }, [isHighlighted]);
   const { addToast } = useToast();
   const queryClient = useQueryClient();
 
@@ -214,7 +223,7 @@ function TheoryCard({ theory, jobId, slices, defaultExpanded }: {
   const mitre = MITRE_MAP[theory.hypothesis_type];
 
   return (
-    <div className="bg-slate-900 border border-slate-700 rounded-lg hover:border-slate-500 transition-colors">
+    <div ref={cardRef} id={`theory-${theory.theory_id}`} className={`bg-slate-900 border rounded-lg hover:border-slate-500 transition-colors ${isHighlighted ? "border-amber-500 ring-1 ring-amber-500/30" : "border-slate-700"}`}>
       {/* Compact header — always visible */}
       <button className="w-full text-left p-4 flex items-start justify-between gap-3"
         onClick={() => setExpanded(e => !e)}>
@@ -297,8 +306,15 @@ function TheoryCard({ theory, jobId, slices, defaultExpanded }: {
 
 export const TheoriesPage: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
+  const location = useLocation();
   const queryClient = useQueryClient();
   const { activeHelpField, setActiveHelpField, toggleHelp } = usePageHelp();
+
+  // Extract theory ID from hash fragment (e.g. #theory-abc123)
+  const highlightId = useMemo(() => {
+    const h = location.hash.replace(/^#theory-/, "");
+    return h && h !== location.hash ? h : null;
+  }, [location.hash]);
   const { addToast } = useToast();
 
   // 4️⃣ Scope toggle: job vs host
@@ -451,7 +467,7 @@ export const TheoriesPage: React.FC = () => {
             <div className="space-y-3">
               {theories.map((t, i) => (
                 <TheoryCard key={t.theory_id} theory={t} jobId={jobId!} slices={slices}
-                  defaultExpanded={i < 2} />
+                  defaultExpanded={i < 2} highlightId={highlightId} />
               ))}
             </div>
           </>

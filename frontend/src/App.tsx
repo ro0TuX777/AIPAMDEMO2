@@ -22,6 +22,7 @@ import { RulesManagementPage } from "./pages/RulesManagementPage";
 import { TheoriesPage } from "./pages/TheoriesPage";
 import { SlicesPage } from "./pages/SlicesPage";
 import { AnnotationsPage } from "./pages/AnnotationsPage";
+import { InvestigationQueuePage } from "./pages/InvestigationQueuePage";
 import { GlobalHostsPage } from "./pages/GlobalHostsPage";
 import { GlobalHostDetailPage } from "./pages/GlobalHostDetailPage";
 import { ModelSetupModal } from "./components/ModelSetupModal";
@@ -136,6 +137,7 @@ export const App: React.FC = () => {
           <Route path="/jobs/:jobId" element={<JobDetailPage />} />
 
           {/* Job sub-resources */}
+          <Route path="/jobs/:jobId/investigation" element={<InvestigationQueuePage />} />
           <Route path="/jobs/:jobId/theories" element={<TheoriesPage />} />
           <Route path="/jobs/:jobId/slices" element={<SlicesPage />} />
           <Route path="/jobs/:jobId/annotations" element={<AnnotationsPage />} />
