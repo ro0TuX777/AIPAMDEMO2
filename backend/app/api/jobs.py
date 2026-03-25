@@ -14,6 +14,8 @@ GET  /jobs/{id}/timeline       – timeline events
 GET  /jobs/{id}/iocs           – IOC list
 GET  /jobs/{id}/events         – SSE stream
 GET  /jobs/{id}/partial-results – early partial pipeline results
+POST /jobs/{id}/arkime/import  – queue PCAPs for Arkime import
+GET  /jobs/{id}/arkime/status  – Arkime import status
 """
 
 import asyncio
@@ -70,6 +72,7 @@ from backend.app.schemas.job import (
     SensorProvenance,
     SensorStats,
 )
+from backend.app.schemas.arkime import ArkimeImportResponse, ArkimeStatusResponse
 from backend.app.schemas.system import (
     BatchJobsRequest,
     BatchJobsResponse,
@@ -927,12 +930,12 @@ async def job_graph(
             if ip not in seen_ips:
                 nodes.append(GraphNode(id=ip, label=ip, type="external"))
                 seen_ips.add(ip)
-        
+
         edges.append(GraphEdge(source=src, target=dst, type="connection"))
 
     # 3. Add alerts as weighted edges or highlight existing
     # For now, let's just use connection data for topology
-    
+
     return JobGraphResponse(nodes=nodes, edges=edges)
 
 
@@ -1182,4 +1185,116 @@ async def export_job_package(
         _create_zip_generator(),
         media_type="application/zip",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
+    )
+
+
+
+# ---------- POST /jobs/{jobId}/arkime/import ----------
+
+@router.post("/jobs/{job_id}/arkime/import", response_model=ArkimeImportResponse)
+async def arkime_import(
+    job_id: str,
+    response: Response,
+    request_id: str = Depends(get_request_id),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+):
+    """Queue the job's PCAPs for import into Arkime.
+
+    Writes a manifest for each PCAP to the shared import-queue volume so the
+    ``arkime-importer`` sidecar picks them up asynchronously.
+    """
+    job = _require_job(db, job_id)
+    response.headers["X-Request-Id"] = request_id
+
+    from backend.app.connectors import ArkimeConnector
+    connector = ArkimeConnector()
+
+    if not connector.enabled:
+        return ArkimeImportResponse(
+            job_id=job_id,
+            enabled=False,
+            import_status="not_imported",
+            message="Arkime integration is not enabled.",
+        )
+
+    if not connector.import_enabled:
+        return ArkimeImportResponse(
+            job_id=job_id,
+            enabled=True,
+            import_status="not_imported",
+            message="Arkime import is disabled in settings.",
+        )
+
+    job_dir = settings.aipam_job_root / job_id
+    if not job_dir.exists():
+        raise HTTPException(status_code=404, detail="Job directory not found on disk")
+
+    # Collect PCAP files from the job's input directory
+    input_dir = job_dir / "input"
+    pcap_paths: list[Path] = []
+    if input_dir.exists():
+        for ext in ("*.pcap", "*.pcapng", "*.cap"):
+            pcap_paths.extend(input_dir.glob(ext))
+
+    if not pcap_paths:
+        return ArkimeImportResponse(
+            job_id=job_id,
+            enabled=True,
+            import_status="not_imported",
+            message="No PCAP files found in job input directory.",
+        )
+
+    # Check if already imported/queued
+    current_status = connector.get_import_status(job_dir)
+    if current_status.get("status") in ("queued", "running", "imported"):
+        return ArkimeImportResponse(
+            job_id=job_id,
+            enabled=True,
+            import_status=current_status["status"],
+            message=f"Import already {current_status['status']}.",
+        )
+
+    state = connector.queue_import(job_id, pcap_paths, job_dir)
+    return ArkimeImportResponse(
+        job_id=job_id,
+        enabled=True,
+        import_status=state,
+        message=f"Queued {len(pcap_paths)} PCAP(s) for Arkime import.",
+    )
+
+
+# ---------- GET /jobs/{jobId}/arkime/status ----------
+
+@router.get("/jobs/{job_id}/arkime/status", response_model=ArkimeStatusResponse)
+async def arkime_status(
+    job_id: str,
+    response: Response,
+    request_id: str = Depends(get_request_id),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+):
+    """Return the current Arkime import status for a job."""
+    _require_job(db, job_id)
+    response.headers["X-Request-Id"] = request_id
+
+    from backend.app.connectors import ArkimeConnector
+    connector = ArkimeConnector()
+
+    if not connector.enabled:
+        return ArkimeStatusResponse(
+            job_id=job_id,
+            enabled=False,
+            message="Arkime integration is not enabled.",
+        )
+
+    job_dir = settings.aipam_job_root / job_id
+    status_data = connector.get_import_status(job_dir)
+
+    return ArkimeStatusResponse(
+        job_id=job_id,
+        enabled=True,
+        import_status=status_data.get("status", "not_imported"),
+        imported_at=status_data.get("imported_at"),
+        pcap_count=status_data.get("pcap_count", 0),
     )

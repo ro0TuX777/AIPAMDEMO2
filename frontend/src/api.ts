@@ -814,6 +814,38 @@ export interface ProofExportResponse {
   filename: string;
 }
 
+// ─── Arkime ─────────────────────────────────────────────────────────────────
+
+export type ArkimeImportState = "not_imported" | "queued" | "running" | "imported" | "failed";
+export type ArkimePivotBasis = "community_id" | "five_tuple" | "none";
+
+export interface ArkimeImportResponse {
+  schema_version: string;
+  job_id: string;
+  enabled: boolean;
+  import_status: ArkimeImportState;
+  message?: string | null;
+}
+
+export interface ArkimeStatusResponse {
+  schema_version: string;
+  job_id: string;
+  enabled: boolean;
+  import_status: ArkimeImportState;
+  imported_at?: string | null;
+  pcap_count: number;
+  message?: string | null;
+}
+
+export interface ArkimePivotResponse {
+  schema_version: string;
+  enabled: boolean;
+  url?: string | null;
+  basis: ArkimePivotBasis;
+  import_status: ArkimeImportState;
+  message?: string | null;
+}
+
 // ─── Timeline ───────────────────────────────────────────────────────────────
 
 export interface TimelineEntityFields {
@@ -1826,6 +1858,20 @@ export const api = {
   },
   getRelatedJobs(jobId: string): Promise<RelatedJobsResponse> {
     return get<RelatedJobsResponse>(`/jobs/${jobId}/related-jobs`);
+  },
+
+  // ── Arkime ──────────────────────────────────────────────────────────────
+  triggerArkimeImport(jobId: string): Promise<ArkimeImportResponse> {
+    return post<ArkimeImportResponse>(`/jobs/${jobId}/arkime/import`);
+  },
+  getArkimeStatus(jobId: string): Promise<ArkimeStatusResponse> {
+    return get<ArkimeStatusResponse>(`/jobs/${jobId}/arkime/status`);
+  },
+  getAlertArkimeLink(jobId: string, alertId: string): Promise<ArkimePivotResponse> {
+    return get<ArkimePivotResponse>(`/jobs/${jobId}/alerts/${alertId}/arkime-link`);
+  },
+  getFindingArkimeLink(jobId: string, findingId: string): Promise<ArkimePivotResponse> {
+    return get<ArkimePivotResponse>(`/jobs/${jobId}/findings/${findingId}/arkime-link`);
   },
 };
 

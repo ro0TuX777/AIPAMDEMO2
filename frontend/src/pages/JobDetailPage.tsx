@@ -12,6 +12,7 @@ import {
   type SseSensorFindingData,
   type SseEarlyAlertData,
   type PartialData,
+  type ArkimeImportState,
 } from "../api";
 import { useJobEvents } from "../hooks/useJobEvents";
 import { useToast, type ToastSeverity } from "../components/ToastProvider";
@@ -158,6 +159,28 @@ export const JobDetailPage: React.FC = () => {
     onError: () => addToast({ severity: "high", title: "Failed to re-run job" }),
   });
 
+  // ── Arkime import ──
+  const arkimeStatusQ = useQuery({
+    queryKey: ["job", jobId, "arkime-status"],
+    queryFn: () => api.getArkimeStatus(jobId!),
+    enabled: !!jobId && isTerminal(job?.status),
+    refetchInterval: (query) => {
+      const st = query.state.data?.import_status;
+      return st === "queued" || st === "running" ? 5000 : false;
+    },
+  });
+  const arkimeStatus: ArkimeImportState = arkimeStatusQ.data?.import_status ?? "not_imported";
+  const arkimeEnabled = arkimeStatusQ.data?.enabled ?? false;
+
+  const arkimeImportMut = useMutation({
+    mutationFn: () => api.triggerArkimeImport(jobId!),
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["job", jobId, "arkime-status"] });
+      addToast({ severity: "info", title: "Arkime import queued", body: data.message ?? "PCAPs queued for Arkime ingestion." });
+    },
+    onError: () => addToast({ severity: "high", title: "Failed to queue Arkime import" }),
+  });
+
   // ── Add After PCAP + Re-analyze flow ──
   const handleAddAfterPcap = async (file: File) => {
     if (!jobId) return;
@@ -275,6 +298,32 @@ export const JobDetailPage: React.FC = () => {
                 </svg>
                 Add After PCAP
               </button>
+              {arkimeEnabled && (
+                <button
+                  onClick={() => arkimeImportMut.mutate()}
+                  disabled={arkimeImportMut.isPending || arkimeStatus === "queued" || arkimeStatus === "running" || arkimeStatus === "imported"}
+                  className={`px-3 py-1.5 text-sm rounded border flex items-center gap-1.5 disabled:opacity-50 ${
+                    arkimeStatus === "imported"
+                      ? "border-emerald-500/40 text-emerald-400 cursor-default"
+                      : arkimeStatus === "queued" || arkimeStatus === "running"
+                        ? "border-violet-500/40 text-violet-400 animate-pulse"
+                        : "border-violet-500/40 text-violet-400 hover:bg-violet-500/10"
+                  }`}
+                  title={
+                    arkimeStatus === "imported" ? "PCAPs already imported into Arkime"
+                      : arkimeStatus === "queued" || arkimeStatus === "running" ? "Import in progress…"
+                        : "Send PCAPs to Arkime for packet-level analysis"
+                  }
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                  </svg>
+                  {arkimeStatus === "imported" ? "Imported to Arkime ✓"
+                    : arkimeStatus === "queued" || arkimeStatus === "running" ? "Importing…"
+                      : arkimeImportMut.isPending ? "Queuing…"
+                        : "Import to Arkime"}
+                </button>
+              )}
               <button onClick={() => { if (confirm("Delete this job? This cannot be undone.")) deleteMut.mutate(); }}
                 disabled={deleteMut.isPending}
                 className="px-3 py-1.5 text-sm rounded border border-red-500/40 text-red-400 hover:bg-red-500/10 disabled:opacity-50">

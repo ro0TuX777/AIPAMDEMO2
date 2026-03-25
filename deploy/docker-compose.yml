@@ -7,12 +7,18 @@
 #   cp .env.example .env   # edit with your AIPAM_API_TOKEN
 #   docker compose -f deploy/docker-compose.yml up -d
 #
+# With Arkime (optional packet investigation):
+#   docker compose -f deploy/docker-compose.yml --profile arkime up -d
+#
 # Volumes:
-#   aipam-data    — SQLite DB + logs
-#   aipam-jobs    — Job folders (PCAPs, sensor outputs, artifacts)
-#   aipam-uploads — Uploaded PCAPs awaiting validation
-#   ollama-models — Ollama model storage
-#   redis-data    — Celery broker + SSE buffer
+#   aipam-data        — SQLite DB + logs
+#   aipam-jobs        — Job folders (PCAPs, sensor outputs, artifacts)
+#   aipam-uploads     — Uploaded PCAPs awaiting validation
+#   ollama-models     — Ollama model storage
+#   redis-data        — Celery broker + SSE buffer
+#   opensearch-data   — Arkime session metadata (profile: arkime)
+#   arkime-raw        — Arkime-managed PCAP storage (profile: arkime)
+#   arkime-import-queue — PCAP import manifests (profile: arkime)
 
 services:
   # ============================================
@@ -163,6 +169,126 @@ services:
       retries: 3
       start_period: 60s
 
+  # ============================================
+  # OpenSearch (Arkime metadata store)
+  # ============================================
+  opensearch:
+    image: opensearchproject/opensearch:2.18.0
+    container_name: aipam-opensearch
+    profiles: ["arkime"]
+    environment:
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+      - DISABLE_SECURITY_PLUGIN=true
+      - DISABLE_INSTALL_DEMO_CONFIG=true
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - opensearch-data:/usr/share/opensearch/data
+    restart: unless-stopped
+    networks:
+      - aipam-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+      start_period: 45s
+
+  # ============================================
+  # Arkime Initialization (one-shot bootstrap)
+  # ============================================
+  arkime-init:
+    image: ${ARKIME_IMAGE:-ghcr.io/arkime/arkime:v5.5.0}
+    container_name: aipam-arkime-init
+    profiles: ["arkime"]
+    command: >
+      /bin/bash -c "
+        echo 'Waiting for OpenSearch...';
+        until curl -sf http://opensearch:9200/_cluster/health; do sleep 2; done;
+        echo 'Initializing Arkime DB...';
+        /opt/arkime/db/db.pl --insecure http://opensearch:9200 init --ifneeded;
+        echo 'Adding admin user...';
+        /opt/arkime/bin/arkime_add_user.sh admin 'Admin' '${ARKIME_ADMIN_PASSWORD:-changeme}' --admin --insecure || true;
+        echo 'Arkime init complete.';
+      "
+    volumes:
+      - ./arkime/config.ini:/opt/arkime/etc/config.ini:ro
+      - arkime-raw:/opt/arkime/raw
+    depends_on:
+      opensearch:
+        condition: service_healthy
+    networks:
+      - aipam-net
+
+  # ============================================
+  # Arkime Viewer (analyst UI + API)
+  # ============================================
+  arkime-viewer:
+    image: ${ARKIME_IMAGE:-ghcr.io/arkime/arkime:v5.5.0}
+    container_name: aipam-arkime-viewer
+    profiles: ["arkime"]
+    command: /opt/arkime/bin/capture --viewer -c /opt/arkime/etc/config.ini
+    ports:
+      - "${ARKIME_VIEWER_PORT:-8005}:8005"
+    volumes:
+      - ./arkime/config.ini:/opt/arkime/etc/config.ini:ro
+      - arkime-raw:/opt/arkime/raw
+    depends_on:
+      opensearch:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - aipam-net
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:8005 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+
+  # ============================================
+  # Arkime Importer (offline PCAP import)
+  # ============================================
+  arkime-importer:
+    image: ${ARKIME_IMAGE:-ghcr.io/arkime/arkime:v5.5.0}
+    container_name: aipam-arkime-importer
+    profiles: ["arkime"]
+    entrypoint: /bin/bash
+    command: >
+      -c "
+        echo 'Arkime importer ready — watching /import-queue';
+        while true; do
+          for manifest in /import-queue/*.json; do
+            [ -f \"$$manifest\" ] || continue;
+            pcap=$$(python3 -c \"import json,sys; print(json.load(open(sys.argv[1]))['pcap_path'])\" \"$$manifest\" 2>/dev/null);
+            if [ -n \"$$pcap\" ] && [ -f \"$$pcap\" ]; then
+              echo \"Importing $$pcap\";
+              /opt/arkime/bin/capture -c /opt/arkime/etc/config.ini -r \"$$pcap\" --copy 2>&1;
+              mv \"$$manifest\" \"$$manifest.done\";
+            fi;
+          done;
+          sleep 5;
+        done
+      "
+    volumes:
+      - ./arkime/config.ini:/opt/arkime/etc/config.ini:ro
+      - arkime-raw:/opt/arkime/raw
+      - arkime-import-queue:/import-queue
+      - aipam-jobs:/jobs:ro
+    depends_on:
+      opensearch:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - aipam-net
+
 # ============================================
 # Volumes
 # ============================================
@@ -181,8 +307,14 @@ volumes:
     driver: local
   aipam-rules:
     driver: local
-
   redis-data:
+    driver: local
+  # Arkime volumes (used only when arkime profile is active)
+  opensearch-data:
+    driver: local
+  arkime-raw:
+    driver: local
+  arkime-import-queue:
     driver: local
 
 # ============================================

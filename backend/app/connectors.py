@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import json
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, List, Optional
+from typing import Any, Dict, List, Optional
+from urllib.parse import quote
 
 import httpx
 
 from .settings_runtime import EffectiveSettings, get_effective_settings
+
+_logger = logging.getLogger("aipam.connectors")
 
 
 class SecurityOnionConnector:
@@ -151,12 +156,30 @@ class SecurityOnionConnector:
 
 
 class ArkimeConnector:
+    """Connector for Arkime viewer / import operations.
+
+    Supports:
+    - PCAP export from Arkime sessions
+    - Queuing PCAP imports via manifest files
+    - Reading import status from sidecar JSON
+    - Building pivot URLs for community_id or 5-tuple queries
+    """
+
+    # Import status sidecar filename (stored in job directory)
+    _STATUS_FILENAME = "arkime_import_status.json"
+
     def __init__(self, settings: Optional[EffectiveSettings] = None) -> None:
         # Allow explicit injection (tests) or fall back to global effective settings.
         settings = settings or get_effective_settings()
+        self.enabled = settings.arkime_enabled
         self.api_url = settings.arkime_api_url
+        self.public_url = settings.arkime_public_url
         self.username = settings.arkime_api_username
         self.password = settings.arkime_api_password
+        self.import_enabled = settings.arkime_import_enabled
+        self.import_queue_dir = settings.arkime_import_queue_dir
+
+    # ── PCAP export (existing) ────────────────────────────────────────
 
     async def export_pcap(self, flt: str, time_range: Dict[str, str]) -> bytes:
         if not self.api_url:
@@ -169,4 +192,98 @@ class ArkimeConnector:
             resp = await client.get(f"{self.api_url}/api/sessions.pcap", params=params, auth=auth)
             resp.raise_for_status()
             return resp.content
+
+    # ── Import queue ──────────────────────────────────────────────────
+
+    def queue_import(self, job_id: str, pcap_paths: List[Path], job_dir: Path) -> str:
+        """Write an import manifest so the arkime-importer picks up PCAPs.
+
+        Returns the import state written (``queued``).
+        """
+        queue_dir = Path(self.import_queue_dir)
+        queue_dir.mkdir(parents=True, exist_ok=True)
+
+        for pcap_path in pcap_paths:
+            manifest = {
+                "job_id": job_id,
+                "pcap_path": str(pcap_path),
+                "queued_at": datetime.now(timezone.utc).isoformat(),
+            }
+            manifest_file = queue_dir / f"{job_id}_{pcap_path.stem}.json"
+            manifest_file.write_text(json.dumps(manifest, indent=2))
+            _logger.info("Arkime import manifest written: %s", manifest_file)
+
+        # Write sidecar status in job directory
+        self._write_status(job_dir, {
+            "status": "queued",
+            "queued_at": datetime.now(timezone.utc).isoformat(),
+            "pcap_count": len(pcap_paths),
+        })
+        return "queued"
+
+    # ── Import status ─────────────────────────────────────────────────
+
+    def get_import_status(self, job_dir: Path) -> Dict[str, Any]:
+        """Read the Arkime import status sidecar for a job."""
+        status_file = job_dir / self._STATUS_FILENAME
+        if not status_file.exists():
+            return {"status": "not_imported"}
+        try:
+            return json.loads(status_file.read_text())
+        except (json.JSONDecodeError, OSError):
+            return {"status": "not_imported"}
+
+    def _write_status(self, job_dir: Path, data: Dict[str, Any]) -> None:
+        status_file = job_dir / self._STATUS_FILENAME
+        try:
+            status_file.write_text(json.dumps(data, indent=2))
+        except OSError as exc:
+            _logger.warning("Failed to write Arkime status sidecar: %s", exc)
+
+    # ── Pivot URL builder ─────────────────────────────────────────────
+
+    def build_pivot_url(
+        self,
+        *,
+        community_id: Optional[str] = None,
+        src_ip: Optional[str] = None,
+        src_port: Optional[int] = None,
+        dest_ip: Optional[str] = None,
+        dest_port: Optional[int] = None,
+        proto: Optional[str] = None,
+        ts: Optional[str] = None,
+    ) -> tuple[Optional[str], str]:
+        """Build an Arkime viewer search URL.
+
+        Returns ``(url, basis)`` where basis is ``community_id``,
+        ``five_tuple``, or ``none``.
+        """
+        base = (self.public_url or self.api_url or "").rstrip("/")
+        if not base:
+            return None, "none"
+
+        # Primary: community_id
+        if community_id:
+            expr = f"communityId == {quote(community_id)}"
+            return f"{base}/sessions?expression={quote(expr)}", "community_id"
+
+        # Fallback: 5-tuple + bounded time
+        parts: List[str] = []
+        if src_ip:
+            parts.append(f"ip.src == {src_ip}")
+        if dest_ip:
+            parts.append(f"ip.dst == {dest_ip}")
+        if src_port is not None:
+            parts.append(f"port.src == {src_port}")
+        if dest_port is not None:
+            parts.append(f"port.dst == {dest_port}")
+        if proto:
+            parts.append(f"protocols == {proto}")
+
+        if parts:
+            expr = " && ".join(parts)
+            url = f"{base}/sessions?expression={quote(expr)}"
+            return url, "five_tuple"
+
+        return None, "none"
 

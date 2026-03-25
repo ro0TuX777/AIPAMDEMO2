@@ -1,8 +1,9 @@
 """
 Findings endpoints (§3.6).
 
-GET  /jobs/{jobId}/findings                   – list findings
-POST /jobs/{jobId}/findings/{findingId}/explain – grounded explain
+GET  /jobs/{jobId}/findings                              – list findings
+POST /jobs/{jobId}/findings/{findingId}/explain           – grounded explain
+GET  /jobs/{jobId}/findings/{findingId}/arkime-link       – Arkime pivot link
 """
 
 import asyncio
@@ -33,6 +34,7 @@ from backend.app.models.connection import Connection
 from backend.app.models.finding import Finding
 from backend.app.models.host import Host
 from backend.app.models.job import Job
+from backend.app.schemas.arkime import ArkimePivotResponse
 from backend.app.schemas.common import Severity
 from backend.app.schemas.finding import (
     FindingDetailResponse,
@@ -1211,4 +1213,86 @@ async def generate_rule(
         rule_text=result.rule_text,
         finding_id=result.finding_id,
         description=result.description,
+    )
+
+
+# ---------- GET /jobs/{jobId}/findings/{findingId}/arkime-link ----------
+
+@router.get(
+    "/jobs/{job_id}/findings/{finding_id}/arkime-link",
+    response_model=ArkimePivotResponse,
+)
+async def finding_arkime_link(
+    job_id: str,
+    finding_id: str,
+    response: Response,
+    request_id: str = Depends(get_request_id),
+    db: Session = Depends(get_db),
+):
+    """Build an Arkime viewer pivot URL for a specific finding.
+
+    Uses community_id (primary) or falls back to any IP-based evidence
+    the finding carries (extracted from evidence_json).
+    """
+    _require_job(db, job_id)
+    response.headers["X-Request-Id"] = request_id
+
+    finding = db.execute(
+        select(Finding).where(Finding.job_id == job_id, Finding.finding_id == finding_id)
+    ).scalar_one_or_none()
+    if not finding:
+        raise HTTPException(status_code=404, detail="Finding not found")
+
+    from backend.app.connectors import ArkimeConnector
+    connector = ArkimeConnector()
+
+    if not connector.enabled:
+        return ArkimePivotResponse(
+            enabled=False,
+            message="Arkime integration is not enabled.",
+        )
+
+    # Extract pivot fields: community_id is on the model; 5-tuple fields
+    # may live inside evidence_json for findings produced by Suricata/Zeek.
+    evidence = _parse_finding_evidence(finding)
+    if isinstance(evidence, dict):
+        src_ip = evidence.get("src_ip")
+        src_port = evidence.get("src_port")
+        dest_ip = evidence.get("dest_ip") or evidence.get("dst_ip")
+        dest_port = evidence.get("dest_port") or evidence.get("dst_port")
+        proto = evidence.get("proto")
+    else:
+        src_ip = src_port = dest_ip = dest_port = proto = None
+
+    # Coerce port values to int if present
+    try:
+        src_port = int(src_port) if src_port is not None else None
+    except (ValueError, TypeError):
+        src_port = None
+    try:
+        dest_port = int(dest_port) if dest_port is not None else None
+    except (ValueError, TypeError):
+        dest_port = None
+
+    url, basis = connector.build_pivot_url(
+        community_id=finding.community_id,
+        src_ip=src_ip,
+        src_port=src_port,
+        dest_ip=dest_ip,
+        dest_port=dest_port,
+        proto=proto,
+    )
+
+    # Get import status for the job
+    from backend.app.config_v2 import get_settings as _get_settings
+    settings = _get_settings()
+    job_dir = settings.aipam_job_root / job_id
+    status_data = connector.get_import_status(job_dir)
+
+    return ArkimePivotResponse(
+        enabled=True,
+        url=url,
+        basis=basis,
+        import_status=status_data.get("status", "not_imported"),
+        message="PCAPs must be imported into Arkime before pivot links will return sessions." if status_data.get("status") == "not_imported" else None,
     )

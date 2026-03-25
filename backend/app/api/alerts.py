@@ -1,8 +1,9 @@
 """
 Alerts endpoints.
 
-GET  /jobs/{jobId}/alerts              – list all alerts for a job
-GET  /jobs/{jobId}/alerts/{alertId}    – get a single alert with related data
+GET  /jobs/{jobId}/alerts                       – list all alerts for a job
+GET  /jobs/{jobId}/alerts/{alertId}             – get a single alert with related data
+GET  /jobs/{jobId}/alerts/{alertId}/arkime-link – Arkime pivot link for an alert
 """
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -16,6 +17,7 @@ from backend.app.models.connection import Connection
 from backend.app.models.host import Host
 from backend.app.models.job import Job
 from backend.app.schemas.alert import AlertItem, AlertListResponse
+from backend.app.schemas.arkime import ArkimePivotResponse
 from backend.app.schemas.common import Severity
 
 router = APIRouter(tags=["Alerts"], dependencies=[Depends(verify_token)])
@@ -140,3 +142,60 @@ async def get_alert(
         "related_connections": related_connections,
     }
 
+
+
+# ---------- GET /jobs/{jobId}/alerts/{alertId}/arkime-link ----------
+
+@router.get("/jobs/{job_id}/alerts/{alert_id}/arkime-link", response_model=ArkimePivotResponse)
+async def alert_arkime_link(
+    job_id: str,
+    alert_id: str,
+    response: Response,
+    request_id: str = Depends(get_request_id),
+    db: Session = Depends(get_db),
+):
+    """Build an Arkime viewer pivot URL for a specific alert.
+
+    Uses community_id (primary) or falls back to 5-tuple correlation.
+    """
+    _require_job(db, job_id)
+    response.headers["X-Request-Id"] = request_id
+
+    alert = db.execute(
+        select(Alert).where(Alert.job_id == job_id, Alert.alert_id == alert_id)
+    ).scalar_one_or_none()
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
+
+    from backend.app.connectors import ArkimeConnector
+    connector = ArkimeConnector()
+
+    if not connector.enabled:
+        return ArkimePivotResponse(
+            enabled=False,
+            message="Arkime integration is not enabled.",
+        )
+
+    url, basis = connector.build_pivot_url(
+        community_id=alert.community_id,
+        src_ip=alert.src_ip,
+        src_port=alert.src_port,
+        dest_ip=alert.dest_ip,
+        dest_port=alert.dest_port,
+        proto=alert.proto,
+        ts=alert.ts,
+    )
+
+    # Get import status for the job
+    from backend.app.config_v2 import get_settings as _get_settings
+    settings = _get_settings()
+    job_dir = settings.aipam_job_root / job_id
+    status_data = connector.get_import_status(job_dir)
+
+    return ArkimePivotResponse(
+        enabled=True,
+        url=url,
+        basis=basis,
+        import_status=status_data.get("status", "not_imported"),
+        message="PCAPs must be imported into Arkime before pivot links will return sessions." if status_data.get("status") == "not_imported" else None,
+    )

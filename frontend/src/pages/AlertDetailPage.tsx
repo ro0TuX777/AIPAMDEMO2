@@ -1,12 +1,57 @@
-import React from "react";
+import React, { useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
-import { api, type AlertRelatedHost, type AlertRelatedConnection } from "../api";
+import { api, type AlertRelatedHost, type AlertRelatedConnection, type ArkimePivotResponse } from "../api";
 import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
 
 const SEV_COLORS: Record<string, string> = {
   critical: "text-red-500", high: "text-orange-400", medium: "text-amber-400",
   low: "text-blue-400", info: "text-slate-400",
+};
+
+const ArkimePivotButton: React.FC<{ jobId: string; alertId: string }> = ({ jobId, alertId }) => {
+  const [pivot, setPivot] = useState<ArkimePivotResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const handleClick = async () => {
+    if (pivot?.url) {
+      window.open(pivot.url, "_blank", "noopener");
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await api.getAlertArkimeLink(jobId, alertId);
+      setPivot(res);
+      if (res.url) {
+        window.open(res.url, "_blank", "noopener");
+      }
+    } catch {
+      setPivot({ schema_version: "", enabled: false, basis: "none", import_status: "not_imported", message: "Failed to get Arkime link" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const label = loading ? "Loading…" : pivot && !pivot.url ? (pivot.message ?? "No pivot available") : "Open in Arkime";
+  const disabled = loading || (pivot !== null && !pivot.url);
+
+  return (
+    <button
+      onClick={handleClick}
+      disabled={disabled}
+      className={`flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg transition-colors border ${
+        disabled
+          ? "bg-slate-700/30 border-slate-600/30 text-slate-500 cursor-not-allowed"
+          : "bg-violet-600/20 hover:bg-violet-600/30 border-violet-500/30 text-violet-400 hover:text-violet-300"
+      }`}
+      title={pivot?.message ?? "Pivot to packet data in Arkime"}
+    >
+      <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+      </svg>
+      {label}
+    </button>
+  );
 };
 
 export const AlertDetailPage: React.FC = () => {
@@ -48,6 +93,7 @@ export const AlertDetailPage: React.FC = () => {
           >
             Ask AI
           </button>
+          <ArkimePivotButton jobId={jobId!} alertId={alertId!} />
         </div>
         <div className="flex gap-4 mt-2 text-sm">
           <span className={`font-medium ${SEV_COLORS[alert.severity] ?? "text-slate-400"}`}>

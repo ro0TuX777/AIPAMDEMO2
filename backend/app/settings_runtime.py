@@ -42,9 +42,17 @@ class EffectiveSettings:
     security_onion_api_token: Optional[str]
 
     # Arkime
+    arkime_enabled: bool
     arkime_api_url: Optional[str]
+    arkime_public_url: Optional[str]
     arkime_api_username: Optional[str]
     arkime_api_password: Optional[str]
+    arkime_opensearch_url: str
+    arkime_node_name: str
+    arkime_import_enabled: bool
+    arkime_auto_import: bool
+    arkime_raw_dir: Path
+    arkime_import_queue_dir: Path
     
     # RAG / Embeddings (Phase 1 Chat)
     embedding_model_name: str
@@ -121,9 +129,17 @@ def get_effective_settings() -> EffectiveSettings:
     )
 
     # Arkime
+    ark_enabled = (raw.get("arkime_enabled") or os.getenv("ARKIME_ENABLED", "false")).lower() in ("true", "1", "yes")
     ark_url = raw.get("arkime_api_url") or os.getenv("ARKIME_API_URL")
+    ark_public_url = raw.get("arkime_public_url") or os.getenv("ARKIME_PUBLIC_URL")
     ark_user = raw.get("arkime_api_username") or os.getenv("ARKIME_API_USERNAME")
     ark_pass = raw.get("arkime_api_password") or os.getenv("ARKIME_API_PASSWORD")
+    ark_os_url = raw.get("arkime_opensearch_url") or os.getenv("ARKIME_OPENSEARCH_URL", "http://opensearch:9200")
+    ark_node = raw.get("arkime_node_name") or os.getenv("ARKIME_NODE_NAME", "aipam-node")
+    ark_import_enabled = (raw.get("arkime_import_enabled") or os.getenv("ARKIME_IMPORT_ENABLED", "true")).lower() in ("true", "1", "yes")
+    ark_auto_import = (raw.get("arkime_auto_import") or os.getenv("ARKIME_AUTO_IMPORT", "false")).lower() in ("true", "1", "yes")
+    ark_raw_dir = raw.get("arkime_raw_dir") or os.getenv("ARKIME_RAW_DIR", "/opt/arkime/raw")
+    ark_import_queue_dir = raw.get("arkime_import_queue_dir") or os.getenv("ARKIME_IMPORT_QUEUE_DIR", "/import-queue")
 
     # RAG / Embeddings
     embedding_model_name = raw.get("embedding_model_name") or os.getenv(
@@ -151,9 +167,17 @@ def get_effective_settings() -> EffectiveSettings:
         security_onion_suricata_log_path=Path(so_suricata),
         security_onion_api_url=so_api_url,
         security_onion_api_token=so_api_token,
+        arkime_enabled=ark_enabled,
         arkime_api_url=ark_url,
+        arkime_public_url=ark_public_url,
         arkime_api_username=ark_user,
         arkime_api_password=ark_pass,
+        arkime_opensearch_url=ark_os_url,
+        arkime_node_name=ark_node,
+        arkime_import_enabled=ark_import_enabled,
+        arkime_auto_import=ark_auto_import,
+        arkime_raw_dir=Path(ark_raw_dir),
+        arkime_import_queue_dir=Path(ark_import_queue_dir),
         embedding_model_name=embedding_model_name,
         embedding_model_path=embedding_model_path,
         vector_store_path=vector_store_path,

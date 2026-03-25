@@ -7,6 +7,7 @@ Loaded once at startup; injected via FastAPI dependency or direct import.
 
 from functools import lru_cache
 from pathlib import Path
+from typing import Optional
 
 from pydantic_settings import BaseSettings
 
@@ -46,6 +47,19 @@ class Settings(BaseSettings):
     aipam_sensor_config_dir: Path = Path("/opt/aipam/sensor-config")
     aipam_suricata_rules_dir: Path = Path("/opt/aipam/rules/suricata")
     aipam_yara_rules_dir: Path = Path("/opt/aipam/rules/yara")
+
+    # --- Arkime (optional — enabled via Compose profile) ---
+    arkime_enabled: bool = False
+    arkime_api_url: Optional[str] = None          # Internal: http://arkime-viewer:8005
+    arkime_public_url: Optional[str] = None        # Analyst browser: http://<host>:8005
+    arkime_api_username: Optional[str] = None
+    arkime_api_password: Optional[str] = None
+    arkime_opensearch_url: str = "http://opensearch:9200"
+    arkime_node_name: str = "aipam-node"
+    arkime_import_enabled: bool = True
+    arkime_auto_import: bool = False
+    arkime_raw_dir: Path = Path("/opt/arkime/raw")
+    arkime_import_queue_dir: Path = Path("/import-queue")
 
     model_config = {
         "env_file": ".env",

@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-import { api, type AnalystStatus, type FindingExplainFeedback, type RuleType, type GeneratedRuleResponse } from "../api";
+import { api, type AnalystStatus, type FindingExplainFeedback, type RuleType, type GeneratedRuleResponse, type ArkimePivotResponse } from "../api";
 import { ReviewNotesPanel } from "../components/ReviewNotesPanel";
 import { ConfidenceBadge, ExplainEvidenceList, ExplainSectionBlock } from "../components/findings/ExplainShared";
 import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
@@ -136,6 +136,53 @@ const RuleGenerationPanel: React.FC<{ jobId: string; findingId: string }> = ({ j
         </p>
       )}
     </section>
+  );
+};
+
+const FindingArkimePivotButton: React.FC<{ jobId: string; findingId: string }> = ({ jobId, findingId }) => {
+  const [pivot, setPivot] = useState<ArkimePivotResponse | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  const handleClick = async () => {
+    if (pivot?.url) {
+      window.open(pivot.url, "_blank", "noopener");
+      return;
+    }
+    setLoading(true);
+    try {
+      const res = await api.getFindingArkimeLink(jobId, findingId);
+      setPivot(res);
+      if (res.url) {
+        window.open(res.url, "_blank", "noopener");
+      }
+    } catch {
+      setPivot({ schema_version: "", enabled: false, basis: "none", import_status: "not_imported", message: "Failed to get Arkime link" });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const label = loading ? "Loading…" : pivot && !pivot.url ? (pivot.message ?? "No pivot available") : "Open in Arkime";
+  const disabled = loading || (pivot !== null && !pivot.url);
+
+  return (
+    <button
+      onClick={handleClick}
+      disabled={disabled}
+      className={`rounded-lg border px-3 py-2 text-sm transition-colors ${
+        disabled
+          ? "bg-slate-700/30 border-slate-600/30 text-slate-500 cursor-not-allowed"
+          : "bg-violet-600/20 hover:bg-violet-600/30 border-violet-500/30 text-violet-400 hover:text-violet-300"
+      }`}
+      title={pivot?.message ?? "Pivot to packet data in Arkime"}
+    >
+      <span className="flex items-center gap-1.5">
+        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
+        </svg>
+        {label}
+      </span>
+    </button>
   );
 };
 
@@ -348,6 +395,7 @@ export const FindingDetailPage: React.FC = () => {
             >
               Ask AI
             </button>
+            <FindingArkimePivotButton jobId={jobId!} findingId={findingId!} />
           </div>
         </div>
 
