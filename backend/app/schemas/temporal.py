@@ -40,6 +40,38 @@ class SeverityCounts(BaseModel):
     info: int = 0
 
 
+class PhaseSnapshot(BaseModel):
+    host_count: int = 0
+    alert_count: int = 0
+    finding_count: int = 0
+    connection_count: int = 0
+    ioc_count: int = 0
+
+
+class PhaseSummary(BaseModel):
+    before: PhaseSnapshot = Field(default_factory=PhaseSnapshot)
+    after: PhaseSnapshot = Field(default_factory=PhaseSnapshot)
+
+
+class SeverityShiftItem(BaseModel):
+    before: int = 0
+    after: int = 0
+    delta: int = 0
+
+
+class SeverityShift(BaseModel):
+    critical: SeverityShiftItem = Field(default_factory=SeverityShiftItem)
+    high: SeverityShiftItem = Field(default_factory=SeverityShiftItem)
+    medium: SeverityShiftItem = Field(default_factory=SeverityShiftItem)
+    low: SeverityShiftItem = Field(default_factory=SeverityShiftItem)
+
+
+class ContainmentIndicators(BaseModel):
+    removed_c2_connections: int = 0
+    reduced_alert_categories: list[str] = Field(default_factory=list)
+    new_defensive_activity: list[str] = Field(default_factory=list)
+
+
 class TemporalSummary(BaseModel):
     hosts: CountDelta = Field(default_factory=CountDelta)
     alerts: AlertCountDelta = Field(default_factory=AlertCountDelta)
@@ -107,6 +139,9 @@ class DnsDiffs(BaseModel):
 class TemporalDeltaResponse(BaseModel):
     schema_version: str = SCHEMA_VERSION
     summary: TemporalSummary = Field(default_factory=TemporalSummary)
+    phase_summary: PhaseSummary = Field(default_factory=PhaseSummary)
+    severity_shift: SeverityShift = Field(default_factory=SeverityShift)
+    containment_indicators: ContainmentIndicators = Field(default_factory=ContainmentIndicators)
     hosts: HostDiffs = Field(default_factory=HostDiffs)
     alerts: list[AlertDiffItem] = Field(default_factory=list)
     findings: list[FindingDiffItem] = Field(default_factory=list)
@@ -134,4 +169,10 @@ class TemporalFlowsResponse(BaseModel):
 class TemporalNarrativeResponse(BaseModel):
     schema_version: str = SCHEMA_VERSION
     narrative_markdown: str = ""
+
+
+class TemporalExportResponse(BaseModel):
+    schema_version: str = SCHEMA_VERSION
+    content: str = ""
+    filename: str = ""
 

@@ -1,5 +1,6 @@
 import React, { useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
+import { JobSubPageNav } from "../components/JobSubPageNav";
 import { useQuery } from "@tanstack/react-query";
 import { api, type IocItem, type IocType } from "../api";
 import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
@@ -30,6 +31,7 @@ export const IocsListPage: React.FC = () => {
   const iocs = data?.items ?? [];
 
   return (
+    <>
     <div className="flex gap-6 items-start">
     <div className="space-y-4 flex-1 min-w-0">
       <nav className="text-sm text-slate-400">
@@ -118,6 +120,8 @@ export const IocsListPage: React.FC = () => {
     </div>
     <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
     </div>
+    <JobSubPageNav jobId={jobId!} currentPath="iocs" />
+    </>
   );
 };
 

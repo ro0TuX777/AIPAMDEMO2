@@ -29,9 +29,10 @@ class Alert(Base):
     pcap_label = Column(String, nullable=True)  # which PCAP generated this alert
 
     # Investigation Queue: analyst review status
-    analyst_status = Column(String, nullable=True, default="unreviewed")  # unreviewed, confirmed, false_positive, deferred
+    analyst_status = Column(String, nullable=True, default="unreviewed")  # unreviewed, confirmed, false_positive, needs_review, deferred
     analyst_notes = Column(Text, nullable=True)
     reviewed_at = Column(String, nullable=True)  # ISO-8601 timestamp
+    reviewer_id = Column(String, nullable=True)  # analyst identifier who last changed status
 
     __table_args__ = (
         UniqueConstraint("job_id", "alert_id"),

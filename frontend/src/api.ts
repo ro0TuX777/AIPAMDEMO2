@@ -470,6 +470,11 @@ export interface FindingItem {
   evidence?: Record<string, unknown>;
   feedback?: "confirmed" | "false_positive" | "false_negative" | null;
   confidence: number;
+  // HITL review state (Sprint 4)
+  analyst_status?: string | null;
+  analyst_notes?: string | null;
+  reviewed_at?: string | null;
+  reviewer_id?: string | null;
 }
 
 export type FindingExplainFeedback = "useful" | "not_useful";
@@ -742,6 +747,8 @@ export interface ReportDetailResponse {
 
 // ─── Proofs ─────────────────────────────────────────────────────────────────
 
+export type ProofMode = "soc_handoff" | "ir_technical" | "executive_summary";
+
 export interface ProofItem {
   proof_id: string;
   job_id: string;
@@ -750,6 +757,7 @@ export interface ProofItem {
   status: string;
   severity: string;
   confidence: number;
+  mode: ProofMode;
   narrative_markdown: string | null;
   item_count: number;
   created_at: string;
@@ -797,6 +805,13 @@ export interface ProofNarrativeResponse {
   schema_version: string;
   proof_id: string;
   narrative_markdown: string;
+  warnings: string[];
+}
+
+export interface ProofExportResponse {
+  schema_version: string;
+  content: string;
+  filename: string;
 }
 
 // ─── Timeline ───────────────────────────────────────────────────────────────
@@ -923,7 +938,8 @@ export interface ExplainTelemetryResponse {
 export type SseEventType =
   | "job.status" | "job.complete" | "stage.status" | "sensor.status"
   | "sensor.log" | "sensor.finding" | "artifact.created"
-  | "quota.hit" | "disk.warning" | "heartbeat" | "reset";
+  | "quota.hit" | "disk.warning" | "heartbeat" | "reset"
+  | "partial_result" | "early_alert";
 
 export interface SseEnvelope<T = unknown> {
   id: number;
@@ -947,6 +963,48 @@ export interface SseQuotaHitData { job_id: string; quota_type: "disk" | "extract
 export interface SseDiskWarningData { usage_pct: number; free_bytes: number; threshold_pct: number; message?: string | null }
 export interface SseHeartbeatData { job_id: string }
 export interface SseResetData { reason: "event_id_expired" }
+export interface SsePartialResultData {
+  job_id: string;
+  stage: string;
+  partial_data: PartialData;
+  completed_stages: string[];
+  current_stage?: string | null;
+}
+export interface SseEarlyAlertData {
+  job_id: string;
+  title: string;
+  severity: Severity;
+  src_ip?: string | null;
+  dst_ip?: string | null;
+}
+
+// ─── Partial Results ────────────────────────────────────────────────────────
+
+export interface PartialData {
+  pcap_stats?: { file_count?: number; total_bytes?: number };
+  top_hosts?: Array<{ ip: string; total_bytes: number }>;
+  protocol_distribution?: Record<string, number>;
+  alert_summary?: { total: number; by_severity: Record<string, number> };
+  sensor_summary?: {
+    total: number;
+    completed: number;
+    failed: number;
+    skipped: number;
+    sensors: Array<{ name: string; status: string; duration_ms?: number | null }>;
+  };
+  correlation_counts?: Record<string, number>;
+  finding_count?: number;
+  alert_count?: number;
+  host_count?: number;
+}
+
+export interface PartialResultsResponse {
+  schema_version: string;
+  job_id: string;
+  completed_stages: string[];
+  current_stage?: string | null;
+  partial_data: PartialData;
+}
 
 // ─── Query Param helpers ────────────────────────────────────────────────────
 
@@ -1065,8 +1123,17 @@ export interface FindingDiffItem { title: string; severity: string; sensor?: str
 export interface IocDiffs { added: string[]; removed: string[]; }
 export interface DnsDiffs { added: string[]; removed: string[]; }
 
+export interface PhaseSnapshot { host_count: number; alert_count: number; finding_count: number; connection_count: number; ioc_count: number; }
+export interface PhaseSummary { before: PhaseSnapshot; after: PhaseSnapshot; }
+export interface SeverityShiftItem { before: number; after: number; delta: number; }
+export interface SeverityShift { critical: SeverityShiftItem; high: SeverityShiftItem; medium: SeverityShiftItem; low: SeverityShiftItem; }
+export interface ContainmentIndicators { removed_c2_connections: number; reduced_alert_categories: string[]; new_defensive_activity: string[]; }
+
 export interface TemporalDeltaResponse {
   schema_version: string; summary: TemporalSummary;
+  phase_summary: PhaseSummary;
+  severity_shift: SeverityShift;
+  containment_indicators: ContainmentIndicators;
   hosts: HostDiffs; alerts: AlertDiffItem[]; findings: FindingDiffItem[];
   iocs: IocDiffs; dns: DnsDiffs;
 }
@@ -1081,7 +1148,7 @@ export interface TemporalNarrativeResponse { schema_version: string; narrative_m
 
 // ─── Investigation Queue ─────────────────────────────────────────────────────
 
-export type AnalystStatus = "unreviewed" | "confirmed" | "false_positive" | "deferred";
+export type AnalystStatus = "unreviewed" | "confirmed" | "false_positive" | "needs_review" | "deferred";
 export type QueueItemSource = "finding" | "alert" | "theory";
 
 export interface InvestigationQueueItem {
@@ -1106,6 +1173,7 @@ export interface InvestigationQueueItem {
   analyst_status: AnalystStatus;
   analyst_notes: string | null;
   reviewed_at: string | null;
+  reviewer_id: string | null;
   extra: Record<string, any>;
 }
 
@@ -1123,7 +1191,9 @@ export interface QueueSummary {
   unreviewed: number;
   confirmed: number;
   false_positive: number;
+  needs_review: number;
   deferred: number;
+  review_rate: number;
 }
 
 export interface InvestigationQueueResponse {
@@ -1136,6 +1206,7 @@ export interface InvestigationQueueResponse {
 export interface StatusUpdateRequest {
   analyst_status: AnalystStatus;
   analyst_notes?: string | null;
+  reviewer_id?: string | null;
 }
 
 export interface StatusUpdateResponse {
@@ -1143,6 +1214,7 @@ export interface StatusUpdateResponse {
   item_id: string;
   analyst_status: AnalystStatus;
   analyst_notes: string | null;
+  reviewer_id: string | null;
   reviewed_at: string;
 }
 
@@ -1150,12 +1222,20 @@ export interface BulkStatusUpdateRequest {
   item_ids: string[];
   analyst_status: AnalystStatus;
   analyst_notes?: string | null;
+  reviewer_id?: string | null;
 }
 
 export interface BulkStatusUpdateResponse {
   schema_version: string;
   updated: string[];
   failed: string[];
+}
+
+export interface ReviewQueueResponse {
+  schema_version: string;
+  items: InvestigationQueueItem[];
+  page: PageInfo;
+  stats: QueueSummary;
 }
 
 // ─── API Error ──────────────────────────────────────────────────────────────
@@ -1322,6 +1402,9 @@ export const api = {
   getJobSensors(jobId: string): Promise<SensorListResponse> {
     return get<SensorListResponse>(`/jobs/${jobId}/sensors`);
   },
+  getPartialResults(jobId: string): Promise<PartialResultsResponse> {
+    return get<PartialResultsResponse>(`/jobs/${jobId}/partial-results`);
+  },
 
   // ── Hosts ──────────────────────────────────────────────────────────────
   listHosts(jobId: string, p: HostListParams = {}): Promise<HostListResponse> {
@@ -1429,7 +1512,7 @@ export const api = {
   getProof(jobId: string, proofId: string): Promise<ProofDetailResponse> {
     return get<ProofDetailResponse>(`/jobs/${jobId}/proofs/${proofId}`);
   },
-  createProof(jobId: string, body: { title: string; conclusion?: string; severity?: string; confidence?: number }): Promise<ProofDetailResponse> {
+  createProof(jobId: string, body: { title: string; conclusion?: string; severity?: string; confidence?: number; mode?: ProofMode }): Promise<ProofDetailResponse> {
     return post<ProofDetailResponse>(`/jobs/${jobId}/proofs`, body);
   },
   updateProof(jobId: string, proofId: string, body: Record<string, unknown>): Promise<ProofDetailResponse> {
@@ -1449,6 +1532,9 @@ export const api = {
   },
   renderProofNarrative(jobId: string, proofId: string): Promise<ProofNarrativeResponse> {
     return post<ProofNarrativeResponse>(`/jobs/${jobId}/proofs/${proofId}/narrative`, {});
+  },
+  exportProof(jobId: string, proofId: string, fmt: "markdown" | "html" = "markdown"): Promise<ProofExportResponse> {
+    return get<ProofExportResponse>(`/jobs/${jobId}/proofs/${proofId}/export?fmt=${fmt}`);
   },
 
   // ── Timeline ───────────────────────────────────────────────────────────
@@ -1543,6 +1629,10 @@ export const api = {
   },
   generateTemporalNarrative(jobId: string): Promise<TemporalNarrativeResponse> {
     return post<TemporalNarrativeResponse>(`/jobs/${jobId}/temporal-narrative`);
+  },
+  getTemporalExportUrl(jobId: string, format: "markdown" | "html" = "markdown"): string {
+    const tokenQs = _token ? `?token=${encodeURIComponent(_token)}&format=${format}` : `?format=${format}`;
+    return `${API_BASE}/jobs/${jobId}/temporal-export${tokenQs}`;
   },
 
   // ── PCAP Management ─────────────────────────────────────────────────
@@ -1697,6 +1787,41 @@ export const api = {
   bulkUpdateQueueStatus(jobId: string, body: BulkStatusUpdateRequest): Promise<BulkStatusUpdateResponse> {
     return post<BulkStatusUpdateResponse>(`/jobs/${jobId}/investigation-queue/bulk-status`, body);
   },
+  getReviewQueue(jobId: string, params?: {
+    status?: AnalystStatus; reviewer?: string; since?: string;
+    offset?: number; limit?: number;
+  }): Promise<ReviewQueueResponse> {
+    const qs = new URLSearchParams();
+    if (params?.status) qs.set("status", params.status);
+    if (params?.reviewer) qs.set("reviewer", params.reviewer);
+    if (params?.since) qs.set("since", params.since);
+    if (params?.offset != null) qs.set("offset", String(params.offset));
+    if (params?.limit != null) qs.set("limit", String(params.limit));
+    const q = qs.toString();
+    return get<ReviewQueueResponse>(`/jobs/${jobId}/review-queue${q ? `?${q}` : ""}`);
+  },
+
+  // ── Admin / Feedback Metrics ─────────────────────────────────────────
+  getFeedbackMetrics(): Promise<FeedbackMetricsResponse> {
+    return get<FeedbackMetricsResponse>("/admin/feedback-metrics");
+  },
+
+  // ── Cross-Job Correlation (Sprint 8) ──────────────────────────────────
+  getCorrelations(
+    jobId: string,
+    params?: { item_id?: string; host?: string; ioc?: string; limit?: number },
+  ): Promise<CorrelationResponse> {
+    const qs = new URLSearchParams();
+    if (params?.item_id) qs.set("item_id", params.item_id);
+    if (params?.host) qs.set("host", params.host);
+    if (params?.ioc) qs.set("ioc", params.ioc);
+    if (params?.limit != null) qs.set("limit", String(params.limit));
+    const q = qs.toString();
+    return get<CorrelationResponse>(`/jobs/${jobId}/correlations${q ? `?${q}` : ""}`);
+  },
+  getRelatedJobs(jobId: string): Promise<RelatedJobsResponse> {
+    return get<RelatedJobsResponse>(`/jobs/${jobId}/related-jobs`);
+  },
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1827,4 +1952,95 @@ export interface DistillStats {
   total_samples: number; file_size_mb: number; file_path: string;
   exists: boolean; teacher_models: string[]; jobs_distilled: string[];
   per_task: Record<string, number>; rejected_count: number;
+}
+
+// ─── Admin Feedback Metrics (Sprint 7) ────────────────────────────────────
+export interface SensorTrustProfile {
+  sensor_name: string;
+  total_items: number;
+  confirmed: number;
+  false_positive: number;
+  deferred: number;
+  confirmation_rate: number;
+  false_positive_rate: number;
+  avg_confidence_delta: number;
+}
+export interface NoisySignature {
+  signature_name: string;
+  category: string | null;
+  false_positive_rate: number;
+  total_occurrences: number;
+  false_positive_count: number;
+  confirmed_count: number;
+  last_seen: string | null;
+}
+export interface OverallFeedbackStats {
+  total_reviewed: number;
+  total_items: number;
+  confirmation_rate: number;
+  false_positive_rate: number;
+  most_trusted_sensor: string | null;
+  noisiest_sensor: string | null;
+}
+export interface DailyReviewCount {
+  date: string;
+  confirmed: number;
+  false_positive: number;
+  deferred: number;
+  needs_review: number;
+}
+export interface FeedbackTimeSeries {
+  daily_reviews: DailyReviewCount[];
+}
+export interface FeedbackMetricsResponse {
+  sensor_trust: SensorTrustProfile[];
+  noisy_signatures: NoisySignature[];
+  overall_stats: OverallFeedbackStats;
+  time_series: FeedbackTimeSeries;
+}
+
+// ── Cross-Job Correlation (Sprint 8) ──────────────────────────────────────
+export interface CorrelationMatch {
+  job_id: string;
+  job_name: string;
+  job_created_at: string | null;
+  match_type: "same_host" | "same_ioc" | "same_mitre" | "similar_pattern";
+  matched_entity: string;
+  matched_item_id: string | null;
+  matched_title: string | null;
+  similarity_score: number;
+  context: string;
+}
+export interface CampaignCandidate {
+  campaign_id: string;
+  label: string;
+  job_ids: string[];
+  shared_iocs: string[];
+  shared_hosts: string[];
+  shared_mitre_techniques: string[];
+  confidence: number;
+}
+export interface CorrelationQuery {
+  job_id: string;
+  item_id: string | null;
+  host: string | null;
+  ioc: string | null;
+}
+export interface CorrelationResponse {
+  query: CorrelationQuery;
+  matches: CorrelationMatch[];
+  campaigns: CampaignCandidate[];
+  total_matches: number;
+}
+export interface RelatedJob {
+  job_id: string;
+  job_name: string;
+  job_created_at: string | null;
+  overlap_type: "shared_hosts" | "shared_iocs" | "shared_mitre";
+  shared_entities: string[];
+  relevance_score: number;
+}
+export interface RelatedJobsResponse {
+  job_id: string;
+  related_jobs: RelatedJob[];
 }

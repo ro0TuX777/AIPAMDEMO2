@@ -24,9 +24,10 @@ class Finding(Base):
     confidence = Column(Float, nullable=False, default=0.0, server_default="0.0")  # 0.0–1.0
 
     # Investigation Queue: analyst review status
-    analyst_status = Column(String, nullable=True, default="unreviewed")  # unreviewed, confirmed, false_positive, deferred
+    analyst_status = Column(String, nullable=True, default="unreviewed")  # unreviewed, confirmed, false_positive, needs_review, deferred
     analyst_notes = Column(Text, nullable=True)
     reviewed_at = Column(String, nullable=True)  # ISO-8601 timestamp
+    reviewer_id = Column(String, nullable=True)  # analyst identifier who last changed status
 
     __table_args__ = (
         UniqueConstraint("job_id", "finding_id"),

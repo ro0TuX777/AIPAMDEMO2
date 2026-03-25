@@ -13,7 +13,10 @@ import type {
   SseQuotaHitData,
   SseDiskWarningData,
   SseResetData,
+  SsePartialResultData,
+  SseEarlyAlertData,
   JobStatus,
+  PartialData,
 } from "../api";
 
 // ─── Public event map (consumers subscribe by event type) ────────────────────
@@ -30,6 +33,8 @@ export interface JobEventMap {
   "disk.warning": SseDiskWarningData;
   "heartbeat": { job_id: string };
   "reset": SseResetData;
+  "partial_result": SsePartialResultData;
+  "early_alert": SseEarlyAlertData;
 }
 
 export type JobEventHandler<K extends keyof JobEventMap> = (data: JobEventMap[K]) => void;
@@ -73,6 +78,10 @@ export function useJobEvents(
   const [connected, setConnected] = useState(false);
   const [jobStatus, setJobStatus] = useState<JobStatus | null>(null);
   const [progress, setProgress] = useState<{ step: number; total: number; label: string } | null>(null);
+  const [partialData, setPartialData] = useState<PartialData | null>(null);
+  const [completedStages, setCompletedStages] = useState<string[]>([]);
+  const [currentStage, setCurrentStage] = useState<string | null>(null);
+  const [earlyAlerts, setEarlyAlerts] = useState<SseEarlyAlertData[]>([]);
 
   // Stable ref for callbacks so effect doesn't re-run on every render
   const onRef = useRef(on);
@@ -142,6 +151,18 @@ export function useJobEvents(
           case "artifact.created":
             queryClient.invalidateQueries({ queryKey: ["job", jobId, "artifacts"] });
             break;
+          case "partial_result": {
+            const pr = data as SsePartialResultData;
+            setPartialData((prev) => ({ ...prev, ...pr.partial_data }));
+            setCompletedStages(pr.completed_stages ?? []);
+            setCurrentStage(pr.current_stage ?? null);
+            break;
+          }
+          case "early_alert": {
+            const ea = data as SseEarlyAlertData;
+            setEarlyAlerts((prev) => [...prev, ea]);
+            break;
+          }
           case "reset":
             // Server told us to refetch everything
             queryClient.invalidateQueries({ queryKey: ["job", jobId] });
@@ -155,6 +176,6 @@ export function useJobEvents(
     return () => close();
   }, [jobId, enabled, queryClient, close]);
 
-  return { connected, jobStatus, progress, close };
+  return { connected, jobStatus, progress, close, partialData, completedStages, currentStage, earlyAlerts };
 }
 

@@ -1,5 +1,6 @@
 import React, { useRef, useEffect, useState, useCallback } from "react";
 import { useParams, Link } from "react-router-dom";
+import { JobSubPageNav } from "../components/JobSubPageNav";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import * as d3 from "d3";
 import { api, type GraphNode, type GraphEdge, type ProofItem, type ProofItemEntry, type ProofNarrativeResponse } from "../api";
@@ -1284,6 +1285,7 @@ export const AttackGraphPage: React.FC = () => {
                     </div>
                 </div>
             )}
+            <JobSubPageNav jobId={jobId!} currentPath="graph" />
             <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
         </div>
     );

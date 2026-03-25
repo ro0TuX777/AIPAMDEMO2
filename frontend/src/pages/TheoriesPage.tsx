@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import { useParams, Link, useLocation } from "react-router-dom";
+import { JobSubPageNav } from "../components/JobSubPageNav";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   api,
@@ -387,6 +388,7 @@ export const TheoriesPage: React.FC = () => {
   if (error) return <div className="p-6 text-red-400">Failed to load theories.</div>;
 
   return (
+    <>
     <div className="flex gap-6 items-start p-6">
       <div className="max-w-4xl mx-auto space-y-4 flex-1 min-w-0">
         {/* Breadcrumb */}
@@ -478,6 +480,8 @@ export const TheoriesPage: React.FC = () => {
       </div>
       <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
     </div>
+    <JobSubPageNav jobId={jobId!} currentPath="theories" />
+    </>
   );
 };
 

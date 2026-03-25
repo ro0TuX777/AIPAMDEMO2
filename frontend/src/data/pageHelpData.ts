@@ -60,9 +60,13 @@ export const pageHelpData: Record<string, PageHelpEntry> = {
             { label: "Corroborating", description: "The number of other items that share evidence with this one. For findings/alerts, this counts other items involving the same host IPs. For theories, it counts the supporting evidence references (findings + alerts) that back the hypothesis." },
             { label: "Blast Radius", description: "How many distinct hosts are affected by this item. A high blast radius means the threat touches many machines — indicating lateral movement, worm-like behavior, or widespread impact." },
             { label: "MITRE ATT&CK IDs", description: "Technique identifiers from the MITRE ATT&CK framework (e.g., T1566 for Phishing, T1071 for Application Layer Protocol). These map the detected behavior to known adversary tactics and techniques." },
-            { label: "Status", description: "Analyst triage status: Unreviewed (new), Confirmed (true positive), False Positive (benign), or Deferred (needs more context later)." },
+            { label: "Status", description: "Analyst triage status: Unreviewed (new), Confirmed (true positive), False Positive (benign), Needs Review (flagged for second opinion), or Deferred (needs more context later)." },
             { label: "Evidence Drawer", description: "A side panel that opens when you click a row. It shows related findings, alerts, network connections, and a timeline — all cross-referenced by shared host IPs or explicit evidence links." },
             { label: "Source Type", description: "Whether the item originated as a Finding (AI-enriched observation), Alert (Suricata signature match), or Theory (AI-generated hypothesis)." },
+            { label: "Review Mode", description: "Toggle that switches the queue to show only reviewed items (non-unreviewed), grouped with 'Needs Review' items first. Useful for team leads auditing analyst progress." },
+            { label: "Review Rate", description: "Percentage of queue items that have been reviewed (any status other than 'unreviewed'). Shown as a progress bar above the summary stats. 100% means every item has been triaged." },
+            { label: "Needs Review", description: "A special status indicating that an item should be examined by a second analyst. Items marked 'Needs Review' are highlighted in purple and appear first in Review Mode." },
+            { label: "Confirmation Gate", description: "Downstream actions like rule export and forensic memory indexing are blocked until an item is explicitly confirmed. This prevents unverified leads from polluting production systems." },
         ],
     },
 
@@ -175,6 +179,44 @@ export const pageHelpData: Record<string, PageHelpEntry> = {
         description:
             "The Report page generates a comprehensive, printable forensic report for a completed analysis job. It includes an executive summary, alert analysis with severity distribution, detailed findings with MITRE ATT&CK mappings, IOC tables, host analysis, threat signals, and actionable recommendations. You can switch between a structured report view and a Report Composer that generates executive or technical summaries using the AI.",
         section: "Reporting",
+    },
+
+    /* ── Proof Builder / Build Case ─────────────────────── */
+    proof_builder: {
+        title: "Build Case (Proof Builder)",
+        description:
+            "The Build Case workspace lets you curate collections of evidence ('Proofs') and generate structured Markdown narratives for handoff, reporting, or archival. Pin findings, alerts, theories, IOCs, and hosts as supporting, contradicting, or contextual evidence. Choose a report mode (SOC Handoff, IR Technical, or Executive Summary), write a conclusion, then generate an AI-powered narrative.",
+        section: "Reporting",
+        fields: [
+            { label: "Proof", description: "A curated collection of evidence items with a title, conclusion, severity, and confidence. Can be in Draft, Final, or Archived status." },
+            { label: "Mode", description: "The report template to use: SOC Handoff (key findings, affected systems, recommended actions), IR Technical (attack path, MITRE mapping, timeline, containment), or Executive Summary (business impact, risk, remediation)." },
+            { label: "Pinned Evidence", description: "Items added to the proof with a role: Supports (✅), Contradicts (❌), or Context (ℹ️). Each item links to a finding, alert, theory, host, IOC, or slice." },
+            { label: "Quick Add", description: "Confirmed items from the Investigation Queue that haven't been added yet. One-click to pin them as supporting evidence." },
+            { label: "Generate Narrative", description: "Uses the LLM to produce a structured Markdown report grounded in the pinned evidence and the analyst's conclusion. Falls back to template-based rendering if the LLM is unavailable." },
+            { label: "Warnings", description: "Alerts shown after generation if evidence items haven't been confirmed by an analyst. Maintains the trust chain from the HITL Review Workflow." },
+            { label: "Export", description: "Download the narrative as Markdown (.md) or HTML for pasting into tickets, emails, or incident management systems." },
+            { label: "Conclusion", description: "The analyst's own summary of what happened. This is fed into the LLM prompt to ground the narrative in the analyst's judgment." },
+        ],
+    },
+
+    /* ── Compare (Temporal) ────────────────────────────── */
+    compare: {
+        title: "Before / After Comparison",
+        description:
+            "The Compare workspace enables temporal delta analysis between two labeled PCAP phases (e.g., 'before' and 'after' a mitigation). It surfaces new and resolved alerts, findings, IOCs, DNS domains, and connection flows — giving analysts a clear picture of what changed. Containment Indicators highlight successful mitigations such as removed C2 connections. An AI Security Assessment can be generated to narrate the overall impact.",
+        section: "Temporal Analysis",
+        fields: [
+            { label: "Phase Summary", description: "Side-by-side counts of hosts, alerts, findings, connections, and IOCs for each labeled PCAP phase." },
+            { label: "Severity Shifts", description: "How alert volumes migrated across severity levels between phases. A shift from critical to low/info suggests successful mitigation." },
+            { label: "Containment Indicators", description: "Heuristic signals that mitigation worked: removed C2 connections, reduced alert categories, and new defensive activity observed in the 'after' phase." },
+            { label: "Alert Signature Changes", description: "Diff table showing NEW, RESOLVED, and CHANGED alert signatures between phases, with before/after hit counts." },
+            { label: "Finding Changes", description: "New or resolved AI-generated findings between phases, with severity and originating sensor." },
+            { label: "IOC Changes", description: "Indicators of Compromise that appeared or disappeared between phases." },
+            { label: "DNS Domain Changes", description: "DNS domains that appeared or disappeared between phases — new suspicious domains or removed C2 domains." },
+            { label: "New Connection Flows", description: "Network flows observed only in the 'after' phase, ranked by session count and byte volume." },
+            { label: "AI Security Assessment", description: "An LLM-generated narrative summarizing the temporal changes, assessing mitigation effectiveness, and providing actionable recommendations." },
+            { label: "Export Report", description: "Download a Markdown export of the full temporal comparison for offline review or inclusion in incident reports." },
+        ],
     },
 
     /* ── Rules Management ──────────────────────────────── */

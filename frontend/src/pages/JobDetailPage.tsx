@@ -1,6 +1,7 @@
 import React, { useCallback, useRef, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { JOB_SUB_TABS, CONDITIONAL_TABS } from "../components/JobSubPageNav";
 import {
   api,
   type JobDetail,
@@ -9,11 +10,14 @@ import {
   type SensorStatus,
   type JobStatus,
   type SseSensorFindingData,
+  type SseEarlyAlertData,
+  type PartialData,
 } from "../api";
 import { useJobEvents } from "../hooks/useJobEvents";
 import { useToast, type ToastSeverity } from "../components/ToastProvider";
 import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
 import { DetailSkeleton } from "../components/SkeletonLoader";
+import { RelatedJobsSidebar } from "../components/RelatedJobsSidebar";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -40,22 +44,8 @@ const TERMINAL_STATUSES = new Set<string>([
   "completed", "completed_with_errors", "failed", "canceled", "deleted",
 ]);
 
-const SUB_TABS = [
-  { label: "🔎 Investigate", path: "investigation" },
-  { label: "Theories", path: "theories" },
-  { label: "Slices", path: "slices" },
-  { label: "Why Unusual?", path: "annotations" },
-  { label: "Hosts", path: "hosts" },
-  { label: "Alerts", path: "alerts" },
-  { label: "Findings", path: "findings" },
-  { label: "Files", path: "files" },
-  { label: "Timeline", path: "timeline" },
-  { label: "IOCs", path: "iocs" },
-  { label: "Graph", path: "graph" },
-  { label: "Artifacts", path: "artifacts" },
-  { label: "AI Chat", path: "chat" },
-  { label: "Report", path: "report" },
-] as const;
+const SUB_TABS = JOB_SUB_TABS;
+const COMPARE_TAB = CONDITIONAL_TABS.find(t => t.path === "compare")!;
 
 export const JobDetailPage: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
@@ -114,11 +104,32 @@ export const JobDetailPage: React.FC = () => {
     }
   }, [addToast, jobId]);
 
+  // ── Early alert toast handler ──
+  const onEarlyAlert = useCallback((data: SseEarlyAlertData) => {
+    const sev = (data.severity ?? "high") as ToastSeverity;
+    addToast({
+      severity: sev,
+      title: `⚡ Early Alert: ${data.title}`,
+      body: `${data.src_ip ?? "?"} → ${data.dst_ip ?? "?"}`,
+      href: `/jobs/${jobId}/alerts`,
+      duration: 10000,
+    });
+  }, [addToast, jobId]);
+
   // ── SSE for live updates ──
-  const { progress } = useJobEvents(jobId, {
+  const { progress, partialData: ssePartial, completedStages, currentStage, earlyAlerts } = useJobEvents(jobId, {
     enabled: !!jobId && !isTerminal(job?.status),
-    on: { "sensor.finding": onFinding },
+    on: { "sensor.finding": onFinding, "early_alert": onEarlyAlert },
   });
+
+  // ── Partial results (fetched on load for running jobs, merged with SSE) ──
+  const partialQ = useQuery({
+    queryKey: ["job", jobId, "partial-results"],
+    queryFn: () => api.getPartialResults(jobId!),
+    enabled: !!jobId && !isTerminal(job?.status),
+    refetchInterval: 10000,
+  });
+  const partialData: PartialData | null = ssePartial ?? partialQ.data?.partial_data ?? null;
 
   // ── Mutations ──
   const cancelMut = useMutation({
@@ -401,6 +412,100 @@ export const JobDetailPage: React.FC = () => {
         </div>
       )}
 
+      {/* ── Pipeline Stage Stepper (partial results) ── */}
+      {!isTerminal(job.status) && (completedStages.length > 0 || partialQ.data?.completed_stages?.length) && (() => {
+        const stages = completedStages.length > 0 ? completedStages : (partialQ.data?.completed_stages ?? []);
+        const curStage = currentStage ?? partialQ.data?.current_stage ?? null;
+        const PIPELINE_STAGES = ["zeek", "suricata", "sensors", "correlate", "index", "theories", "slices", "annotations"];
+        return (
+          <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-4">
+            <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-3">Pipeline Progress</h2>
+            <div className="flex items-center gap-1">
+              {PIPELINE_STAGES.map((s, i) => {
+                const done = stages.includes(s);
+                const active = curStage === s;
+                return (
+                  <React.Fragment key={s}>
+                    {i > 0 && <div className={`flex-1 h-0.5 ${done ? "bg-emerald-500" : "bg-slate-700"}`} />}
+                    <div className="flex flex-col items-center gap-1">
+                      <div className={`w-3 h-3 rounded-full flex-shrink-0 ${done ? "bg-emerald-500" : active ? "bg-blue-500 animate-pulse" : "bg-slate-700"}`} />
+                      <span className={`text-[10px] capitalize ${done ? "text-emerald-400" : active ? "text-blue-400" : "text-slate-600"}`}>{s}</span>
+                    </div>
+                  </React.Fragment>
+                );
+              })}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* ── Early Partial Results Cards ── */}
+      {!isTerminal(job.status) && partialData && (
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {partialData.pcap_stats?.total_bytes != null && (
+            <div className="bg-slate-900/50 border border-indigo-500/20 rounded-lg p-4">
+              <div className="text-xs text-indigo-400 uppercase tracking-wider">PCAP Size</div>
+              <div className="text-2xl font-bold text-slate-100 mt-1">{(partialData.pcap_stats.total_bytes / 1048576).toFixed(1)} MB</div>
+              {partialData.pcap_stats.file_count != null && <div className="text-xs text-slate-500 mt-0.5">{partialData.pcap_stats.file_count} file(s)</div>}
+            </div>
+          )}
+          {partialData.alert_summary && partialData.alert_summary.total > 0 && (
+            <div className="bg-slate-900/50 border border-red-500/20 rounded-lg p-4">
+              <div className="text-xs text-red-400 uppercase tracking-wider">Early Alerts</div>
+              <div className="text-2xl font-bold text-red-400 mt-1">{partialData.alert_summary.total}</div>
+              {Object.keys(partialData.alert_summary.by_severity).length > 0 && (
+                <div className="text-xs text-slate-500 mt-0.5">
+                  {Object.entries(partialData.alert_summary.by_severity).map(([k, v]) => `Sev ${k}: ${v}`).join(" · ")}
+                </div>
+              )}
+            </div>
+          )}
+          {partialData.finding_count != null && partialData.finding_count > 0 && (
+            <div className="bg-slate-900/50 border border-amber-500/20 rounded-lg p-4">
+              <div className="text-xs text-amber-400 uppercase tracking-wider">Findings</div>
+              <div className="text-2xl font-bold text-amber-400 mt-1">{partialData.finding_count}</div>
+            </div>
+          )}
+          {partialData.host_count != null && partialData.host_count > 0 && (
+            <div className="bg-slate-900/50 border border-blue-500/20 rounded-lg p-4">
+              <div className="text-xs text-blue-400 uppercase tracking-wider">Hosts</div>
+              <div className="text-2xl font-bold text-blue-400 mt-1">{partialData.host_count}</div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── Top Hosts (early insight) ── */}
+      {!isTerminal(job.status) && partialData?.top_hosts && partialData.top_hosts.length > 0 && (
+        <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-4">
+          <h2 className="text-sm font-semibold text-slate-300 uppercase tracking-wider mb-2">Top Hosts (Early)</h2>
+          <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+            {partialData.top_hosts.slice(0, 10).map((h) => (
+              <div key={h.ip} className="flex items-center justify-between bg-slate-950/50 rounded px-3 py-2 border border-slate-800/50">
+                <span className="text-xs text-slate-300 font-mono">{h.ip}</span>
+                <span className="text-[10px] text-slate-500">{(h.total_bytes / 1024).toFixed(0)} KB</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── Early Alerts list (from SSE) ── */}
+      {!isTerminal(job.status) && earlyAlerts.length > 0 && (
+        <div className="bg-slate-900/50 border border-red-900/30 rounded-lg p-4">
+          <h2 className="text-sm font-semibold text-red-400 uppercase tracking-wider mb-2">⚡ Early Alerts ({earlyAlerts.length})</h2>
+          <div className="space-y-1 max-h-40 overflow-y-auto">
+            {earlyAlerts.map((a, i) => (
+              <div key={i} className="flex items-center gap-2 text-xs">
+                <span className={`w-2 h-2 rounded-full flex-shrink-0 ${a.severity === "critical" ? "bg-red-500" : "bg-orange-500"}`} />
+                <span className="text-slate-300 truncate flex-1">{a.title}</span>
+                <span className="text-slate-500 font-mono text-[10px]">{a.src_ip} → {a.dst_ip}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* Sensor Progress Panel */}
       {sensors.length > 0 && (
         <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-4">
@@ -521,6 +626,15 @@ export const JobDetailPage: React.FC = () => {
               {label}
             </Link>
           ))}
+          {/* Show Compare tab only for temporal (multi-PCAP) jobs */}
+          {job.pcaps && job.pcaps.length > 1 && (
+            <Link
+              to={`/jobs/${jobId}/${COMPARE_TAB.path}`}
+              className="px-4 py-2 text-sm border-b-2 border-transparent text-emerald-400 hover:text-emerald-300 hover:border-emerald-600 transition-colors"
+            >
+              {COMPARE_TAB.label}
+            </Link>
+          )}
         </nav>
       </div>
 
@@ -551,6 +665,11 @@ export const JobDetailPage: React.FC = () => {
             ))}
           </div>
         </div>
+      )}
+
+      {/* Related Jobs sidebar (Sprint 8) */}
+      {TERMINAL_STATUSES.has(job.status) && (
+        <RelatedJobsSidebar jobId={jobId!} />
       )}
 
     </div>

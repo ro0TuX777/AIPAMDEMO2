@@ -13,6 +13,7 @@ GET  /jobs/{id}/sensors        – sensor list
 GET  /jobs/{id}/timeline       – timeline events
 GET  /jobs/{id}/iocs           – IOC list
 GET  /jobs/{id}/events         – SSE stream
+GET  /jobs/{id}/partial-results – early partial pipeline results
 """
 
 import asyncio
@@ -637,6 +638,44 @@ async def job_summary(
         finding_count=finding_count,
         ioc_count=ioc_count,
         host_count=host_count,
+    )
+
+
+# ---------- GET /jobs/{jobId}/partial-results ----------
+
+class PartialResultsResponse(BaseModel):
+    """Intermediate pipeline data available before full analysis completes."""
+    schema_version: str = "1.0"
+    job_id: str
+    completed_stages: list[str] = Field(default_factory=list)
+    current_stage: str | None = None
+    partial_data: dict = Field(default_factory=dict)
+
+
+@router.get("/jobs/{job_id}/partial-results", response_model=PartialResultsResponse)
+async def get_partial_results(
+    job_id: str,
+    response: Response,
+    request_id: str = Depends(get_request_id),
+    db: Session = Depends(get_db),
+):
+    """Return current partial results for a running job.
+
+    Allows the frontend to fetch intermediate pipeline data on page load
+    without waiting for the next SSE event.
+    """
+    _require_job(db, job_id)
+    response.headers["X-Request-Id"] = request_id
+
+    from backend.app.partial_results import get_partial_result
+    data = get_partial_result(job_id)
+    if data is None:
+        return PartialResultsResponse(job_id=job_id)
+    return PartialResultsResponse(
+        job_id=job_id,
+        completed_stages=data.get("completed_stages", []),
+        current_stage=data.get("current_stage"),
+        partial_data=data.get("partial_data", {}),
     )
 
 

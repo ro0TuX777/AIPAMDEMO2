@@ -1,11 +1,11 @@
 # AIPAM — AI-Powered Advanced Packet Analysis for Malware Detection
 
 <p align="center">
-  <img src="https://img.shields.io/badge/Version-2.0-blue" alt="Version">
+  <img src="https://img.shields.io/badge/Version-2.1-blue" alt="Version">
   <img src="https://img.shields.io/badge/License-MIT-green" alt="License">
   <img src="https://img.shields.io/badge/AI%20Model-Llama%203.1%208B%20(v9)-orange" alt="AI Model">
   <img src="https://img.shields.io/badge/API-V2%20(Sensors)-blueviolet" alt="API V2">
-  <img src="https://img.shields.io/badge/Tests-110%20passing-brightgreen" alt="Tests">
+  <img src="https://img.shields.io/badge/Analyst%20Cockpit-8%20Sprints-ff69b4" alt="Analyst Cockpit">
   <img src="https://img.shields.io/badge/Deployment-Air--Gapped-critical" alt="Deployment">
 </p>
 
@@ -13,6 +13,7 @@
 
 - [What is AIPAM?](#what-is-aipam)
 - [Key Features](#key-features)
+- [Analyst Cockpit](#analyst-cockpit)
 - [How It Works](#how-it-works)
 - [System Architecture](#system-architecture)
 - [Execution Profiles](#execution-profiles)
@@ -135,6 +136,60 @@ Built-in admin CLI (`aipam-admin`) for production maintenance:
 - **support-bundle** — Diagnostic archive (excludes PCAPs and secrets)
 - **apply-update** — Air-gapped rule/TI updates with rollback
 - **smoke-test** / **parity-check** — Validation tools
+
+---
+
+## Analyst Cockpit
+
+The **Analyst Cockpit** is AIPAM's high-performance triage and investigation interface, purpose-built for SOC analysts working air-gapped investigations. Delivered across 8 sprints, it transforms raw pipeline output into a prioritized, interactive workflow.
+
+### Investigation Queue (Sprints 1–2)
+A unified, ranked queue of all actionable items (alerts, findings, theories) across a job:
+- **Composite rank score** — weighted blend of severity (25%), confidence (20%), recency (15%), corroboration (20%), feedback adjustment (10%), and host criticality (10%)
+- **Multi-axis filtering** — by type, severity, MITRE tactic, status, and free-text search
+- **Expandable evidence drawer** — inline detail with host context, IOCs, and related evidence
+- **Bulk actions** — confirm, dismiss, or escalate multiple items at once
+- **Queue summary cards** — total, critical, needs-review, and confirmed-rate stats
+
+### Before / After Comparison Workspace (Sprint 3)
+Side-by-side temporal comparison of two jobs on the same target:
+- **Diff view** — new, resolved, and persistent findings highlighted with color-coded badges
+- **Metric delta cards** — alert count, finding count, host count, IOC count changes with directional arrows
+- **Job selector** — pick any two completed jobs for comparison
+
+### HITL Review Workflow (Sprint 4)
+Human-in-the-loop confirmation gate ensuring analyst sign-off before results enter forensic memory:
+- **Status transitions** — `pending → confirmed / dismissed / escalated / needs_review`
+- **Review Notes panel** — inline status buttons, analyst notes, and timestamps
+- **Review Mode** — groups queue items by review status with a review-rate progress bar
+- **Forensic memory gate** — only confirmed findings are indexed into ChromaDB
+
+### Case Narrative / Proof Builder (Sprint 5)
+Build structured forensic arguments from pinned evidence:
+- **Three export modes** — SOC Handoff, IR Technical, Executive Summary
+- **LLM-powered narrative generation** — mode-specific prompts produce tailored write-ups
+- **Unreviewed-item warnings** — highlights evidence that hasn't been analyst-confirmed
+- **Markdown export** — copy or download the rendered narrative
+
+### Early Partial Results (Sprint 6)
+Reduce time-to-first-insight by surfacing intermediate pipeline data via SSE:
+- **Pipeline progress stepper** — visual stage tracker (Ingest → Parse → Aggregate → Sensor → Correlate → Report)
+- **Partial data cards** — PCAP stats, top hosts, alert summaries appear as each stage completes
+- **SSE event types** — `partial_result`, `early_alert`, `sensor_complete` for real-time UI updates
+
+### Feedback-Driven Ranking (Sprint 7)
+The investigation queue learns from analyst confirmation and rejection patterns:
+- **Sensor trust profiles** — sensors with consistently confirmed alerts get a ranking boost
+- **Noisy signature detection** — signatures with high rejection rates are penalized
+- **Admin feedback dashboard** — overall stats, sensor trust table, noisy signatures list, daily review chart
+- **Score tooltip** — hover any queue item to see the full "Why this rank?" breakdown
+
+### Cross-Job Correlation UX (Sprint 8)
+Surfaces "forensic memory" by matching IPs, IOCs, and MITRE techniques across all historical jobs:
+- **"Seen Before?" panel** — shows prior occurrences of hosts, IOCs, and MITRE categories with similarity scores
+- **Campaign detection** — clusters of 3+ jobs sharing entities are flagged as potential campaigns
+- **Related Jobs sidebar** — lists jobs with shared entities, ranked by weighted relevance (IOCs 0.25, Hosts 0.15, MITRE 0.10)
+- **Direct navigation** — click any match to jump to the source job
 
 ---
 
@@ -682,6 +737,17 @@ The chat uses **3-source RAG**: current job data, cross-job campaign correlation
 - Navigate to **Why Unusual?** for context annotations on anomalous traffic
 - Each page includes breadcrumb navigation back to the job
 
+### Using the Analyst Cockpit
+
+1. **Open the Investigation Queue** from the job detail page — items are ranked by composite score
+2. **Filter and sort** by type, severity, MITRE tactic, or review status
+3. **Expand any item** to see the evidence drawer with host context, IOCs, and "Seen Before?" panel
+4. **Review items** — confirm, dismiss, or escalate; only confirmed findings enter forensic memory
+5. **Compare jobs** — use the Before/After workspace to diff two analyses on the same target
+6. **Build a narrative** — open the Proof Builder, select a mode (SOC Handoff / IR Technical / Executive), and generate
+7. **Check correlations** — the Related Jobs sidebar shows which other jobs share the same IOCs, hosts, or MITRE techniques
+8. **Monitor feedback impact** — visit Admin → Feedback Dashboard to see how analyst patterns adjust ranking
+
 ### Detection Rules
 
 From any finding, generate **Suricata** or **Sigma** rules:
@@ -755,6 +821,16 @@ From any finding, generate **Suricata** or **Sigma** rules:
 - [x] **Reports** — HTML + Markdown report generation with executive summaries
 - [x] **Detection Rules** — Auto-generate Suricata and Sigma rules from findings
 - [x] **Human-readable Evidence** — Supporting evidence shown as labeled chips
+
+### Analyst Cockpit (Complete — 8 Sprints)
+
+- [x] **Investigation Queue** — Ranked, filterable triage queue with composite scoring (Sprints 1–2)
+- [x] **Before/After Comparison** — Side-by-side temporal diff of two jobs (Sprint 3)
+- [x] **HITL Review Workflow** — Analyst confirmation gate with forensic memory indexing (Sprint 4)
+- [x] **Case Narrative Builder** — LLM-powered proof narratives in 3 export modes (Sprint 5)
+- [x] **Early Partial Results** — SSE-driven pipeline progress and intermediate data cards (Sprint 6)
+- [x] **Feedback-Driven Ranking** — Queue learns from analyst confirm/reject patterns (Sprint 7)
+- [x] **Cross-Job Correlation UX** — "Seen Before?" panels, campaign detection, related jobs (Sprint 8)
 
 ### Integrated Training and Air-Gap (Complete)
 

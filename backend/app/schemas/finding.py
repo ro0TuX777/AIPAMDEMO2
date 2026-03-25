@@ -24,6 +24,12 @@ class FindingItem(BaseModel):
     feedback: str | None = None
     confidence: float = 0.0
 
+    # HITL review state (Sprint 4)
+    analyst_status: str | None = None
+    analyst_notes: str | None = None
+    reviewed_at: str | None = None
+    reviewer_id: str | None = None
+
 
 class FindingRelatedHost(BaseModel):
     ip: str

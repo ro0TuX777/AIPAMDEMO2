@@ -1,5 +1,6 @@
 import React, { useState, useCallback, useEffect, useMemo } from "react";
 import { useParams, Link, useSearchParams } from "react-router-dom";
+import { JobSubPageNav } from "../components/JobSubPageNav";
 import { useQuery } from "@tanstack/react-query";
 import { ChatPanel } from "../components/ChatPanel";
 import {
@@ -363,6 +364,7 @@ export const ChatPage: React.FC = () => {
           </div>
         </div>
       )}
+      <JobSubPageNav jobId={jobId!} currentPath="chat" />
     </div>
   );
 };

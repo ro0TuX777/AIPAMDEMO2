@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from "react";
-import { useParams, Link, useNavigate } from "react-router-dom";
+import { useParams, Link, useNavigate, useSearchParams } from "react-router-dom";
+import { JobSubPageNav } from "../components/JobSubPageNav";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   EXPLAIN_FORMAT_LABELS,
@@ -45,6 +46,8 @@ const SEV_COLORS: Record<string, string> = {
 export const FindingsListPage: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const pcapLabel = searchParams.get("pcap_label") || "";
   const [sevFilter, setSevFilter] = useState<Severity | "">("");
   const [categoryFilter, setCategoryFilter] = useState<string>("");
   const [openExplainId, setOpenExplainId] = useState<string | null>(null);
@@ -53,10 +56,11 @@ export const FindingsListPage: React.FC = () => {
   const { activeHelpField, setActiveHelpField, toggleHelp } = usePageHelp();
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ["job", jobId, "findings", sevFilter, categoryFilter],
+    queryKey: ["job", jobId, "findings", sevFilter, categoryFilter, pcapLabel],
     queryFn: () => api.listFindings(jobId!, {
       severity: sevFilter || undefined,
       category: categoryFilter || undefined,
+      pcap_label: pcapLabel || undefined,
       limit: 200,
     }),
     enabled: !!jobId,
@@ -235,6 +239,7 @@ export const FindingsListPage: React.FC = () => {
   };
 
   return (
+    <>
     <div className="flex gap-6 items-start">
     <div className="space-y-4 flex-1 min-w-0">
       <nav className="text-sm text-slate-400">
@@ -248,6 +253,12 @@ export const FindingsListPage: React.FC = () => {
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className={`text-xl font-semibold ${labelHint("findings", activeHelpField)}`} onClick={() => toggleHelp("findings")}>Findings ({findings.length})</h1>
         <div className="flex items-center gap-2 flex-wrap">
+          {pcapLabel && (
+            <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-xs font-medium">
+              Phase: {pcapLabel}
+              <button onClick={() => { searchParams.delete("pcap_label"); setSearchParams(searchParams); }} className="ml-1.5 text-emerald-400 hover:text-white">✕</button>
+            </span>
+          )}
           <select value={sevFilter} onChange={e => setSevFilter(e.target.value as Severity | "")}
             className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-sm text-slate-300">
             <option value="">All severities</option>
@@ -653,5 +664,7 @@ export const FindingsListPage: React.FC = () => {
     </div>
     <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
     </div>
+    <JobSubPageNav jobId={jobId!} currentPath="findings" />
+    </>
   );
 };

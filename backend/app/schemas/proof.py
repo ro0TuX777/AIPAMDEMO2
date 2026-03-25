@@ -9,6 +9,7 @@ from backend.app.schemas.common import SCHEMA_VERSION
 ProofStatus = Literal["draft", "final", "archived"]
 ProofRole = Literal["supports", "contradicts", "context"]
 EntityType = Literal["host", "alert", "finding", "theory", "slice", "ioc", "annotation"]
+ProofMode = Literal["soc_handoff", "ir_technical", "executive_summary"]
 
 
 # ---------------------------------------------------------------------------
@@ -61,6 +62,7 @@ class ProofCreate(BaseModel):
     conclusion: str | None = None
     severity: str = "info"
     confidence: float = Field(default=0.0, ge=0.0, le=1.0)
+    mode: ProofMode = "soc_handoff"
 
 
 class ProofUpdate(BaseModel):
@@ -70,6 +72,8 @@ class ProofUpdate(BaseModel):
     status: ProofStatus | None = None
     severity: str | None = None
     confidence: float | None = Field(default=None, ge=0.0, le=1.0)
+    mode: ProofMode | None = None
+    narrative_markdown: str | None = None
 
 
 class ProofOut(BaseModel):
@@ -82,6 +86,7 @@ class ProofOut(BaseModel):
     status: str
     severity: str
     confidence: float
+    mode: str = "soc_handoff"
     narrative_markdown: str | None = None
     item_count: int = 0
     created_at: str
@@ -121,4 +126,11 @@ class ProofNarrativeResponse(BaseModel):
     schema_version: str = SCHEMA_VERSION
     proof_id: str
     narrative_markdown: str
+    warnings: list[str] = []
+
+
+class ProofExportResponse(BaseModel):
+    schema_version: str = SCHEMA_VERSION
+    content: str
+    filename: str
 

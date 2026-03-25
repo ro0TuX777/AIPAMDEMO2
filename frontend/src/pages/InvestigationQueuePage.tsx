@@ -1,5 +1,6 @@
 import React, { useMemo, useState, useEffect } from "react";
-import { useParams, Link, useSearchParams } from "react-router-dom";
+import { useParams, Link, useSearchParams, useNavigate } from "react-router-dom";
+import { JobSubPageNav } from "../components/JobSubPageNav";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   api,
@@ -12,6 +13,7 @@ import { useToast } from "../components/ToastProvider";
 import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
 import { EvidenceDrawer } from "../components/EvidenceDrawer";
 import { InfoTooltip } from "../components/InfoTooltip";
+import { SeenBeforePanel } from "../components/SeenBeforePanel";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -20,6 +22,7 @@ const STATUS_OPTIONS: { value: AnalystStatus | ""; label: string }[] = [
   { value: "unreviewed", label: "Unreviewed" },
   { value: "confirmed", label: "Confirmed" },
   { value: "false_positive", label: "False Positive" },
+  { value: "needs_review", label: "Needs Review" },
   { value: "deferred", label: "Deferred" },
 ];
 
@@ -42,6 +45,7 @@ const STATUS_COLORS: Record<string, string> = {
   unreviewed: "text-slate-400",
   confirmed: "text-emerald-400",
   false_positive: "text-red-400",
+  needs_review: "text-purple-400",
   deferred: "text-yellow-400",
 };
 
@@ -99,6 +103,7 @@ function ItemBadges({ item }: { item: InvestigationQueueItem }) {
 
 export const InvestigationQueuePage: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
   const { addToast } = useToast();
   const { activeHelpField, setActiveHelpField, toggleHelp } = usePageHelp();
@@ -122,6 +127,7 @@ export const InvestigationQueuePage: React.FC = () => {
 
   const [selectedItems, setSelectedItems] = useState<Set<string>>(new Set());
   const [drawerItemId, setDrawerItemId] = useState<string | null>(null);
+  const [reviewMode, setReviewMode] = useState(false);
 
   // Fetch queue
   const { data, isLoading, error } = useQuery({
@@ -139,8 +145,20 @@ export const InvestigationQueuePage: React.FC = () => {
     enabled: !!jobId,
   });
 
-  const items = data?.items ?? [];
+  const allItems = data?.items ?? [];
   const summary = data?.summary;
+
+  // In review mode, show only reviewed items (not unreviewed) and group needs_review first
+  const items = useMemo(() => {
+    if (!reviewMode) return allItems;
+    const reviewed = allItems.filter((i) => i.analyst_status !== "unreviewed");
+    return reviewed.sort((a, b) => {
+      // needs_review items first
+      if (a.analyst_status === "needs_review" && b.analyst_status !== "needs_review") return -1;
+      if (b.analyst_status === "needs_review" && a.analyst_status !== "needs_review") return 1;
+      return 0;
+    });
+  }, [allItems, reviewMode]);
 
   // Unique hosts & MITRE IDs for filter dropdowns
   const uniqueHosts = useMemo(() => {
@@ -215,21 +233,40 @@ export const InvestigationQueuePage: React.FC = () => {
         <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
       </div>
 
-      {/* Summary bar */}
+      {/* Review Mode toggle + Summary bar */}
       {summary && (
-        <div className="grid grid-cols-5 gap-2 text-center text-sm">
-          {[
-            { label: "Total", count: summary.total, color: "text-slate-200" },
-            { label: "Unreviewed", count: summary.unreviewed, color: "text-slate-400" },
-            { label: "Confirmed", count: summary.confirmed, color: "text-emerald-400" },
-            { label: "False Positive", count: summary.false_positive, color: "text-red-400" },
-            { label: "Deferred", count: summary.deferred, color: "text-yellow-400" },
-          ].map((s) => (
-            <div key={s.label} className="bg-slate-900/50 border border-slate-800 rounded-lg p-2">
-              <div className={`text-lg font-bold ${s.color}`}>{s.count}</div>
-              <div className="text-xs text-slate-500">{s.label}</div>
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-slate-500 uppercase tracking-wider font-semibold">Review Progress</span>
+              <div className="flex items-center gap-1.5">
+                <div className="w-32 h-2 bg-slate-800 rounded-full overflow-hidden">
+                  <div className="h-full bg-emerald-500 rounded-full transition-all" style={{ width: `${Math.round(summary.review_rate * 100)}%` }} />
+                </div>
+                <span className="text-xs font-mono text-slate-400">{Math.round(summary.review_rate * 100)}%</span>
+              </div>
             </div>
-          ))}
+            <label className="flex items-center gap-2 text-xs text-slate-400 cursor-pointer select-none">
+              <input type="checkbox" checked={reviewMode} onChange={(e) => setReviewMode(e.target.checked)}
+                className="rounded border-slate-600" />
+              Review Mode
+            </label>
+          </div>
+          <div className="grid grid-cols-6 gap-2 text-center text-sm">
+            {[
+              { label: "Total", count: summary.total, color: "text-slate-200" },
+              { label: "Unreviewed", count: summary.unreviewed, color: "text-slate-400" },
+              { label: "Confirmed", count: summary.confirmed, color: "text-emerald-400" },
+              { label: "False Positive", count: summary.false_positive, color: "text-red-400" },
+              { label: "Needs Review", count: summary.needs_review, color: "text-purple-400" },
+              { label: "Deferred", count: summary.deferred, color: "text-yellow-400" },
+            ].map((s) => (
+              <div key={s.label} className="bg-slate-900/50 border border-slate-800 rounded-lg p-2">
+                <div className={`text-lg font-bold ${s.color}`}>{s.count}</div>
+                <div className="text-xs text-slate-500">{s.label}</div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
       {/* Filters — row 1 */}
@@ -280,11 +317,19 @@ export const InvestigationQueuePage: React.FC = () => {
           <button onClick={() => bulkMut.mutate("false_positive")} className="px-2 py-1 bg-red-700 hover:bg-red-600 rounded text-xs text-white">
             ✗ False Positive
           </button>
+          <button onClick={() => bulkMut.mutate("needs_review")} className="px-2 py-1 bg-purple-700 hover:bg-purple-600 rounded text-xs text-white">
+            👁 Needs Review
+          </button>
           <button onClick={() => bulkMut.mutate("deferred")} className="px-2 py-1 bg-yellow-700 hover:bg-yellow-600 rounded text-xs text-white">
             ⏸ Defer
           </button>
           <button onClick={() => setSelectedItems(new Set())} className="px-2 py-1 text-slate-400 hover:text-slate-200 text-xs">
             Clear
+          </button>
+          <span className="w-px h-5 bg-slate-700" />
+          <button onClick={() => navigate(`/jobs/${jobId}/proof`)}
+            className="px-2 py-1 bg-cyan-700 hover:bg-cyan-600 rounded text-xs text-white">
+            📋 Build Case
           </button>
         </div>
       )}
@@ -303,7 +348,7 @@ export const InvestigationQueuePage: React.FC = () => {
                   <input type="checkbox" checked={selectedItems.size === items.length && items.length > 0} onChange={toggleSelectAll} />
                 </th>
                 <th className="p-2 w-10">#</th>
-                <th className="p-2 w-16">Score <InfoTooltip text="Composite priority (0–100) from Severity 30%, Confidence 25%, Corroboration 20%, Blast Radius 15%, Recency 10%." /></th>
+                <th className="p-2 w-16">Score <InfoTooltip text="Composite priority (0–100): Severity 25%, Confidence 20%, Corroboration 20%, Blast Radius 15%, Recency 10%, Feedback 10%. Feedback adjusts based on sensor trust and signature noise from analyst review history." /></th>
                 <th className="p-2 w-10">Type</th>
                 <th className="p-2 w-20">Severity</th>
                 <th className="p-2">Title</th>
@@ -318,6 +363,7 @@ export const InvestigationQueuePage: React.FC = () => {
                   <tr
                     className={`border-b border-slate-800/50 hover:bg-slate-900/60 transition-colors cursor-pointer ${
                       item.analyst_status === "false_positive" ? "opacity-50" : ""
+                    } ${item.analyst_status === "needs_review" ? "border-l-2 border-l-purple-500 bg-purple-950/20" : ""
                     } ${drawerItemId === item.item_id ? "bg-slate-900/80 border-l-2 border-l-cyan-500" : ""}`}
                     onClick={() => setDrawerItemId(drawerItemId === item.item_id ? null : item.item_id)}
                   >
@@ -326,12 +372,27 @@ export const InvestigationQueuePage: React.FC = () => {
                     </td>
                     <td className="p-2 text-slate-500 font-mono text-xs">{item.rank_position}</td>
                     <td className="p-2">
-                      <div className="flex items-center gap-1">
+                      <div className="flex items-center gap-1 group/score relative">
                         <div className="w-12 h-1.5 bg-slate-800 rounded-full overflow-hidden">
                           <div className="h-full bg-gradient-to-r from-blue-500 to-red-500 rounded-full"
                             style={{ width: `${Math.round(item.rank_score * 100)}%` }} />
                         </div>
-                        <span className="text-xs text-slate-400 font-mono">{(item.rank_score * 100).toFixed(0)}</span>
+                        <span className="text-xs text-slate-400 font-mono cursor-help">{(item.rank_score * 100).toFixed(0)}</span>
+                        {/* Why this rank? tooltip */}
+                        <div className="absolute left-0 top-6 z-50 hidden group-hover/score:block bg-slate-800 border border-slate-700 rounded-lg p-2.5 text-xs text-slate-300 w-56 shadow-xl">
+                          <div className="font-semibold text-slate-200 mb-1">Why this rank?</div>
+                          <div className="space-y-0.5">
+                            <div className="flex justify-between"><span>Severity (25%)</span><span className="font-mono text-slate-400">{item.severity}</span></div>
+                            <div className="flex justify-between"><span>Confidence (20%)</span><span className="font-mono text-slate-400">{(item.confidence * 100).toFixed(0)}%</span></div>
+                            <div className="flex justify-between"><span>Corroboration (20%)</span><span className="font-mono text-slate-400">{item.corroborating_count} links</span></div>
+                            <div className="flex justify-between"><span>Blast Radius (15%)</span><span className="font-mono text-slate-400">{item.affected_hosts_count} hosts</span></div>
+                            <div className="flex justify-between"><span>Recency (10%)</span><span className="font-mono text-slate-400">—</span></div>
+                            <div className="flex justify-between"><span>Feedback (10%)</span><span className="font-mono text-slate-400">{item.sensor ? `via ${item.sensor}` : "neutral"}</span></div>
+                          </div>
+                          <div className="mt-1.5 pt-1 border-t border-slate-700 text-[10px] text-slate-500">
+                            Feedback adjusts rank based on historical sensor trust and signature noise.
+                          </div>
+                        </div>
                       </div>
                     </td>
                     <td className="p-2 text-lg" title={item.source_type}>{SOURCE_ICONS[item.source_type] ?? "?"}</td>
@@ -369,6 +430,11 @@ export const InvestigationQueuePage: React.FC = () => {
                             className="px-1.5 py-0.5 bg-red-900 hover:bg-red-800 rounded text-xs text-red-200"
                             title="False Positive">✗</button>
                         )}
+                        {item.analyst_status !== "needs_review" && (
+                          <button onClick={() => statusMut.mutate({ itemId: item.item_id, status: "needs_review" })}
+                            className="px-1.5 py-0.5 bg-purple-900 hover:bg-purple-800 rounded text-xs text-purple-200"
+                            title="Needs Review">👁</button>
+                        )}
                         {item.analyst_status !== "deferred" && (
                           <button onClick={() => statusMut.mutate({ itemId: item.item_id, status: "deferred" })}
                             className="px-1.5 py-0.5 bg-yellow-900 hover:bg-yellow-800 rounded text-xs text-yellow-200"
@@ -377,12 +443,17 @@ export const InvestigationQueuePage: React.FC = () => {
                       </div>
                     </td>
                   </tr>
-                  {/* Evidence drawer — inline below the row */}
+                  {/* Evidence drawer + Seen Before — inline below the row */}
                   {drawerItemId === item.item_id && (
                     <tr>
                       <td colSpan={9} className="p-0">
-                        <EvidenceDrawer jobId={jobId} itemId={item.item_id}
-                          isOpen={true} onClose={() => setDrawerItemId(null)} />
+                        <div className="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-0">
+                          <EvidenceDrawer jobId={jobId} itemId={item.item_id}
+                            isOpen={true} onClose={() => setDrawerItemId(null)} />
+                          <div className="border-l border-slate-800 p-2">
+                            <SeenBeforePanel jobId={jobId} itemId={item.item_id} />
+                          </div>
+                        </div>
                       </td>
                     </tr>
                   )}
@@ -395,6 +466,7 @@ export const InvestigationQueuePage: React.FC = () => {
           )}
         </div>
       )}
+      <JobSubPageNav jobId={jobId!} currentPath="investigation" />
     </div>
   );
 };

@@ -24,6 +24,7 @@ class Proof(Base):
     status = Column(String, nullable=False, default="draft")  # draft, final, archived
     severity = Column(String, nullable=False, default="info")  # critical, high, medium, low, info
     confidence = Column(Float, nullable=False, default=0.0)    # 0.0–1.0, analyst-assessed
+    mode = Column(String, nullable=False, default="soc_handoff")  # soc_handoff, ir_technical, executive_summary
 
     # Rendered narrative (generated from items)
     narrative_markdown = Column(Text, nullable=True)

@@ -1,5 +1,6 @@
 import React from "react";
 import { useParams, Link } from "react-router-dom";
+import { JobSubPageNav } from "../components/JobSubPageNav";
 import { useQuery } from "@tanstack/react-query";
 import { api, type FileItem } from "../api";
 import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
@@ -17,6 +18,7 @@ export const FilesListPage: React.FC = () => {
     const files = data?.items ?? [];
 
     return (
+        <>
         <div className="flex gap-6 items-start">
         <div className="space-y-4 flex-1 min-w-0">
             <nav className="text-sm text-slate-400">
@@ -121,5 +123,7 @@ export const FilesListPage: React.FC = () => {
         </div>
         <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
         </div>
+        <JobSubPageNav jobId={jobId!} currentPath="files" />
+        </>
     );
 };

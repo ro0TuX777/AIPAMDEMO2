@@ -1,5 +1,6 @@
 import React, { useState } from "react";
-import { useParams, Link, useNavigate } from "react-router-dom";
+import { useParams, Link, useNavigate, useSearchParams } from "react-router-dom";
+import { JobSubPageNav } from "../components/JobSubPageNav";
 import { useQuery } from "@tanstack/react-query";
 import { api, type AlertItem, type Severity } from "../api";
 import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
@@ -16,18 +17,21 @@ const SEV_COLORS: Record<string, string> = {
 export const AlertsListPage: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
   const navigate = useNavigate();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const pcapLabel = searchParams.get("pcap_label") || "";
   const [sevFilter, setSevFilter] = useState<Severity | "">("");
   const { activeHelpField, setActiveHelpField, toggleHelp } = usePageHelp();
 
   const { data, isLoading, error } = useQuery({
-    queryKey: ["job", jobId, "alerts", sevFilter],
-    queryFn: () => api.listAlerts(jobId!, { severity: sevFilter || undefined, limit: 200 }),
+    queryKey: ["job", jobId, "alerts", sevFilter, pcapLabel],
+    queryFn: () => api.listAlerts(jobId!, { severity: sevFilter || undefined, pcap_label: pcapLabel || undefined, limit: 200 }),
     enabled: !!jobId,
   });
 
   const alerts = data?.items ?? [];
 
   return (
+    <>
     <div className="flex gap-6 items-start">
     <div className="space-y-4 flex-1 min-w-0">
       <nav className="text-sm text-slate-400">
@@ -40,15 +44,23 @@ export const AlertsListPage: React.FC = () => {
 
       <div className="flex items-center justify-between">
         <h1 className={`text-xl font-semibold ${labelHint("alerts", activeHelpField)}`} onClick={() => toggleHelp("alerts")}>Alerts ({alerts.length})</h1>
-        <select value={sevFilter} onChange={e => setSevFilter(e.target.value as Severity | "")}
-          className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-sm text-slate-300">
-          <option value="">All severities</option>
-          <option value="critical">Critical</option>
-          <option value="high">High</option>
-          <option value="medium">Medium</option>
-          <option value="low">Low</option>
-          <option value="info">Info</option>
-        </select>
+        <div className="flex items-center gap-2">
+          {pcapLabel && (
+            <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-xs font-medium">
+              Phase: {pcapLabel}
+              <button onClick={() => { searchParams.delete("pcap_label"); setSearchParams(searchParams); }} className="ml-1.5 text-emerald-400 hover:text-white">✕</button>
+            </span>
+          )}
+          <select value={sevFilter} onChange={e => setSevFilter(e.target.value as Severity | "")}
+            className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-sm text-slate-300">
+            <option value="">All severities</option>
+            <option value="critical">Critical</option>
+            <option value="high">High</option>
+            <option value="medium">Medium</option>
+            <option value="low">Low</option>
+            <option value="info">Info</option>
+          </select>
+        </div>
       </div>
 
       {isLoading && <p className="text-slate-400 animate-pulse">Loading alerts…</p>}
@@ -122,6 +134,8 @@ export const AlertsListPage: React.FC = () => {
     </div>
     <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
     </div>
+    <JobSubPageNav jobId={jobId!} currentPath="alerts" />
+    </>
   );
 };
 

@@ -1,5 +1,6 @@
 import React, { useRef, useCallback, useState, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
+import { JobSubPageNav } from "../components/JobSubPageNav";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -1514,6 +1515,7 @@ export const ReportPage: React.FC = () => {
         </>)}
       </div>
       <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
+      <JobSubPageNav jobId={jobId!} currentPath="report" />
     </>
   );
 };

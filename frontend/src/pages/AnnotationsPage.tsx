@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from "react";
 import { useParams, Link } from "react-router-dom";
+import { JobSubPageNav } from "../components/JobSubPageNav";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   api,
@@ -440,6 +441,7 @@ export function AnnotationsPage() {
   );
 
   return (
+    <>
     <div className="flex gap-6 items-start p-6">
       <div className="max-w-4xl mx-auto flex-1 min-w-0 space-y-4">
         {/* Breadcrumb */}
@@ -555,5 +557,7 @@ export function AnnotationsPage() {
       </div>
       <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
     </div>
+    <JobSubPageNav jobId={jobId!} currentPath="annotations" />
+    </>
   );
 }

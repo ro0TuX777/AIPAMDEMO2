@@ -19,10 +19,13 @@ import { ChatPage } from "./pages/ChatPage";
 import { SettingsPage } from "./pages/SettingsPage";
 import { TrainingPage } from "./pages/TrainingPage";
 import { RulesManagementPage } from "./pages/RulesManagementPage";
+import { AdminFeedbackPage } from "./pages/AdminFeedbackPage";
 import { TheoriesPage } from "./pages/TheoriesPage";
 import { SlicesPage } from "./pages/SlicesPage";
 import { AnnotationsPage } from "./pages/AnnotationsPage";
 import { InvestigationQueuePage } from "./pages/InvestigationQueuePage";
+import { ComparePage } from "./pages/ComparePage";
+import { ProofBuilderPage } from "./pages/ProofBuilderPage";
 import { GlobalHostsPage } from "./pages/GlobalHostsPage";
 import { GlobalHostDetailPage } from "./pages/GlobalHostDetailPage";
 import { ModelSetupModal } from "./components/ModelSetupModal";
@@ -161,6 +164,9 @@ export const App: React.FC = () => {
           <Route path="/jobs/:jobId/artifacts" element={<ArtifactsPage />} />
           <Route path="/jobs/:jobId/chat" element={<ChatPage />} />
           <Route path="/jobs/:jobId/report" element={<ReportPage />} />
+          <Route path="/jobs/:jobId/compare" element={<ComparePage />} />
+          <Route path="/jobs/:jobId/proof" element={<ProofBuilderPage />} />
+          <Route path="/jobs/:jobId/proof/:proofId" element={<ProofBuilderPage />} />
 
           {/* New analysis (V1 upload flow) */}
           <Route path="/new" element={<NewAnalysisPage />} />
@@ -169,6 +175,7 @@ export const App: React.FC = () => {
           <Route path="/settings" element={<SettingsPage />} />
           <Route path="/training" element={<TrainingPage />} />
           <Route path="/rules" element={<RulesManagementPage />} />
+          <Route path="/admin/feedback" element={<AdminFeedbackPage />} />
 
           {/* Global Hosts (cross-job forensics) */}
           <Route path="/hosts" element={<GlobalHostsPage />} />

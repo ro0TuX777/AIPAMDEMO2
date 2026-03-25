@@ -85,8 +85,19 @@ def store_findings(
     if collection is None:
         return 0
 
+    # HITL gate: only index findings with analyst_status == "confirmed"
+    confirmed_findings = [
+        f for f in findings
+        if f.get("analyst_status") == "confirmed"
+    ]
+    if not confirmed_findings and findings:
+        logger.info(
+            "Forensic memory: %d findings skipped (none confirmed by analyst)",
+            len(findings),
+        )
+
     indexed = 0
-    for i, finding in enumerate(findings):
+    for i, finding in enumerate(confirmed_findings):
         doc_text = _finding_to_text(finding)
         doc_id = f"{job_id}-{i}"
         metadata = {

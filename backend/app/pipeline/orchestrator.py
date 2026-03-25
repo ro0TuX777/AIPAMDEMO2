@@ -20,8 +20,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
+from backend.app.models.alert import Alert
+from backend.app.models.finding import Finding
+from backend.app.models.host import Host
 from backend.app.models.job import Job
 from backend.app.models.job_pcap import JobPcap
 from backend.app.models.sensor import JobSensor
@@ -51,6 +55,48 @@ def _emit(job_id: str, event_type: str, **payload: Any) -> None:
         publish_job_event(job_id, event_type, {"job_id": job_id, **payload})
     except Exception:
         pass
+
+
+def _publish_partial_result(
+    job_id: str,
+    stage: str,
+    data: dict[str, Any],
+    completed_stages: list[str],
+    current_stage: str | None = None,
+) -> None:
+    """Persist partial results and emit SSE event (fire-and-forget).
+
+    Called after each major pipeline stage to give the frontend early data.
+    """
+    try:
+        from backend.app.partial_results import save_partial_result
+
+        partial_payload: dict[str, Any] = {
+            "completed_stages": completed_stages,
+            "current_stage": current_stage,
+        }
+        # Merge stage-specific data under partial_data
+        partial_payload.setdefault("partial_data", {})
+        partial_payload["partial_data"].update(data)
+
+        # Read existing partial to accumulate across stages
+        from backend.app.partial_results import get_partial_result
+        existing = get_partial_result(job_id)
+        if existing and "partial_data" in existing:
+            merged = existing["partial_data"]
+            merged.update(data)
+            partial_payload["partial_data"] = merged
+
+        partial_payload["completed_stages"] = completed_stages
+        partial_payload["current_stage"] = current_stage
+        save_partial_result(job_id, partial_payload)
+
+        # Emit SSE event so frontend updates immediately
+        _emit(job_id, "partial_result", stage=stage, partial_data=data,
+              completed_stages=completed_stages, current_stage=current_stage)
+    except Exception as exc:
+        logger.debug("Failed to publish partial result for job %s stage %s: %s",
+                      job_id, stage, exc)
 
 
 def _now_iso() -> str:
@@ -388,6 +434,80 @@ def run_pipeline(
             _update_job_status(db, job, "failed", f"Stage {stage_def.name} failed: {result.error}")
             return "failed"
 
+    # --- Publish partial result: ingest/parse stage data ---
+    _completed_stages: list[str] = [s.name for s in stages]
+    _pcap_stats: dict[str, Any] = {}
+    try:
+        # Gather PCAP stats from input files
+        input_dir = job_dir / "input"
+        pcap_files_on_disk = list(input_dir.glob("*.pcap")) + list(input_dir.glob("*.pcapng"))
+        _pcap_stats = {
+            "file_count": len(pcap_files_on_disk),
+            "total_bytes": sum(f.stat().st_size for f in pcap_files_on_disk if f.exists()),
+        }
+        # Try to read Zeek conn.log for top hosts
+        _top_hosts: list[dict[str, Any]] = []
+        _protocol_dist: dict[str, int] = {}
+        conn_log = job_dir / "sensors" / "zeek" / "conn.log"
+        if conn_log.exists():
+            host_bytes: dict[str, int] = {}
+            for line in conn_log.read_text().splitlines():
+                if line.startswith("#"):
+                    continue
+                parts = line.split("\t")
+                if len(parts) >= 10:
+                    src, dst = parts[2], parts[4]
+                    proto = parts[6] if len(parts) > 6 else "unknown"
+                    bsrc = int(parts[9]) if parts[9].isdigit() else 0
+                    host_bytes[src] = host_bytes.get(src, 0) + bsrc
+                    host_bytes[dst] = host_bytes.get(dst, 0) + bsrc
+                    _protocol_dist[proto] = _protocol_dist.get(proto, 0) + 1
+            _top_hosts = [
+                {"ip": ip, "total_bytes": b}
+                for ip, b in sorted(host_bytes.items(), key=lambda x: -x[1])[:10]
+            ]
+
+        # Try to read Suricata alert summary
+        _alert_summary: dict[str, Any] = {"total": 0, "by_severity": {}}
+        eve_json = job_dir / "sensors" / "suricata" / "eve.json"
+        if eve_json.exists():
+            sev_counts: dict[str, int] = {}
+            alert_total = 0
+            for line in eve_json.read_text().splitlines():
+                if not line.strip():
+                    continue
+                try:
+                    rec = json.loads(line)
+                    if rec.get("event_type") == "alert":
+                        alert_total += 1
+                        sev = str(rec.get("alert", {}).get("severity", "unknown"))
+                        sev_counts[sev] = sev_counts.get(sev, 0) + 1
+                        # Emit early_alert for high severity (1 = highest in Suricata)
+                        if sev in ("1", "2"):
+                            sig_name = rec.get("alert", {}).get("signature", "Unknown alert")
+                            _emit(job_id, "early_alert",
+                                  title=sig_name,
+                                  severity="critical" if sev == "1" else "high",
+                                  src_ip=rec.get("src_ip"),
+                                  dst_ip=rec.get("dest_ip"))
+                except json.JSONDecodeError:
+                    pass
+            _alert_summary = {"total": alert_total, "by_severity": sev_counts}
+
+        _publish_partial_result(
+            job_id, "parse",
+            {
+                "pcap_stats": _pcap_stats,
+                "top_hosts": _top_hosts,
+                "protocol_distribution": _protocol_dist,
+                "alert_summary": _alert_summary,
+            },
+            completed_stages=_completed_stages,
+            current_stage="sensors",
+        )
+    except Exception as exc:
+        logger.debug("Failed to publish parse partial result: %s", exc)
+
     # --- Step 4: File extraction manifest ---
     # The actual extraction happens in file_triage sensor (Step 5).
     # We write the manifest after sensors complete (see below).
@@ -460,6 +580,28 @@ def run_pipeline(
     # --- Write extraction manifest (§3.3) ---
     _write_extraction_manifest(job_dir)
 
+    # --- Publish partial result: sensor completion summary ---
+    _completed_stages.append("sensors")
+    try:
+        sensor_summary = {
+            "total": len(sensor_results),
+            "completed": sum(1 for r in sensor_results if r.status == "completed"),
+            "failed": sum(1 for r in sensor_results if r.status == "failed"),
+            "skipped": sum(1 for r in sensor_results if r.status == "skipped"),
+            "sensors": [
+                {"name": r.sensor, "status": r.status, "duration_ms": r.duration_ms}
+                for r in sensor_results
+            ],
+        }
+        _publish_partial_result(
+            job_id, "sensors",
+            {"sensor_summary": sensor_summary},
+            completed_stages=_completed_stages,
+            current_stage="correlate",
+        )
+    except Exception as exc:
+        logger.debug("Failed to publish sensor partial result: %s", exc)
+
     # --- Step 6-8: Normalize, Correlate, Persist ---
     step_num += 1
     _emit(job_id, "stage.status", stage="correlate", status="running",
@@ -480,6 +622,33 @@ def run_pipeline(
     except Exception as exc:
         logger.error("Correlation failed for job %s: %s", job_id, exc, exc_info=True)
         has_errors = True
+
+    # --- Publish partial result: correlation / aggregate data ---
+    _completed_stages.append("correlate")
+    try:
+        _corr_data: dict[str, Any] = {}
+        if corr_counts:
+            _corr_data["correlation_counts"] = corr_counts
+            # Query early finding/alert counts from DB
+            from sqlalchemy import func as sa_func
+            _corr_data["finding_count"] = db.scalar(
+                select(sa_func.count()).select_from(Finding).where(Finding.job_id == job_id)
+            ) or 0
+            _corr_data["alert_count"] = db.scalar(
+                select(sa_func.count()).select_from(Alert).where(Alert.job_id == job_id)
+            ) or 0
+            _corr_data["host_count"] = db.scalar(
+                select(sa_func.count()).select_from(Host).where(Host.job_id == job_id)
+            ) or 0
+
+        _publish_partial_result(
+            job_id, "correlate",
+            _corr_data,
+            completed_stages=_completed_stages,
+            current_stage="index",
+        )
+    except Exception as exc:
+        logger.debug("Failed to publish correlate partial result: %s", exc)
 
     # --- Step 9: Auto-index pipeline outputs for RAG ───────────────
     step_num += 1
@@ -605,6 +774,13 @@ def run_pipeline(
 
     # --- Write job_metrics.json (§20) ---
     _write_job_metrics(job_dir, job, stages, sensor_results, corr_counts)
+
+    # --- Clean up partial results (full results now available) ---
+    try:
+        from backend.app.partial_results import delete_partial_result
+        delete_partial_result(job_id)
+    except Exception:
+        pass
 
     logger.info("Pipeline completed for job %s: status=%s, metrics=%s", job_id, final_status, metrics)
     return final_status

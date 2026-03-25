@@ -4,12 +4,13 @@ Investigation Queue ranking algorithm.
 Produces a unified rank_score for findings, alerts, and theories
 so they can be sorted into a single triage queue.
 
-Weights (Sprint 1 — static):
-  severity   0.30
-  confidence 0.25
-  corroboration 0.20
-  blast_radius 0.15
-  recency    0.10
+Weights (Sprint 7 — feedback-adjusted):
+  severity        0.25  (was 0.30)
+  confidence      0.20  (was 0.25)
+  corroboration   0.20
+  blast_radius    0.15
+  recency         0.10
+  feedback_adj    0.10  (NEW — learned from analyst behavior)
 """
 
 from __future__ import annotations
@@ -57,12 +58,18 @@ def _extract_mitre_ids(text: str | None, hypothesis_type: str | None = None) -> 
         ids.update(_MITRE_PATTERN.findall(text))
     return sorted(ids)
 
-# ── Weight constants ─────────────────────────────────────────────────────
-W_SEVERITY = 0.30
-W_CONFIDENCE = 0.25
+# ── Weight constants (Sprint 7: reduced sev/conf to make room for feedback) ──
+W_SEVERITY = 0.25
+W_CONFIDENCE = 0.20
 W_CORROBORATION = 0.20
 W_BLAST_RADIUS = 0.15
 W_RECENCY = 0.10
+W_FEEDBACK = 0.10
+
+# Sub-weights within the feedback_adjustment component
+_FB_SENSOR_TRUST = 0.50
+_FB_SIGNATURE_NOISE = 0.30
+_FB_CATEGORY_CONFIRM = 0.20
 
 _SEVERITY_MAP: dict[str, float] = {
     "critical": 1.0,
@@ -129,20 +136,61 @@ def _blast_radius_score(extra: dict[str, Any]) -> float:
     return min(1.0, count / 10.0)
 
 
+def compute_feedback_adjustment(
+    sensor: str | None,
+    signature: str | None,
+    category: str | None,
+    sensor_adjustments: dict[str, float] | None = None,
+    signature_adjustments: dict[str, float] | None = None,
+    category_adjustments: dict[str, float] | None = None,
+) -> float:
+    """Compute the feedback adjustment factor (0.0–1.0 range, centered at 0.5).
+
+    Components:
+      - sensor_trust_factor (50%): high-trust sensors get boosted
+      - signature_noise_penalty (30%): noisy signatures get penalized
+      - category_confirmation_rate (20%): categories often confirmed rank higher
+    """
+    sensor_factor = 0.5  # neutral
+    if sensor_adjustments and sensor and sensor in sensor_adjustments:
+        # adjustments are in [-0.5, 0.5], shift to [0.0, 1.0]
+        sensor_factor = 0.5 + sensor_adjustments[sensor]
+
+    sig_factor = 0.5  # neutral
+    if signature_adjustments and signature and signature in signature_adjustments:
+        # penalties are in [-0.5, 0.0], shift to [0.0, 0.5] → center at 0.5
+        sig_factor = 0.5 + signature_adjustments[signature]
+
+    cat_factor = 0.5  # neutral
+    if category_adjustments and category and category in category_adjustments:
+        cat_factor = 0.5 + category_adjustments[category]
+
+    return (
+        _FB_SENSOR_TRUST * min(1.0, max(0.0, sensor_factor))
+        + _FB_SIGNATURE_NOISE * min(1.0, max(0.0, sig_factor))
+        + _FB_CATEGORY_CONFIRM * min(1.0, max(0.0, cat_factor))
+    )
+
+
 def compute_rank_score(
     severity: str,
     confidence: float,
     corroboration: float,
     blast_radius: float,
     recency: float,
+    feedback_adj: float = 0.5,
 ) -> float:
-    """Compute the weighted rank score (0.0–1.0)."""
+    """Compute the weighted rank score (0.0–1.0).
+
+    feedback_adj defaults to 0.5 (neutral) when no feedback data is available.
+    """
     return (
         W_SEVERITY * _severity_score(severity)
         + W_CONFIDENCE * min(1.0, max(0.0, confidence))
         + W_CORROBORATION * corroboration
         + W_BLAST_RADIUS * blast_radius
         + W_RECENCY * recency
+        + W_FEEDBACK * min(1.0, max(0.0, feedback_adj))
     )
 
 
@@ -165,7 +213,12 @@ def _find_corroborating_hosts(db: Session, job_id: str, host_ips: list[str]) -> 
     return max(0, alert_count + finding_count - 1)  # -1 to exclude self
 
 
-def _finding_to_queue_item(f: Finding, db: Session, now: datetime) -> InvestigationQueueItem:
+def _finding_to_queue_item(
+    f: Finding, db: Session, now: datetime,
+    sensor_adj: dict[str, float] | None = None,
+    sig_adj: dict[str, float] | None = None,
+    cat_adj: dict[str, float] | None = None,
+) -> InvestigationQueueItem:
     """Convert a Finding ORM object to an InvestigationQueueItem."""
     evidence = {}
     if f.evidence_json:
@@ -186,6 +239,7 @@ def _finding_to_queue_item(f: Finding, db: Session, now: datetime) -> Investigat
     corroboration = _corroboration_score(f.job_id, "finding", f.finding_id, db)
     blast_radius = _blast_radius_score(extra)
     recency = _recency_score(f.reviewed_at or str(now), now)
+    fb_adj = compute_feedback_adjustment(f.sensor, None, f.category, sensor_adj, sig_adj, cat_adj)
 
     rank = compute_rank_score(
         severity=f.severity or "info",
@@ -193,6 +247,7 @@ def _finding_to_queue_item(f: Finding, db: Session, now: datetime) -> Investigat
         corroboration=corroboration,
         blast_radius=blast_radius,
         recency=recency,
+        feedback_adj=fb_adj,
     )
 
     return InvestigationQueueItem(
@@ -215,11 +270,17 @@ def _finding_to_queue_item(f: Finding, db: Session, now: datetime) -> Investigat
         analyst_status=f.analyst_status or "unreviewed",
         analyst_notes=f.analyst_notes,
         reviewed_at=f.reviewed_at,
+        reviewer_id=getattr(f, "reviewer_id", None),
         extra=extra,
     )
 
 
-def _alert_to_queue_item(a: Alert, db: Session, now: datetime) -> InvestigationQueueItem:
+def _alert_to_queue_item(
+    a: Alert, db: Session, now: datetime,
+    sensor_adj: dict[str, float] | None = None,
+    sig_adj: dict[str, float] | None = None,
+    cat_adj: dict[str, float] | None = None,
+) -> InvestigationQueueItem:
     """Convert an Alert ORM object to an InvestigationQueueItem."""
     extra: dict[str, Any] = {}
     if a.src_ip:
@@ -235,6 +296,7 @@ def _alert_to_queue_item(a: Alert, db: Session, now: datetime) -> InvestigationQ
     corroboration = _corroboration_score(a.job_id, "alert", a.alert_id, db)
     blast_radius = _blast_radius_score(extra)
     recency = _recency_score(a.ts, now)
+    fb_adj = compute_feedback_adjustment(a.engine, a.signature, a.category, sensor_adj, sig_adj, cat_adj)
 
     # Alerts don't have a confidence score; use severity-based proxy
     confidence_proxy = _severity_score(a.severity or "info") * 0.7
@@ -245,6 +307,7 @@ def _alert_to_queue_item(a: Alert, db: Session, now: datetime) -> InvestigationQ
         corroboration=corroboration,
         blast_radius=blast_radius,
         recency=recency,
+        feedback_adj=fb_adj,
     )
 
     return InvestigationQueueItem(
@@ -267,11 +330,17 @@ def _alert_to_queue_item(a: Alert, db: Session, now: datetime) -> InvestigationQ
         analyst_status=a.analyst_status or "unreviewed",
         analyst_notes=a.analyst_notes,
         reviewed_at=a.reviewed_at,
+        reviewer_id=getattr(a, "reviewer_id", None),
         extra=extra,
     )
 
 
-def _theory_to_queue_item(t: Theory, db: Session, now: datetime) -> InvestigationQueueItem:
+def _theory_to_queue_item(
+    t: Theory, db: Session, now: datetime,
+    sensor_adj: dict[str, float] | None = None,
+    sig_adj: dict[str, float] | None = None,
+    cat_adj: dict[str, float] | None = None,
+) -> InvestigationQueueItem:
     """Convert a Theory ORM object to an InvestigationQueueItem."""
     extra: dict[str, Any] = {
         "hypothesis_type": t.hypothesis_type,
@@ -303,12 +372,15 @@ def _theory_to_queue_item(t: Theory, db: Session, now: datetime) -> Investigatio
 
     blast_radius = _blast_radius_score({"affected_hosts": affected_hosts})
 
+    fb_adj = compute_feedback_adjustment(None, None, t.hypothesis_type, sensor_adj, sig_adj, cat_adj)
+
     rank = compute_rank_score(
         severity="high" if t.score >= 0.7 else "medium" if t.score >= 0.4 else "low",
         confidence=confidence,
         corroboration=corroboration,
         blast_radius=blast_radius,
         recency=recency,
+        feedback_adj=fb_adj,
     )
 
     return InvestigationQueueItem(
@@ -331,6 +403,7 @@ def _theory_to_queue_item(t: Theory, db: Session, now: datetime) -> Investigatio
         analyst_status=t.analyst_status or "unreviewed",
         analyst_notes=t.analyst_notes,
         reviewed_at=t.reviewed_at,
+        reviewer_id=getattr(t, "reviewer_id", None),
         extra=extra,
     )
 
@@ -352,14 +425,24 @@ def build_investigation_queue(
 
     Returns (sorted_items, summary).
     """
+    from backend.app.services.feedback_analytics import (
+        compute_ranking_adjustments,
+        compute_signature_adjustments,
+    )
+
     now = datetime.now(timezone.utc)
     items: list[InvestigationQueueItem] = []
+
+    # ── Load feedback adjustments once (Sprint 7) ──
+    sensor_adj = compute_ranking_adjustments(db)
+    sig_adj = compute_signature_adjustments(db)
+    cat_adj: dict[str, float] | None = None  # reserved for future category-level feedback
 
     # ── Findings ──
     if source_filter is None or source_filter == QueueItemSource.finding:
         findings = db.query(Finding).filter(Finding.job_id == job_id).all()
         for f in findings:
-            items.append(_finding_to_queue_item(f, db, now))
+            items.append(_finding_to_queue_item(f, db, now, sensor_adj, sig_adj, cat_adj))
 
     # ── Alerts (deduplicated by signature) ──
     if source_filter is None or source_filter == QueueItemSource.alert:
@@ -370,7 +453,7 @@ def build_investigation_queue(
             sig_key = f"{a.signature}:{a.severity}"
             if sig_key not in seen_sigs:
                 seen_sigs.add(sig_key)
-                items.append(_alert_to_queue_item(a, db, now))
+                items.append(_alert_to_queue_item(a, db, now, sensor_adj, sig_adj, cat_adj))
 
     # ── Theories (job-scoped only for queue) ──
     if source_filter is None or source_filter == QueueItemSource.theory:
@@ -379,7 +462,7 @@ def build_investigation_queue(
             Theory.scope_type == "job",
         ).all()
         for t in theories:
-            items.append(_theory_to_queue_item(t, db, now))
+            items.append(_theory_to_queue_item(t, db, now, sensor_adj, sig_adj, cat_adj))
 
     # ── Apply filters ──
     if status_filter:
@@ -413,12 +496,16 @@ def build_investigation_queue(
         item.rank_position = idx
 
     # ── Build summary ──
+    total = len(items)
+    unreviewed_count = sum(1 for i in items if i.analyst_status == AnalystStatus.unreviewed)
     summary = QueueSummary(
-        total=len(items),
-        unreviewed=sum(1 for i in items if i.analyst_status == AnalystStatus.unreviewed),
+        total=total,
+        unreviewed=unreviewed_count,
         confirmed=sum(1 for i in items if i.analyst_status == AnalystStatus.confirmed),
         false_positive=sum(1 for i in items if i.analyst_status == AnalystStatus.false_positive),
+        needs_review=sum(1 for i in items if i.analyst_status == AnalystStatus.needs_review),
         deferred=sum(1 for i in items if i.analyst_status == AnalystStatus.deferred),
+        review_rate=((total - unreviewed_count) / total) if total > 0 else 0.0,
     )
 
     return items, summary

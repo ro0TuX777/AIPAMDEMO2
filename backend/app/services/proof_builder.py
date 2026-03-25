@@ -5,11 +5,19 @@ A "proof" is an analyst's argument: a set of pinned evidence items
 with roles (supports/contradicts/context) and a conclusion.  The
 builder manages creation, item management, and renders a markdown
 narrative from the items.
+
+Narrative generation supports three modes:
+  - soc_handoff: Executive Summary, Key Findings, Affected Systems, Recommended Actions
+  - ir_technical: Incident Summary, Attack Path, Indicator Analysis, Timeline, MITRE Mapping, Containment
+  - executive_summary: Business Impact, Risk Assessment, Remediation Status, Next Steps
 """
 
 from __future__ import annotations
 
+import html
 import logging
+import os
+import re
 from datetime import datetime, timezone
 from typing import Any
 from uuid import uuid4
@@ -79,7 +87,8 @@ def _resolve_entity(db: Session, entity_type: str, entity_id: str) -> tuple[str,
 def create_proof(db: Session, job_id: str, *, title: str,
                  conclusion: str | None = None,
                  severity: str = "info",
-                 confidence: float = 0.0) -> Proof:
+                 confidence: float = 0.0,
+                 mode: str = "soc_handoff") -> Proof:
     """Create a new empty proof for a job."""
     job = db.get(Job, job_id)
     if not job:
@@ -94,6 +103,7 @@ def create_proof(db: Session, job_id: str, *, title: str,
         status="draft",
         severity=severity,
         confidence=confidence,
+        mode=mode,
         item_count=0,
         created_at=now,
         updated_at=now,
@@ -113,7 +123,7 @@ def update_proof(db: Session, proof_id: str, **kwargs) -> Proof:
     if not proof:
         raise ValueError(f"Proof {proof_id} not found")
 
-    allowed = {"title", "conclusion", "status", "severity", "confidence"}
+    allowed = {"title", "conclusion", "status", "severity", "confidence", "mode", "narrative_markdown"}
     for k, v in kwargs.items():
         if k in allowed and v is not None:
             setattr(proof, k, v)
@@ -246,20 +256,166 @@ def list_items(db: Session, proof_id: str) -> list[ProofItem]:
 
 _ROLE_EMOJI = {"supports": "✅", "contradicts": "❌", "context": "ℹ️"}
 
+# ── Mode-specific prompt templates ─────────────────────────────────────
 
-def render_narrative(db: Session, proof_id: str) -> str:
-    """Render a Markdown narrative from a proof's items and conclusion."""
+_MODE_PROMPTS: dict[str, str] = {
+    "soc_handoff": (
+        "You are generating a SOC handoff report. Structure it with these sections:\n"
+        "1. Executive Summary — one-paragraph overview of the incident\n"
+        "2. Key Findings — bullet list of the most critical evidence\n"
+        "3. Affected Systems — list of hosts/IPs and their roles\n"
+        "4. Recommended Actions — prioritized next steps for the receiving team\n"
+    ),
+    "ir_technical": (
+        "You are generating a technical Incident Response report. Structure it with these sections:\n"
+        "1. Incident Summary — what happened, when, and how it was detected\n"
+        "2. Attack Path — reconstructed attack sequence based on evidence\n"
+        "3. Indicator Analysis — IOCs, signatures, and anomalies observed\n"
+        "4. Timeline — chronological sequence of events\n"
+        "5. MITRE ATT&CK Mapping — techniques observed (if any)\n"
+        "6. Containment Status — current state and recommended containment\n"
+    ),
+    "executive_summary": (
+        "You are generating an Executive Summary report for non-technical leadership. Structure it with:\n"
+        "1. Business Impact — what business functions are affected\n"
+        "2. Risk Assessment — severity and likelihood of continued impact\n"
+        "3. Remediation Status — what has been done and what remains\n"
+        "4. Next Steps — recommended actions in business terms\n"
+    ),
+}
+
+
+def _build_evidence_context(proof: Any, items: list[Any]) -> str:
+    """Build a text summary of evidence for the LLM prompt."""
+    lines = [f"Proof Title: {proof.title}"]
+    lines.append(f"Severity: {proof.severity} | Confidence: {proof.confidence:.0%}")
+    if proof.conclusion:
+        lines.append(f"Analyst Conclusion: {proof.conclusion}")
+    lines.append("")
+
+    for role_key, role_label in [("supports", "Supporting Evidence"),
+                                  ("contradicts", "Contradicting Evidence"),
+                                  ("context", "Contextual Evidence")]:
+        role_items = [i for i in items if i.role == role_key]
+        if not role_items:
+            continue
+        lines.append(f"--- {role_label} ---")
+        for i in role_items:
+            lines.append(f"- [{i.entity_type.upper()}] {i.entity_id}: {i.label} (severity: {i.severity})")
+            if i.analyst_note:
+                lines.append(f"  Analyst note: {i.analyst_note}")
+    return "\n".join(lines)
+
+
+def _collect_warnings(items: list[Any], db: Session) -> list[str]:
+    """Check for unconfirmed items and generate warnings."""
+    warnings: list[str] = []
+    unconfirmed = 0
+    for item in items:
+        # Check the analyst_status of the source entity
+        spec = _ENTITY_QUERIES.get(item.entity_type)
+        if spec:
+            model, id_col, _ = spec
+            row = db.execute(
+                select(model).where(getattr(model, id_col) == item.entity_id)
+            ).scalars().first()
+            if row:
+                status = getattr(row, "analyst_status", None)
+                if status and status not in ("confirmed",):
+                    unconfirmed += 1
+    if unconfirmed:
+        warnings.append(f"{unconfirmed} included item(s) are not yet confirmed by an analyst")
+    if not items:
+        warnings.append("No evidence items have been added to this proof")
+    return warnings
+
+
+def render_narrative(db: Session, proof_id: str) -> dict[str, Any]:
+    """Render a Markdown narrative from a proof's items and conclusion.
+
+    Returns dict with 'narrative' (str) and 'warnings' (list[str]).
+    Uses LLM when available, falls back to template-based rendering.
+    """
     proof = get_proof(db, proof_id)
     if not proof:
         raise ValueError(f"Proof {proof_id} not found")
 
     items = list_items(db, proof_id)
+    warnings = _collect_warnings(items, db)
+    mode = getattr(proof, "mode", "soc_handoff") or "soc_handoff"
 
+    # Try LLM-powered narrative generation
+    narrative = _try_llm_narrative(proof, items, mode)
+
+    if not narrative:
+        # Fallback: template-based rendering
+        narrative = _template_narrative(proof, items, mode)
+
+    # Persist rendered narrative
+    proof.narrative_markdown = narrative
+    proof.updated_at = _now()
+    db.commit()
+
+    return {"narrative": narrative, "warnings": warnings}
+
+
+def _try_llm_narrative(proof: Any, items: list[Any], mode: str) -> str | None:
+    """Attempt LLM-powered narrative generation. Returns None on failure."""
+    try:
+        import asyncio
+        from backend.app.config_v2 import get_settings
+        from backend.app.llm_client import LLMClient, LLMConfig
+
+        settings = get_settings()
+        ollama_base = settings.aipam_ollama_url.rstrip("/")
+        config = LLMConfig(
+            endpoint=os.getenv("LLM_ENDPOINT", f"{ollama_base}/v1/chat/completions"),
+            model=os.getenv("LLM_MODEL_NAME", "aipam-trafficllm-v10"),
+            temperature=0.3,
+            max_tokens=int(os.getenv("LLM_MAX_TOKENS", "4096")),
+            timeout_seconds=float(os.getenv("LLM_TIMEOUT_SECONDS", "120")),
+        )
+        client = LLMClient(config=config)
+
+        evidence_ctx = _build_evidence_context(proof, items)
+        mode_prompt = _MODE_PROMPTS.get(mode, _MODE_PROMPTS["soc_handoff"])
+
+        system_msg = (
+            "You are a cybersecurity report writer for AIPAM, an AI-powered network "
+            "forensics platform. Generate a professional Markdown report based on the "
+            "evidence provided. Be precise, cite specific evidence items, and maintain "
+            "a factual tone. Do not invent evidence not provided.\n\n"
+            f"{mode_prompt}"
+        )
+
+        messages = [
+            {"role": "system", "content": system_msg},
+            {"role": "user", "content": (
+                f"Generate a {mode.replace('_', ' ')} report from this evidence:\n\n"
+                f"{evidence_ctx}"
+            )},
+        ]
+
+        # Run async in sync context
+        loop = asyncio.new_event_loop()
+        try:
+            narrative = loop.run_until_complete(client.chat_completion(messages, temperature=0.3))
+        finally:
+            loop.close()
+
+        return narrative
+    except Exception as exc:
+        logger.warning("LLM narrative generation failed, using template fallback: %s", exc)
+        return None
+
+
+def _template_narrative(proof: Any, items: list[Any], mode: str) -> str:
+    """Template-based narrative fallback (no LLM required)."""
     lines: list[str] = []
     lines.append(f"# {proof.title}")
     lines.append("")
-    lines.append(f"**Status:** {proof.status} | **Severity:** {proof.severity} "
-                 f"| **Confidence:** {proof.confidence:.0%}")
+    lines.append(f"**Mode:** {mode.replace('_', ' ').title()} | **Status:** {proof.status} "
+                 f"| **Severity:** {proof.severity} | **Confidence:** {proof.confidence:.0%}")
     lines.append("")
 
     if proof.conclusion:
@@ -284,14 +440,63 @@ def render_narrative(db: Session, proof_id: str) -> str:
                 lines.append(f"   > {i.analyst_note}")
             lines.append("")
 
-    narrative = "\n".join(lines)
+    return "\n".join(lines)
 
-    # Persist rendered narrative
-    proof.narrative_markdown = narrative
-    proof.updated_at = _now()
-    db.commit()
 
-    return narrative
+# ---------------------------------------------------------------------------
+# Export
+# ---------------------------------------------------------------------------
+
+
+def export_proof(db: Session, proof_id: str, *, fmt: str = "markdown") -> dict[str, str]:
+    """Export a proof's narrative as markdown or HTML."""
+    proof = get_proof(db, proof_id)
+    if not proof:
+        raise ValueError(f"Proof {proof_id} not found")
+
+    narrative = proof.narrative_markdown
+    if not narrative:
+        # Generate if not yet rendered
+        result = render_narrative(db, proof_id)
+        narrative = result["narrative"]
+
+    safe_title = re.sub(r"[^a-zA-Z0-9_-]", "_", proof.title)[:50]
+
+    if fmt == "html":
+        # Simple markdown-to-html conversion
+        html_content = _markdown_to_html(narrative, proof.title)
+        return {"content": html_content, "filename": f"{safe_title}.html"}
+
+    return {"content": narrative, "filename": f"{safe_title}.md"}
+
+
+def _markdown_to_html(md: str, title: str) -> str:
+    """Very basic markdown-to-HTML converter (no external deps)."""
+    body = html.escape(md)
+    # Headers
+    body = re.sub(r"^### (.+)$", r"<h3>\1</h3>", body, flags=re.MULTILINE)
+    body = re.sub(r"^## (.+)$", r"<h2>\1</h2>", body, flags=re.MULTILINE)
+    body = re.sub(r"^# (.+)$", r"<h1>\1</h1>", body, flags=re.MULTILINE)
+    # Bold
+    body = re.sub(r"\*\*(.+?)\*\*", r"<strong>\1</strong>", body)
+    # Inline code
+    body = re.sub(r"`(.+?)`", r"<code>\1</code>", body)
+    # Bullet lists
+    body = re.sub(r"^- (.+)$", r"<li>\1</li>", body, flags=re.MULTILINE)
+    # Blockquotes
+    body = re.sub(r"^&gt; (.+)$", r"<blockquote>\1</blockquote>", body, flags=re.MULTILINE)
+    # Paragraphs (double newline)
+    body = re.sub(r"\n\n", r"</p><p>", body)
+    body = body.replace("\n", "<br>")
+    return (
+        f"<!DOCTYPE html><html><head><meta charset='utf-8'>"
+        f"<title>{html.escape(title)}</title>"
+        f"<style>body{{font-family:sans-serif;max-width:800px;margin:2em auto;padding:0 1em;color:#222}}"
+        f"h1,h2,h3{{color:#1a365d}}code{{background:#f0f0f0;padding:2px 4px;border-radius:3px}}"
+        f"blockquote{{border-left:3px solid #cbd5e0;padding-left:1em;color:#4a5568}}"
+        f"li{{margin:0.3em 0}}</style>"
+        f"</head><body><p>{body}</p></body></html>"
+    )
 
 
 # ---------------------------------------------------------------------------

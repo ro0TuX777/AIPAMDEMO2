@@ -148,6 +148,7 @@ def init_v2_db() -> None:
         ("analyst_status", "VARCHAR DEFAULT 'unreviewed'"),
         ("analyst_notes", "TEXT"),
         ("reviewed_at", "VARCHAR"),
+        ("reviewer_id", "VARCHAR"),
     ]
     for table_name in _investigation_tables:
         if inspector.has_table(table_name):
@@ -158,6 +159,15 @@ def init_v2_db() -> None:
                         connection.execute(
                             text(f"ALTER TABLE {table_name} ADD COLUMN {col_name} {col_type}")
                         )
+
+    # Proof Builder: add mode column to proofs table if missing
+    if inspector.has_table("proofs"):
+        proof_cols = {c["name"] for c in inspector.get_columns("proofs")}
+        if "mode" not in proof_cols:
+            with engine.begin() as connection:
+                connection.execute(
+                    text("ALTER TABLE proofs ADD COLUMN mode VARCHAR DEFAULT 'soc_handoff'")
+                )
 
 def reset_engine() -> None:
     """Reset engine and session factory. Used in tests."""

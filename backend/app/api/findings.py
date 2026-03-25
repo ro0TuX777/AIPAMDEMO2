@@ -111,6 +111,10 @@ def _finding_to_item(f: Finding) -> FindingItem:
         evidence=evidence,
         feedback=f.feedback,
         confidence=getattr(f, "confidence", 0.0) or 0.0,
+        analyst_status=getattr(f, "analyst_status", None),
+        analyst_notes=getattr(f, "analyst_notes", None),
+        reviewed_at=getattr(f, "reviewed_at", None),
+        reviewer_id=getattr(f, "reviewer_id", None),
     )
 
 
@@ -330,6 +334,10 @@ def _finding_to_detail(db: Session, finding: Finding) -> FindingDetailResponse:
         confidence=getattr(finding, "confidence", 0.0) or 0.0,
         community_id=finding.community_id,
         explanation_feedback=finding.explanation_feedback,
+        analyst_status=getattr(finding, "analyst_status", None),
+        analyst_notes=getattr(finding, "analyst_notes", None),
+        reviewed_at=getattr(finding, "reviewed_at", None),
+        reviewer_id=getattr(finding, "reviewer_id", None),
         related_hosts=[_serialize_related_host(host) for host in related_hosts],
         related_alerts=[_serialize_related_alert(alert) for alert in related_alerts],
         related_connections=[_serialize_related_connection(connection) for connection in related_connections],
@@ -916,12 +924,15 @@ async def list_findings(
     severity: Severity | None = Query(None),
     category: str | None = Query(None),
     sensor: str | None = Query(None),
+    pcap_label: str | None = Query(None, description="Filter by PCAP label (before/after)"),
     search: str | None = Query(None, alias="q"),
 ):
     _require_job(db, job_id)
     response.headers["X-Request-Id"] = request_id
 
     stmt = select(Finding).where(Finding.job_id == job_id)
+    if pcap_label:
+        stmt = stmt.where(Finding.pcap_label == pcap_label)
     if severity:
         stmt = stmt.where(Finding.severity == severity.value)
     if category:

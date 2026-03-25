@@ -4,7 +4,8 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-import { api, type FindingExplainFeedback } from "../api";
+import { api, type AnalystStatus, type FindingExplainFeedback } from "../api";
+import { ReviewNotesPanel } from "../components/ReviewNotesPanel";
 import { ConfidenceBadge, ExplainEvidenceList, ExplainSectionBlock } from "../components/findings/ExplainShared";
 import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
 import { CardGridSkeleton } from "../components/SkeletonLoader";
@@ -95,6 +96,18 @@ export const FindingDetailPage: React.FC = () => {
       addToast({ severity: "info", title: "Feedback saved", duration: 3000 });
     },
     onError: () => addToast({ severity: "high", title: "Failed to save feedback" }),
+  });
+
+  // HITL review status mutation (Sprint 4)
+  const reviewStatusMut = useMutation({
+    mutationFn: ({ status, notes }: { status: AnalystStatus; notes?: string }) =>
+      api.updateQueueItemStatus(jobId!, `finding:${findingId}`, { analyst_status: status, analyst_notes: notes }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["job", jobId, "finding", findingId] });
+      queryClient.invalidateQueries({ queryKey: ["investigation-queue", jobId] });
+      addToast({ severity: "info", title: "Review status updated", duration: 2000 });
+    },
+    onError: () => addToast({ severity: "high", title: "Failed to update review status" }),
   });
 
   const explainFeedbackMut = useMutation({
@@ -274,6 +287,27 @@ export const FindingDetailPage: React.FC = () => {
             </div>
           </div>
         </div>
+
+        {/* HITL Confirmation Gate Banner (Sprint 4) */}
+        {(!finding.analyst_status || finding.analyst_status === "unreviewed") && (
+          <div className="flex items-center gap-3 rounded-lg border border-amber-700/50 bg-amber-950/30 px-4 py-3">
+            <span className="text-amber-400 text-lg">⚠️</span>
+            <div>
+              <div className="text-sm font-medium text-amber-300">This finding is unreviewed</div>
+              <div className="text-xs text-amber-400/70">Confirm it before exporting rules or indexing to forensic memory.</div>
+            </div>
+          </div>
+        )}
+
+        {/* ReviewNotesPanel (Sprint 4) */}
+        <ReviewNotesPanel
+          currentStatus={finding.analyst_status}
+          analystNotes={finding.analyst_notes}
+          reviewedAt={finding.reviewed_at}
+          reviewerId={finding.reviewer_id}
+          onStatusChange={(status, notes) => reviewStatusMut.mutate({ status, notes })}
+          isPending={reviewStatusMut.isPending}
+        />
 
         <div className="flex flex-wrap gap-2">
           <button

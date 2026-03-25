@@ -2,6 +2,7 @@
 Investigation Queue endpoints.
 
 GET   /jobs/{jobId}/investigation-queue                          – ranked triage queue
+GET   /jobs/{jobId}/review-queue                                 – review-focused queue with stats
 GET   /jobs/{jobId}/investigation-queue/{itemId}/evidence-bundle – corroborating evidence
 PATCH /jobs/{jobId}/investigation-queue/{itemId}/status          – update analyst status
 POST  /jobs/{jobId}/investigation-queue/bulk-status              – bulk status update
@@ -26,6 +27,7 @@ from backend.app.schemas.investigation import (
     EvidenceBundleResponse,
     InvestigationQueueResponse,
     QueueItemSource,
+    ReviewQueueResponse,
     StatusUpdateRequest,
     StatusUpdateResponse,
 )
@@ -118,6 +120,45 @@ async def get_investigation_queue(
     )
 
 
+@router.get("/jobs/{job_id}/review-queue", response_model=ReviewQueueResponse)
+async def get_review_queue(
+    job_id: str,
+    response: Response,
+    request_id: str = Depends(get_request_id),
+    db: Session = Depends(get_db),
+    status_filter: AnalystStatus | None = Query(None, alias="status"),
+    reviewer: str | None = Query(None),
+    since: str | None = Query(None, description="ISO-8601 timestamp — show items reviewed after this time"),
+    offset: int = Query(0, ge=0),
+    limit: int = Query(100, ge=1, le=500),
+):
+    """Return a review-focused view of the investigation queue with review statistics."""
+    _require_job(db, job_id)
+    response.headers["X-Request-Id"] = request_id
+
+    items, summary = build_investigation_queue(db, job_id, status_filter=status_filter)
+
+    # Apply review-specific filters
+    if reviewer:
+        items = [i for i in items if getattr(i, "reviewer_id", None) == reviewer]
+    if since:
+        items = [i for i in items if i.reviewed_at and i.reviewed_at >= since]
+
+    # Paginate
+    total = len(items)
+    page_items = items[offset: offset + limit]
+    has_more = (offset + limit) < total
+
+    return ReviewQueueResponse(
+        items=page_items,
+        page=PageInfo(
+            has_more=has_more,
+            next_cursor=str(offset + limit) if has_more else None,
+        ),
+        stats=summary,
+    )
+
+
 @router.get(
     "/jobs/{job_id}/investigation-queue/{item_id}/evidence-bundle",
     response_model=EvidenceBundleResponse,
@@ -182,12 +223,14 @@ async def update_item_status(
     obj.analyst_status = body.analyst_status.value
     obj.analyst_notes = body.analyst_notes
     obj.reviewed_at = now
+    obj.reviewer_id = body.reviewer_id
     db.commit()
 
     return StatusUpdateResponse(
         item_id=item_id,
         analyst_status=body.analyst_status,
         analyst_notes=body.analyst_notes,
+        reviewer_id=body.reviewer_id,
         reviewed_at=now,
     )
 
@@ -217,6 +260,7 @@ async def bulk_update_status(
             obj.analyst_status = body.analyst_status.value
             obj.analyst_notes = body.analyst_notes
             obj.reviewed_at = now
+            obj.reviewer_id = body.reviewer_id
             updated.append(iid)
         except HTTPException:
             failed.append(iid)

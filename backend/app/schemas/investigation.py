@@ -12,6 +12,7 @@ class AnalystStatus(str, Enum):
     unreviewed = "unreviewed"
     confirmed = "confirmed"
     false_positive = "false_positive"
+    needs_review = "needs_review"
     deferred = "deferred"
 
 
@@ -53,6 +54,7 @@ class InvestigationQueueItem(BaseModel):
     analyst_status: AnalystStatus = AnalystStatus.unreviewed
     analyst_notes: str | None = None
     reviewed_at: str | None = None
+    reviewer_id: str | None = None
 
     # Extra context (varies by source type)
     extra: dict[str, Any] = Field(default_factory=dict)
@@ -64,7 +66,9 @@ class QueueSummary(BaseModel):
     unreviewed: int = 0
     confirmed: int = 0
     false_positive: int = 0
+    needs_review: int = 0
     deferred: int = 0
+    review_rate: float = 0.0  # fraction of items that have been reviewed (not unreviewed)
 
 
 class InvestigationQueueResponse(BaseModel):
@@ -74,9 +78,18 @@ class InvestigationQueueResponse(BaseModel):
     summary: QueueSummary
 
 
+class ReviewQueueResponse(BaseModel):
+    """Response for the review-queue endpoint — filtered view with review stats."""
+    schema_version: str = SCHEMA_VERSION
+    items: list[InvestigationQueueItem]
+    page: PageInfo
+    stats: QueueSummary
+
+
 class StatusUpdateRequest(BaseModel):
     analyst_status: AnalystStatus
     analyst_notes: str | None = None
+    reviewer_id: str | None = None
 
 
 class StatusUpdateResponse(BaseModel):
@@ -84,6 +97,7 @@ class StatusUpdateResponse(BaseModel):
     item_id: str
     analyst_status: AnalystStatus
     analyst_notes: str | None = None
+    reviewer_id: str | None = None
     reviewed_at: str
 
 
@@ -91,6 +105,7 @@ class BulkStatusUpdateRequest(BaseModel):
     item_ids: list[str]
     analyst_status: AnalystStatus
     analyst_notes: str | None = None
+    reviewer_id: str | None = None
 
 
 class BulkStatusUpdateResponse(BaseModel):

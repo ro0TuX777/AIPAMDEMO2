@@ -25,6 +25,7 @@ from backend.app.models.job import Job
 from backend.app.schemas.proof import (
     ProofCreate,
     ProofDetailResponse,
+    ProofExportResponse,
     ProofItemCreate,
     ProofItemDetailResponse,
     ProofItemListResponse,
@@ -39,6 +40,7 @@ from backend.app.services.proof_builder import (
     add_item,
     create_proof,
     delete_proof,
+    export_proof,
     get_proof,
     list_items,
     list_proofs,
@@ -78,7 +80,8 @@ async def create_proof_endpoint(
     _require_job(db, job_id)
     response.headers["X-Request-Id"] = request_id
     proof = create_proof(db, job_id, title=body.title, conclusion=body.conclusion,
-                         severity=body.severity, confidence=body.confidence)
+                         severity=body.severity, confidence=body.confidence,
+                         mode=body.mode)
     return ProofDetailResponse(item=ProofOut.model_validate(proof), job_id=job_id)
 
 
@@ -205,5 +208,29 @@ async def render_narrative_endpoint(
     _require_job(db, job_id)
     response.headers["X-Request-Id"] = request_id
     _require_proof(db, proof_id)
-    narrative = render_narrative(db, proof_id)
-    return ProofNarrativeResponse(proof_id=proof_id, narrative_markdown=narrative)
+    result = render_narrative(db, proof_id)
+    return ProofNarrativeResponse(
+        proof_id=proof_id,
+        narrative_markdown=result["narrative"],
+        warnings=result.get("warnings", []),
+    )
+
+
+# ── Export ───────────────────────────────────────────────────────────────
+
+
+@router.get("/jobs/{job_id}/proofs/{proof_id}/export",
+            response_model=ProofExportResponse)
+async def export_proof_endpoint(
+    job_id: str, proof_id: str, response: Response,
+    fmt: str = "markdown",
+    request_id: str = Depends(get_request_id), db: Session = Depends(get_db),
+):
+    _require_job(db, job_id)
+    response.headers["X-Request-Id"] = request_id
+    proof = _require_proof(db, proof_id)
+    result = export_proof(db, proof_id, fmt=fmt)
+    return ProofExportResponse(
+        content=result["content"],
+        filename=result["filename"],
+    )
