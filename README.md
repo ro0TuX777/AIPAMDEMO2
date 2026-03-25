@@ -72,7 +72,18 @@ Live updates via Server-Sent Events as each sensor completes:
 ### AI-Assisted Investigation (Ask AI)
 Context-aware AI chat available on **every page** — Alerts, Hosts, IOCs, Findings, and more:
 - **One-click "Ask AI"** buttons generate a scoped prompt with full entity context
-- **3-source RAG** — Current case data + campaign correlations + forensic memory (ChromaDB)
+- **Hybrid retrieval router** — dual-path context assembly for every query:
+  - **Route A (Structured)** — direct DB lookups for IPs, domains, hashes, finding IDs, DNS queries, and connections
+  - **Route B (Semantic)** — 3-strategy vector search: query-based, IP-grounded, and per-doc-type KB retrieval
+- **6-source RAG context window**:
+  1. **Scoped evidence bundle** — page-level entity context injected by Ask AI buttons
+  2. **Sensor context** — live-queried host stats, alerts, and connection summaries from the analysis DB
+  3. **Structured DB retrieval** — exact-match entity lookups (hosts, alerts, findings, IOCs, DNS, connections)
+  4. **Knowledge Base** — analyst-uploaded documents (asset inventories, network maps, SOC playbooks, threat intel, policies, baseline profiles, reference manuals)
+  5. **Forensic memory** — global ChromaDB of confirmed findings across all past investigations
+  6. **Cross-job correlations** — campaign matches and shared IOCs/hosts/MITRE techniques from historical jobs
+- **KB document boost** — user-uploaded docs get relevance priority over auto-indexed host profiles
+- **Confidence-tiered citations** — findings grouped as high (≥70%), medium (40–70%), or low (<40%) confidence
 - *"What hosts are infected?"* · *"Is this alert a true positive?"* · *"What should I do next?"*
 
 ### Evidence Graph
@@ -719,7 +730,7 @@ AIPAM: "Yes — the alert correlates with beaconing to 206.123.152.51
        on port 2404, a known Remcos C2 endpoint..."
 ```
 
-The chat uses **3-source RAG**: current job data, cross-job campaign correlations, and a persistent forensic memory (ChromaDB vector store) that remembers past investigations.
+The chat uses a **6-source hybrid RAG pipeline**: scoped page context, live sensor data, structured DB lookups, analyst-uploaded knowledge base documents, global forensic memory (ChromaDB), and cross-job campaign correlations. A dual-path retrieval router combines exact entity matching (Route A) with semantic vector search (Route B) to maximize recall.
 
 ### Using the Evidence Graph & Proof Builder
 
@@ -789,7 +800,7 @@ From any finding, generate **Suricata** or **Sigma** rules:
 ### Phase 3 — Proactive Defense + Forensic Memory (Complete)
 
 - [x] Forensic Memory — ChromaDB vector store for cross-case knowledge
-- [x] 3-Source RAG Chat — Current case + campaign correlations + forensic memory
+- [x] 6-Source Hybrid RAG Chat — Scoped context + sensor data + structured DB + knowledge base + forensic memory + campaign correlations
 - [x] Cross-Job Campaign Detection
 - [x] Detection-as-Code — Suricata and Sigma rules from findings
 - [x] Purple Team Simulation — Scapy-based adversary emulation
