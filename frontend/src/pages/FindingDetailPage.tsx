@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-import { api, type AnalystStatus, type FindingExplainFeedback } from "../api";
+import { api, type AnalystStatus, type FindingExplainFeedback, type RuleType, type GeneratedRuleResponse } from "../api";
 import { ReviewNotesPanel } from "../components/ReviewNotesPanel";
 import { ConfidenceBadge, ExplainEvidenceList, ExplainSectionBlock } from "../components/findings/ExplainShared";
 import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
@@ -45,6 +45,98 @@ const formatDateTime = (value?: string | null) => {
   if (!value) return "—";
   const parsed = new Date(value);
   return Number.isNaN(parsed.getTime()) ? value : parsed.toLocaleString();
+};
+
+/* ── Detection-as-Code: Rule Generation Panel ─────────────────────────── */
+const RULE_LABELS: Record<RuleType, { label: string; icon: string }> = {
+  suricata: { label: "Suricata", icon: "🛡️" },
+  sigma: { label: "Sigma", icon: "📐" },
+};
+
+const RuleGenerationPanel: React.FC<{ jobId: string; findingId: string }> = ({ jobId, findingId }) => {
+  const [generatedRule, setGeneratedRule] = useState<GeneratedRuleResponse | null>(null);
+  const [generating, setGenerating] = useState<RuleType | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
+  const handleGenerate = async (ruleType: RuleType) => {
+    setGenerating(ruleType);
+    setError(null);
+    setGeneratedRule(null);
+    setCopied(false);
+    try {
+      const result = await api.generateRule(jobId, findingId, ruleType);
+      setGeneratedRule(result);
+    } catch (err: any) {
+      setError(err?.message || "Rule generation failed");
+    } finally {
+      setGenerating(null);
+    }
+  };
+
+  const handleCopy = async () => {
+    if (!generatedRule) return;
+    await navigator.clipboard.writeText(generatedRule.rule_text);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <section className="rounded-lg border border-slate-800 bg-slate-900/40 p-4 space-y-3">
+      <div className="flex items-center justify-between">
+        <h2 className="text-sm font-semibold text-slate-200">Detection-as-Code</h2>
+        <div className="flex gap-2">
+          {(["suricata", "sigma"] as RuleType[]).map((rt) => (
+            <button
+              key={rt}
+              onClick={() => void handleGenerate(rt)}
+              disabled={generating !== null}
+              className="flex items-center gap-1.5 rounded border border-slate-700 bg-slate-800 px-3 py-1.5 text-xs font-bold uppercase tracking-wider text-slate-300 transition-colors hover:border-cyan-500/40 hover:text-cyan-300 disabled:opacity-40 disabled:cursor-wait"
+            >
+              {generating === rt ? (
+                <span className="animate-pulse">Generating…</span>
+              ) : (
+                <>
+                  <span>{RULE_LABELS[rt].icon}</span>
+                  <span>Generate {RULE_LABELS[rt].label} Rule</span>
+                </>
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {error && (
+        <div className="rounded border border-red-700/50 bg-red-950/30 px-3 py-2 text-xs text-red-400">{error}</div>
+      )}
+
+      {generatedRule && (
+        <div className="space-y-2">
+          <div className="flex items-center justify-between">
+            <span className="text-xs text-slate-400">
+              {RULE_LABELS[generatedRule.rule_type as RuleType]?.icon} {generatedRule.rule_type.toUpperCase()} rule
+              {generatedRule.description && <> — {generatedRule.description}</>}
+            </span>
+            <button
+              onClick={() => void handleCopy()}
+              className="rounded border border-slate-700 bg-slate-800 px-2 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400 transition-colors hover:border-cyan-500/30 hover:text-cyan-300"
+            >
+              {copied ? "✓ Copied" : "Copy"}
+            </button>
+          </div>
+          <pre className="overflow-x-auto rounded border border-slate-800 bg-slate-950/70 p-3 text-xs leading-6 text-green-300 font-mono whitespace-pre-wrap">
+            {generatedRule.rule_text}
+          </pre>
+        </div>
+      )}
+
+      {!generatedRule && !error && !generating && (
+        <p className="text-xs text-slate-500">
+          Generate a deployable IDS or SIEM rule from this finding's evidence using the LLM.
+        </p>
+      )}
+    </section>
+  );
 };
 
 export const FindingDetailPage: React.FC = () => {
@@ -331,6 +423,9 @@ export const FindingDetailPage: React.FC = () => {
             {finding.feedback === "false_positive" ? "✗ False positive" : "Mark FP"}
           </button>
         </div>
+
+        {/* Detection-as-Code: Rule Generation */}
+        <RuleGenerationPanel jobId={jobId!} findingId={findingId!} />
 
         <section className="rounded-lg border border-slate-800 bg-slate-950/70 p-4 space-y-4">
           <div className="flex items-center justify-between gap-2 flex-wrap">

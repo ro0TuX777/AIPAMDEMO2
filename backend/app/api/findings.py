@@ -7,6 +7,7 @@ POST /jobs/{jobId}/findings/{findingId}/explain – grounded explain
 
 import asyncio
 import json
+import logging
 import os
 import re
 from ipaddress import ip_address
@@ -14,6 +15,7 @@ from time import perf_counter
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
+from pydantic import BaseModel
 from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
@@ -1085,3 +1087,128 @@ async def update_finding_feedback(
     db.refresh(finding)
 
     return _finding_to_item(finding)
+
+
+# ── Detection-as-Code: Rule Generation ──────────────────────────────────────
+
+_rule_gen_logger = logging.getLogger(__name__ + ".rule_gen")
+
+
+class GenerateRuleRequest(BaseModel):
+    rule_type: str  # "suricata" | "sigma"
+
+
+class GenerateRuleResponse(BaseModel):
+    rule_type: str
+    rule_text: str
+    finding_id: str
+    description: str = ""
+
+
+class _FindingProxy:
+    """Adapter that maps V2 Finding columns to the field names the Jinja2
+    export templates expect (mitre_technique_id, classification, etc.)."""
+
+    def __init__(self, finding: Finding, evidence: Any) -> None:
+        self.mitre_technique_id: str | None = None
+        self.mitre_technique_name: str | None = None
+        self.classification: str | None = finding.category
+        self.severity: str = finding.severity
+        self.title: str = finding.title
+        self.description: str = finding.summary or finding.title
+        self.affected_hosts: list[str] = []
+        self.id: str = finding.finding_id
+
+        # Try to extract MITRE info and hosts from evidence JSON
+        if isinstance(evidence, dict):
+            self.mitre_technique_id = evidence.get("mitre_technique_id") or evidence.get("technique_id")
+            self.mitre_technique_name = evidence.get("mitre_technique_name") or evidence.get("technique_name")
+            hosts = evidence.get("affected_hosts") or evidence.get("hosts") or []
+            if isinstance(hosts, list):
+                self.affected_hosts = [str(h) for h in hosts]
+            # Also check nested IPs
+            src_ip = evidence.get("src_ip")
+            dst_ip = evidence.get("dst_ip")
+            if src_ip and str(src_ip) not in self.affected_hosts:
+                self.affected_hosts.append(str(src_ip))
+            if dst_ip and str(dst_ip) not in self.affected_hosts:
+                self.affected_hosts.append(str(dst_ip))
+
+
+def _extract_evidence_snippets(evidence: Any) -> list[str]:
+    """Build human-readable evidence snippets for the LLM prompt."""
+    if evidence is None:
+        return []
+    snippets: list[str] = []
+    if isinstance(evidence, dict):
+        for key, val in evidence.items():
+            if key in ("mitre_technique_id", "mitre_technique_name", "affected_hosts", "hosts"):
+                continue
+            snippets.append(f"{key}: {json.dumps(val) if isinstance(val, (dict, list)) else val}")
+    elif isinstance(evidence, list):
+        for item in evidence[:10]:
+            snippets.append(str(item))
+    else:
+        snippets.append(str(evidence))
+    return snippets[:15]
+
+
+@router.post(
+    "/jobs/{job_id}/findings/{finding_id}/generate-rule",
+    response_model=GenerateRuleResponse,
+)
+async def generate_rule(
+    job_id: str,
+    finding_id: str,
+    body: GenerateRuleRequest,
+    response: Response,
+    request_id: str = Depends(get_request_id),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+):
+    """Generate a Suricata or Sigma detection rule from a finding."""
+    _require_job(db, job_id)
+    response.headers["X-Request-Id"] = request_id
+
+    if body.rule_type not in ("suricata", "sigma"):
+        raise HTTPException(status_code=400, detail="rule_type must be 'suricata' or 'sigma'")
+
+    finding = db.execute(
+        select(Finding).where(Finding.job_id == job_id, Finding.finding_id == finding_id)
+    ).scalar_one_or_none()
+    if not finding:
+        raise HTTPException(status_code=404, detail="Finding not found")
+
+    evidence = _parse_finding_evidence(finding)
+    proxy = _FindingProxy(finding, evidence)
+    snippets = _extract_evidence_snippets(evidence)
+
+    # Build OllamaProvider
+    from backend.app.llm.providers.ollama import OllamaProvider
+    from backend.app.core.exporters import SuricataExporter, SigmaExporter
+
+    ollama_base = settings.aipam_ollama_url.rstrip("/")
+    provider = OllamaProvider(
+        endpoint=os.getenv("LLM_ENDPOINT", f"{ollama_base}/v1/chat/completions"),
+        model=os.getenv("LLM_MODEL_NAME", "aipam-trafficllm-v10"),
+        temperature=0.2,
+        max_tokens=2000,
+    )
+
+    try:
+        if body.rule_type == "suricata":
+            exporter = SuricataExporter(provider=provider)
+        else:
+            exporter = SigmaExporter(provider=provider)
+
+        result = await exporter.generate(proxy, snippets)
+    except Exception as exc:
+        _rule_gen_logger.exception("Rule generation failed for finding %s", finding_id)
+        raise HTTPException(status_code=502, detail=f"LLM rule generation failed: {exc}") from exc
+
+    return GenerateRuleResponse(
+        rule_type=result.rule_type,
+        rule_text=result.rule_text,
+        finding_id=result.finding_id,
+        description=result.description,
+    )

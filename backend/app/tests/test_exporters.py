@@ -5,7 +5,7 @@ import pytest
 
 from unittest.mock import AsyncMock, MagicMock
 
-from app.core.exporters import SuricataExporter, SigmaExporter, ExportedRule
+from backend.app.core.exporters import SuricataExporter, SigmaExporter, ExportedRule
 
 
 # -------------------------------------------------------------------------

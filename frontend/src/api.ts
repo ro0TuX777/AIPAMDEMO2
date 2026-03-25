@@ -1732,6 +1732,11 @@ export const api = {
     return post<{ changed: number; total_targeted: number; enabled: boolean }>(`/rules/suricata/${filename}/toggle`, body);
   },
 
+  // ── Detection-as-Code: Rule Generation ──
+  generateRule(jobId: string, findingId: string, ruleType: RuleType): Promise<GeneratedRuleResponse> {
+    return post<GeneratedRuleResponse>(`/jobs/${jobId}/findings/${findingId}/generate-rule`, { rule_type: ruleType });
+  },
+
   // ── Training (V1) ──
   /** @deprecated V1 */
   startTrainingJob(): Promise<any> { return post<any>("/training/start"); },
@@ -1879,6 +1884,15 @@ export interface ToggleRulesRequest {
   sids?: number[];
   category?: string;
   enabled: boolean;
+}
+
+// ─── Detection-as-Code types ─────────────────────────────────────────────
+export type RuleType = "suricata" | "sigma";
+export interface GeneratedRuleResponse {
+  rule_type: RuleType;
+  rule_text: string;
+  finding_id: string;
+  description: string;
 }
 
 // ─── Knowledge Base types ───────────────────────────────────────────────────
