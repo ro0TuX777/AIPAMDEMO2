@@ -1,6 +1,7 @@
 services:
   backend:
     build: ./backend
+    image: aipam-app:latest
     container_name: aipam-backend
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -31,6 +32,7 @@ services:
       - ./ti:/opt/aipam/ti:ro
       - ./finetuning:/data/finetuning
       - ${EXTERNAL_DATA_PATH:-/Volumes}:/external_data # Configurable external drive mount
+      - arkime_import_queue:/import-queue
     depends_on:
       - redis
     ports:
@@ -38,6 +40,7 @@ services:
 
   worker:
     build: ./backend
+    image: aipam-app:latest
     container_name: aipam-worker
     extra_hosts:
       - "host.docker.internal:host-gateway"
@@ -69,6 +72,7 @@ services:
       - ./ti:/opt/aipam/ti:ro
       - ./finetuning:/data/finetuning
       - ${EXTERNAL_DATA_PATH:-/Volumes}:/external_data # Configurable external drive mount
+      - arkime_import_queue:/import-queue
     depends_on:
       - redis
 
@@ -77,6 +81,7 @@ services:
       context: ./frontend
       args:
         VITE_API_TOKEN: test-token-v2
+    image: aipam-frontend:latest
     container_name: aipam-frontend
     depends_on:
       - backend
@@ -128,9 +133,132 @@ services:
               capabilities: [gpu]
     restart: unless-stopped
 
+  # ============================================
+  # OpenSearch (Arkime metadata store)
+  # ============================================
+  opensearch:
+    image: opensearchproject/opensearch:2.18.0
+    container_name: aipam-opensearch
+    profiles: ["arkime"]
+    environment:
+      - discovery.type=single-node
+      - bootstrap.memory_lock=true
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
+      - DISABLE_SECURITY_PLUGIN=true
+      - DISABLE_INSTALL_DEMO_CONFIG=true
+    ulimits:
+      memlock: { soft: -1, hard: -1 }
+      nofile:  { soft: 65536, hard: 65536 }
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:9200/_cluster/health || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+    volumes:
+      - opensearch_data:/usr/share/opensearch/data
+    restart: unless-stopped
+
+  # ============================================
+  # Arkime Initialization (one-shot bootstrap)
+  # ============================================
+  arkime-init:
+    image: ${ARKIME_IMAGE:-ghcr.io/arkime/arkime/arkime:v6-latest}
+    container_name: aipam-arkime-init
+    profiles: ["arkime"]
+    command: >
+      /bin/bash -c "
+        echo 'Waiting for OpenSearch...';
+        until curl -sf http://opensearch:9200/_cluster/health; do sleep 2; done;
+        echo 'Initializing Arkime DB...';
+        /opt/arkime/db/db.pl --insecure http://opensearch:9200 init --ifneeded;
+        echo 'Adding admin user...';
+        /opt/arkime/bin/arkime_add_user.sh admin 'Admin' '${ARKIME_ADMIN_PASSWORD:-changeme}' --admin --insecure || true;
+        echo 'Arkime init complete.';
+      "
+    volumes:
+      - ./deploy/arkime/config.ini:/opt/arkime/etc/config.ini:ro
+      - arkime_raw:/opt/arkime/raw
+    depends_on:
+      opensearch:
+        condition: service_healthy
+
+  # ============================================
+  # Arkime Viewer (analyst UI + API)
+  # ============================================
+  arkime-viewer:
+    image: ${ARKIME_IMAGE:-ghcr.io/arkime/arkime/arkime:v6-latest}
+    container_name: aipam-arkime-viewer
+    profiles: ["arkime"]
+    command: /opt/arkime/bin/docker.sh viewer
+    environment:
+      - ARKIME__elasticsearch=http://opensearch:9200
+    ports:
+      - "${ARKIME_VIEWER_PORT:-8005}:8005"
+    volumes:
+      - ./deploy/arkime/config.ini:/opt/arkime/etc/config.ini:ro
+      - arkime_raw:/opt/arkime/raw
+    depends_on:
+      opensearch:
+        condition: service_healthy
+    restart: unless-stopped
+
+  # ============================================
+  # Arkime Importer (offline PCAP import)
+  # ============================================
+  arkime-importer:
+    image: ${ARKIME_IMAGE:-ghcr.io/arkime/arkime/arkime:v6-latest}
+    container_name: aipam-arkime-importer
+    profiles: ["arkime"]
+    environment:
+      - ARKIME__elasticsearch=http://opensearch:9200
+    entrypoint: /bin/bash
+    command: >
+      -c "
+        echo 'Arkime importer ready — watching /import-queue';
+        while true; do
+          for manifest in /import-queue/*.json; do
+            [ -f \"$$manifest\" ] || continue;
+            pcap=$$(jq -r '.pcap_path' \"$$manifest\");
+            job_id=$$(jq -r '.job_id // empty' \"$$manifest\");
+            if [ -n \"$$pcap\" ] && [ -f \"$$pcap\" ]; then
+              echo \"Importing $$pcap (job $$job_id)\";
+              if /opt/arkime/bin/capture -r \"$$pcap\" --copy 2>&1; then
+                mv \"$$manifest\" \"$$manifest.done\";
+                if [ -n \"$$job_id\" ] && [ -d \"/data/jobs/$$job_id\" ]; then
+                  remaining=$$(ls /import-queue/$${job_id}_*.json 2>/dev/null | wc -l);
+                  if [ \"$$remaining\" -eq 0 ]; then
+                    echo '{\"status\":\"imported\",\"imported_at\":\"'$$(date -u +%Y-%m-%dT%H:%M:%S+00:00)'\"}' > /data/jobs/$$job_id/arkime_import_status.json;
+                    echo \"Import complete for job $$job_id\";
+                  fi;
+                fi;
+              else
+                echo \"FAILED: $$pcap\";
+                if [ -n \"$$job_id\" ] && [ -d \"/data/jobs/$$job_id\" ]; then
+                  echo '{\"status\":\"failed\"}' > /data/jobs/$$job_id/arkime_import_status.json;
+                fi;
+                mv \"$$manifest\" \"$$manifest.failed\";
+              fi;
+            fi;
+          done;
+          sleep 5;
+        done
+      "
+    volumes:
+      - ./deploy/arkime/config.ini:/opt/arkime/etc/config.ini:ro
+      - arkime_raw:/opt/arkime/raw
+      - arkime_import_queue:/import-queue
+      - aipam_data:/data
+    depends_on:
+      opensearch:
+        condition: service_healthy
+    restart: unless-stopped
+
 volumes:
   aipam_data:
   aipam_rules:
   redis_data:
   ollama_data:
   trafficllm_models:
+  opensearch_data:
+  arkime_raw:
+  arkime_import_queue:
