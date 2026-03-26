@@ -24,7 +24,7 @@ services:
   # ============================================
   # API Server (FastAPI)
   # ============================================
-  api:
+  backend:
     build:
       context: ..
       dockerfile: deploy/Dockerfile.app
@@ -118,7 +118,7 @@ services:
     ports:
       - "80:80"
     depends_on:
-      - api
+      - backend
     restart: unless-stopped
     networks:
       - aipam-net
