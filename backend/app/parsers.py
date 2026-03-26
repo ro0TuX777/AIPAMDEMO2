@@ -205,6 +205,7 @@ def parse_suricata_eve(logs: Iterable[dict]) -> List[AlertRecord]:
                     signature_name=str(alert.get("signature", "unknown")),
                     severity=_normalize_suricata_severity(alert.get("severity")),
                     category=alert.get("category"),
+                    community_id=rec.get("community_id"),
                     flow_id=str(rec.get("flow_id")) if rec.get("flow_id") is not None else None,
                     extra={
                         k: v
@@ -222,6 +223,7 @@ def parse_suricata_eve(logs: Iterable[dict]) -> List[AlertRecord]:
                             "host",
                             "event_type",
                             "alert",
+                            "community_id",
                         }
                     },
                 )

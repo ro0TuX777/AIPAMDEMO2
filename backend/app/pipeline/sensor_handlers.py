@@ -303,7 +303,8 @@ def handle_suricata(
             raw_dir = sensor_output_dir / "raw" / pcap_label
         raw_dir.mkdir(parents=True, exist_ok=True)
 
-        cmd = [suricata_bin, "-r", str(pcap), "-l", str(raw_dir)]
+        cmd = [suricata_bin, "-r", str(pcap), "-l", str(raw_dir),
+               "--set", "community-id.enabled=true"]
         if runtime_rules_bundle:
             cmd.extend(["-S", str(runtime_rules_bundle)])
         logger.info("Running Suricata on %s: %s", pcap_label, " ".join(cmd))
@@ -345,7 +346,7 @@ def _parse_suricata_results(raw_dir: Path) -> list[dict]:
 
 
 def _alert_to_dict(alert) -> dict:
-    return {
+    d = {
         "id": alert.id, "timestamp": str(alert.timestamp),
         "src_ip": alert.src_ip, "dst_ip": alert.dst_ip,
         "src_port": alert.src_port, "dst_port": alert.dst_port,
@@ -353,6 +354,9 @@ def _alert_to_dict(alert) -> dict:
         "signature_name": alert.signature_name,
         "severity": alert.severity, "category": alert.category,
     }
+    if alert.community_id:
+        d["community_id"] = alert.community_id
+    return d
 
 
 # ---------------------------------------------------------------------------

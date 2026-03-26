@@ -61,11 +61,17 @@ class EffectiveSettings:
 
 
 def _load_settings_row() -> dict:
-    """Return raw settings dict from SettingsDB (or empty dict)."""
+    """Return raw settings dict from SettingsDB (or empty dict).
 
-    with get_session() as session:
-        row = session.get(SettingsDB, 1)
-        return dict(row.values or {}) if row else {}
+    Gracefully returns ``{}`` when the ``settingsdb`` table has not yet been
+    created (e.g. V2 app that only runs ``init_v2_db``).
+    """
+    try:
+        with get_session() as session:
+            row = session.get(SettingsDB, 1)
+            return dict(row.values or {}) if row else {}
+    except Exception:
+        return {}
 
 
 def get_effective_settings() -> EffectiveSettings:

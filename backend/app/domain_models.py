@@ -57,6 +57,7 @@ class AlertRecord(BaseModel):
     signature_name: str
     severity: str
     category: Optional[str] = None
+    community_id: Optional[str] = None
     flow_id: Optional[str] = None
     extra: Dict[str, object] = Field(default_factory=dict)
 

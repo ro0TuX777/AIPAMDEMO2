@@ -51,6 +51,7 @@ services:
       - aipam-logs:/opt/aipam/logs
       - aipam-rules:/opt/aipam/rules
       - ./ti:/opt/aipam/ti:ro
+      - arkime-import-queue:/import-queue
     depends_on:
       redis:
         condition: service_healthy
@@ -205,7 +206,7 @@ services:
   # Arkime Initialization (one-shot bootstrap)
   # ============================================
   arkime-init:
-    image: ${ARKIME_IMAGE:-ghcr.io/arkime/arkime:v5.5.0}
+    image: ${ARKIME_IMAGE:-ghcr.io/arkime/arkime/arkime:v6-latest}
     container_name: aipam-arkime-init
     profiles: ["arkime"]
     command: >
@@ -231,10 +232,12 @@ services:
   # Arkime Viewer (analyst UI + API)
   # ============================================
   arkime-viewer:
-    image: ${ARKIME_IMAGE:-ghcr.io/arkime/arkime:v5.5.0}
+    image: ${ARKIME_IMAGE:-ghcr.io/arkime/arkime/arkime:v6-latest}
     container_name: aipam-arkime-viewer
     profiles: ["arkime"]
-    command: /opt/arkime/bin/capture --viewer -c /opt/arkime/etc/config.ini
+    command: /opt/arkime/bin/docker.sh viewer
+    environment:
+      - ARKIME__elasticsearch=http://opensearch:9200
     ports:
       - "${ARKIME_VIEWER_PORT:-8005}:8005"
     volumes:
@@ -257,9 +260,11 @@ services:
   # Arkime Importer (offline PCAP import)
   # ============================================
   arkime-importer:
-    image: ${ARKIME_IMAGE:-ghcr.io/arkime/arkime:v5.5.0}
+    image: ${ARKIME_IMAGE:-ghcr.io/arkime/arkime/arkime:v6-latest}
     container_name: aipam-arkime-importer
     profiles: ["arkime"]
+    environment:
+      - ARKIME__elasticsearch=http://opensearch:9200
     entrypoint: /bin/bash
     command: >
       -c "
@@ -267,11 +272,26 @@ services:
         while true; do
           for manifest in /import-queue/*.json; do
             [ -f \"$$manifest\" ] || continue;
-            pcap=$$(python3 -c \"import json,sys; print(json.load(open(sys.argv[1]))['pcap_path'])\" \"$$manifest\" 2>/dev/null);
+            pcap=$$(grep -o '\"pcap_path\"[[:space:]]*:[[:space:]]*\"[^\"]*\"' \"$$manifest\" | sed 's/.*:.*\"\\(.*\\)\"/\\1/');
+            job_id=$$(grep -o '\"job_id\"[[:space:]]*:[[:space:]]*\"[^\"]*\"' \"$$manifest\" | sed 's/.*:.*\"\\(.*\\)\"/\\1/');
             if [ -n \"$$pcap\" ] && [ -f \"$$pcap\" ]; then
-              echo \"Importing $$pcap\";
-              /opt/arkime/bin/capture -c /opt/arkime/etc/config.ini -r \"$$pcap\" --copy 2>&1;
-              mv \"$$manifest\" \"$$manifest.done\";
+              echo \"Importing $$pcap (job $$job_id)\";
+              if /opt/arkime/bin/capture -r \"$$pcap\" --copy 2>&1; then
+                mv \"$$manifest\" \"$$manifest.done\";
+                if [ -n \"$$job_id\" ] && [ -d \"/jobs/$$job_id\" ]; then
+                  remaining=$$(ls /import-queue/$${job_id}_*.json 2>/dev/null | wc -l);
+                  if [ \"$$remaining\" -eq 0 ]; then
+                    echo '{\"status\":\"imported\",\"imported_at\":\"'$$(date -u +%Y-%m-%dT%H:%M:%S+00:00)'\"}' > /jobs/$$job_id/arkime_import_status.json;
+                    echo \"Import complete for job $$job_id\";
+                  fi;
+                fi;
+              else
+                echo \"Capture failed for $$pcap\";
+                if [ -n \"$$job_id\" ] && [ -d \"/jobs/$$job_id\" ]; then
+                  echo '{\"status\":\"failed\"}' > /jobs/$$job_id/arkime_import_status.json;
+                fi;
+                mv \"$$manifest\" \"$$manifest.failed\";
+              fi;
             fi;
           done;
           sleep 5;
@@ -281,7 +301,7 @@ services:
       - ./arkime/config.ini:/opt/arkime/etc/config.ini:ro
       - arkime-raw:/opt/arkime/raw
       - arkime-import-queue:/import-queue
-      - aipam-jobs:/jobs:ro
+      - aipam-jobs:/jobs
     depends_on:
       opensearch:
         condition: service_healthy

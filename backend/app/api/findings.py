@@ -1234,14 +1234,7 @@ async def finding_arkime_link(
     Uses community_id (primary) or falls back to any IP-based evidence
     the finding carries (extracted from evidence_json).
     """
-    _require_job(db, job_id)
     response.headers["X-Request-Id"] = request_id
-
-    finding = db.execute(
-        select(Finding).where(Finding.job_id == job_id, Finding.finding_id == finding_id)
-    ).scalar_one_or_none()
-    if not finding:
-        raise HTTPException(status_code=404, detail="Finding not found")
 
     from backend.app.connectors import ArkimeConnector
     connector = ArkimeConnector()
@@ -1251,6 +1244,14 @@ async def finding_arkime_link(
             enabled=False,
             message="Arkime integration is not enabled.",
         )
+
+    _require_job(db, job_id)
+
+    finding = db.execute(
+        select(Finding).where(Finding.job_id == job_id, Finding.finding_id == finding_id)
+    ).scalar_one_or_none()
+    if not finding:
+        raise HTTPException(status_code=404, detail="Finding not found")
 
     # Extract pivot fields: community_id is on the model; 5-tuple fields
     # may live inside evidence_json for findings produced by Suricata/Zeek.

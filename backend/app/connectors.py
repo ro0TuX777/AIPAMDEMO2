@@ -262,27 +262,34 @@ class ArkimeConnector:
         if not base:
             return None, "none"
 
+        # date=-1 tells Arkime to search across ALL time, not just the
+        # default last-hour window.  PCAPs can be from any date.
+        time_param = "date=-1"
+
         # Primary: community_id
         if community_id:
             expr = f"communityId == {quote(community_id)}"
-            return f"{base}/sessions?expression={quote(expr)}", "community_id"
+            return f"{base}/sessions?{time_param}&expression={quote(expr)}", "community_id"
 
-        # Fallback: 5-tuple + bounded time
+        # Fallback: direction-agnostic IP/port matching.
+        # Suricata and Arkime may disagree on src vs dst, so we use
+        # the direction-agnostic ``ip ==`` and ``port ==`` expressions
+        # which match regardless of which side is source/destination.
         parts: List[str] = []
         if src_ip:
-            parts.append(f"ip.src == {src_ip}")
+            parts.append(f"ip == {src_ip}")
         if dest_ip:
-            parts.append(f"ip.dst == {dest_ip}")
+            parts.append(f"ip == {dest_ip}")
         if src_port is not None:
-            parts.append(f"port.src == {src_port}")
+            parts.append(f"port == {src_port}")
         if dest_port is not None:
-            parts.append(f"port.dst == {dest_port}")
+            parts.append(f"port == {dest_port}")
         if proto:
             parts.append(f"protocols == {proto}")
 
         if parts:
             expr = " && ".join(parts)
-            url = f"{base}/sessions?expression={quote(expr)}"
+            url = f"{base}/sessions?{time_param}&expression={quote(expr)}"
             return url, "five_tuple"
 
         return None, "none"

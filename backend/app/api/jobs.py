@@ -1204,7 +1204,6 @@ async def arkime_import(
     Writes a manifest for each PCAP to the shared import-queue volume so the
     ``arkime-importer`` sidecar picks them up asynchronously.
     """
-    job = _require_job(db, job_id)
     response.headers["X-Request-Id"] = request_id
 
     from backend.app.connectors import ArkimeConnector
@@ -1225,6 +1224,8 @@ async def arkime_import(
             import_status="not_imported",
             message="Arkime import is disabled in settings.",
         )
+
+    job = _require_job(db, job_id)
 
     job_dir = settings.aipam_job_root / job_id
     if not job_dir.exists():
@@ -1275,7 +1276,6 @@ async def arkime_status(
     settings: Settings = Depends(get_settings),
 ):
     """Return the current Arkime import status for a job."""
-    _require_job(db, job_id)
     response.headers["X-Request-Id"] = request_id
 
     from backend.app.connectors import ArkimeConnector
@@ -1287,6 +1287,8 @@ async def arkime_status(
             enabled=False,
             message="Arkime integration is not enabled.",
         )
+
+    _require_job(db, job_id)
 
     job_dir = settings.aipam_job_root / job_id
     status_data = connector.get_import_status(job_dir)

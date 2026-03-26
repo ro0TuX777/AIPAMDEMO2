@@ -158,14 +158,7 @@ async def alert_arkime_link(
 
     Uses community_id (primary) or falls back to 5-tuple correlation.
     """
-    _require_job(db, job_id)
     response.headers["X-Request-Id"] = request_id
-
-    alert = db.execute(
-        select(Alert).where(Alert.job_id == job_id, Alert.alert_id == alert_id)
-    ).scalar_one_or_none()
-    if not alert:
-        raise HTTPException(status_code=404, detail="Alert not found")
 
     from backend.app.connectors import ArkimeConnector
     connector = ArkimeConnector()
@@ -175,6 +168,14 @@ async def alert_arkime_link(
             enabled=False,
             message="Arkime integration is not enabled.",
         )
+
+    _require_job(db, job_id)
+
+    alert = db.execute(
+        select(Alert).where(Alert.job_id == job_id, Alert.alert_id == alert_id)
+    ).scalar_one_or_none()
+    if not alert:
+        raise HTTPException(status_code=404, detail="Alert not found")
 
     url, basis = connector.build_pivot_url(
         community_id=alert.community_id,

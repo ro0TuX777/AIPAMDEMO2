@@ -218,7 +218,11 @@ class TestArkimeImport:
 
     def test_import_job_not_found(self, app_client):
         client, _ = app_client
-        r = client.post("/api/v1/jobs/nonexistent/arkime/import", headers=AUTH)
+        with patch("backend.app.connectors.ArkimeConnector") as MockCls:
+            mock = MockCls.return_value
+            mock.enabled = True
+            mock.import_enabled = True
+            r = client.post("/api/v1/jobs/nonexistent/arkime/import", headers=AUTH)
         assert r.status_code == 404
 
 
@@ -268,7 +272,10 @@ class TestArkimeStatus:
 
     def test_status_job_not_found(self, app_client):
         client, _ = app_client
-        r = client.get("/api/v1/jobs/nonexistent/arkime/status", headers=AUTH)
+        with patch("backend.app.connectors.ArkimeConnector") as MockCls:
+            mock = MockCls.return_value
+            mock.enabled = True
+            r = client.get("/api/v1/jobs/nonexistent/arkime/status", headers=AUTH)
         assert r.status_code == 404
 
 
@@ -341,9 +348,12 @@ class TestAlertArkimeLink:
         client, db = app_client
         job_id = _uid()
         _insert_job(db, job_id)
-        r = client.get(
-            f"/api/v1/jobs/{job_id}/alerts/nope/arkime-link", headers=AUTH
-        )
+        with patch("backend.app.connectors.ArkimeConnector") as MockCls:
+            mock = MockCls.return_value
+            mock.enabled = True
+            r = client.get(
+                f"/api/v1/jobs/{job_id}/alerts/nope/arkime-link", headers=AUTH
+            )
         assert r.status_code == 404
 
 
@@ -420,7 +430,10 @@ class TestFindingArkimeLink:
         client, db = app_client
         job_id = _uid()
         _insert_job(db, job_id)
-        r = client.get(
-            f"/api/v1/jobs/{job_id}/findings/nope/arkime-link", headers=AUTH
-        )
+        with patch("backend.app.connectors.ArkimeConnector") as MockCls:
+            mock = MockCls.return_value
+            mock.enabled = True
+            r = client.get(
+                f"/api/v1/jobs/{job_id}/findings/nope/arkime-link", headers=AUTH
+            )
         assert r.status_code == 404

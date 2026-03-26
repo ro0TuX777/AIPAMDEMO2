@@ -157,6 +157,8 @@ def test_handle_suricata_uses_explicit_managed_bundle(monkeypatch, tmp_path):
                 str(pcap),
                 "-l",
                 str(raw_dir),
+                "--set",
+                "community-id.enabled=true",
                 "-S",
                 str(bundle_path),
             ],

@@ -60,11 +60,11 @@ COPY backend/ /app/backend/
 COPY alembic.ini /app/alembic.ini
 
 # Create required directories
-RUN mkdir -p /data /jobs /uploads /opt/aipam/logs /opt/aipam/sensor-config /opt/aipam/rules/suricata
+RUN mkdir -p /data /jobs /uploads /opt/aipam/logs /opt/aipam/sensor-config /opt/aipam/rules/suricata /import-queue
 
 # Non-root user for API; worker overrides to root for Docker socket access
 RUN groupadd -r aipam && useradd -r -g aipam -d /app aipam \
-    && chown -R aipam:aipam /app /data /jobs /uploads /opt/aipam
+    && chown -R aipam:aipam /app /data /jobs /uploads /opt/aipam /import-queue
 
 # Default environment
 ENV PYTHONPATH=/app \
