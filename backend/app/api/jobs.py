@@ -2,6 +2,7 @@
 Job endpoints (§1.3 + §3.3 + §3.4 + §3.8).
 
 POST /jobs                     – create a job from an upload
+POST /jobs/from_arkime         – create a job from Arkime session export
 GET  /jobs                     – list jobs with cursor pagination
 GET  /jobs/{id}                – get job detail
 DELETE /jobs/{id}              – delete a job
@@ -19,6 +20,7 @@ GET  /jobs/{id}/arkime/status  – Arkime import status
 """
 
 import asyncio
+import hashlib
 import io
 import json
 import uuid
@@ -187,6 +189,90 @@ async def create_job(
         )
         db.add(pcap_rec)
 
+    db.commit()
+
+    # Dispatch the pipeline to the Celery worker
+    _dispatch_job(job_id)
+
+    return JobCreateResponse(schema_version="1.0", job_id=job_id)
+
+
+# ---------- POST /jobs/from_arkime ----------
+
+class ArkimeJobRequest(BaseModel):
+    """Request to create a job by exporting sessions from Arkime."""
+    source: str = "arkime"
+    filter: str
+    time_range: dict = Field(..., description="Dict with 'start' and 'end' ISO timestamps")
+    mode: str = "single_window"
+    metadata: dict = Field(default_factory=dict)
+
+
+@router.post("/jobs/from_arkime", status_code=status.HTTP_201_CREATED, response_model=JobCreateResponse)
+async def create_job_from_arkime(
+    body: ArkimeJobRequest,
+    response: Response,
+    request_id: str = Depends(get_request_id),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+):
+    """Create a new analysis job by exporting matching sessions from Arkime as PCAP."""
+    response.headers["X-Request-Id"] = request_id
+
+    from backend.app.connectors import ArkimeConnector
+    connector = ArkimeConnector()
+
+    if not connector.enabled:
+        raise HTTPException(status_code=400, detail="Arkime integration is not enabled. Set ARKIME_ENABLED=true.")
+
+    # Export PCAP from Arkime Viewer
+    try:
+        pcap_data = await connector.export_pcap(body.filter, body.time_range)
+    except Exception as exc:
+        _logger.error("Arkime PCAP export failed: %s", exc)
+        raise HTTPException(status_code=502, detail=f"Failed to export PCAP from Arkime: {exc}")
+
+    if not pcap_data:
+        raise HTTPException(status_code=404, detail="No matching sessions found in Arkime for the given filter/time range.")
+
+    job_id = str(uuid.uuid4())
+
+    # Create job directory and save the exported PCAP
+    job_dir: Path = settings.aipam_job_root / job_id
+    input_dir = job_dir / "input"
+    input_dir.mkdir(parents=True, exist_ok=True)
+
+    pcap_filename = f"arkime_export_{job_id[:8]}.pcap"
+    pcap_path = input_dir / pcap_filename
+    pcap_path.write_bytes(pcap_data)
+
+    # Save metadata
+    pcap_sha256 = hashlib.sha256(pcap_data).hexdigest()
+
+    meta = {
+        "source": "arkime",
+        "filter": body.filter,
+        "time_range": body.time_range,
+        "mode": body.mode,
+        "metadata": body.metadata,
+    }
+    meta_path = input_dir / "input.meta.json"
+    meta_path.write_text(json.dumps(meta, indent=2))
+
+    # Create job record
+    job = Job(
+        job_id=job_id,
+        job_name=body.metadata.get("exercise_id", f"Arkime: {body.filter[:60]}"),
+        notes=body.metadata.get("notes", ""),
+        status="queued",
+        execution_profile=body.mode,
+        priority="normal",
+        pcap_filename=pcap_filename,
+        pcap_size_bytes=len(pcap_data),
+        pcap_sha256=pcap_sha256,
+        created_at=_now_iso(),
+    )
+    db.add(job)
     db.commit()
 
     # Dispatch the pipeline to the Celery worker

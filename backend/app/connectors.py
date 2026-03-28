@@ -181,13 +181,32 @@ class ArkimeConnector:
 
     # ── PCAP export (existing) ────────────────────────────────────────
 
+    @staticmethod
+    def _iso_to_epoch(iso_str: str) -> int:
+        """Convert ISO 8601 timestamp to Unix epoch seconds for Arkime API."""
+        from datetime import datetime, timezone
+        try:
+            dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
+            return int(dt.timestamp())
+        except (ValueError, AttributeError):
+            return 0
+
     async def export_pcap(self, flt: str, time_range: Dict[str, str]) -> bytes:
         if not self.api_url:
             return b""
-        params = {"expression": flt}
+        params: Dict[str, Any] = {"expression": flt}
+        start_epoch = self._iso_to_epoch(time_range.get("start", ""))
+        stop_epoch = self._iso_to_epoch(time_range.get("end", ""))
+        if start_epoch and stop_epoch:
+            params["startTime"] = start_epoch
+            params["stopTime"] = stop_epoch
+        else:
+            # No valid time range — search all time
+            params["date"] = -1
         auth = None
         if self.username and self.password:
-            auth = (self.username, self.password)
+            # Arkime uses Digest authentication
+            auth = httpx.DigestAuth(self.username, self.password)
         async with httpx.AsyncClient(timeout=120) as client:
             resp = await client.get(f"{self.api_url}/api/sessions.pcap", params=params, auth=auth)
             resp.raise_for_status()
