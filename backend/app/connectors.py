@@ -208,7 +208,10 @@ class ArkimeConnector:
             # Arkime uses Digest authentication
             auth = httpx.DigestAuth(self.username, self.password)
         async with httpx.AsyncClient(timeout=120) as client:
-            resp = await client.get(f"{self.api_url}/api/sessions.pcap", params=params, auth=auth)
+            # Arkime 5.x uses /api/session/entire/pcap (not /api/sessions.pcap)
+            resp = await client.get(
+                f"{self.api_url}/api/session/entire/pcap", params=params, auth=auth,
+            )
             resp.raise_for_status()
             return resp.content
 

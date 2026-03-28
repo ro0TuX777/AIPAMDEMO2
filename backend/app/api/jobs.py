@@ -260,12 +260,15 @@ async def create_job_from_arkime(
     meta_path.write_text(json.dumps(meta, indent=2))
 
     # Create job record
+    # The form's "mode" (single_window/baseline_vs_exploit) is analysis mode,
+    # not execution_profile (triage/standard/deep). Store mode in metadata.
+    meta["analysis_mode"] = body.mode
     job = Job(
         job_id=job_id,
         job_name=body.metadata.get("exercise_id", f"Arkime: {body.filter[:60]}"),
         notes=body.metadata.get("notes", ""),
         status="queued",
-        execution_profile=body.mode,
+        execution_profile="standard",
         priority="normal",
         pcap_filename=pcap_filename,
         pcap_size_bytes=len(pcap_data),
