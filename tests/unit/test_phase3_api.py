@@ -1449,3 +1449,100 @@ class TestTemporalEndpoints:
         client, db = app_client
         r = client.post(f"/api/v1/jobs/{_uuid()}/temporal-narrative", headers=AUTH)
         assert r.status_code == 404
+
+    # ── non-standard label combinations ──
+
+    def _setup_temporal_job_custom(self, db, label_a: str, label_b: str):
+        """Create a job with arbitrary PCAP labels."""
+        job = _seed_job(db)
+        _seed_job_pcap(db, job.job_id, label=label_a, ordinal=0)
+        _seed_job_pcap(db, job.job_id, label=label_b, ordinal=1)
+        return job
+
+    def test_delta_during_after_labels(self, app_client):
+        """Temporal comparison should work with 'during' and 'after' labels."""
+        client, db = app_client
+        job = self._setup_temporal_job_custom(db, "during", "after")
+
+        _seed_host(db, job.job_id, ip="10.0.0.1", pcap_label="during", conn_count=5, alert_count=1)
+        _seed_host(db, job.job_id, ip="10.0.0.2", pcap_label="after", conn_count=3, alert_count=0)
+
+        r = client.get(f"/api/v1/jobs/{job.job_id}/temporal-delta", headers=AUTH)
+        assert r.status_code == 200
+        body = r.json()
+        assert body["phase_labels"] == ["during", "after"]
+        assert body["summary"]["hosts"]["before"] == 1
+        assert body["summary"]["hosts"]["after"] == 1
+        assert len(body["hosts"]["added"]) == 1
+        assert len(body["hosts"]["removed"]) == 1
+
+    def test_delta_before_during_labels(self, app_client):
+        """Temporal comparison should work with 'before' and 'during' labels."""
+        client, db = app_client
+        job = self._setup_temporal_job_custom(db, "before", "during")
+
+        _seed_host(db, job.job_id, ip="10.0.0.1", pcap_label="before", conn_count=5, alert_count=1)
+        _seed_host(db, job.job_id, ip="10.0.0.1", pcap_label="during", conn_count=10, alert_count=3)
+
+        r = client.get(f"/api/v1/jobs/{job.job_id}/temporal-delta", headers=AUTH)
+        assert r.status_code == 200
+        body = r.json()
+        assert body["phase_labels"] == ["before", "during"]
+        assert len(body["hosts"]["changed"]) == 1
+
+    def test_delta_custom_labels(self, app_client):
+        """Temporal comparison should work with arbitrary custom labels."""
+        client, db = app_client
+        job = self._setup_temporal_job_custom(db, "baseline", "incident")
+
+        _seed_alert(db, job.job_id, signature="ET MALWARE Known Bad", severity="high", pcap_label="baseline")
+        _seed_alert(db, job.job_id, signature="ET MALWARE New Threat", severity="critical", pcap_label="incident")
+
+        r = client.get(f"/api/v1/jobs/{job.job_id}/temporal-delta", headers=AUTH)
+        assert r.status_code == 200
+        body = r.json()
+        assert body["phase_labels"] == ["baseline", "incident"]
+        sigs = {a["signature"]: a for a in body["alerts"]}
+        assert sigs["ET MALWARE Known Bad"]["status"] == "removed"
+        assert sigs["ET MALWARE New Threat"]["status"] == "new"
+
+    def test_delta_phase_labels_in_before_after_response(self, app_client):
+        """Standard before/after should include phase_labels field."""
+        client, db = app_client
+        job = self._setup_temporal_job(db)
+        _seed_host(db, job.job_id, ip="10.0.0.1", pcap_label="before")
+
+        r = client.get(f"/api/v1/jobs/{job.job_id}/temporal-delta", headers=AUTH)
+        assert r.status_code == 200
+        assert r.json()["phase_labels"] == ["before", "after"]
+
+    def test_flows_during_after_labels(self, app_client):
+        """Temporal flows should work with 'during' and 'after' labels."""
+        client, db = app_client
+        job = self._setup_temporal_job_custom(db, "during", "after")
+
+        _seed_connection(db, job.job_id, pcap_label="during",
+                         src_ip="10.0.0.1", dest_ip="8.8.8.8", dest_port=443, proto="tcp")
+        _seed_connection(db, job.job_id, pcap_label="after",
+                         src_ip="10.0.0.1", dest_ip="1.2.3.4", dest_port=80, proto="tcp",
+                         bytes_sent=100, bytes_recv=200)
+
+        r = client.get(f"/api/v1/jobs/{job.job_id}/temporal-flows", headers=AUTH)
+        assert r.status_code == 200
+        body = r.json()
+        assert body["total_new_flows"] == 1
+        assert body["flows"][0]["dest_ip"] == "1.2.3.4"
+
+    def test_narrative_during_after_labels(self, app_client):
+        """Narrative should reference actual phase labels, not hardcoded before/after."""
+        client, db = app_client
+        job = self._setup_temporal_job_custom(db, "during", "after")
+
+        _seed_host(db, job.job_id, ip="10.0.0.1", pcap_label="during")
+        _seed_host(db, job.job_id, ip="10.0.0.2", pcap_label="after")
+
+        r = client.post(f"/api/v1/jobs/{job.job_id}/temporal-narrative", headers=AUTH)
+        assert r.status_code == 200
+        md = r.json()["narrative_markdown"]
+        assert "**during**" in md
+        assert "**after**" in md

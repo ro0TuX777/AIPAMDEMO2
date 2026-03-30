@@ -92,7 +92,7 @@ echo "Build Complete!"
 echo "============================================"
 echo ""
 echo "To deploy:"
-echo "  docker-compose -f deploy/docker-compose.yml up -d"
+echo "  docker compose up -d"
 echo ""
 echo "Access the application at: http://localhost"
 

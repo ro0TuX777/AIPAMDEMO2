@@ -46,6 +46,11 @@ export const NewAnalysisPage: React.FC = () => {
   const [soStartTime, setSoStartTime] = useState("");
   const [soEndTime, setSoEndTime] = useState("");
   const [soSensors, setSoSensors] = useState("");
+  const [soProtocol, setSoProtocol] = useState("");
+  const [soSrcIp, setSoSrcIp] = useState("");
+  const [soDstIp, setSoDstIp] = useState("");
+  const [soSrcPort, setSoSrcPort] = useState("");
+  const [soDstPort, setSoDstPort] = useState("");
   const [soExerciseId, setSoExerciseId] = useState("");
   const [soNotes, setSoNotes] = useState("");
   const [analysisMode, setAnalysisMode] = useState("single_window");
@@ -151,10 +156,16 @@ export const NewAnalysisPage: React.FC = () => {
       if (mode === "security_onion") {
         if (!soStartTime || !soEndTime) { setError("Please provide a start and end time."); return; }
         const sensors = soSensors.split(",").map((s) => s.trim()).filter(Boolean);
+        const filter_fields: Record<string, any> = {};
+        if (soProtocol) filter_fields.protocol = soProtocol;
+        if (soSrcIp) filter_fields.srcIp = soSrcIp;
+        if (soDstIp) filter_fields.dstIp = soDstIp;
+        if (soSrcPort) filter_fields.srcPort = parseInt(soSrcPort, 10);
+        if (soDstPort) filter_fields.dstPort = parseInt(soDstPort, 10);
         const res = await api.createJobFromSecurityOnion({
           source: "security_onion",
           time_range: { start: new Date(soStartTime).toISOString(), end: new Date(soEndTime).toISOString() },
-          sensors, mode: analysisMode,
+          sensors, mode: analysisMode, filter_fields,
           metadata: { exercise_id: soExerciseId || "so-ui", notes: soNotes || "Created via Security Onion UI tab" },
         });
         navigate(`/jobs/${res.job_id}`);
@@ -168,8 +179,9 @@ export const NewAnalysisPage: React.FC = () => {
         });
         navigate(`/jobs/${res.job_id}`);
       }
-    } catch (err) {
-      setError("Failed to create job. Please try again.");
+    } catch (err: any) {
+      const msg = err?.serverMessage || err?.message || "Unknown error";
+      setError(`Failed to create job: ${msg}`);
       console.error(err);
     } finally {
       setIsSubmitting(false);
@@ -393,6 +405,75 @@ export const NewAnalysisPage: React.FC = () => {
                 onChange={(e) => setSoSensors(e.target.value)}
                 data-testid="input-so-sensors"
               />
+            </div>
+
+            <div className="border border-slate-700/50 rounded p-3 space-y-3">
+              <p className="text-xs text-slate-400">
+                <span className="text-amber-400">⚡ Packet Filters</span> — Use these to narrow the export.
+                Tip: set <strong>Protocol = tcp</strong> if you get serialization errors (e.g. OSPF).
+              </p>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div>
+                  <label className="block mb-1 text-slate-400 text-xs">Protocol</label>
+                  <select
+                    className="bg-slate-900 border border-slate-700 rounded px-2 py-1 w-full text-slate-200 text-sm"
+                    value={soProtocol}
+                    onChange={(e) => setSoProtocol(e.target.value)}
+                    data-testid="input-so-protocol"
+                  >
+                    <option value="">Any</option>
+                    <option value="tcp">TCP</option>
+                    <option value="udp">UDP</option>
+                    <option value="icmp">ICMP</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block mb-1 text-slate-400 text-xs">Source IP</label>
+                  <input
+                    type="text"
+                    className="bg-slate-900 border border-slate-700 rounded px-2 py-1 w-full text-slate-200 text-sm"
+                    placeholder="e.g. 192.168.1.10"
+                    value={soSrcIp}
+                    onChange={(e) => setSoSrcIp(e.target.value)}
+                    data-testid="input-so-src-ip"
+                  />
+                </div>
+                <div>
+                  <label className="block mb-1 text-slate-400 text-xs">Destination IP</label>
+                  <input
+                    type="text"
+                    className="bg-slate-900 border border-slate-700 rounded px-2 py-1 w-full text-slate-200 text-sm"
+                    placeholder="e.g. 10.0.0.1"
+                    value={soDstIp}
+                    onChange={(e) => setSoDstIp(e.target.value)}
+                    data-testid="input-so-dst-ip"
+                  />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className="block mb-1 text-slate-400 text-xs">Source Port</label>
+                  <input
+                    type="number"
+                    className="bg-slate-900 border border-slate-700 rounded px-2 py-1 w-full text-slate-200 text-sm"
+                    placeholder="e.g. 443"
+                    value={soSrcPort}
+                    onChange={(e) => setSoSrcPort(e.target.value)}
+                    data-testid="input-so-src-port"
+                  />
+                </div>
+                <div>
+                  <label className="block mb-1 text-slate-400 text-xs">Destination Port</label>
+                  <input
+                    type="number"
+                    className="bg-slate-900 border border-slate-700 rounded px-2 py-1 w-full text-slate-200 text-sm"
+                    placeholder="e.g. 445"
+                    value={soDstPort}
+                    onChange={(e) => setSoDstPort(e.target.value)}
+                    data-testid="input-so-dst-port"
+                  />
+                </div>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

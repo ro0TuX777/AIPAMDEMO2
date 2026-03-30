@@ -138,6 +138,7 @@ class DnsDiffs(BaseModel):
 
 class TemporalDeltaResponse(BaseModel):
     schema_version: str = SCHEMA_VERSION
+    phase_labels: list[str] = Field(default_factory=lambda: ["before", "after"])
     summary: TemporalSummary = Field(default_factory=TemporalSummary)
     phase_summary: PhaseSummary = Field(default_factory=PhaseSummary)
     severity_shift: SeverityShift = Field(default_factory=SeverityShift)

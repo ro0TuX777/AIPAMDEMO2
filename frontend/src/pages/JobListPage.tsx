@@ -395,10 +395,10 @@ export const JobListPage: React.FC = () => {
       {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className={`text-2xl font-semibold ${labelHint("jobs_list", activeHelpField)}`} onClick={() => toggleHelp("jobs_list")}>Jobs</h1>
-        <button onClick={() => setUploadOpen(true)}
+        <Link to="/new"
           className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-md text-sm font-medium transition-colors">
           New Analysis
-        </button>
+        </Link>
       </div>
 
       {/* Filters */}

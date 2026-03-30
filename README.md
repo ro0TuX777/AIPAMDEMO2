@@ -146,6 +146,7 @@ Built-in admin CLI (`aipam-admin`) for production maintenance:
 - **cleanup-jobs** — Automated retention policy enforcement
 - **support-bundle** — Diagnostic archive (excludes PCAPs and secrets)
 - **apply-update** — Air-gapped rule/TI updates with rollback
+- **benchmark** — Model accuracy & regression evaluation
 - **smoke-test** / **parity-check** — Validation tools
 
 ---
@@ -656,6 +657,14 @@ aipam-admin apply-update /path/to/update-bundle.zip
 ```
 
 Verifies SHA256 checksums from the bundle's `manifest.json` before unpacking rules and threat intelligence updates. Rejects tampered bundles with exit code 1.
+
+### `benchmark` — Model Performance Evaluation
+
+```bash
+aipam-admin benchmark [--manifest PATH] [--model MODEL] [--baseline PATH] [--limit N]
+```
+
+Runs the benchmark evaluation suite against a manifest of labelled PCAPs. Reports accuracy (exact family, type, and malicious-vs-benign), per-family precision/recall/F1, and average inference time. When `--baseline` is provided, compares results against the baseline and exits with code 1 if runtime regresses >20%.
 
 ---
 

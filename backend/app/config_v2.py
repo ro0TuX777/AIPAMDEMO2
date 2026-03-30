@@ -48,6 +48,12 @@ class Settings(BaseSettings):
     aipam_suricata_rules_dir: Path = Path("/opt/aipam/rules/suricata")
     aipam_yara_rules_dir: Path = Path("/opt/aipam/rules/yara")
 
+    # --- Security Onion (optional — external SO instance) ---
+    security_onion_enabled: bool = False
+    security_onion_api_url: Optional[str] = None       # e.g. https://so-standalone
+    security_onion_username: Optional[str] = None
+    security_onion_password: Optional[str] = None
+
     # --- Arkime (optional — enabled via Compose profile) ---
     arkime_enabled: bool = False
     arkime_api_url: Optional[str] = None          # Internal: http://arkime-viewer:8005

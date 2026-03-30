@@ -40,6 +40,9 @@ class EffectiveSettings:
     security_onion_suricata_log_path: Path
     security_onion_api_url: Optional[str]
     security_onion_api_token: Optional[str]
+    security_onion_enabled: bool
+    security_onion_username: Optional[str]
+    security_onion_password: Optional[str]
 
     # Arkime
     arkime_enabled: bool
@@ -133,6 +136,9 @@ def get_effective_settings() -> EffectiveSettings:
     so_api_token = raw.get("security_onion_api_token") or os.getenv(
         "SECURITY_ONION_API_TOKEN"
     )
+    so_enabled = (raw.get("security_onion_enabled") or os.getenv("SECURITY_ONION_ENABLED", "false")).lower() in ("true", "1", "yes")
+    so_username = raw.get("security_onion_username") or os.getenv("SECURITY_ONION_USERNAME")
+    so_password = raw.get("security_onion_password") or os.getenv("SECURITY_ONION_PASSWORD")
 
     # Arkime
     ark_enabled = (raw.get("arkime_enabled") or os.getenv("ARKIME_ENABLED", "false")).lower() in ("true", "1", "yes")
@@ -173,6 +179,9 @@ def get_effective_settings() -> EffectiveSettings:
         security_onion_suricata_log_path=Path(so_suricata),
         security_onion_api_url=so_api_url,
         security_onion_api_token=so_api_token,
+        security_onion_enabled=so_enabled,
+        security_onion_username=so_username,
+        security_onion_password=so_password,
         arkime_enabled=ark_enabled,
         arkime_api_url=ark_url,
         arkime_public_url=ark_public_url,

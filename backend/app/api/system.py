@@ -25,6 +25,8 @@ from backend.app.schemas.system import (
     ExplainConfiguration,
     ExplainTelemetryResponse,
     HealthResponse,
+    LoadedModelInfo,
+    OllamaGpuStatusResponse,
     OllamaModelInfo,
     SystemConfigResponse,
 )
@@ -91,7 +93,7 @@ async def health_check(
                 redis_ok = True
     except Exception:
         pass
-        
+
     # Docker OK acts as a proxy for the worker containers running
     docker_ok = redis_ok
 
@@ -251,3 +253,108 @@ async def get_available_models(
     log.warning("Could not reach Ollama at any of: %s", unique_urls)
     return AvailableModelsResponse(models=[])
 
+
+
+@router.get("/system/ollama-status", response_model=OllamaGpuStatusResponse)
+async def get_ollama_status(
+    response: Response,
+    request_id: str = Depends(get_request_id),
+    settings: Settings = Depends(get_settings),
+):
+    """Return Ollama GPU / hardware utilisation status.
+
+    Queries ``/api/ps`` (running models) and ``/api/version`` from the Ollama
+    instance.  GPU detection is inferred from the ``size_vram`` field returned
+    by ``/api/ps`` — if *any* loaded model has ``size_vram > 0`` the inference
+    device is GPU.  The GPU name is extracted from Docker container logs (the
+    Ollama startup log line ``using device CUDA0 (…)``).
+    """
+    import httpx
+    import logging
+    import re
+
+    log = logging.getLogger(__name__)
+    response.headers["X-Request-Id"] = request_id
+
+    ollama_base = settings.aipam_ollama_url.rstrip("/")
+
+    result = OllamaGpuStatusResponse()
+
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            # --- Version ---------------------------------------------------
+            try:
+                ver_resp = await client.get(f"{ollama_base}/api/version")
+                if ver_resp.status_code == 200:
+                    result.ollama_version = ver_resp.json().get("version", "unknown")
+            except Exception:
+                pass
+
+            # --- Running models (GPU detection) ----------------------------
+            ps_resp = await client.get(f"{ollama_base}/api/ps")
+            if ps_resp.status_code == 200:
+                ps_data = ps_resp.json()
+                raw_models = ps_data.get("models", [])
+                total_vram = 0
+                total_size = 0
+                loaded: list[LoadedModelInfo] = []
+                for m in raw_models:
+                    sz = m.get("size", 0)
+                    vram = m.get("size_vram", 0)
+                    total_size += sz
+                    total_vram += vram
+                    pct = int(round(vram / sz * 100)) if sz else 0
+                    details = m.get("details", {})
+                    loaded.append(LoadedModelInfo(
+                        name=m.get("name", ""),
+                        size=sz,
+                        size_vram=vram,
+                        parameter_size=details.get("parameter_size", "N/A"),
+                        quantization=details.get("quantization_level", "Unknown"),
+                        family=details.get("family", "Unknown"),
+                        context_length=m.get("context_length", 0),
+                        gpu_offload_pct=pct,
+                    ))
+                result.loaded_models = loaded
+                if total_vram > 0:
+                    result.gpu_detected = True
+                    result.compute_device = "CUDA"
+                    result.vram_used_bytes = total_vram
+
+            # --- GPU name from /proc/driver/nvidia/gpus/ --------------------
+            # The nvidia driver exposes GPU info via procfs, which is available
+            # to containers even without direct device access.
+            try:
+                from pathlib import Path
+                nvidia_proc = Path("/proc/driver/nvidia/gpus")
+                if nvidia_proc.exists():
+                    for gpu_dir in nvidia_proc.iterdir():
+                        info_file = gpu_dir / "information"
+                        if info_file.exists():
+                            info_text = info_file.read_text()
+                            model_match = re.search(r"Model:\s*(.+)", info_text)
+                            if model_match:
+                                result.gpu_name = model_match.group(1).strip()
+                                result.gpu_detected = True
+                                result.compute_device = "CUDA"
+                            break  # Take first GPU
+            except Exception as e:
+                log.debug("Could not read /proc/driver/nvidia for GPU info: %s", e)
+
+            # --- VRAM total from Ollama /api/ps is not exposed, try nvidia-smi
+            if result.gpu_detected and result.vram_total_bytes == 0:
+                try:
+                    import subprocess
+                    nvsmi = subprocess.check_output(
+                        ["nvidia-smi", "--query-gpu=memory.total", "--format=csv,noheader,nounits"],
+                        timeout=3,
+                    ).decode().strip()
+                    if nvsmi:
+                        result.vram_total_bytes = int(float(nvsmi.split("\n")[0]) * 1024 * 1024)
+                except Exception:
+                    pass
+
+    except Exception as e:
+        log.warning("Failed to query Ollama status: %s", e)
+
+    return result

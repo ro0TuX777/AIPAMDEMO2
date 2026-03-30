@@ -2807,7 +2807,7 @@ All 54 implementation items from §17 have been verified against the codebase. S
 | 38 | Golden PCAP corpus | ✅ | `tests/fixtures/golden/` — 4 PCAPs + `expected_findings.json` |
 | 39 | Integration test scenarios | ✅ | `tests/integration/test_golden_pcaps.py` — benign, DNS, mixed, empty, corrupt |
 | 40 | Smoke test CLI | ✅ | `backend/app/cli.py:cmd_smoke_test` — upload→validate→create→status flow |
-| 41 | Benchmark CLI | ⏭️ | Deferred — existing `benchmark/` directory has standalone benchmarks |
+| 41 | Benchmark CLI | ✅ | `backend/app/cli.py:cmd_benchmark` — wraps `benchmark/evaluate.py`, supports `--manifest`, `--baseline` regression comparison |
 
 ### Phase 6: Migration + Parity
 

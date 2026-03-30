@@ -2,9 +2,9 @@ import { test, expect } from '@playwright/test';
 
 const jobId = 'e2e-findings-job-001';
 const findingId = 'finding-explain-001';
-const findingsUrl = `http://localhost:8000/api/v1/jobs/${jobId}/findings?limit=200`;
-const findingDetailUrl = `http://localhost:8000/api/v1/jobs/${jobId}/findings/${findingId}`;
-const explainUrl = `http://localhost:8000/api/v1/jobs/${jobId}/findings/${findingId}/explain`;
+const findingsUrl = `**/api/v1/jobs/${jobId}/findings?limit=200`;
+const findingDetailUrl = `**/api/v1/jobs/${jobId}/findings/${findingId}`;
+const explainUrl = `**/api/v1/jobs/${jobId}/findings/${findingId}/explain`;
 
 function buildExplainResponse(format: 'markdown' | 'text', requestNumber: number) {
   const body = `${format.toUpperCase()} explanation request ${requestNumber}`;

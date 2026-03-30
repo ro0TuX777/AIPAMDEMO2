@@ -5,6 +5,7 @@ import {
   SettingsPayload,
   EffectiveSettingsResponse,
   OllamaModelInfo,
+  OllamaGpuStatusResponse,
   ExplainTelemetryResponse,
   SystemConfigResponse,
 } from "../api";
@@ -50,8 +51,12 @@ export const SettingsPage: React.FC = () => {
   // Ollama models
   const [availableModels, setAvailableModels] = useState<OllamaModelInfo[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
+  // Ollama GPU status
+  const [gpuStatus, setGpuStatus] = useState<OllamaGpuStatusResponse | null>(null);
+  const [gpuStatusLoading, setGpuStatusLoading] = useState(false);
   // Help guide
   const [activeHelpField, setActiveHelpField] = useState<string | null>(null);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const toggleHelp = (field: string) => {
     setActiveHelpField((prev) => (prev === field ? null : field));
   };
@@ -65,6 +70,18 @@ export const SettingsPage: React.FC = () => {
       console.error("Failed to fetch models:", err);
     } finally {
       setModelsLoading(false);
+    }
+  }, []);
+
+  const fetchGpuStatus = useCallback(async () => {
+    setGpuStatusLoading(true);
+    try {
+      const status = await api.getOllamaStatus();
+      setGpuStatus(status);
+    } catch (err) {
+      console.error("Failed to fetch GPU status:", err);
+    } finally {
+      setGpuStatusLoading(false);
     }
   }, []);
 
@@ -143,6 +160,10 @@ export const SettingsPage: React.FC = () => {
   useEffect(() => {
     void loadSystemConfig();
   }, [loadSystemConfig]);
+
+  useEffect(() => {
+    void fetchGpuStatus();
+  }, [fetchGpuStatus]);
 
   const explainMode = systemConfig?.explain_configuration.mode ?? "deterministic";
   const explainModeLabel = explainMode === "llm" ? "LLM-enabled" : "Deterministic only";
@@ -225,6 +246,87 @@ export const SettingsPage: React.FC = () => {
           className="border border-slate-800 rounded-lg p-4 text-sm text-slate-200 space-y-6"
           onSubmit={handleSubmit}
         >
+          {/* Ollama Hardware Status (read-only) */}
+          <section className="space-y-2" data-testid="section-gpu-status">
+            <div className="flex items-center justify-between">
+              <h2
+                className={`font-semibold text-slate-100 cursor-pointer ${labelHint("hardware_acceleration", activeHelpField)}`}
+                onClick={() => toggleHelp("hardware_acceleration")}
+              >
+                Hardware Acceleration
+                <span className="ml-1.5 text-[10px] text-slate-500 font-normal align-middle">ⓘ</span>
+              </h2>
+              <button
+                type="button"
+                onClick={fetchGpuStatus}
+                disabled={gpuStatusLoading}
+                className="rounded bg-slate-700 px-2 py-0.5 text-[10px] font-medium hover:bg-slate-600 disabled:opacity-50"
+              >
+                {gpuStatusLoading ? "Checking…" : "↻ Refresh"}
+              </button>
+            </div>
+            {gpuStatusLoading && !gpuStatus ? (
+              <div className="text-xs text-slate-400">Checking hardware…</div>
+            ) : gpuStatus ? (
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                <div className="rounded border border-slate-800 bg-slate-950/60 p-2">
+                  <div className="text-[10px] uppercase tracking-wide text-slate-500">Device</div>
+                  <div className="mt-0.5 text-sm font-semibold" data-testid="gpu-device">
+                    {gpuStatus.gpu_detected ? (
+                      <span className="text-emerald-400">{gpuStatus.compute_device}</span>
+                    ) : (
+                      <span className="text-amber-400">CPU</span>
+                    )}
+                  </div>
+                </div>
+                <div className="rounded border border-slate-800 bg-slate-950/60 p-2">
+                  <div className="text-[10px] uppercase tracking-wide text-slate-500">GPU</div>
+                  <div className="mt-0.5 text-sm font-medium text-slate-200" data-testid="gpu-name">
+                    {gpuStatus.gpu_name ?? "Not detected"}
+                  </div>
+                </div>
+                <div className="rounded border border-slate-800 bg-slate-950/60 p-2">
+                  <div className="text-[10px] uppercase tracking-wide text-slate-500">VRAM Used</div>
+                  <div className="mt-0.5 text-sm font-medium text-slate-200" data-testid="gpu-vram-used">
+                    {gpuStatus.vram_used_bytes > 0 ? formatBytes(gpuStatus.vram_used_bytes) : "—"}
+                    {gpuStatus.vram_total_bytes > 0 && (
+                      <span className="text-slate-500 text-xs"> / {formatBytes(gpuStatus.vram_total_bytes)}</span>
+                    )}
+                  </div>
+                </div>
+                <div className="rounded border border-slate-800 bg-slate-950/60 p-2">
+                  <div className="text-[10px] uppercase tracking-wide text-slate-500">Ollama</div>
+                  <div className="mt-0.5 text-sm font-medium text-slate-200" data-testid="ollama-version">
+                    v{gpuStatus.ollama_version}
+                  </div>
+                </div>
+                {gpuStatus.loaded_models.length > 0 && (
+                  <div className="col-span-2 md:col-span-4 rounded border border-slate-800 bg-slate-950/60 p-2">
+                    <div className="text-[10px] uppercase tracking-wide text-slate-500 mb-1">Loaded Models</div>
+                    {gpuStatus.loaded_models.map((m) => (
+                      <div key={m.name} className="flex items-center gap-2 text-xs text-slate-300">
+                        <span className="font-medium">{m.name}</span>
+                        <span className="text-slate-500">|</span>
+                        <span>{m.parameter_size}</span>
+                        <span className="text-slate-500">|</span>
+                        <span className={m.gpu_offload_pct === 100 ? "text-emerald-400" : m.gpu_offload_pct > 0 ? "text-amber-400" : "text-slate-400"}>
+                          {m.gpu_offload_pct}% GPU
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="text-xs text-slate-500">Unable to determine hardware status</div>
+            )}
+            {gpuStatus && !gpuStatus.gpu_detected && (
+              <div className="text-[10px] text-amber-400/70 bg-amber-900/10 border border-amber-800/20 rounded px-2 py-1">
+                No GPU detected. Inference runs on CPU, which is slower. To enable GPU, configure <code>deploy.resources.reservations.devices</code> in docker-compose.yml and restart the Ollama container.
+              </div>
+            )}
+          </section>
+
           {/* LLM Settings */}
           <section className="space-y-3">
             <h2 className="font-semibold text-slate-100">LLM Settings</h2>
@@ -385,453 +487,14 @@ export const SettingsPage: React.FC = () => {
             </div>
           </section>
 
-          {/* Fine-Tuning Configuration */}
-          <section className="space-y-3">
-            <h2 className="font-semibold text-slate-100">Fine-Tuning</h2>
-            <div className="border border-emerald-500/20 rounded-lg p-3 space-y-3 bg-slate-900/40">
-              <span className="text-xs font-semibold text-emerald-400 uppercase tracking-wide">
-                Training Pipeline Configuration
-              </span>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label
-                    className={`block mb-1 text-slate-300 ${labelHint("finetune_base_model", activeHelpField)}`}
-                    onClick={() => toggleHelp("finetune_base_model")}
-                  >
-                    Base Model
-                    <span className="text-[10px] text-slate-500 ml-1">(select local model)</span>
-                  </label>
-                  <select
-                    className="bg-slate-900 border border-slate-700 rounded px-2 py-1 w-full text-slate-200 text-sm"
-                    value={values.finetune_base_model ?? ""}
-                    onChange={(e) => handleChange("finetune_base_model", e.target.value)}
-                    data-testid="input-finetune-base-model"
-                  >
-                    <option value="">— Select Base Model —</option>
-                    {availableModels.map((m) => (
-                      <option key={`finetune-${m.name}`} value={m.name}>
-                        {m.name} ({m.parameter_size}, {formatBytes(m.size)})
-                      </option>
-                    ))}
-                  </select>
-                </div>
-                <div>
-                  <label
-                    className={`block mb-1 text-slate-300 ${labelHint("finetuning_backend", activeHelpField)}`}
-                    onClick={() => toggleHelp("finetuning_backend")}
-                  >
-                    Training Backend
-                    <span className="text-[10px] text-slate-500 ml-1">(hardware acceleration)</span>
-                  </label>
-                  <select
-                    className="bg-slate-900 border border-slate-700 rounded px-2 py-1 w-full text-slate-200 text-sm"
-                    value={values.finetuning_backend ?? "mlx"}
-                    onChange={(e) => handleChange("finetuning_backend", e.target.value)}
-                    data-testid="select-finetuning-backend"
-                  >
-                    <option value="mlx">Apple Silicon (MLX)</option>
-                    <option value="cuda">NVIDIA GPU (CUDA/Unsloth)</option>
-                  </select>
-                </div>
-                <div>
-                  <label
-                    className={`block mb-1 text-slate-300 ${labelHint("finetune_dataset_url", activeHelpField)}`}
-                    onClick={() => toggleHelp("finetune_dataset_url")}
-                  >
-                    Dataset Source
-                    <span className="text-[10px] text-slate-500 ml-1">(HuggingFace URL or repo ID)</span>
-                  </label>
-                  <input
-                    type="text"
-                    className="bg-slate-900 border border-slate-700 rounded px-2 py-1 w-full text-slate-200 text-sm"
-                    value={values.finetune_dataset_url ?? ""}
-                    onChange={(e) => handleChange("finetune_dataset_url", e.target.value)}
-                    placeholder="https://huggingface.co/datasets/your-org/dataset"
-                    data-testid="input-finetune-dataset-url"
-                  />
-                </div>
-                <div className="md:col-span-2">
-                  <label
-                    className={`block mb-1 text-slate-300 ${labelHint("dataset_storage_path", activeHelpField)}`}
-                    onClick={() => toggleHelp("dataset_storage_path")}
-                  >
-                    Dataset Storage Path
-                    <span className="text-[10px] text-slate-500 ml-1">(filesystem path for large downloads)</span>
-                  </label>
-                  <input
-                    type="text"
-                    className="bg-slate-900 border border-slate-700 rounded px-2 py-1 w-full text-slate-200 text-sm"
-                    value={values.dataset_storage_path ?? ""}
-                    onChange={(e) => handleChange("dataset_storage_path", e.target.value)}
-                    placeholder="/data/finetune_datasets"
-                    data-testid="input-dataset-storage-path"
-                  />
-                  <div className="flex items-center gap-2 mt-1">
-                    <button
-                      type="button"
-                      onClick={async () => {
-                        if (!values.dataset_storage_path) return;
-                        try {
-                          const res = await api.validateStoragePath(values.dataset_storage_path);
-                          if (res.valid) {
-                            alert("Path is valid and writable!");
-                          } else {
-                            alert(`Invalid Path: ${res.message}`);
-                          }
-                        } catch (err: any) {
-                          alert(`Error validating path: ${err.message}`);
-                        }
-                      }}
-                      className="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-0.5 rounded border border-slate-600"
-                    >
-                      Validate Path
-                    </button>
-                    <span className="text-[10px] text-slate-500">
-                      (e.g., /Volumes/MyExternalDrive/data)
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                <div>
-                  <label
-                    className={`block mb-1 text-slate-300 ${labelHint("finetune_lora_rank", activeHelpField)}`}
-                    onClick={() => toggleHelp("finetune_lora_rank")}
-                  >
-                    LoRA Rank
-                    <span className="text-[10px] text-slate-500 ml-1">(adapter rank)</span>
-                  </label>
-                  <input
-                    type="number"
-                    min="4"
-                    max="256"
-                    className="bg-slate-900 border border-slate-700 rounded px-2 py-1 w-full text-slate-200 text-sm"
-                    value={values.finetune_lora_rank ?? ""}
-                    onChange={(e) => handleChange("finetune_lora_rank", e.target.value)}
-                    placeholder="16"
-                    data-testid="input-finetune-lora-rank"
-                  />
-                </div>
-                <div>
-                  <label
-                    className={`block mb-1 text-slate-300 ${labelHint("finetune_learning_rate", activeHelpField)}`}
-                    onClick={() => toggleHelp("finetune_learning_rate")}
-                  >
-                    Learning Rate
-                  </label>
-                  <input
-                    type="number"
-                    step="0.00001"
-                    min="0"
-                    className="bg-slate-900 border border-slate-700 rounded px-2 py-1 w-full text-slate-200 text-sm"
-                    value={values.finetune_learning_rate ?? ""}
-                    onChange={(e) => handleChange("finetune_learning_rate", e.target.value)}
-                    placeholder="0.0002"
-                    data-testid="input-finetune-learning-rate"
-                  />
-                </div>
-                <div>
-                  <label
-                    className={`block mb-1 text-slate-300 ${labelHint("finetune_max_seq_length", activeHelpField)}`}
-                    onClick={() => toggleHelp("finetune_max_seq_length")}
-                  >
-                    Context Window
-                    <span className="text-[10px] text-slate-500 ml-1">(tokens)</span>
-                  </label>
-                  <input
-                    type="number"
-                    step="1024"
-                    min="1024"
-                    className="bg-slate-900 border border-slate-700 rounded px-2 py-1 w-full text-slate-200 text-sm"
-                    value={values.finetune_max_seq_length ?? ""}
-                    onChange={(e) => handleChange("finetune_max_seq_length", e.target.value)}
-                    placeholder="32768"
-                    data-testid="input-finetune-max-seq-length"
-                  />
-                </div>
-              </div>
-
-              <div className="flex justify-end pt-2">
-                <button
-                  type="button"
-                  onClick={async () => {
-                    if (!window.confirm("Start fine-tuning job with current settings?")) return;
-                    try {
-                      const res = await api.startTrainingJob();
-                      setSuccess(`Job started: ${res.task_id}`);
-                      // Navigate to Training page to see live progress
-                      window.location.href = '/training';
-                    } catch (err: any) {
-                      const msg = err.message || "Failed to start job";
-                      setError(msg);
-                    }
-                  }}
-                  className="rounded bg-emerald-600 px-3 py-1.5 text-xs font-medium hover:bg-emerald-500 flex items-center gap-2"
-                  data-testid="btn-start-finetuning"
-                >
-                  Start Fine-Tuning Job
-                </button>
-              </div>
-            </div>
-          </section>
-
-          {/* Debug: Effective Runtime Settings */}
-          <section className="space-y-2 border border-slate-800 rounded-lg p-3" data-testid="section-effective-settings-debug">
-            <div className="flex items-center justify-between gap-2">
-              <span className="text-xs font-semibold text-slate-300">Debug: Effective Runtime Settings</span>
-              <label className="inline-flex items-center gap-1 text-xs text-slate-300">
-                <input
-                  type="checkbox"
-                  checked={showDebug}
-                  onChange={(e) => setShowDebug(e.target.checked)}
-                  data-testid="toggle-effective-settings-debug"
-                />
-                <span>Show</span>
-              </label>
-            </div>
-            {showDebug && (
-              <div className="mt-2 text-xs">
-                <button
-                  type="button"
-                  onClick={async () => {
-                    setEffectiveLoading(true);
-                    setEffectiveError(null);
-                    try {
-                      const data = await api.getEffectiveSettings();
-                      setEffectiveSettings(data);
-                    } catch (err) {
-                      console.error(err);
-                      setEffectiveError("Failed to load effective settings");
-                    } finally {
-                      setEffectiveLoading(false);
-                    }
-                  }}
-                  className="mb-2 rounded bg-slate-700 px-2 py-1 text-[11px] font-medium hover:bg-slate-600 disabled:opacity-50"
-                  disabled={effectiveLoading}
-                  data-testid="btn-load-effective-settings"
-                >
-                  {effectiveLoading ? "Loading..." : "Load Effective Settings"}
-                </button>
-
-                {effectiveError && (
-                  <div className="text-red-400 mb-1" data-testid="text-effective-settings-error">
-                    {effectiveError}
-                  </div>
-                )}
-
-                {effectiveSettings && (
-                  <pre
-                    className="bg-slate-950 border border-slate-800 rounded p-2 overflow-auto max-h-48"
-                    data-testid="pre-effective-settings-json"
-                  >
-                    {JSON.stringify(effectiveSettings, null, 2)}
-                  </pre>
-                )}
-              </div>
-            )}
-          </section>
-
-          <section className="space-y-3 border border-slate-800 rounded-lg p-3" data-testid="section-explain-config">
-            <div className="space-y-1">
-              <h2 className="font-semibold text-slate-100">Explain Configuration</h2>
-              <p className="text-xs text-slate-400">
-                Current runtime mode for grounded finding explanations and the LLM configuration they will use when enabled.
-              </p>
-            </div>
-
-            {systemConfigError && (
-              <div className="text-red-400 text-xs" data-testid="text-explain-config-error">
-                {systemConfigError}
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
-              <div className="rounded border border-slate-800 bg-slate-950/60 p-3">
-                <div className="text-xs uppercase tracking-wide text-slate-400">Mode</div>
-                <div className="mt-1 text-xl font-semibold text-slate-100" data-testid="text-explain-config-mode">
-                  {systemConfigLoading ? "Loading..." : explainModeLabel}
-                </div>
-                <div className="mt-2 text-xs text-slate-400" data-testid="text-explain-config-mode-description">
-                  {systemConfigLoading ? "Loading explain configuration..." : explainModeDescription}
-                </div>
-              </div>
-              <div className="rounded border border-slate-800 bg-slate-950/60 p-3">
-                <div className="text-xs uppercase tracking-wide text-slate-400">LLM model</div>
-                <div className="mt-1 text-sm font-medium text-slate-100 break-all" data-testid="text-explain-config-model">
-                  {systemConfigLoading ? "Loading..." : explainModelName}
-                </div>
-              </div>
-              <div className="rounded border border-slate-800 bg-slate-950/60 p-3">
-                <div className="text-xs uppercase tracking-wide text-slate-400">LLM endpoint</div>
-                <div className="mt-1 text-sm font-medium text-slate-100 break-all" data-testid="text-explain-config-endpoint">
-                  {systemConfigLoading ? "Loading..." : explainEndpoint}
-                </div>
-              </div>
-            </div>
-          </section>
-
-          <section className="space-y-3 border border-slate-800 rounded-lg p-3" data-testid="section-explain-telemetry">
-            <div className="flex items-start justify-between gap-3">
-              <div className="space-y-1">
-                <h2 className="font-semibold text-slate-100">Explain Telemetry</h2>
-                <p className="text-xs text-slate-400">
-                  Process-local counters and latency summaries for grounded explanation responses. These values reset when the API process restarts.
-                </p>
-              </div>
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={loadExplainTelemetry}
-                  disabled={telemetryLoading || telemetryResetting}
-                  className="rounded bg-slate-700 px-3 py-1 text-xs font-medium hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
-                  data-testid="btn-refresh-explain-telemetry"
-                >
-                  {telemetryLoading ? "Refreshing..." : "Refresh Telemetry"}
-                </button>
-                <button
-                  type="button"
-                  onClick={handleResetExplainTelemetry}
-                  disabled={telemetryLoading || telemetryResetting}
-                  className="rounded border border-amber-700 bg-amber-950/40 px-3 py-1 text-xs font-medium text-amber-200 hover:bg-amber-900/40 disabled:opacity-50 disabled:cursor-not-allowed"
-                  data-testid="btn-reset-explain-telemetry"
-                >
-                  {telemetryResetting ? "Resetting..." : "Reset Counters"}
-                </button>
-              </div>
-            </div>
-
-            {telemetryError && (
-              <div className="text-red-400 text-xs" data-testid="text-explain-telemetry-error">
-                {telemetryError}
-              </div>
-            )}
-
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-3 text-sm">
-              <div className="rounded border border-slate-800 bg-slate-950/60 p-3">
-                <div className="text-xs uppercase tracking-wide text-slate-400">Total responses</div>
-                <div className="mt-1 text-xl font-semibold text-slate-100" data-testid="text-explain-telemetry-total">
-                  {totalExplainResponses}
-                </div>
-              </div>
-              <div className="rounded border border-slate-800 bg-slate-950/60 p-3">
-                <div className="text-xs uppercase tracking-wide text-slate-400">Deterministic</div>
-                <div className="mt-1 text-xl font-semibold text-slate-100" data-testid="text-explain-telemetry-deterministic">
-                  {deterministicExplainResponses}
-                </div>
-              </div>
-              <div className="rounded border border-slate-800 bg-slate-950/60 p-3">
-                <div className="text-xs uppercase tracking-wide text-slate-400">LLM</div>
-                <div className="mt-1 text-xl font-semibold text-slate-100" data-testid="text-explain-telemetry-llm">
-                  {llmExplainResponses}
-                </div>
-              </div>
-              <div className="rounded border border-slate-800 bg-slate-950/60 p-3">
-                <div className="text-xs uppercase tracking-wide text-slate-400">Fallback</div>
-                <div className="mt-1 text-xl font-semibold text-slate-100" data-testid="text-explain-telemetry-fallback">
-                  {fallbackExplainResponses}
-                </div>
-              </div>
-              <div className="rounded border border-slate-800 bg-slate-950/60 p-3">
-                <div className="text-xs uppercase tracking-wide text-slate-400">Average latency</div>
-                <div className="mt-1 text-xl font-semibold text-slate-100" data-testid="text-explain-telemetry-average-ms">
-                  {formatDurationMs(averageExplainLatencyMs)}
-                </div>
-              </div>
-              <div className="rounded border border-slate-800 bg-slate-950/60 p-3">
-                <div className="text-xs uppercase tracking-wide text-slate-400">Last response</div>
-                <div className="mt-1 text-xl font-semibold text-slate-100" data-testid="text-explain-telemetry-last-ms">
-                  {formatDurationMs(lastExplainLatencyMs)}
-                </div>
-              </div>
-              <div className="rounded border border-slate-800 bg-slate-950/60 p-3">
-                <div className="text-xs uppercase tracking-wide text-slate-400">Fastest response</div>
-                <div className="mt-1 text-xl font-semibold text-slate-100" data-testid="text-explain-telemetry-min-ms">
-                  {formatDurationMs(minExplainLatencyMs)}
-                </div>
-              </div>
-              <div className="rounded border border-slate-800 bg-slate-950/60 p-3">
-                <div className="text-xs uppercase tracking-wide text-slate-400">Slowest response</div>
-                <div className="mt-1 text-xl font-semibold text-slate-100" data-testid="text-explain-telemetry-max-ms">
-                  {formatDurationMs(maxExplainLatencyMs)}
-                </div>
-              </div>
-            </div>
-          </section>
-
           {/* Security Onion Settings */}
           <section className="space-y-3">
             <h2 className="font-semibold text-slate-100">Security Onion</h2>
+            <p className="text-xs text-slate-400">
+              Connect to a Security Onion 2.4+ instance via the SOC API for PCAP pull/push and alert enrichment.
+            </p>
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label
-                  className={`block mb-1 ${labelHint("security_onion_mode", activeHelpField)}`}
-                  onClick={() => toggleHelp("security_onion_mode")}
-                >
-                  Mode
-                </label>
-                <select
-                  className="bg-slate-900 border border-slate-700 rounded px-2 py-1 w-full text-slate-200 text-sm"
-                  value={values.security_onion_mode ?? "filesystem"}
-                  onChange={(e) => handleChange("security_onion_mode", e.target.value)}
-                  data-testid="select-so-mode-settings"
-                >
-                  <option value="filesystem">Filesystem</option>
-                  <option value="api">API</option>
-                </select>
-              </div>
-              <div>
-                <label
-                  className={`block mb-1 ${labelHint("security_onion_base_pcap_path", activeHelpField)}`}
-                  onClick={() => toggleHelp("security_onion_base_pcap_path")}
-                >
-                  Base PCAP Path (filesystem)
-                </label>
-                <input
-                  type="text"
-                  className="bg-slate-900 border border-slate-700 rounded px-2 py-1 w-full text-slate-200 text-sm"
-                  value={values.security_onion_base_pcap_path ?? ""}
-                  onChange={(e) => handleChange("security_onion_base_pcap_path", e.target.value)}
-                  placeholder="/srv/aipam/so-pcaps"
-                  data-testid="input-so-base-pcap-path"
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label
-                  className={`block mb-1 ${labelHint("security_onion_zeek_log_path", activeHelpField)}`}
-                  onClick={() => toggleHelp("security_onion_zeek_log_path")}
-                >
-                  Zeek Log Path
-                </label>
-                <input
-                  type="text"
-                  className="bg-slate-900 border border-slate-700 rounded px-2 py-1 w-full text-slate-200 text-sm"
-                  value={values.security_onion_zeek_log_path ?? ""}
-                  onChange={(e) => handleChange("security_onion_zeek_log_path", e.target.value)}
-                  data-testid="input-so-zeek-log-path"
-                />
-              </div>
-              <div>
-                <label
-                  className={`block mb-1 ${labelHint("security_onion_suricata_log_path", activeHelpField)}`}
-                  onClick={() => toggleHelp("security_onion_suricata_log_path")}
-                >
-                  Suricata Log Path
-                </label>
-                <input
-                  type="text"
-                  className="bg-slate-900 border border-slate-700 rounded px-2 py-1 w-full text-slate-200 text-sm"
-                  value={values.security_onion_suricata_log_path ?? ""}
-                  onChange={(e) => handleChange("security_onion_suricata_log_path", e.target.value)}
-                  data-testid="input-so-suricata-log-path"
-                />
-              </div>
-            </div>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
+              <div className="md:col-span-2">
                 <label
                   className={`block mb-1 ${labelHint("security_onion_api_url", activeHelpField)}`}
                   onClick={() => toggleHelp("security_onion_api_url")}
@@ -843,22 +506,29 @@ export const SettingsPage: React.FC = () => {
                   className="bg-slate-900 border border-slate-700 rounded px-2 py-1 w-full text-slate-200 text-sm"
                   value={values.security_onion_api_url ?? ""}
                   onChange={(e) => handleChange("security_onion_api_url", e.target.value)}
+                  placeholder="https://172.16.0.15"
                   data-testid="input-so-api-url"
                 />
               </div>
               <div>
-                <label
-                  className={`block mb-1 ${labelHint("security_onion_api_token", activeHelpField)}`}
-                  onClick={() => toggleHelp("security_onion_api_token")}
-                >
-                  API Token
-                </label>
+                <label className="block mb-1 text-slate-300">Username</label>
+                <input
+                  type="text"
+                  className="bg-slate-900 border border-slate-700 rounded px-2 py-1 w-full text-slate-200 text-sm"
+                  value={values.security_onion_username ?? ""}
+                  onChange={(e) => handleChange("security_onion_username", e.target.value)}
+                  placeholder="analyst@example.com"
+                  data-testid="input-so-username"
+                />
+              </div>
+              <div>
+                <label className="block mb-1 text-slate-300">Password</label>
                 <input
                   type="password"
                   className="bg-slate-900 border border-slate-700 rounded px-2 py-1 w-full text-slate-200 text-sm"
-                  value={values.security_onion_api_token ?? ""}
-                  onChange={(e) => handleChange("security_onion_api_token", e.target.value)}
-                  data-testid="input-so-api-token"
+                  value={values.security_onion_password ?? ""}
+                  onChange={(e) => handleChange("security_onion_password", e.target.value)}
+                  data-testid="input-so-password"
                 />
               </div>
             </div>
@@ -936,6 +606,130 @@ export const SettingsPage: React.FC = () => {
                 data-testid="input-file-storage-path"
               />
             </div>
+          </section>
+
+          {/* Advanced (Debug / Telemetry) — collapsible */}
+          <section className="space-y-3">
+            <button
+              type="button"
+              onClick={() => setShowAdvanced(!showAdvanced)}
+              className="flex items-center gap-2 text-sm font-semibold text-slate-400 hover:text-slate-200 transition-colors"
+            >
+              <span className={`transform transition-transform ${showAdvanced ? "rotate-90" : ""}`}>▶</span>
+              Advanced
+            </button>
+
+            {showAdvanced && (
+              <div className="space-y-4 border border-slate-800 rounded-lg p-4 bg-slate-900/30">
+
+                {/* Debug: Effective Runtime Settings */}
+                <div className="space-y-2" data-testid="section-effective-settings-debug">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-semibold text-slate-300">Effective Runtime Settings</span>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        setEffectiveLoading(true);
+                        setEffectiveError(null);
+                        try {
+                          const data = await api.getEffectiveSettings();
+                          setEffectiveSettings(data);
+                        } catch (err) {
+                          console.error(err);
+                          setEffectiveError("Failed to load effective settings");
+                        } finally {
+                          setEffectiveLoading(false);
+                        }
+                      }}
+                      className="rounded bg-slate-700 px-2 py-1 text-[11px] font-medium hover:bg-slate-600 disabled:opacity-50"
+                      disabled={effectiveLoading}
+                      data-testid="btn-load-effective-settings"
+                    >
+                      {effectiveLoading ? "Loading..." : "Load"}
+                    </button>
+                  </div>
+                  {effectiveError && (
+                    <div className="text-red-400 text-xs" data-testid="text-effective-settings-error">{effectiveError}</div>
+                  )}
+                  {effectiveSettings && (
+                    <pre className="bg-slate-950 border border-slate-800 rounded p-2 overflow-auto max-h-48 text-xs" data-testid="pre-effective-settings-json">
+                      {JSON.stringify(effectiveSettings, null, 2)}
+                    </pre>
+                  )}
+                </div>
+
+                {/* Explain Configuration */}
+                <div className="space-y-2" data-testid="section-explain-config">
+                  <span className="text-xs font-semibold text-slate-300">Explain Configuration</span>
+                  {systemConfigError && (
+                    <div className="text-red-400 text-xs" data-testid="text-explain-config-error">{systemConfigError}</div>
+                  )}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
+                    <div className="rounded border border-slate-800 bg-slate-950/60 p-3">
+                      <div className="text-xs uppercase tracking-wide text-slate-400">Mode</div>
+                      <div className="mt-1 text-lg font-semibold text-slate-100" data-testid="text-explain-config-mode">
+                        {systemConfigLoading ? "Loading..." : explainModeLabel}
+                      </div>
+                      <div className="mt-1 text-xs text-slate-400" data-testid="text-explain-config-mode-description">
+                        {systemConfigLoading ? "..." : explainModeDescription}
+                      </div>
+                    </div>
+                    <div className="rounded border border-slate-800 bg-slate-950/60 p-3">
+                      <div className="text-xs uppercase tracking-wide text-slate-400">LLM model</div>
+                      <div className="mt-1 text-sm font-medium text-slate-100 break-all" data-testid="text-explain-config-model">
+                        {systemConfigLoading ? "Loading..." : explainModelName}
+                      </div>
+                    </div>
+                    <div className="rounded border border-slate-800 bg-slate-950/60 p-3">
+                      <div className="text-xs uppercase tracking-wide text-slate-400">LLM endpoint</div>
+                      <div className="mt-1 text-sm font-medium text-slate-100 break-all" data-testid="text-explain-config-endpoint">
+                        {systemConfigLoading ? "Loading..." : explainEndpoint}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Explain Telemetry */}
+                <div className="space-y-2" data-testid="section-explain-telemetry">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-xs font-semibold text-slate-300">Explain Telemetry</span>
+                    <div className="flex items-center gap-2">
+                      <button type="button" onClick={loadExplainTelemetry} disabled={telemetryLoading || telemetryResetting}
+                        className="rounded bg-slate-700 px-2 py-1 text-[11px] font-medium hover:bg-slate-600 disabled:opacity-50"
+                        data-testid="btn-refresh-explain-telemetry">
+                        {telemetryLoading ? "..." : "Refresh"}
+                      </button>
+                      <button type="button" onClick={handleResetExplainTelemetry} disabled={telemetryLoading || telemetryResetting}
+                        className="rounded border border-amber-700 bg-amber-950/40 px-2 py-1 text-[11px] font-medium text-amber-200 hover:bg-amber-900/40 disabled:opacity-50"
+                        data-testid="btn-reset-explain-telemetry">
+                        {telemetryResetting ? "..." : "Reset"}
+                      </button>
+                    </div>
+                  </div>
+                  {telemetryError && (
+                    <div className="text-red-400 text-xs" data-testid="text-explain-telemetry-error">{telemetryError}</div>
+                  )}
+                  <div className="grid grid-cols-2 md:grid-cols-4 gap-2 text-sm">
+                    {[
+                      ["Total", totalExplainResponses, "text-explain-telemetry-total"],
+                      ["Deterministic", deterministicExplainResponses, "text-explain-telemetry-deterministic"],
+                      ["LLM", llmExplainResponses, "text-explain-telemetry-llm"],
+                      ["Fallback", fallbackExplainResponses, "text-explain-telemetry-fallback"],
+                      ["Avg latency", formatDurationMs(averageExplainLatencyMs), "text-explain-telemetry-average-ms"],
+                      ["Last", formatDurationMs(lastExplainLatencyMs), "text-explain-telemetry-last-ms"],
+                      ["Fastest", formatDurationMs(minExplainLatencyMs), "text-explain-telemetry-min-ms"],
+                      ["Slowest", formatDurationMs(maxExplainLatencyMs), "text-explain-telemetry-max-ms"],
+                    ].map(([label, value, testId]) => (
+                      <div key={testId as string} className="rounded border border-slate-800 bg-slate-950/60 p-2">
+                        <div className="text-[10px] uppercase tracking-wide text-slate-400">{label}</div>
+                        <div className="mt-1 text-lg font-semibold text-slate-100" data-testid={testId}>{value}</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+              </div>
+            )}
           </section>
 
           {error && <div className="text-red-400 text-sm">{error}</div>}

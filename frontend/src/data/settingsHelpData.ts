@@ -7,6 +7,46 @@ export interface HelpEntry {
 }
 
 export const settingsHelpData: Record<string, HelpEntry> = {
+    /* ── Hardware Acceleration ─────────────────────────── */
+    hardware_acceleration: {
+        title: "Hardware Acceleration (GPU / CPU)",
+        description:
+            "Controls whether the Ollama inference server uses your NVIDIA GPU or falls back to CPU-only mode. GPU acceleration dramatically improves LLM response times (typically 5–10× faster). This is a Docker-level configuration — it cannot be toggled at runtime from the UI.",
+        acceptedValues:
+            "Read-only status indicator. To change the hardware mode, follow these steps:\n\n" +
+            "━━ Switch from GPU → CPU ━━\n" +
+            "1. Open docker-compose.yml in a text editor\n" +
+            "2. Find the 'ollama' service section\n" +
+            "3. Comment out (or remove) the entire 'deploy' block:\n" +
+            "     # deploy:\n" +
+            "     #   resources:\n" +
+            "     #     reservations:\n" +
+            "     #       devices:\n" +
+            "     #         - driver: nvidia\n" +
+            "     #           count: 1\n" +
+            "     #           capabilities: [gpu]\n" +
+            "4. Save the file\n" +
+            "5. Run: docker compose up -d --force-recreate ollama\n" +
+            "6. Click 'Refresh' on this status card to confirm\n\n" +
+            "━━ Switch from CPU → GPU ━━\n" +
+            "1. Ensure NVIDIA drivers + nvidia-container-toolkit are installed on the host\n" +
+            "   (verify with: nvidia-smi && docker run --rm --gpus all nvidia/cuda:12.8.0-base-ubuntu24.04 nvidia-smi)\n" +
+            "2. Open docker-compose.yml in a text editor\n" +
+            "3. Add the 'deploy' block under the 'ollama' service:\n" +
+            "     deploy:\n" +
+            "       resources:\n" +
+            "         reservations:\n" +
+            "           devices:\n" +
+            "             - driver: nvidia\n" +
+            "               count: 1\n" +
+            "               capabilities: [gpu]\n" +
+            "4. Save the file\n" +
+            "5. Run: docker compose up -d --force-recreate ollama\n" +
+            "6. Click 'Refresh' on this status card to confirm GPU is detected",
+        dependencies: [],
+        section: "Hardware",
+    },
+
     /* ── LLM Settings ─────────────────────────────────── */
     llm_endpoint: {
         title: "Endpoint URL",

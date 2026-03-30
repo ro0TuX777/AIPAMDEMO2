@@ -814,6 +814,17 @@ export interface ProofExportResponse {
   filename: string;
 }
 
+// ─── Security Onion Import ──────────────────────────────────────────────────
+
+export interface SecurityOnionImportResponse {
+  schema_version: string;
+  job_id: string;
+  enabled: boolean;
+  status: string;
+  message?: string | null;
+  node_id?: string | null;
+}
+
 // ─── Arkime ─────────────────────────────────────────────────────────────────
 
 export type ArkimeImportState = "not_imported" | "queued" | "running" | "imported" | "failed";
@@ -1162,7 +1173,9 @@ export interface SeverityShift { critical: SeverityShiftItem; high: SeverityShif
 export interface ContainmentIndicators { removed_c2_connections: number; reduced_alert_categories: string[]; new_defensive_activity: string[]; }
 
 export interface TemporalDeltaResponse {
-  schema_version: string; summary: TemporalSummary;
+  schema_version: string;
+  phase_labels: [string, string];
+  summary: TemporalSummary;
   phase_summary: PhaseSummary;
   severity_shift: SeverityShift;
   containment_indicators: ContainmentIndicators;
@@ -1278,8 +1291,9 @@ export class ApiError extends Error {
     public code: string,
     public details?: Record<string, unknown>,
     public retryAfter?: number,
+    public serverMessage?: string,
   ) {
-    super(`[${status}] ${code}`);
+    super(serverMessage || `[${status}] ${code}`);
     this.name = "ApiError";
   }
 }
@@ -1324,6 +1338,7 @@ async function request<T>(url: string, init: RequestInit = {}): Promise<T> {
       body.code || `HTTP_${res.status}`,
       body.details,
       typeof parsedRetryAfter === "number" && Number.isFinite(parsedRetryAfter) ? parsedRetryAfter : undefined,
+      body.error || body.detail || undefined,
     );
   }
   if (res.status === 204) return undefined as unknown as T;
@@ -1640,6 +1655,9 @@ export const api = {
   resetExplainTelemetry(): Promise<ExplainTelemetryResponse> {
     return post<ExplainTelemetryResponse>("/system/explain-telemetry/reset");
   },
+  getOllamaStatus(): Promise<OllamaGpuStatusResponse> {
+    return get<OllamaGpuStatusResponse>("/system/ollama-status");
+  },
 
   // ── SSE ────────────────────────────────────────────────────────────────
   /** Create an EventSource for job progress. Caller is responsible for closing it. */
@@ -1873,6 +1891,11 @@ export const api = {
   getFindingArkimeLink(jobId: string, findingId: string): Promise<ArkimePivotResponse> {
     return get<ArkimePivotResponse>(`/jobs/${jobId}/findings/${findingId}/arkime-link`);
   },
+
+  // ── Security Onion Import ──────────────────────────────────────────────
+  triggerSecurityOnionImport(jobId: string): Promise<SecurityOnionImportResponse> {
+    return post<SecurityOnionImportResponse>(`/jobs/${jobId}/security_onion/import`);
+  },
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1884,6 +1907,17 @@ export interface SettingsPayload { [key: string]: any }
 export interface EffectiveSettingsResponse { [key: string]: any }
 export interface OllamaModelInfo { name: string; size: number; family: string; parameter_size: string; quantization: string }
 export interface SetupStatusResponse { model_configured: boolean; llm_model_name: string | null }
+
+// ─── Ollama GPU status ──────────────────────────────────────────────────────
+export interface LoadedModelInfo {
+  name: string; size: number; size_vram: number; parameter_size: string;
+  quantization: string; family: string; context_length: number; gpu_offload_pct: number;
+}
+export interface OllamaGpuStatusResponse {
+  schema_version: string; ollama_version: string; gpu_detected: boolean;
+  gpu_name: string | null; vram_total_bytes: number; vram_used_bytes: number;
+  compute_device: string; loaded_models: LoadedModelInfo[];
+}
 
 // ─── Chat types ─────────────────────────────────────────────────────────────
 export interface ChatCitation { type: string; id?: string; snippet: string }

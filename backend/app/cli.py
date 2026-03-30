@@ -871,6 +871,86 @@ def cmd_perf_gate(args):
     sys.exit(1 if violations > 0 else 0)
 
 
+def cmd_benchmark(args):
+    """Run benchmark evaluation on a manifest of PCAPs (§14.10).
+
+    Wraps the standalone ``benchmark/evaluate.py`` logic so it can be invoked
+    via ``aipam-admin benchmark``.
+    """
+    # Resolve paths relative to the repo root so the command works from any cwd.
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    benchmark_dir = repo_root / "benchmark"
+
+    # Ensure the benchmark package is importable.
+    if str(benchmark_dir.parent) not in sys.path:
+        sys.path.insert(0, str(benchmark_dir.parent))
+
+    try:
+        from benchmark.evaluate import run_benchmark  # type: ignore[import-untyped]
+        from benchmark.inference import InferenceConfig  # type: ignore[import-untyped]
+    except ImportError as exc:
+        print(f"ERROR: Could not import benchmark modules: {exc}")
+        print("Make sure the benchmark/ directory is present at the repo root.")
+        sys.exit(2)
+
+    # Resolve manifest — fall back to the default trained-families manifest.
+    manifest = args.manifest
+    if manifest is None:
+        manifest = str(benchmark_dir / "manifests" / "benchmark_manifest.json")
+        if not Path(manifest).exists():
+            # Try the trained families manifest as a second fallback
+            manifest = str(benchmark_dir / "manifests" / "trained_families_benchmark.json")
+    manifest = str(Path(manifest).resolve())
+
+    if not Path(manifest).exists():
+        print(f"ERROR: Manifest not found: {manifest}")
+        sys.exit(2)
+
+    config = InferenceConfig(
+        endpoint=args.endpoint,
+        model=args.model,
+    )
+
+    output_dir = args.output or str(benchmark_dir / "benchmark_results")
+
+    # --- Baseline comparison (§14.10) -----------------------------------------
+    baseline_path = args.baseline
+    report = run_benchmark(
+        manifest,
+        config=config,
+        output_dir=output_dir,
+        limit=args.limit or None,
+        filter_set=args.set or None,
+    )
+
+    if baseline_path and Path(baseline_path).exists():
+        import json as _json
+        with open(baseline_path) as f:
+            baseline = _json.load(f)
+
+        baseline_time = baseline.get("avg_inference_time", 0)
+        baseline_acc = baseline.get("accuracy", 0)
+
+        time_delta = (
+            (report.avg_inference_time - baseline_time) / baseline_time * 100
+            if baseline_time
+            else 0
+        )
+        acc_delta = (report.accuracy - baseline_acc) * 100
+
+        print(f"\n--- Baseline Comparison ---")
+        print(f"Accuracy   : {report.accuracy:.2%} vs {baseline_acc:.2%} ({acc_delta:+.1f}pp)")
+        print(f"Avg Time   : {report.avg_inference_time:.2f}s vs {baseline_time:.2f}s ({time_delta:+.1f}%)")
+
+        if time_delta > 20:
+            print("⚠️  Runtime regression > 20% — review before merging.")
+            sys.exit(1)
+    elif baseline_path:
+        print(f"\nWARN: Baseline file not found ({baseline_path}), skipping comparison.")
+
+    sys.exit(0)
+
+
 def main():
     parser = argparse.ArgumentParser(prog="aipam-admin", description="AIPAM V2 Admin CLI")
     sub = parser.add_subparsers(dest="command", help="Available commands")
@@ -911,6 +991,16 @@ def main():
         help="Root directory for job data",
     )
 
+    # benchmark (§14.10)
+    p_bench = sub.add_parser("benchmark", help="Run benchmark evaluation (§14.10)")
+    p_bench.add_argument("--manifest", help="Path to benchmark manifest JSON (default: benchmark/manifests/benchmark_manifest.json)")
+    p_bench.add_argument("--model", default="aipam-trafficllm-v5", help="Ollama model name")
+    p_bench.add_argument("--endpoint", default="http://localhost:11434/v1/chat/completions", help="LLM endpoint URL")
+    p_bench.add_argument("--output", help="Output directory for reports (default: benchmark/benchmark_results/)")
+    p_bench.add_argument("--limit", type=int, default=0, help="Limit number of samples (0 = all)")
+    p_bench.add_argument("--set", dest="set", help="Filter by set (benchmark, leakage, etc)")
+    p_bench.add_argument("--baseline", help="Path to baseline JSON for regression comparison")
+
     args = parser.parse_args()
 
     if args.command == "smoke-test":
@@ -925,6 +1015,8 @@ def main():
         cmd_apply_update(args)
     elif args.command == "perf-gate":
         cmd_perf_gate(args)
+    elif args.command == "benchmark":
+        cmd_benchmark(args)
     else:
         parser.print_help()
         sys.exit(2)

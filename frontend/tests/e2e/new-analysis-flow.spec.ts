@@ -53,7 +53,7 @@ test('@requires-backend can start a new upload analysis and see job detail', asy
     }
   });
 
-  await page.route(`http://localhost:8000/api/v1/jobs/${jobId}`, async (route) => {
+  await page.route(`**/api/v1/jobs/${jobId}`, async (route) => {
     const now = new Date().toISOString();
     await route.fulfill({
       status: 200,
@@ -78,7 +78,7 @@ test('@requires-backend can start a new upload analysis and see job detail', asy
     });
   });
 
-  await page.route(`http://localhost:8000/api/v1/jobs/${jobId}/summary`, async (route) => {
+  await page.route(`**/api/v1/jobs/${jobId}/summary`, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -119,7 +119,7 @@ test('@requires-backend can start a new upload analysis and see job detail', asy
 test('@requires-backend can start a new Security Onion analysis and see job detail', async ({ page }) => {
   const jobId = 'e2e-so-job-456';
 
-  await page.route('http://localhost:8000/api/v1/jobs/from_security_onion', async (route) => {
+  await page.route('**/api/v1/jobs/from_security_onion', async (route) => {
     await route.fulfill({
       status: 201,
       contentType: 'application/json',
@@ -127,7 +127,7 @@ test('@requires-backend can start a new Security Onion analysis and see job deta
     });
   });
 
-  await page.route(`http://localhost:8000/api/v1/jobs/${jobId}`, async (route) => {
+  await page.route(`**/api/v1/jobs/${jobId}`, async (route) => {
     const now = new Date().toISOString();
     await route.fulfill({
       status: 200,
@@ -152,7 +152,7 @@ test('@requires-backend can start a new Security Onion analysis and see job deta
     });
   });
 
-  await page.route(`http://localhost:8000/api/v1/jobs/${jobId}/summary`, async (route) => {
+  await page.route(`**/api/v1/jobs/${jobId}/summary`, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -196,7 +196,7 @@ test('@requires-backend can start a new Security Onion analysis and see job deta
 test('@requires-backend can start a new Arkime analysis and see job detail', async ({ page }) => {
   const jobId = 'e2e-arkime-job-789';
 
-  await page.route('http://localhost:8000/api/v1/jobs/from_arkime', async (route) => {
+  await page.route('**/api/v1/jobs/from_arkime', async (route) => {
     await route.fulfill({
       status: 201,
       contentType: 'application/json',
@@ -204,7 +204,7 @@ test('@requires-backend can start a new Arkime analysis and see job detail', asy
     });
   });
 
-  await page.route(`http://localhost:8000/api/v1/jobs/${jobId}`, async (route) => {
+  await page.route(`**/api/v1/jobs/${jobId}`, async (route) => {
     const now = new Date().toISOString();
     await route.fulfill({
       status: 200,
@@ -229,7 +229,7 @@ test('@requires-backend can start a new Arkime analysis and see job detail', asy
     });
   });
 
-  await page.route(`http://localhost:8000/api/v1/jobs/${jobId}/summary`, async (route) => {
+  await page.route(`**/api/v1/jobs/${jobId}/summary`, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',

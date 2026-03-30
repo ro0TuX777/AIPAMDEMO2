@@ -4,7 +4,7 @@ import { test, expect } from '@playwright/test';
 
 test('can view effective runtime settings debug panel', async ({ page }) => {
   // Stub backend GET /settings to provide initial values; sufficient for page to render.
-  await page.route('http://localhost:8000/api/v1/settings', async (route) => {
+  await page.route('**/api/v1/settings', async (route) => {
     if (route.request().method() === 'GET') {
       await route.fulfill({
         status: 200,
@@ -25,7 +25,7 @@ test('can view effective runtime settings debug panel', async ({ page }) => {
   });
 
   // Stub admin effective settings endpoint.
-  await page.route('http://localhost:8000/api/v1/admin/effective_settings', async (route) => {
+  await page.route('**/api/v1/admin/effective_settings', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -52,13 +52,13 @@ test('can view effective runtime settings debug panel', async ({ page }) => {
   await page.goto('/settings');
   await expect(page.getByTestId('page-settings')).toBeVisible();
 
-  // Debug section is present but collapsed by default.
+  // Expand the Advanced section first (collapsed by default).
+  await page.getByText('Advanced').click();
+
+  // Debug section is now visible.
   await expect(page.getByTestId('section-effective-settings-debug')).toBeVisible();
 
-  // Enable debug view.
-  await page.getByTestId('toggle-effective-settings-debug').check();
-
-  // Load effective settings.
+  // Load effective settings (no toggle needed — section is always visible once Advanced is expanded).
   await page.getByTestId('btn-load-effective-settings').click();
 
   // Expect JSON pre block to be visible and contain some key from the stub.

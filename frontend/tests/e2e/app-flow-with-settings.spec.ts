@@ -53,7 +53,7 @@ test('@requires-backend app flow: upload analysis then navigate to settings', as
     }
   });
 
-  await page.route(`http://localhost:8000/api/v1/jobs/${jobId}`, async (route) => {
+  await page.route(`**/api/v1/jobs/${jobId}`, async (route) => {
     const now = new Date().toISOString();
     await route.fulfill({
       status: 200,
@@ -78,7 +78,7 @@ test('@requires-backend app flow: upload analysis then navigate to settings', as
     });
   });
 
-  await page.route(`http://localhost:8000/api/v1/jobs/${jobId}/summary`, async (route) => {
+  await page.route(`**/api/v1/jobs/${jobId}/summary`, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -97,7 +97,7 @@ test('@requires-backend app flow: upload analysis then navigate to settings', as
   });
 
   // Stub settings endpoints so the Settings page works in this flow.
-  await page.route('http://localhost:8000/api/v1/settings', async (route) => {
+  await page.route('**/api/v1/settings', async (route) => {
     if (route.request().method() === 'GET') {
       await route.fulfill({
         status: 200,
@@ -120,7 +120,7 @@ test('@requires-backend app flow: upload analysis then navigate to settings', as
     }
   });
 
-  await page.route('http://localhost:8000/api/v1/settings/test_llm', async (route) => {
+  await page.route('**/api/v1/settings/test_llm', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',

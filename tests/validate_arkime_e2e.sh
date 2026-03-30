@@ -3,9 +3,9 @@
 # Arkime MVP — End-to-End Validation Script
 # ─────────────────────────────────────────────────────────────────────────────
 # Usage:
-#   1. Start base AIPAM:  docker compose -f deploy/docker-compose.yml up -d
+#   1. Start base AIPAM:  docker compose up -d
 #   2. Run disabled-mode checks:  bash tests/validate_arkime_e2e.sh --disabled
-#   3. Start Arkime profile:  docker compose -f deploy/docker-compose.yml --profile arkime up -d
+#   3. Start Arkime profile:  docker compose --profile arkime up -d
 #   4. Run enabled-mode checks:  bash tests/validate_arkime_e2e.sh --enabled
 # ─────────────────────────────────────────────────────────────────────────────
 

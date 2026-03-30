@@ -20,7 +20,7 @@ test('settings page surfaces explain telemetry and refreshes counts', async ({ p
   let serveRefreshedTelemetry = false;
   let telemetryWasReset = false;
 
-  await page.route('http://localhost:8000/api/v1/settings', async (route) => {
+  await page.route('**/api/v1/settings', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -28,7 +28,7 @@ test('settings page surfaces explain telemetry and refreshes counts', async ({ p
     });
   });
 
-  await page.route('http://localhost:8000/api/v1/models/available', async (route) => {
+  await page.route('**/api/v1/models/available', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -36,7 +36,7 @@ test('settings page surfaces explain telemetry and refreshes counts', async ({ p
     });
   });
 
-  await page.route('http://localhost:8000/api/v1/system/config', async (route) => {
+  await page.route('**/api/v1/system/config', async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',
@@ -60,7 +60,7 @@ test('settings page surfaces explain telemetry and refreshes counts', async ({ p
     });
   });
 
-  await page.route('http://localhost:8000/api/v1/system/explain-telemetry', async (route) => {
+  await page.route('**/api/v1/system/explain-telemetry', async (route) => {
     telemetryRequestCount += 1;
     await page.waitForTimeout(150);
     await route.fulfill({
@@ -76,7 +76,7 @@ test('settings page surfaces explain telemetry and refreshes counts', async ({ p
     });
   });
 
-  await page.route('http://localhost:8000/api/v1/system/explain-telemetry/reset', async (route) => {
+  await page.route('**/api/v1/system/explain-telemetry/reset', async (route) => {
     telemetryWasReset = true;
     await page.waitForTimeout(150);
     await route.fulfill({
@@ -87,6 +87,9 @@ test('settings page surfaces explain telemetry and refreshes counts', async ({ p
   });
 
   await page.goto('/settings');
+
+  // Expand the Advanced section (collapsed by default).
+  await page.getByText('Advanced').click();
 
   await expect(page.getByTestId('section-explain-telemetry')).toBeVisible();
   await expect(page.getByTestId('text-explain-telemetry-total')).toHaveText('3');

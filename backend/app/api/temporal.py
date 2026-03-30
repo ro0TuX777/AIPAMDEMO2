@@ -57,9 +57,13 @@ logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Temporal"], dependencies=[Depends(verify_token)])
 
-BEFORE = "before"
-AFTER = "after"
 TEMPORAL_EXPORT_FORMAT = Literal["markdown", "html"]
+
+# Canonical ordering for label auto-detection.  The first label found in
+# this list becomes the "baseline" (phase A) and the second becomes the
+# "comparison" (phase B).  Any custom labels not listed here are sorted
+# alphabetically after the known ones.
+_LABEL_ORDER = ["before", "during", "after"]
 
 _SEVERITY_SHIFT_LEVELS = ("critical", "high", "medium", "low")
 _C2_KEYWORDS = (
@@ -93,18 +97,36 @@ def _require_job(db: Session, job_id: str) -> Job:
     return job
 
 
-def _require_temporal(db: Session, job_id: str) -> None:
-    """Verify that the job has both before and after PCAP labels."""
-    labels = set(
-        db.execute(
-            select(JobPcap.label).where(JobPcap.job_id == job_id)
-        ).scalars().all()
+def _resolve_labels(db: Session, job_id: str) -> tuple[str, str]:
+    """Return the (phase_a, phase_b) label pair for a temporal comparison.
+
+    Auto-detects labels from the job's PCAPs using canonical ordering
+    (before → during → after).  Raises 400 if fewer than two distinct
+    labels exist.
+    """
+    labels = sorted(
+        set(
+            db.execute(
+                select(JobPcap.label).where(JobPcap.job_id == job_id)
+            ).scalars().all()
+        ),
+        key=lambda lbl: (
+            _LABEL_ORDER.index(lbl) if lbl in _LABEL_ORDER else len(_LABEL_ORDER),
+            lbl,
+        ),
     )
-    if BEFORE not in labels or AFTER not in labels:
+    if len(labels) < 2:
         raise HTTPException(
             status_code=400,
-            detail="Job does not have both 'before' and 'after' PCAP phases",
+            detail="Job needs at least two distinct PCAP phase labels for temporal comparison "
+                   f"(found: {labels!r})",
         )
+    return labels[0], labels[1]
+
+
+def _require_temporal(db: Session, job_id: str) -> tuple[str, str]:
+    """Verify that the job has ≥2 PCAP labels and return (phase_a, phase_b)."""
+    return _resolve_labels(db, job_id)
 
 
 def _sev_counts(alerts: list) -> SeverityCounts:
@@ -247,7 +269,7 @@ def _build_containment_indicators(
     )
 
 
-def _build_temporal_delta_payload(db: Session, job_id: str) -> TemporalDeltaResponse:
+def _build_temporal_delta_payload(db: Session, job_id: str, label_a: str = "before", label_b: str = "after") -> TemporalDeltaResponse:
     def _hosts(label: str):
         return db.execute(select(Host).where(Host.job_id == job_id, Host.pcap_label == label)).scalars().all()
 
@@ -272,14 +294,14 @@ def _build_temporal_delta_payload(db: Session, job_id: str) -> TemporalDeltaResp
     def _tls(label: str):
         return db.execute(select(TlsSession).where(TlsSession.job_id == job_id, TlsSession.pcap_label == label)).scalars().all()
 
-    bh, ah = _hosts(BEFORE), _hosts(AFTER)
-    ba, aa = _alerts(BEFORE), _alerts(AFTER)
-    bf, af = _findings(BEFORE), _findings(AFTER)
-    bi, ai = _iocs(BEFORE), _iocs(AFTER)
-    bd, ad = _dns(BEFORE), _dns(AFTER)
-    bc_, ac = _conns(BEFORE), _conns(AFTER)
-    bt, at_ = _theories(BEFORE), _theories(AFTER)
-    btls, atls = _tls(BEFORE), _tls(AFTER)
+    bh, ah = _hosts(label_a), _hosts(label_b)
+    ba, aa = _alerts(label_a), _alerts(label_b)
+    bf, af = _findings(label_a), _findings(label_b)
+    bi, ai = _iocs(label_a), _iocs(label_b)
+    bd, ad = _dns(label_a), _dns(label_b)
+    bc_, ac = _conns(label_a), _conns(label_b)
+    bt, at_ = _theories(label_a), _theories(label_b)
+    btls, atls = _tls(label_a), _tls(label_b)
 
     bh_ips = {h.ip: h for h in bh}
     ah_ips = {h.ip: h for h in ah}
@@ -381,6 +403,7 @@ def _build_temporal_delta_payload(db: Session, job_id: str) -> TemporalDeltaResp
     )
 
     return TemporalDeltaResponse(
+        phase_labels=[label_a, label_b],
         summary=summary,
         phase_summary=PhaseSummary(
             before=_phase_snapshot(bh, ba, bf, bc_, bi),
@@ -398,11 +421,12 @@ def _build_temporal_delta_payload(db: Session, job_id: str) -> TemporalDeltaResp
 
 def _build_temporal_narrative_markdown(delta: TemporalDeltaResponse) -> str:
     s = delta.summary
+    lbl_a, lbl_b = delta.phase_labels[0], delta.phase_labels[1]
     lines: list[str] = ["# Temporal Analysis Narrative\n"]
     lines.append("## Overview\n")
     lines.append(
-        f"Comparing **before** ({s.hosts.before} hosts, {s.alerts.before} alerts) "
-        f"with **after** ({s.hosts.after} hosts, {s.alerts.after} alerts).\n"
+        f"Comparing **{lbl_a}** ({s.hosts.before} hosts, {s.alerts.before} alerts) "
+        f"with **{lbl_b}** ({s.hosts.after} hosts, {s.alerts.after} alerts).\n"
     )
 
     if s.hosts.new or s.hosts.removed:
@@ -451,6 +475,7 @@ def _render_markdown_bullet_list(items: list[str]) -> list[str]:
 
 
 def _render_temporal_export_markdown(job_id: str, delta: TemporalDeltaResponse, narrative_markdown: str) -> str:
+    lbl_a, lbl_b = delta.phase_labels[0], delta.phase_labels[1]
     phase_before = delta.phase_summary.before
     phase_after = delta.phase_summary.after
     containment = delta.containment_indicators
@@ -460,8 +485,8 @@ def _render_temporal_export_markdown(job_id: str, delta: TemporalDeltaResponse, 
         "",
         "## Phase Summary",
         "",
-        f"- Before: hosts={phase_before.host_count}, alerts={phase_before.alert_count}, findings={phase_before.finding_count}, connections={phase_before.connection_count}, iocs={phase_before.ioc_count}",
-        f"- After: hosts={phase_after.host_count}, alerts={phase_after.alert_count}, findings={phase_after.finding_count}, connections={phase_after.connection_count}, iocs={phase_after.ioc_count}",
+        f"- {lbl_a.capitalize()}: hosts={phase_before.host_count}, alerts={phase_before.alert_count}, findings={phase_before.finding_count}, connections={phase_before.connection_count}, iocs={phase_before.ioc_count}",
+        f"- {lbl_b.capitalize()}: hosts={phase_after.host_count}, alerts={phase_after.alert_count}, findings={phase_after.finding_count}, connections={phase_after.connection_count}, iocs={phase_after.ioc_count}",
         "",
         "## Severity Shift",
         "",
@@ -494,6 +519,7 @@ def _render_temporal_export_markdown(job_id: str, delta: TemporalDeltaResponse, 
 
 
 def _render_temporal_export_html(job_id: str, delta: TemporalDeltaResponse, narrative_markdown: str) -> str:
+    lbl_a, lbl_b = delta.phase_labels[0], delta.phase_labels[1]
     containment = delta.containment_indicators
     severity = delta.severity_shift
     reduced_categories = "".join(f"<li>{escape(item)}</li>" for item in containment.reduced_alert_categories) or "<li>None</li>"
@@ -506,8 +532,8 @@ def _render_temporal_export_html(job_id: str, delta: TemporalDeltaResponse, narr
         f"<h1>{escape(f'Temporal Comparison Report for Job {job_id}')}</h1>",
         "<h2>Phase Summary</h2>",
         "<ul>",
-        f"<li>Before: hosts={delta.phase_summary.before.host_count}, alerts={delta.phase_summary.before.alert_count}, findings={delta.phase_summary.before.finding_count}, connections={delta.phase_summary.before.connection_count}, iocs={delta.phase_summary.before.ioc_count}</li>",
-        f"<li>After: hosts={delta.phase_summary.after.host_count}, alerts={delta.phase_summary.after.alert_count}, findings={delta.phase_summary.after.finding_count}, connections={delta.phase_summary.after.connection_count}, iocs={delta.phase_summary.after.ioc_count}</li>",
+        f"<li>{escape(lbl_a.capitalize())}: hosts={delta.phase_summary.before.host_count}, alerts={delta.phase_summary.before.alert_count}, findings={delta.phase_summary.before.finding_count}, connections={delta.phase_summary.before.connection_count}, iocs={delta.phase_summary.before.ioc_count}</li>",
+        f"<li>{escape(lbl_b.capitalize())}: hosts={delta.phase_summary.after.host_count}, alerts={delta.phase_summary.after.alert_count}, findings={delta.phase_summary.after.finding_count}, connections={delta.phase_summary.after.connection_count}, iocs={delta.phase_summary.after.ioc_count}</li>",
         "</ul>",
         "<h2>Severity Shift</h2>",
         "<ul>",
@@ -540,12 +566,12 @@ async def get_temporal_delta(
     request_id: str = Depends(get_request_id),
     db: Session = Depends(get_db),
 ):
-    """Compute the delta between 'before' and 'after' PCAP analysis phases."""
+    """Compute the delta between two PCAP analysis phases (auto-detected)."""
     _require_job(db, job_id)
-    _require_temporal(db, job_id)
+    label_a, label_b = _require_temporal(db, job_id)
     response.headers["X-Request-Id"] = request_id
 
-    return _build_temporal_delta_payload(db, job_id)
+    return _build_temporal_delta_payload(db, job_id, label_a, label_b)
 
 
 
@@ -558,19 +584,19 @@ async def get_temporal_flows(
     request_id: str = Depends(get_request_id),
     db: Session = Depends(get_db),
 ):
-    """List new connection flows that only appear in the 'after' phase."""
+    """List new connection flows that only appear in the second phase."""
     _require_job(db, job_id)
-    _require_temporal(db, job_id)
+    label_a, label_b = _require_temporal(db, job_id)
     response.headers["X-Request-Id"] = request_id
 
     before_conns = db.execute(
-        select(Connection).where(Connection.job_id == job_id, Connection.pcap_label == BEFORE)
+        select(Connection).where(Connection.job_id == job_id, Connection.pcap_label == label_a)
     ).scalars().all()
     after_conns = db.execute(
-        select(Connection).where(Connection.job_id == job_id, Connection.pcap_label == AFTER)
+        select(Connection).where(Connection.job_id == job_id, Connection.pcap_label == label_b)
     ).scalars().all()
 
-    # Build set of (src_ip, dest_ip, dest_port, proto) tuples from before
+    # Build set of (src_ip, dest_ip, dest_port, proto) tuples from phase A
     before_keys = {(c.src_ip, c.dest_ip, c.dest_port, c.proto) for c in before_conns}
 
     # Aggregate new flows
@@ -607,10 +633,10 @@ async def generate_temporal_narrative(
 ):
     """Generate a natural-language narrative summarising the temporal delta."""
     _require_job(db, job_id)
-    _require_temporal(db, job_id)
+    label_a, label_b = _require_temporal(db, job_id)
     response.headers["X-Request-Id"] = request_id
 
-    delta = _build_temporal_delta_payload(db, job_id)
+    delta = _build_temporal_delta_payload(db, job_id, label_a, label_b)
     return TemporalNarrativeResponse(narrative_markdown=_build_temporal_narrative_markdown(delta))
 
 
@@ -622,12 +648,12 @@ async def export_temporal_report(
     db: Session = Depends(get_db),
     format: TEMPORAL_EXPORT_FORMAT = Query("markdown"),
 ):
-    """Generate a structured before/after comparison report as markdown or HTML."""
+    """Generate a structured comparison report as markdown or HTML."""
     _require_job(db, job_id)
-    _require_temporal(db, job_id)
+    label_a, label_b = _require_temporal(db, job_id)
     response.headers["X-Request-Id"] = request_id
 
-    delta = _build_temporal_delta_payload(db, job_id)
+    delta = _build_temporal_delta_payload(db, job_id, label_a, label_b)
     narrative_markdown = _build_temporal_narrative_markdown(delta)
     if format == "html":
         return TemporalExportResponse(

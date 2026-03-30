@@ -1,4 +1,4 @@
-import React, { useCallback, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { JOB_SUB_TABS, CONDITIONAL_TABS } from "../components/JobSubPageNav";
@@ -13,6 +13,7 @@ import {
   type SseEarlyAlertData,
   type PartialData,
   type ArkimeImportState,
+  type SecurityOnionImportResponse,
 } from "../api";
 import { useJobEvents } from "../hooks/useJobEvents";
 import { useToast, type ToastSeverity } from "../components/ToastProvider";
@@ -54,6 +55,20 @@ export const JobDetailPage: React.FC = () => {
   const queryClient = useQueryClient();
   const [showRerun, setShowRerun] = useState(false);
   const [showAddPcap, setShowAddPcap] = useState(false);
+  const [showExportMenu, setShowExportMenu] = useState(false);
+  const exportMenuRef = useRef<HTMLDivElement>(null);
+
+  // Close export menu on click outside
+  useEffect(() => {
+    if (!showExportMenu) return;
+    const handler = (e: MouseEvent) => {
+      if (exportMenuRef.current && !exportMenuRef.current.contains(e.target as Node)) {
+        setShowExportMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [showExportMenu]);
   const [afterLabel, setAfterLabel] = useState("after");
   const [uploadPct, setUploadPct] = useState(0);
   const [uploadStep, setUploadStep] = useState<"idle" | "uploading" | "validating" | "attaching" | "analyzing" | "done" | "error">("idle");
@@ -157,6 +172,20 @@ export const JobDetailPage: React.FC = () => {
       navigate(`/jobs/${data.job_id}`);
     },
     onError: () => addToast({ severity: "high", title: "Failed to re-run job" }),
+  });
+
+  // ── Security Onion import ──
+  const [soImportStatus, setSoImportStatus] = useState<string | null>(null);
+  const soImportMut = useMutation({
+    mutationFn: () => api.triggerSecurityOnionImport(jobId!),
+    onSuccess: (data) => {
+      setSoImportStatus(data.status);
+      addToast({ severity: "info", title: "Pushed to Security Onion", body: data.message ?? "PCAP uploaded to Security Onion." });
+    },
+    onError: (err: any) => {
+      setSoImportStatus("failed");
+      addToast({ severity: "high", title: "SO Import Failed", body: err?.message ?? "Failed to push PCAP to Security Onion." });
+    },
   });
 
   // ── Arkime import ──
@@ -298,32 +327,64 @@ export const JobDetailPage: React.FC = () => {
                 </svg>
                 Add After PCAP
               </button>
-              {arkimeEnabled && (
+              {/* Export / Import dropdown */}
+              <div className="relative" ref={exportMenuRef}>
                 <button
-                  onClick={() => arkimeImportMut.mutate()}
-                  disabled={arkimeImportMut.isPending || arkimeStatus === "queued" || arkimeStatus === "running" || arkimeStatus === "imported"}
-                  className={`px-3 py-1.5 text-sm rounded border flex items-center gap-1.5 disabled:opacity-50 ${
-                    arkimeStatus === "imported"
-                      ? "border-emerald-500/40 text-emerald-400 cursor-default"
-                      : arkimeStatus === "queued" || arkimeStatus === "running"
-                        ? "border-violet-500/40 text-violet-400 animate-pulse"
-                        : "border-violet-500/40 text-violet-400 hover:bg-violet-500/10"
-                  }`}
-                  title={
-                    arkimeStatus === "imported" ? "PCAPs already imported into Arkime"
-                      : arkimeStatus === "queued" || arkimeStatus === "running" ? "Import in progress…"
-                        : "Send PCAPs to Arkime for packet-level analysis"
-                  }
+                  onClick={() => setShowExportMenu(!showExportMenu)}
+                  className="px-3 py-1.5 text-sm rounded border border-violet-500/40 text-violet-400 hover:bg-violet-500/10 flex items-center gap-1.5"
                 >
                   <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 16v1a2 2 0 002 2h12a2 2 0 002-2v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
                   </svg>
-                  {arkimeStatus === "imported" ? "Imported to Arkime ✓"
-                    : arkimeStatus === "queued" || arkimeStatus === "running" ? "Importing…"
-                      : arkimeImportMut.isPending ? "Queuing…"
-                        : "Import to Arkime"}
+                  Import / Push
+                  <svg className={`w-3 h-3 transition-transform ${showExportMenu ? "rotate-180" : ""}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                  </svg>
                 </button>
-              )}
+                {showExportMenu && (
+                  <div className="absolute right-0 top-full mt-1 w-64 bg-slate-800 border border-slate-600/50 rounded-lg shadow-xl z-50 overflow-hidden">
+                    {/* Arkime option */}
+                    {arkimeEnabled && (
+                      <button
+                        onClick={() => { arkimeImportMut.mutate(); setShowExportMenu(false); }}
+                        disabled={arkimeImportMut.isPending || arkimeStatus === "queued" || arkimeStatus === "running" || arkimeStatus === "imported"}
+                        className="w-full px-4 py-2.5 text-left text-sm hover:bg-slate-700/60 disabled:opacity-50 flex items-center gap-3 border-b border-slate-700/50"
+                      >
+                        <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                          arkimeStatus === "imported" ? "bg-emerald-400" : arkimeStatus === "queued" || arkimeStatus === "running" ? "bg-violet-400 animate-pulse" : "bg-slate-500"
+                        }`} />
+                        <div>
+                          <div className={`font-medium ${arkimeStatus === "imported" ? "text-emerald-400" : "text-slate-200"}`}>
+                            {arkimeStatus === "imported" ? "Imported to Arkime ✓"
+                              : arkimeStatus === "queued" || arkimeStatus === "running" ? "Importing to Arkime…"
+                                : arkimeImportMut.isPending ? "Queuing…"
+                                  : "Import to Arkime"}
+                          </div>
+                          <div className="text-xs text-slate-400 mt-0.5">Packet-level analysis</div>
+                        </div>
+                      </button>
+                    )}
+                    {/* Security Onion option */}
+                    <button
+                      onClick={() => { soImportMut.mutate(); setShowExportMenu(false); }}
+                      disabled={soImportMut.isPending || soImportStatus === "accepted"}
+                      className="w-full px-4 py-2.5 text-left text-sm hover:bg-slate-700/60 disabled:opacity-50 flex items-center gap-3"
+                    >
+                      <div className={`w-2 h-2 rounded-full flex-shrink-0 ${
+                        soImportStatus === "accepted" ? "bg-emerald-400" : "bg-slate-500"
+                      }`} />
+                      <div>
+                        <div className={`font-medium ${soImportStatus === "accepted" ? "text-emerald-400" : "text-slate-200"}`}>
+                          {soImportStatus === "accepted" ? "Pushed to Security Onion ✓"
+                            : soImportMut.isPending ? "Uploading…"
+                              : "Push to Security Onion"}
+                        </div>
+                        <div className="text-xs text-slate-400 mt-0.5">Suricata + Zeek analysis</div>
+                      </div>
+                    </button>
+                  </div>
+                )}
+              </div>
               <button onClick={() => { if (confirm("Delete this job? This cannot be undone.")) deleteMut.mutate(); }}
                 disabled={deleteMut.isPending}
                 className="px-3 py-1.5 text-sm rounded border border-red-500/40 text-red-400 hover:bg-red-500/10 disabled:opacity-50">

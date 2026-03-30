@@ -54,7 +54,7 @@ export const ComparePage: React.FC = () => {
 
       <div className="flex items-center justify-between">
         <h1 className={`text-xl font-semibold text-slate-100 ${labelHint("compare", activeHelpField)}`} onClick={() => toggleHelp("compare")}>
-          🔬 Before / After Comparison
+          🔬 {delta ? `${delta.phase_labels[0].charAt(0).toUpperCase() + delta.phase_labels[0].slice(1)} / ${delta.phase_labels[1].charAt(0).toUpperCase() + delta.phase_labels[1].slice(1)}` : "Phase"} Comparison
         </h1>
         <a
           href={api.getTemporalExportUrl(jobId)}
@@ -84,12 +84,13 @@ export const ComparePage: React.FC = () => {
           <div className="bg-slate-900/60 border border-slate-700/50 rounded-lg p-4">
             <h3 className="text-sm font-bold text-slate-200 mb-3">📋 Phase Summary</h3>
             <div className="grid grid-cols-2 gap-6">
-              {(["before", "after"] as const).map(phase => {
+              {(["before", "after"] as const).map((phase, idx) => {
                 const ps = delta.phase_summary[phase];
-                const color = phase === "before" ? "text-cyan-300" : "text-orange-300";
+                const label = delta.phase_labels[idx];
+                const color = idx === 0 ? "text-cyan-300" : "text-orange-300";
                 return (
                   <div key={phase}>
-                    <div className={`text-xs font-bold uppercase mb-2 ${color}`}>{phase}</div>
+                    <div className={`text-xs font-bold uppercase mb-2 ${color}`}>{label}</div>
                     <div className="grid grid-cols-5 gap-2 text-center text-xs">
                       {[
                         { label: "Hosts", val: ps.host_count },
@@ -229,12 +230,12 @@ export const ComparePage: React.FC = () => {
           {/* Deep-link shortcuts */}
           <div className="flex flex-wrap gap-2 text-xs">
             <span className="text-slate-500">Jump to phase data:</span>
-            <Link to={`/jobs/${jobId}/hosts?pcap_label=before`} className="text-cyan-400 hover:underline">Hosts (Before)</Link>
-            <Link to={`/jobs/${jobId}/hosts?pcap_label=after`} className="text-orange-400 hover:underline">Hosts (After)</Link>
-            <Link to={`/jobs/${jobId}/alerts?pcap_label=before`} className="text-cyan-400 hover:underline">Alerts (Before)</Link>
-            <Link to={`/jobs/${jobId}/alerts?pcap_label=after`} className="text-orange-400 hover:underline">Alerts (After)</Link>
-            <Link to={`/jobs/${jobId}/findings?pcap_label=before`} className="text-cyan-400 hover:underline">Findings (Before)</Link>
-            <Link to={`/jobs/${jobId}/findings?pcap_label=after`} className="text-orange-400 hover:underline">Findings (After)</Link>
+            {["hosts", "alerts", "findings"].map(section => (
+              <React.Fragment key={section}>
+                <Link to={`/jobs/${jobId}/${section}?pcap_label=${delta.phase_labels[0]}`} className="text-cyan-400 hover:underline">{section.charAt(0).toUpperCase() + section.slice(1)} ({delta.phase_labels[0]})</Link>
+                <Link to={`/jobs/${jobId}/${section}?pcap_label=${delta.phase_labels[1]}`} className="text-orange-400 hover:underline">{section.charAt(0).toUpperCase() + section.slice(1)} ({delta.phase_labels[1]})</Link>
+              </React.Fragment>
+            ))}
           </div>
         </div>
       )}

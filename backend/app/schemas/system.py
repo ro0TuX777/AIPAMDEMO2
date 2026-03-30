@@ -95,6 +95,30 @@ class AvailableModelsResponse(BaseModel):
     models: list[OllamaModelInfo] = []
 
 
+class LoadedModelInfo(BaseModel):
+    """Information about a currently loaded model in Ollama."""
+    name: str
+    size: int = 0
+    size_vram: int = 0
+    parameter_size: str = "N/A"
+    quantization: str = "Unknown"
+    family: str = "Unknown"
+    context_length: int = 0
+    gpu_offload_pct: int = 0  # 0-100
+
+
+class OllamaGpuStatusResponse(BaseModel):
+    """GPU / hardware utilisation status from Ollama."""
+    schema_version: str = SCHEMA_VERSION
+    ollama_version: str = "unknown"
+    gpu_detected: bool = False
+    gpu_name: str | None = None
+    vram_total_bytes: int = 0
+    vram_used_bytes: int = 0
+    compute_device: str = "CPU"  # "CPU" or "CUDA" or "ROCm" etc.
+    loaded_models: list[LoadedModelInfo] = []
+
+
 class JobSummaryResponse(BaseModel):
     schema_version: str = SCHEMA_VERSION
     job_id: str

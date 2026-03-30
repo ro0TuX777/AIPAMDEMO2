@@ -6,7 +6,7 @@ test('@requires-backend job detail page renders header and navigation links', as
   const jobId = 'e2e-job-tabs-001';
 
   // Stub job detail
-  await page.route(`http://localhost:8000/api/v1/jobs/${jobId}`, async (route) => {
+  await page.route(`**/api/v1/jobs/${jobId}`, async (route) => {
     const now = new Date().toISOString();
     await route.fulfill({
       status: 200,
@@ -32,7 +32,7 @@ test('@requires-backend job detail page renders header and navigation links', as
   });
 
   // Stub job summary (separate endpoint)
-  await page.route(`http://localhost:8000/api/v1/jobs/${jobId}/summary`, async (route) => {
+  await page.route(`**/api/v1/jobs/${jobId}/summary`, async (route) => {
     await route.fulfill({
       status: 200,
       contentType: 'application/json',

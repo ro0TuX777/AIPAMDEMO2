@@ -3,6 +3,7 @@ Job endpoints (§1.3 + §3.3 + §3.4 + §3.8).
 
 POST /jobs                     – create a job from an upload
 POST /jobs/from_arkime         – create a job from Arkime session export
+POST /jobs/from_security_onion – create a job from Security Onion PCAP export
 GET  /jobs                     – list jobs with cursor pagination
 GET  /jobs/{id}                – get job detail
 DELETE /jobs/{id}              – delete a job
@@ -17,6 +18,7 @@ GET  /jobs/{id}/events         – SSE stream
 GET  /jobs/{id}/partial-results – early partial pipeline results
 POST /jobs/{id}/arkime/import  – queue PCAPs for Arkime import
 GET  /jobs/{id}/arkime/status  – Arkime import status
+POST /jobs/{id}/security_onion/import – push PCAPs to Security Onion
 """
 
 import asyncio
@@ -236,33 +238,29 @@ async def create_job_from_arkime(
         raise HTTPException(status_code=404, detail="No matching sessions found in Arkime for the given filter/time range.")
 
     job_id = str(uuid.uuid4())
-
-    # Create job directory and save the exported PCAP
-    job_dir: Path = settings.aipam_job_root / job_id
-    input_dir = job_dir / "input"
-    input_dir.mkdir(parents=True, exist_ok=True)
-
+    upload_id = str(uuid.uuid4())
     pcap_filename = f"arkime_export_{job_id[:8]}.pcap"
-    pcap_path = input_dir / pcap_filename
-    pcap_path.write_bytes(pcap_data)
-
-    # Save metadata
     pcap_sha256 = hashlib.sha256(pcap_data).hexdigest()
 
-    meta = {
-        "source": "arkime",
-        "filter": body.filter,
-        "time_range": body.time_range,
-        "mode": body.mode,
-        "metadata": body.metadata,
-    }
-    meta_path = input_dir / "input.meta.json"
-    meta_path.write_text(json.dumps(meta, indent=2))
+    # Save the exported PCAP to the upload staging area so the
+    # pipeline can find it via the standard upload_id lookup.
+    upload_dir: Path = settings.aipam_upload_root / upload_id
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    (upload_dir / pcap_filename).write_bytes(pcap_data)
 
-    # Create job record
-    # The form's "mode" (single_window/baseline_vs_exploit) is analysis mode,
-    # not execution_profile (triage/standard/deep). Store mode in metadata.
-    meta["analysis_mode"] = body.mode
+    # Create an Upload DB record
+    upload = Upload(
+        upload_id=upload_id,
+        filename=pcap_filename,
+        size_bytes=len(pcap_data),
+        sha256=pcap_sha256,
+        is_valid=1,
+        format="pcap",
+        created_at=_now_iso(),
+    )
+    db.add(upload)
+
+    # Create the Job record linked to the upload
     job = Job(
         job_id=job_id,
         job_name=body.metadata.get("exercise_id", f"Arkime: {body.filter[:60]}"),
@@ -270,6 +268,92 @@ async def create_job_from_arkime(
         status="queued",
         execution_profile="standard",
         priority="normal",
+        upload_id=upload_id,
+        pcap_filename=pcap_filename,
+        pcap_size_bytes=len(pcap_data),
+        pcap_sha256=pcap_sha256,
+        created_at=_now_iso(),
+    )
+    db.add(job)
+    db.commit()
+
+    # Dispatch the pipeline to the Celery worker
+    _dispatch_job(job_id)
+
+    return JobCreateResponse(schema_version="1.0", job_id=job_id)
+
+
+# ---------- POST /jobs/from_security_onion ----------
+
+class SecurityOnionJobRequest(BaseModel):
+    """Request to create a job by exporting PCAP from Security Onion."""
+    source: str = "security_onion"
+    time_range: dict = Field(..., description="Dict with 'start' and 'end' ISO timestamps")
+    sensors: list = Field(default_factory=list, description="List of sensor names to filter by")
+    filter_fields: dict = Field(default_factory=dict, description="Optional packet filters: protocol, srcIp, dstIp, srcPort, dstPort")
+    mode: str = "single_window"
+    metadata: dict = Field(default_factory=dict)
+
+
+@router.post("/jobs/from_security_onion", status_code=status.HTTP_201_CREATED, response_model=JobCreateResponse)
+async def create_job_from_security_onion(
+    body: SecurityOnionJobRequest,
+    response: Response,
+    request_id: str = Depends(get_request_id),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+):
+    """Create a new analysis job by exporting matching PCAP from Security Onion."""
+    response.headers["X-Request-Id"] = request_id
+
+    from backend.app.connectors import SecurityOnionConnector
+    connector = SecurityOnionConnector()
+
+    if not connector.enabled:
+        raise HTTPException(status_code=400, detail="Security Onion integration is not enabled. Set SECURITY_ONION_ENABLED=true.")
+
+    # Export PCAP from Security Onion
+    try:
+        pcap_data = await connector.export_pcap(body.time_range, body.sensors, body.filter_fields)
+    except Exception as exc:
+        _logger.error("Security Onion PCAP export failed: %s", exc)
+        raise HTTPException(status_code=502, detail=f"Failed to export PCAP from Security Onion: {exc}")
+
+    if not pcap_data:
+        raise HTTPException(status_code=404, detail="No matching packets found in Security Onion for the given time range/sensors.")
+
+    job_id = str(uuid.uuid4())
+    upload_id = str(uuid.uuid4())
+    pcap_filename = f"so_export_{job_id[:8]}.pcap"
+    pcap_sha256 = hashlib.sha256(pcap_data).hexdigest()
+
+    # Save the exported PCAP to the upload staging area
+    upload_dir: Path = settings.aipam_upload_root / upload_id
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    (upload_dir / pcap_filename).write_bytes(pcap_data)
+
+    # Create an Upload DB record
+    upload = Upload(
+        upload_id=upload_id,
+        filename=pcap_filename,
+        size_bytes=len(pcap_data),
+        sha256=pcap_sha256,
+        is_valid=1,
+        format="pcap",
+        created_at=_now_iso(),
+    )
+    db.add(upload)
+
+    # Create the Job record linked to the upload
+    sensor_names = ", ".join(body.sensors) if body.sensors else "all"
+    job = Job(
+        job_id=job_id,
+        job_name=body.metadata.get("exercise_id", f"SO: {sensor_names}"),
+        notes=body.metadata.get("notes", ""),
+        status="queued",
+        execution_profile="standard",
+        priority="normal",
+        upload_id=upload_id,
         pcap_filename=pcap_filename,
         pcap_size_bytes=len(pcap_data),
         pcap_sha256=pcap_sha256,
@@ -1388,4 +1472,88 @@ async def arkime_status(
         import_status=status_data.get("status", "not_imported"),
         imported_at=status_data.get("imported_at"),
         pcap_count=status_data.get("pcap_count", 0),
+    )
+
+
+# ---------- POST /jobs/{jobId}/security_onion/import ----------
+
+class SecurityOnionImportResponse(BaseModel):
+    """Response after requesting a PCAP import into Security Onion."""
+    schema_version: str = "1.0"
+    job_id: str
+    enabled: bool = True
+    status: str = "accepted"
+    message: str | None = None
+    node_id: str | None = None
+
+
+@router.post("/jobs/{job_id}/security_onion/import", response_model=SecurityOnionImportResponse)
+async def security_onion_import(
+    job_id: str,
+    response: Response,
+    request_id: str = Depends(get_request_id),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+):
+    """Push the job's PCAPs to Security Onion for ingestion via so-import-pcap.
+
+    Uploads each PCAP via ``POST /api/gridmembers/{nodeId}/import`` so that
+    Security Onion runs Suricata + Zeek against the traffic and indexes
+    alerts/logs into Elasticsearch with original timestamps.
+    """
+    response.headers["X-Request-Id"] = request_id
+
+    from backend.app.connectors import SecurityOnionConnector
+    connector = SecurityOnionConnector()
+
+    if not connector.enabled:
+        return SecurityOnionImportResponse(
+            job_id=job_id,
+            enabled=False,
+            status="disabled",
+            message="Security Onion integration is not enabled.",
+        )
+
+    job = _require_job(db, job_id)
+
+    job_dir = settings.aipam_job_root / job_id
+    if not job_dir.exists():
+        raise HTTPException(status_code=404, detail="Job directory not found on disk")
+
+    # Collect PCAP files from the job's input directory
+    input_dir = job_dir / "input"
+    pcap_paths: list[Path] = []
+    if input_dir.exists():
+        for ext in ("*.pcap", "*.pcapng", "*.cap"):
+            pcap_paths.extend(input_dir.glob(ext))
+
+    if not pcap_paths:
+        return SecurityOnionImportResponse(
+            job_id=job_id,
+            enabled=True,
+            status="no_pcaps",
+            message="No PCAP files found in job input directory.",
+        )
+
+    # Upload each PCAP to Security Onion
+    results = []
+    for pcap_path in pcap_paths:
+        try:
+            pcap_bytes = pcap_path.read_bytes()
+            result = await connector.import_pcap(pcap_bytes, pcap_path.name)
+            results.append(result)
+        except Exception as exc:
+            _logger.error("SO import failed for %s: %s", pcap_path.name, exc)
+            raise HTTPException(
+                status_code=502,
+                detail=f"Failed to import {pcap_path.name} into Security Onion: {exc}",
+            )
+
+    node_id = results[0].get("node_id", "") if results else None
+    return SecurityOnionImportResponse(
+        job_id=job_id,
+        enabled=True,
+        status="accepted",
+        message=f"Uploaded {len(pcap_paths)} PCAP(s) to Security Onion. Import is processing asynchronously.",
+        node_id=node_id,
     )

@@ -66,6 +66,8 @@ class Settings(BaseModel):
     security_onion_suricata_log_path: Optional[str] = None
     security_onion_api_url: Optional[str] = None
     security_onion_api_token: Optional[str] = None
+    security_onion_username: Optional[str] = None
+    security_onion_password: Optional[str] = None
     arkime_api_url: Optional[str] = None
     arkime_api_username: Optional[str] = None
     arkime_api_password: Optional[str] = None
