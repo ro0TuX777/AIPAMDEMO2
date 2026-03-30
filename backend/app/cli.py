@@ -938,7 +938,7 @@ def cmd_benchmark(args):
         )
         acc_delta = (report.accuracy - baseline_acc) * 100
 
-        print(f"\n--- Baseline Comparison ---")
+        print("\n--- Baseline Comparison ---")
         print(f"Accuracy   : {report.accuracy:.2%} vs {baseline_acc:.2%} ({acc_delta:+.1f}pp)")
         print(f"Avg Time   : {report.avg_inference_time:.2f}s vs {baseline_time:.2f}s ({time_delta:+.1f}%)")
 

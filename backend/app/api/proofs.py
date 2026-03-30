@@ -228,7 +228,7 @@ async def export_proof_endpoint(
 ):
     _require_job(db, job_id)
     response.headers["X-Request-Id"] = request_id
-    proof = _require_proof(db, proof_id)
+    _require_proof(db, proof_id)
     result = export_proof(db, proof_id, fmt=fmt)
     return ProofExportResponse(
         content=result["content"],

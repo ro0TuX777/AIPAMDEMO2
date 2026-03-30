@@ -1,7 +1,7 @@
 """Investigation Queue schemas — unified triage queue for findings, alerts, theories."""
 
 from enum import Enum
-from typing import Any, Literal
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 

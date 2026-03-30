@@ -1398,7 +1398,7 @@ async def arkime_import(
             message="Arkime import is disabled in settings.",
         )
 
-    job = _require_job(db, job_id)
+    _require_job(db, job_id)
 
     job_dir = settings.aipam_job_root / job_id
     if not job_dir.exists():
@@ -1514,7 +1514,7 @@ async def security_onion_import(
             message="Security Onion integration is not enabled.",
         )
 
-    job = _require_job(db, job_id)
+    _require_job(db, job_id)
 
     job_dir = settings.aipam_job_root / job_id
     if not job_dir.exists():

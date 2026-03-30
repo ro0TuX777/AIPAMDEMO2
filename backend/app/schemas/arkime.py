@@ -2,7 +2,7 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from backend.app.schemas.common import SCHEMA_VERSION
 

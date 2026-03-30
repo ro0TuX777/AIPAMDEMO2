@@ -25,7 +25,6 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.models.alert import Alert
-from backend.app.models.connection import Connection
 from backend.app.models.finding import Finding
 from backend.app.models.theory import Theory
 from backend.app.schemas.investigation import (

@@ -72,7 +72,7 @@ test-all: test-unit test-contract test-api test-worker test-sse
 
 ## Run ruff linter
 lint:
-	$(PYTHON) -m ruff check backend/ tests/
+	$(PYTHON) -m ruff check --config ruff.toml backend/ tests/
 
 ## Auto-format with ruff
 fmt:
