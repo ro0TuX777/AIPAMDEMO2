@@ -45,9 +45,9 @@ services:
       AIPAM_JOB_ROOT: /jobs
       AIPAM_UPLOAD_ROOT: /uploads
       AIPAM_REDIS_URL: redis://redis:6379/0
-      AIPAM_OLLAMA_URL: http://ollama:11434
+      AIPAM_OLLAMA_URL: ${AIPAM_OLLAMA_URL:-http://ollama:11434}
       LLM_MODEL_NAME: ${LLM_MODEL_NAME:-aipam-trafficllm-v10}
-      LLM_ENDPOINT: http://ollama:11434/v1/chat/completions
+      LLM_ENDPOINT: ${LLM_ENDPOINT:-http://ollama:11434/v1/chat/completions}
       VECTOR_STORE_PATH: /data/vector_store
     volumes:
       - aipam-data:/data
@@ -59,6 +59,7 @@ services:
       - arkime-import-queue:/import-queue
     extra_hosts:
       - "so-standalone:172.16.0.15"
+      - "host.docker.internal:host-gateway"
     depends_on:
       redis:
         condition: service_healthy
@@ -88,9 +89,9 @@ services:
       AIPAM_JOB_ROOT: /jobs
       AIPAM_UPLOAD_ROOT: /uploads
       AIPAM_REDIS_URL: redis://redis:6379/0
-      AIPAM_OLLAMA_URL: http://ollama:11434
+      AIPAM_OLLAMA_URL: ${AIPAM_OLLAMA_URL:-http://ollama:11434}
       LLM_MODEL_NAME: ${LLM_MODEL_NAME:-aipam-trafficllm-v10}
-      LLM_ENDPOINT: http://ollama:11434/v1/chat/completions
+      LLM_ENDPOINT: ${LLM_ENDPOINT:-http://ollama:11434/v1/chat/completions}
       AIPAM_SENSOR_CONFIG_DIR: /opt/aipam/sensor-config
       C_FORCE_ROOT: "true"
     volumes:
@@ -105,6 +106,7 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock  # sensor containers
     extra_hosts:
       - "so-standalone:172.16.0.15"
+      - "host.docker.internal:host-gateway"
     depends_on:
       redis:
         condition: service_healthy
