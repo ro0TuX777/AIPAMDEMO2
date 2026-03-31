@@ -21,12 +21,10 @@ GET  /jobs/{id}/arkime/status  – Arkime import status
 POST /jobs/{id}/security_onion/import – push PCAPs to Security Onion
 """
 
-import asyncio
 import hashlib
-import io
 import json
+import logging as _logging
 import uuid
-import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -39,16 +37,12 @@ from sqlalchemy.orm import Session
 from backend.app.api.deps import get_db, get_request_id, verify_token, verify_token_or_query
 from backend.app.api.pagination import paginate
 from backend.app.config_v2 import Settings, get_settings
-from backend.app.models.alert import Alert
-from backend.app.models.finding import Finding
 from backend.app.models.file import File
-from backend.app.models.host import Host
 from backend.app.models.ioc import Ioc
 from backend.app.models.job import Job
 from backend.app.models.job_pcap import JobPcap
 from backend.app.models.sensor import JobSensor
 from backend.app.models.timeline import TimelineEvent
-from backend.app.models.theory import Theory
 from backend.app.models.upload import Upload
 from backend.app.schemas.common import (
     ExecutionProfile,
@@ -56,7 +50,6 @@ from backend.app.schemas.common import (
     PageInfo,
 )
 from backend.app.schemas.file import FileItem, FileListResponse
-from backend.app.schemas.host import HostListItem
 from backend.app.schemas.ioc import IocItem, IocListResponse
 from backend.app.schemas.job import (
     EvidenceGraphResponse,
@@ -91,8 +84,6 @@ router = APIRouter(tags=["Jobs"], dependencies=[Depends(verify_token)])
 # EventSource cannot send Authorization headers.  Auth is handled per-endpoint
 # via verify_token_or_query (header OR ?token= query param).
 sse_router = APIRouter(tags=["Jobs"])
-
-import logging as _logging
 
 _logger = _logging.getLogger("aipam.api.jobs")
 
@@ -744,77 +735,9 @@ async def job_summary(
     _require_job(db, job_id)
     response.headers["X-Request-Id"] = request_id
 
-    alert_count = db.scalar(select(func.count()).select_from(Alert).where(Alert.job_id == job_id)) or 0
-    finding_count = db.scalar(select(func.count()).select_from(Finding).where(Finding.job_id == job_id)) or 0
-    ioc_count = db.scalar(select(func.count()).select_from(Ioc).where(Ioc.job_id == job_id)) or 0
-    host_count = db.scalar(select(func.count()).select_from(Host).where(Host.job_id == job_id)) or 0
-
-    # Top hosts by connection count
-    top_hosts_rows = db.execute(
-        select(Host).where(Host.job_id == job_id).order_by(Host.conn_count.desc()).limit(5)
-    ).scalars().all()
-    top_hosts = [HostListItem(
-        ip=h.ip, role=h.role or "unknown", conn_count=h.conn_count or 0,
-        bytes_sent=h.bytes_sent, bytes_recv=h.bytes_recv,
-        alert_count=h.alert_count or 0, finding_count=h.finding_count or 0,
-        top_domains=_safe_json_list(h.top_domains_json),
-    ) for h in top_hosts_rows]
-
-    # Top IOCs
-    top_iocs_rows = db.execute(
-        select(Ioc).where(Ioc.job_id == job_id).limit(5)
-    ).scalars().all()
-    top_iocs = [IocItem(
-        ioc_id=i.ioc_id, type=i.ioc_type, value=i.value,
-        confidence=i.confidence, sources=_safe_json_list(i.sources_json),
-    ) for i in top_iocs_rows]
-
-    # Top signals (high/critical alerts)
-    top_alerts = db.execute(
-        select(Alert.signature).where(
-            Alert.job_id == job_id, Alert.severity.in_(["high", "critical"])
-        ).group_by(Alert.signature).order_by(func.count().desc()).limit(5)
-    ).scalars().all()
-
-    headline = f"Analysis found {alert_count} alerts, {finding_count} findings, {ioc_count} IOCs across {host_count} hosts."
-
-    # Generate recommendations based on evidence
-    from backend.app.services.report_composer import _generate_recommendations
-    theories = db.execute(
-        select(Theory).where(Theory.job_id == job_id)
-    ).scalars().all()
-    findings = db.execute(
-        select(Finding).where(Finding.job_id == job_id)
-    ).scalars().all()
-    iocs_all = db.execute(
-        select(Ioc).where(Ioc.job_id == job_id)
-    ).scalars().all()
-    # Determine threat level from alert severities
-    has_critical = db.scalar(
-        select(func.count()).select_from(Alert).where(
-            Alert.job_id == job_id, Alert.severity == "critical"
-        )
-    ) or 0
-    has_high = db.scalar(
-        select(func.count()).select_from(Alert).where(
-            Alert.job_id == job_id, Alert.severity == "high"
-        )
-    ) or 0
-    threat = "critical" if has_critical else "high" if has_high else "medium"
-    recommendations = _generate_recommendations(threat, theories, findings, iocs_all)
-
-    return JobSummaryResponse(
-        job_id=job_id,
-        headline=headline,
-        top_signals=list(top_alerts),
-        top_hosts=top_hosts,
-        top_iocs=top_iocs,
-        recommendations=recommendations,
-        alert_count=alert_count,
-        finding_count=finding_count,
-        ioc_count=ioc_count,
-        host_count=host_count,
-    )
+    from backend.app.services.job_service import compute_job_summary
+    summary = compute_job_summary(db, job_id)
+    return JobSummaryResponse(**summary)
 
 
 # ---------- GET /jobs/{jobId}/partial-results ----------
@@ -1153,96 +1076,7 @@ async def job_evidence_graph(
 
 # ---------- GET /jobs/{jobId}/events (SSE) ----------
 
-async def _sse_generator(job_id: str, db_factory):
-    """Server-Sent Events generator with Redis pub/sub + DB polling fallback.
-
-    Subscribes to the job's Redis event channel for low-latency pipeline
-    events (sensor start/complete, high-severity findings).  Falls back to
-    DB polling every 2 s to detect status changes even if Redis is down.
-    """
-    from backend.app.events import subscribe_job_events
-
-    pubsub = subscribe_job_events(job_id)
-    last_status = None
-    retry_count = 0
-    max_retries = 3600  # ~1 hour at 1 s intervals
-    _event_id = 0
-
-    try:
-        while retry_count < max_retries:
-            # ── 1. Drain any queued Redis pub/sub messages ──────────
-            if pubsub is not None:
-                try:
-                    for _ in range(50):  # batch up to 50 messages per tick
-                        msg = pubsub.get_message(ignore_subscribe_messages=True, timeout=0.0)
-                        if msg is None:
-                            break
-                        if msg["type"] == "message":
-                            raw = msg["data"]
-                            # Forward the envelope directly — it matches SseEnvelope
-                            yield f"data: {raw}\n\n"
-                except Exception:
-                    pass  # Redis hiccup — fall through to DB poll
-
-            # ── 2. DB status poll (authoritative, every tick) ───────
-            try:
-                db = db_factory()
-                try:
-                    job = db.get(Job, job_id)
-                    if not job:
-                        yield "event: error\ndata: {\"message\": \"Job not found\"}\n\n"
-                        return
-
-                    current_status = job.status
-                    if current_status != last_status:
-                        _event_id += 1
-                        envelope = json.dumps({
-                            "id": _event_id,
-                            "type": "job.status",
-                            "ts": job.started_at or "",
-                            "data": {
-                                "job_id": job_id,
-                                "status": current_status,
-                                "started_at": job.started_at,
-                                "completed_at": job.completed_at,
-                                "error_summary": job.error_summary,
-                            },
-                        })
-                        yield f"data: {envelope}\n\n"
-                        last_status = current_status
-
-                    # Terminal states
-                    if current_status in ("completed", "completed_with_errors",
-                                          "failed", "canceled", "deleted"):
-                        _event_id += 1
-                        done_envelope = json.dumps({
-                            "id": _event_id,
-                            "type": "job.complete",
-                            "ts": job.completed_at or "",
-                            "data": {
-                                "job_id": job_id,
-                                "status": current_status,
-                            },
-                        })
-                        yield f"data: {done_envelope}\n\n"
-                        return
-                finally:
-                    db.close()
-            except Exception as e:
-                yield f"event: error\ndata: {{\"message\": \"{str(e)}\"}}\n\n"
-
-            await asyncio.sleep(1.0)
-            retry_count += 1
-    finally:
-        # Clean up Redis subscription
-        if pubsub is not None:
-            try:
-                pubsub.unsubscribe()
-                pubsub.close()
-            except Exception:
-                pass
-
-    yield "event: timeout\ndata: {\"message\": \"SSE stream timed out\"}\n\n"
+    # SSE generator logic moved to backend.app.services.job_service.sse_generator
 
 
 @sse_router.get("/jobs/{job_id}/events")
@@ -1283,7 +1117,8 @@ async def job_events(
         gen = _immediate()
     else:
         from backend.app.database_v2 import get_session_factory
-        gen = _sse_generator(job_id, get_session_factory())
+        from backend.app.services.job_service import sse_generator
+        gen = sse_generator(job_id, get_session_factory())
 
     return StreamingResponse(
         gen,
@@ -1312,50 +1147,12 @@ async def export_job_package(
     if not job_dir.exists():
         raise HTTPException(status_code=404, detail="Job directory not found on disk")
 
-    # Use a generator to stream the zip data
-    def _create_zip_generator():
-        buf = io.BytesIO()
-        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
-            # zip input/
-            for pcap in (job_dir / "input").glob("*"):
-                if pcap.is_file():
-                    zf.write(pcap, arcname=f"input/{pcap.name}")
-
-            # zip sensors/ results
-            for res in (job_dir / "sensors").rglob("sensor.results.jsonl"):
-                rel = res.relative_to(job_dir)
-                zf.write(res, arcname=str(rel))
-
-            # zip report/ if exists
-            report_dir = job_dir / "report"
-            if report_dir.exists():
-                for f in report_dir.iterdir():
-                    if f.is_file():
-                        zf.write(f, arcname=f"report/{f.name}")
-
-            # query findings and serialize
-            from backend.app.api.findings import _finding_to_item
-            findings_q = select(Finding).where(Finding.job_id == job_id)
-            findings = db.execute(findings_q).scalars().all()
-            findings_data = [
-                _finding_to_item(f).model_dump() for f in findings
-            ]
-            zf.writestr("findings.json", json.dumps(findings_data, indent=2))
-
-            # metadata
-            meta = {
-                "job_id": job_id,
-                "job_name": job.job_name,
-                "exported_at": datetime.now(timezone.utc).isoformat(),
-                "status": job.status,
-            }
-            zf.writestr("export_metadata.json", json.dumps(meta, indent=2))
-
-        yield buf.getvalue()
+    from backend.app.services.job_service import create_export_zip
+    zip_bytes = create_export_zip(db, job, job_dir)
 
     filename = f"aipam_export_{job_id[:8]}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.zip"
     return StreamingResponse(
-        _create_zip_generator(),
+        iter([zip_bytes]),
         media_type="application/zip",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )

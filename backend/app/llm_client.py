@@ -34,291 +34,24 @@ class DualLLMConfig:
     use_trafficllm_for_detection: bool = False  # Use TrafficLLM for malware/attack detection
 
 
-# Comprehensive MITRE ATT&CK technique mappings for known malware families
-# Based on finetuning/aipam_gpu_training/malware_data.py and malware-traffic-analysis.net data
-# Network indicators to help distinguish malware families
-# Each family has characteristic ports, domains, protocols, and behaviors
-MALWARE_NETWORK_INDICATORS = {
-    # === Infostealers - typically exfiltrate to C2 via HTTP/HTTPS ===
-    "Lumma_Stealer": {
-        "ports": [80, 443, 8080],
-        "domain_patterns": [".shop", ".top", ".xyz", "steam"],
-        "protocols": ["http", "https"],
-        "behaviors": ["rapid small POST requests", "base64 exfil", "browser data collection"],
-        "typical_flow": "HTTPS POST with encrypted stolen credentials, often to domains ending in .shop/.top"
-    },
-    "Redline_Stealer": {
-        "ports": [80, 443, 8080, 15647],
-        "domain_patterns": [".ru", ".top", ".xyz"],
-        "protocols": ["http", "tcp"],
-        "behaviors": ["TCP binary protocol", "system enumeration", "credential theft"],
-        "typical_flow": "Initial HTTP checkin then TCP binary protocol for data exfiltration"
-    },
-    "Formbook": {
-        "ports": [80, 443],
-        "domain_patterns": [".com", "random subdomains"],
-        "protocols": ["http"],
-        "behaviors": ["HTTP POST form data", "decoy domain requests", "keylogging"],
-        "typical_flow": "Multiple HTTP requests to different domains, POST with form-encoded data"
-    },
-    # === RATs - persistent connections for remote control ===
-    "Remcos_RAT": {
-        "ports": [2404, 2405, 8080, 443, 9030],
-        "domain_patterns": ["duckdns.org", ".ddns", "dynamic dns"],
-        "protocols": ["tcp", "tls"],
-        "behaviors": ["persistent TCP connection", "encrypted C2", "keylogging"],
-        "typical_flow": "Persistent TCP/TLS connection on non-standard ports (2404-2405 common)"
-    },
-    "AsyncRAT": {
-        "ports": [6606, 7707, 8808, 4449, 5552, 443],
-        "domain_patterns": [".duckdns.org", "pastebin"],
-        "protocols": ["tcp", "tls"],
-        "behaviors": ["encrypted C2", "persistence via registry"],
-        "typical_flow": "TCP connection on ports 6606/7707/8808 with TLS encryption"
-    },
-    "NetSupport_RAT": {
-        "ports": [5405, 443, 80, 12345],
-        "domain_patterns": [".netsupport", "remote"],
-        "protocols": ["tcp", "http"],
-        "behaviors": ["remote desktop", "file transfer", "large data flows"],
-        "typical_flow": "TCP 5405 for control, legitimate remote support tool abuse"
-    },
-    # === Loaders - download and execute payloads ===
-    "DarkGate": {
-        "ports": [80, 443, 2351, 8080],
-        "domain_patterns": [".shop", ".top", "cdn", "cloud"],
-        "protocols": ["http", "https"],
-        "behaviors": ["autoit scripts", "payload download", "obfuscated traffic"],
-        "typical_flow": "HTTPS GET to download encrypted payloads, often via compromised sites"
-    },
-    "Pikabot": {
-        "ports": [443, 2078, 2083, 2087],
-        "domain_patterns": [".com", ".net"],
-        "protocols": ["https"],
-        "behaviors": ["HTTPS with unusual UA", "webshell-like patterns"],
-        "typical_flow": "HTTPS on alternative ports (2078/2083), encrypted blob exchanges"
-    },
-    "Latrodectus": {
-        "ports": [443, 80, 8080],
-        "domain_patterns": [".com", ".net", ".shop"],
-        "protocols": ["https"],
-        "behaviors": ["system fingerprinting", "follows IcedID patterns", "encrypted C2"],
-        "typical_flow": "HTTPS beaconing similar to IcedID, system enumeration payloads"
-    },
-    # === Banking Trojans - web injection, MITB ===
-    "IcedID": {
-        "ports": [443, 80],
-        "domain_patterns": [".com", ".top", "aws", "cloud"],
-        "protocols": ["https", "http"],
-        "behaviors": ["web injects", "proxy module", "cookie stealing", "GZIP encoded C2"],
-        "typical_flow": "HTTPS beaconing with GZIP encoded payloads, distinctive User-Agent"
-    },
-    "Danabot": {
-        "ports": [443, 80, 8080, 4433],
-        "domain_patterns": [".at", ".eu", ".online"],
-        "protocols": ["https", "tcp"],
-        "behaviors": ["webinjects", "VNC module", "proxy"],
-        "typical_flow": "HTTPS to multiple C2s with webinject downloads"
-    },
-    "Qakbot": {
-        "ports": [443, 995, 993, 465, 2222],
-        "domain_patterns": ["residential IPs", ".net"],
-        "protocols": ["https"],
-        "behaviors": ["email harvesting", "lateral movement", "SMB spreading"],
-        "typical_flow": "HTTPS to residential IPs on various ports, thread hijacking"
-    },
-    # === Pentest Tools ===
-    "CobaltStrike": {
-        "ports": [80, 443, 8080, 50050, 8443],
-        "domain_patterns": ["cloud", "cdn", "amazonaws"],
-        "protocols": ["http", "https", "dns"],
-        "behaviors": ["malleable C2 profile", "DNS beaconing", "stageless/staged payloads"],
-        "typical_flow": "HTTPS beaconing with malleable C2, often mimics legitimate traffic"
-    },
-}
+# ---- Static data & prompts now live in backend/app/llm/ sub-modules ----
+from .llm.malware_data import (  # noqa: E402
+    MALWARE_MITRE_MAPPINGS,
+    MALWARE_NAME_ALIASES,
+    MALWARE_NETWORK_INDICATORS,  # noqa: F401  — re-exported for backward compat
+)
+from .llm.prompts import SYSTEM_PROMPT  # noqa: E402
+from .llm.mitre_validation import (  # noqa: E402
+    get_mitre_technique_name,
+    validate_and_fix_mitre_techniques as _validate_and_fix_mitre_techniques_fn,
+    validate_attack_chain as _validate_attack_chain_fn,
+    validate_output_mitre as _validate_output_mitre_fn,
+)
 
-MALWARE_MITRE_MAPPINGS = {
-    # === Infostealers ===
-    "Lumma_Stealer": {"type": "Infostealer", "mitre": [{"id": "T1555", "name": "Credentials from Password Stores"}, {"id": "T1539", "name": "Steal Web Session Cookie"}, {"id": "T1048", "name": "Exfiltration Over Alternative Protocol"}, {"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1082", "name": "System Information Discovery"}], "severity": "high", "indicators": ["stealer", "credential theft", "browser data"]},
-    "Redline_Stealer": {"type": "Infostealer", "mitre": [{"id": "T1555", "name": "Credentials from Password Stores"}, {"id": "T1082", "name": "System Information Discovery"}, {"id": "T1048", "name": "Exfiltration Over Alternative Protocol"}, {"id": "T1539", "name": "Steal Web Session Cookie"}], "severity": "high", "indicators": ["redline", "stealer", "credential"]},
-    "StealC": {"type": "Infostealer", "mitre": [{"id": "T1555", "name": "Credentials from Password Stores"}, {"id": "T1539", "name": "Steal Web Session Cookie"}, {"id": "T1048", "name": "Exfiltration Over Alternative Protocol"}, {"id": "T1071.001", "name": "Web Protocols"}], "severity": "high", "indicators": ["stealc", "credential theft"]},
-    "Vidar": {"type": "Infostealer", "mitre": [{"id": "T1555", "name": "Credentials from Password Stores"}, {"id": "T1113", "name": "Screen Capture"}, {"id": "T1048", "name": "Exfiltration Over Alternative Protocol"}, {"id": "T1082", "name": "System Information Discovery"}], "severity": "high", "indicators": ["vidar", "stealer"]},
-    "Formbook": {"type": "Infostealer", "mitre": [{"id": "T1055.012", "name": "Process Hollowing"}, {"id": "T1056.001", "name": "Keylogging"}, {"id": "T1113", "name": "Screen Capture"}, {"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1055", "name": "Process Injection"}], "severity": "high", "indicators": ["formbook", "xloader", "form grabber"]},
-    "XLoader": {"type": "Infostealer", "mitre": [{"id": "T1055.012", "name": "Process Hollowing"}, {"id": "T1056.001", "name": "Keylogging"}, {"id": "T1113", "name": "Screen Capture"}, {"id": "T1071.001", "name": "Web Protocols"}], "severity": "high", "indicators": ["xloader", "formbook variant"]},
-    "AgentTesla": {"type": "Infostealer", "mitre": [{"id": "T1056.001", "name": "Keylogging"}, {"id": "T1048.003", "name": "Exfiltration Over Unencrypted Non-C2 Protocol"}, {"id": "T1113", "name": "Screen Capture"}, {"id": "T1555", "name": "Credentials from Password Stores"}, {"id": "T1071.003", "name": "Mail Protocols"}], "severity": "high", "indicators": ["agenttesla", "tesla", "smtp exfil"]},
-    "Raccoon": {"type": "Infostealer", "mitre": [{"id": "T1555", "name": "Credentials from Password Stores"}, {"id": "T1539", "name": "Steal Web Session Cookie"}, {"id": "T1082", "name": "System Information Discovery"}, {"id": "T1071.001", "name": "Web Protocols"}], "severity": "high", "indicators": ["raccoon", "stealer"]},
-    "Meduza_Stealer": {"type": "Infostealer", "mitre": [{"id": "T1555", "name": "Credentials from Password Stores"}, {"id": "T1539", "name": "Steal Web Session Cookie"}, {"id": "T1048", "name": "Exfiltration Over Alternative Protocol"}], "severity": "high", "indicators": ["meduza", "stealer"]},
-    # === Remote Access Trojans ===
-    "Remcos_RAT": {"type": "Remote Access Trojan", "mitre": [{"id": "T1219", "name": "Remote Access Software"}, {"id": "T1547.001", "name": "Registry Run Keys / Startup Folder"}, {"id": "T1056.001", "name": "Keylogging"}, {"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1113", "name": "Screen Capture"}], "severity": "critical", "indicators": ["remcos", "remote control"]},
-    "AsyncRAT": {"type": "Remote Access Trojan", "mitre": [{"id": "T1219", "name": "Remote Access Software"}, {"id": "T1056.001", "name": "Keylogging"}, {"id": "T1113", "name": "Screen Capture"}, {"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1547.001", "name": "Registry Run Keys / Startup Folder"}], "severity": "critical", "indicators": ["asyncrat", "async client"]},
-    "NetSupport_RAT": {"type": "Remote Access Trojan", "mitre": [{"id": "T1219", "name": "Remote Access Software"}, {"id": "T1105", "name": "Ingress Tool Transfer"}, {"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1021.005", "name": "VNC"}], "severity": "critical", "indicators": ["netsupport", "remote control", "nsm"]},
-    "NjRAT": {"type": "Remote Access Trojan", "mitre": [{"id": "T1219", "name": "Remote Access Software"}, {"id": "T1547.001", "name": "Registry Run Keys / Startup Folder"}, {"id": "T1056.001", "name": "Keylogging"}, {"id": "T1071.004", "name": "DNS"}], "severity": "critical", "indicators": ["njrat", "bladabindi"]},
-    "QuasarRAT": {"type": "Remote Access Trojan", "mitre": [{"id": "T1219", "name": "Remote Access Software"}, {"id": "T1056.001", "name": "Keylogging"}, {"id": "T1113", "name": "Screen Capture"}, {"id": "T1071.001", "name": "Web Protocols"}], "severity": "critical", "indicators": ["quasar", "quasarrat"]},
-    "Astaroth": {"type": "Remote Access Trojan", "mitre": [{"id": "T1055.012", "name": "Process Hollowing"}, {"id": "T1056.001", "name": "Keylogging"}, {"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1027", "name": "Obfuscated Files or Information"}], "severity": "critical", "indicators": ["astaroth", "guildma"]},
-    "XWorm": {"type": "Remote Access Trojan", "mitre": [{"id": "T1219", "name": "Remote Access Software"}, {"id": "T1056.001", "name": "Keylogging"}, {"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1113", "name": "Screen Capture"}, {"id": "T1059.001", "name": "PowerShell"}], "severity": "critical", "indicators": ["xworm", "worm"]},
-    "DcRAT": {"type": "Remote Access Trojan", "mitre": [{"id": "T1219", "name": "Remote Access Software"}, {"id": "T1056.001", "name": "Keylogging"}, {"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1547.001", "name": "Registry Run Keys / Startup Folder"}], "severity": "critical", "indicators": ["dcrat"]},
-    "VenomRAT": {"type": "Remote Access Trojan", "mitre": [{"id": "T1219", "name": "Remote Access Software"}, {"id": "T1056.001", "name": "Keylogging"}, {"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1059.003", "name": "Windows Command Shell"}], "severity": "critical", "indicators": ["venomrat"]},
-    "WarZone": {"type": "Remote Access Trojan", "mitre": [{"id": "T1219", "name": "Remote Access Software"}, {"id": "T1056.001", "name": "Keylogging"}, {"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1113", "name": "Screen Capture"}], "severity": "critical", "indicators": ["warzone", "avemaria"]},
-    # === Loaders/Droppers ===
-    "DarkGate": {"type": "Loader/RAT", "mitre": [{"id": "T1059.001", "name": "PowerShell"}, {"id": "T1105", "name": "Ingress Tool Transfer"}, {"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1547.001", "name": "Registry Run Keys / Startup Folder"}, {"id": "T1055", "name": "Process Injection"}], "severity": "high", "indicators": ["darkgate", "loader"]},
-    "Pikabot": {"type": "Loader", "mitre": [{"id": "T1059", "name": "Command and Scripting Interpreter"}, {"id": "T1105", "name": "Ingress Tool Transfer"}, {"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1055", "name": "Process Injection"}, {"id": "T1027", "name": "Obfuscated Files or Information"}], "severity": "high", "indicators": ["pikabot", "loader"]},
-    "Latrodectus": {"type": "Loader", "mitre": [{"id": "T1105", "name": "Ingress Tool Transfer"}, {"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1059.003", "name": "Windows Command Shell"}, {"id": "T1082", "name": "System Information Discovery"}], "severity": "high", "indicators": ["latrodectus", "loader", "icedid successor"]},
-    "GuLoader": {"type": "Loader", "mitre": [{"id": "T1027.002", "name": "Software Packing"}, {"id": "T1105", "name": "Ingress Tool Transfer"}, {"id": "T1059.005", "name": "Visual Basic"}, {"id": "T1497.001", "name": "System Checks"}], "severity": "high", "indicators": ["guloader", "cloudeye"]},
-    "BazarLoader": {"type": "Loader", "mitre": [{"id": "T1566.001", "name": "Spearphishing Attachment"}, {"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1105", "name": "Ingress Tool Transfer"}, {"id": "T1055", "name": "Process Injection"}], "severity": "high", "indicators": ["bazarloader", "bazar", "kegtap"]},
-    "SmartLoader": {"type": "Loader", "mitre": [{"id": "T1059", "name": "Command and Scripting Interpreter"}, {"id": "T1105", "name": "Ingress Tool Transfer"}, {"id": "T1071.001", "name": "Web Protocols"}], "severity": "high", "indicators": ["smartloader"]},
-    "Matanbuchus": {"type": "Loader", "mitre": [{"id": "T1059.001", "name": "PowerShell"}, {"id": "T1105", "name": "Ingress Tool Transfer"}, {"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1055", "name": "Process Injection"}], "severity": "high", "indicators": ["matanbuchus"]},
-    "SmartApeSG": {"type": "Loader", "mitre": [{"id": "T1059.007", "name": "JavaScript"}, {"id": "T1105", "name": "Ingress Tool Transfer"}, {"id": "T1071.001", "name": "Web Protocols"}], "severity": "high", "indicators": ["smartapesg", "fake update"]},
-    "BumbleBee": {"type": "Loader", "mitre": [{"id": "T1566.001", "name": "Spearphishing Attachment"}, {"id": "T1059.005", "name": "Visual Basic"}, {"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1055", "name": "Process Injection"}], "severity": "high", "indicators": ["bumblebee"]},
-    "HijackLoader": {"type": "Loader", "mitre": [{"id": "T1055.012", "name": "Process Hollowing"}, {"id": "T1105", "name": "Ingress Tool Transfer"}, {"id": "T1027", "name": "Obfuscated Files or Information"}, {"id": "T1071.001", "name": "Web Protocols"}], "severity": "high", "indicators": ["hijackloader"]},
-    "SSLoad": {"type": "Loader", "mitre": [{"id": "T1105", "name": "Ingress Tool Transfer"}, {"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1059.001", "name": "PowerShell"}], "severity": "high", "indicators": ["ssload"]},
-    "SocGholish": {"type": "Loader", "mitre": [{"id": "T1189", "name": "Drive-by Compromise"}, {"id": "T1059.007", "name": "JavaScript"}, {"id": "T1105", "name": "Ingress Tool Transfer"}, {"id": "T1071.001", "name": "Web Protocols"}], "severity": "high", "indicators": ["socgholish", "fake update"]},
-    "ClearFake": {"type": "Loader", "mitre": [{"id": "T1189", "name": "Drive-by Compromise"}, {"id": "T1059.007", "name": "JavaScript"}, {"id": "T1105", "name": "Ingress Tool Transfer"}], "severity": "high", "indicators": ["clearfake", "fake browser"]},
-    "FakeBat": {"type": "Loader", "mitre": [{"id": "T1105", "name": "Ingress Tool Transfer"}, {"id": "T1059.001", "name": "PowerShell"}, {"id": "T1071.001", "name": "Web Protocols"}], "severity": "high", "indicators": ["fakebat", "eugenloader"]},
-    # === Banking Trojans ===
-    "Danabot": {"type": "Banking Trojan", "mitre": [{"id": "T1185", "name": "Browser Session Hijacking"}, {"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1055", "name": "Process Injection"}, {"id": "T1056.001", "name": "Keylogging"}, {"id": "T1090.001", "name": "Internal Proxy"}], "severity": "critical", "indicators": ["danabot", "webinject"]},
-    "Zeus": {"type": "Banking Trojan", "mitre": [{"id": "T1059", "name": "Command and Scripting Interpreter"}, {"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1056.001", "name": "Keylogging"}, {"id": "T1185", "name": "Browser Session Hijacking"}], "severity": "critical", "indicators": ["zeus", "zbot"]},
-    "Emotet": {"type": "Loader/Banking Trojan", "mitre": [{"id": "T1566.001", "name": "Spearphishing Attachment"}, {"id": "T1059.001", "name": "PowerShell"}, {"id": "T1547.001", "name": "Registry Run Keys / Startup Folder"}, {"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1027", "name": "Obfuscated Files or Information"}], "severity": "critical", "indicators": ["emotet", "heodo", "geodo"]},
-    "TrickBot": {"type": "Banking Trojan/Loader", "mitre": [{"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1003.001", "name": "LSASS Memory"}, {"id": "T1021.002", "name": "SMB/Windows Admin Shares"}, {"id": "T1185", "name": "Browser Session Hijacking"}, {"id": "T1055", "name": "Process Injection"}], "severity": "critical", "indicators": ["trickbot", "trickster"]},
-    "Qakbot": {"type": "Banking Trojan/Loader", "mitre": [{"id": "T1566.001", "name": "Spearphishing Attachment"}, {"id": "T1055", "name": "Process Injection"}, {"id": "T1053.005", "name": "Scheduled Task"}, {"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1021.002", "name": "SMB/Windows Admin Shares"}], "severity": "critical", "indicators": ["qakbot", "qbot", "pinkslipbot"]},
-    "IcedID": {"type": "Banking Trojan/Loader", "mitre": [{"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1185", "name": "Browser Session Hijacking"}, {"id": "T1566.002", "name": "Spearphishing Link"}, {"id": "T1055", "name": "Process Injection"}], "severity": "critical", "indicators": ["icedid", "bokbot"]},
-    # === Penetration Testing Tools (abused) ===
-    "CobaltStrike": {"type": "Penetration Testing Tool/RAT", "mitre": [{"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1055.001", "name": "Dynamic-link Library Injection"}, {"id": "T1021.002", "name": "SMB/Windows Admin Shares"}, {"id": "T1059.001", "name": "PowerShell"}, {"id": "T1090.002", "name": "External Proxy"}], "severity": "critical", "indicators": ["cobaltstrike", "beacon", "cs beacon", "malleable c2"]},
-    "Metasploit": {"type": "Penetration Testing Tool", "mitre": [{"id": "T1059", "name": "Command and Scripting Interpreter"}, {"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1055", "name": "Process Injection"}], "severity": "critical", "indicators": ["metasploit", "meterpreter"]},
-    "Sliver": {"type": "Penetration Testing Tool/RAT", "mitre": [{"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1071.004", "name": "DNS"}, {"id": "T1055", "name": "Process Injection"}, {"id": "T1090", "name": "Proxy"}], "severity": "critical", "indicators": ["sliver", "implant"]},
-    # === Ransomware ===
-    "CryptoWall": {"type": "Ransomware", "mitre": [{"id": "T1486", "name": "Data Encrypted for Impact"}, {"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1490", "name": "Inhibit System Recovery"}, {"id": "T1083", "name": "File and Directory Discovery"}, {"id": "T1027", "name": "Obfuscated Files or Information"}], "severity": "critical", "indicators": ["cryptowall", "crypto wall", "ransom", "encrypted files"]},
-    "Locky": {"type": "Ransomware", "mitre": [{"id": "T1486", "name": "Data Encrypted for Impact"}, {"id": "T1566.001", "name": "Spearphishing Attachment"}, {"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1490", "name": "Inhibit System Recovery"}], "severity": "critical", "indicators": ["locky", "ransom"]},
-    "WannaCry": {"type": "Ransomware/Worm", "mitre": [{"id": "T1486", "name": "Data Encrypted for Impact"}, {"id": "T1210", "name": "Exploitation of Remote Services"}, {"id": "T1021.002", "name": "SMB/Windows Admin Shares"}, {"id": "T1570", "name": "Lateral Tool Transfer"}], "severity": "critical", "indicators": ["wannacry", "wanna cry", "wcry", "eternalblue"]},
-    "Cerber": {"type": "Ransomware", "mitre": [{"id": "T1486", "name": "Data Encrypted for Impact"}, {"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1071.004", "name": "DNS"}, {"id": "T1490", "name": "Inhibit System Recovery"}], "severity": "critical", "indicators": ["cerber", "ransom"]},
-    "TeslaCrypt": {"type": "Ransomware", "mitre": [{"id": "T1486", "name": "Data Encrypted for Impact"}, {"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1490", "name": "Inhibit System Recovery"}, {"id": "T1083", "name": "File and Directory Discovery"}], "severity": "critical", "indicators": ["teslacrypt", "tesla crypt"]},
-    "Ryuk": {"type": "Ransomware", "mitre": [{"id": "T1486", "name": "Data Encrypted for Impact"}, {"id": "T1021.002", "name": "SMB/Windows Admin Shares"}, {"id": "T1490", "name": "Inhibit System Recovery"}, {"id": "T1489", "name": "Service Stop"}], "severity": "critical", "indicators": ["ryuk", "ransom"]},
-    "REvil": {"type": "Ransomware", "mitre": [{"id": "T1486", "name": "Data Encrypted for Impact"}, {"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1490", "name": "Inhibit System Recovery"}, {"id": "T1489", "name": "Service Stop"}], "severity": "critical", "indicators": ["revil", "sodinokibi"]},
-    "Conti": {"type": "Ransomware", "mitre": [{"id": "T1486", "name": "Data Encrypted for Impact"}, {"id": "T1021.002", "name": "SMB/Windows Admin Shares"}, {"id": "T1490", "name": "Inhibit System Recovery"}, {"id": "T1048", "name": "Exfiltration Over Alternative Protocol"}], "severity": "critical", "indicators": ["conti", "ransom"]},
-    "LockBit": {"type": "Ransomware", "mitre": [{"id": "T1486", "name": "Data Encrypted for Impact"}, {"id": "T1021.002", "name": "SMB/Windows Admin Shares"}, {"id": "T1490", "name": "Inhibit System Recovery"}, {"id": "T1071.001", "name": "Web Protocols"}], "severity": "critical", "indicators": ["lockbit", "ransom"]},
-    "BlackCat": {"type": "Ransomware", "mitre": [{"id": "T1486", "name": "Data Encrypted for Impact"}, {"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1490", "name": "Inhibit System Recovery"}, {"id": "T1048", "name": "Exfiltration Over Alternative Protocol"}], "severity": "critical", "indicators": ["blackcat", "alphv"]},
-    "Petya": {"type": "Ransomware/Wiper", "mitre": [{"id": "T1486", "name": "Data Encrypted for Impact"}, {"id": "T1485", "name": "Data Destruction"}, {"id": "T1561.002", "name": "Disk Structure Wipe"}, {"id": "T1210", "name": "Exploitation of Remote Services"}], "severity": "critical", "indicators": ["petya", "notpetya", "goldeneye"]},
-    "CTBLocker": {"type": "Ransomware", "mitre": [{"id": "T1486", "name": "Data Encrypted for Impact"}, {"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1490", "name": "Inhibit System Recovery"}, {"id": "T1071.004", "name": "DNS"}], "severity": "critical", "indicators": ["ctb-locker", "ctblocker", "critroni"]},
-    # === Legacy malware (from ISCX dataset) ===
-    "Cridex": {"type": "Banking Trojan", "mitre": [{"id": "T1185", "name": "Browser Session Hijacking"}, {"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1056.001", "name": "Keylogging"}], "severity": "high", "indicators": ["cridex"]},
-    "Geodo": {"type": "Banking Trojan", "mitre": [{"id": "T1566.001", "name": "Spearphishing Attachment"}, {"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1185", "name": "Browser Session Hijacking"}], "severity": "high", "indicators": ["geodo"]},
-    "Htbot": {"type": "Click Fraud Bot", "mitre": [{"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1059", "name": "Command and Scripting Interpreter"}], "severity": "medium", "indicators": ["htbot"]},
-    "Miuref": {"type": "Botnet", "mitre": [{"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1499.001", "name": "OS Exhaustion Flood"}], "severity": "medium", "indicators": ["miuref"]},
-    "Neris": {"type": "Botnet/Spam Bot", "mitre": [{"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1071.003", "name": "Mail Protocols"}], "severity": "medium", "indicators": ["neris"]},
-    "Nsis-ay": {"type": "Dropper/Loader", "mitre": [{"id": "T1059", "name": "Command and Scripting Interpreter"}, {"id": "T1105", "name": "Ingress Tool Transfer"}, {"id": "T1027", "name": "Obfuscated Files or Information"}], "severity": "medium", "indicators": ["nsis"]},
-    "Shifu": {"type": "Banking Trojan", "mitre": [{"id": "T1497.001", "name": "System Checks"}, {"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1185", "name": "Browser Session Hijacking"}, {"id": "T1056.001", "name": "Keylogging"}], "severity": "high", "indicators": ["shifu"]},
-    "Tinba": {"type": "Banking Trojan", "mitre": [{"id": "T1185", "name": "Browser Session Hijacking"}, {"id": "T1055", "name": "Process Injection"}, {"id": "T1071.001", "name": "Web Protocols"}], "severity": "high", "indicators": ["tinba", "tiny banker"]},
-    "Virut": {"type": "File Infector/Botnet", "mitre": [{"id": "T1071.001", "name": "Web Protocols"}, {"id": "T1091", "name": "Replication Through Removable Media"}, {"id": "T1027", "name": "Obfuscated Files or Information"}], "severity": "high", "indicators": ["virut"]},
-    # === Benign Applications (for proper classification) ===
-    "BitTorrent": {"type": "Benign P2P Application", "mitre": [], "severity": "low", "indicators": ["bittorrent", "p2p"]},
-    "FTP": {"type": "Benign File Transfer", "mitre": [], "severity": "low", "indicators": ["ftp"]},
-    "Facetime": {"type": "Benign Video Call", "mitre": [], "severity": "low", "indicators": ["facetime"]},
-    "Gmail": {"type": "Benign Email", "mitre": [], "severity": "low", "indicators": ["gmail"]},
-    "MySQL": {"type": "Benign Database", "mitre": [], "severity": "low", "indicators": ["mysql"]},
-    "Outlook": {"type": "Benign Email", "mitre": [], "severity": "low", "indicators": ["outlook"]},
-    "SMB": {"type": "Benign File Sharing", "mitre": [], "severity": "low", "indicators": ["smb"]},
-    "Skype": {"type": "Benign VoIP", "mitre": [], "severity": "low", "indicators": ["skype"]},
-    "Weibo": {"type": "Benign Social Media", "mitre": [], "severity": "low", "indicators": ["weibo"]},
-    "WorldOfWarcraft": {"type": "Benign Gaming", "mitre": [], "severity": "low", "indicators": ["wow", "gaming"]},
-}
 
-# Malware name normalization (handles common variations in model output)
-MALWARE_NAME_ALIASES = {
-    # Infostealers
-    "lumma": "Lumma_Stealer", "lummastealer": "Lumma_Stealer", "lumma stealer": "Lumma_Stealer", "lumma c2": "Lumma_Stealer",
-    "redline": "Redline_Stealer", "redlinestealer": "Redline_Stealer", "redline stealer": "Redline_Stealer",
-    "stealc": "StealC", "steal c": "StealC", "stealc stealer": "StealC",
-    "vidar": "Vidar", "vidar stealer": "Vidar",
-    "formbook": "Formbook", "form book": "Formbook",
-    "xloader": "XLoader", "x loader": "XLoader", "formbook xloader": "XLoader",
-    "agenttesla": "AgentTesla", "agent tesla": "AgentTesla", "tesla": "AgentTesla",
-    "raccoon": "Raccoon", "raccoon stealer": "Raccoon", "raccoonstealer": "Raccoon",
-    "meduza": "Meduza_Stealer", "meduzastealer": "Meduza_Stealer", "meduza stealer": "Meduza_Stealer",
-    # RATs
-    "remcos": "Remcos_RAT", "remcosrat": "Remcos_RAT", "remcos rat": "Remcos_RAT",
-    "asyncrat": "AsyncRAT", "async rat": "AsyncRAT", "async": "AsyncRAT",
-    "netsupport": "NetSupport_RAT", "netsupportrat": "NetSupport_RAT", "netsupport rat": "NetSupport_RAT", "nsm": "NetSupport_RAT",
-    "njrat": "NjRAT", "nj rat": "NjRAT", "bladabindi": "NjRAT",
-    "quasarrat": "QuasarRAT", "quasar": "QuasarRAT", "quasar rat": "QuasarRAT",
-    "astaroth": "Astaroth", "guildma": "Astaroth",
-    "xworm": "XWorm", "x worm": "XWorm",
-    "dcrat": "DcRAT", "dc rat": "DcRAT",
-    "venomrat": "VenomRAT", "venom rat": "VenomRAT",
-    "warzone": "WarZone", "avemaria": "WarZone", "warzonerat": "WarZone",
-    # Loaders
-    "darkgate": "DarkGate", "dark gate": "DarkGate",
-    "pikabot": "Pikabot", "pika bot": "Pikabot",
-    "latrodectus": "Latrodectus", "latrodectus loader": "Latrodectus",
-    "guloader": "GuLoader", "gu loader": "GuLoader", "cloudeye": "GuLoader",
-    "bazarloader": "BazarLoader", "bazar": "BazarLoader", "kegtap": "BazarLoader",
-    "smartloader": "SmartLoader", "smart loader": "SmartLoader",
-    "matanbuchus": "Matanbuchus",
-    "smartapesg": "SmartApeSG", "smart ape": "SmartApeSG", "smartape": "SmartApeSG",
-    "bumblebee": "BumbleBee", "bumble bee": "BumbleBee",
-    "hijackloader": "HijackLoader", "hijack loader": "HijackLoader",
-    "ssload": "SSLoad", "ss load": "SSLoad",
-    "socgholish": "SocGholish", "soc gholish": "SocGholish", "fake update": "SocGholish",
-    "clearfake": "ClearFake", "clear fake": "ClearFake",
-    "fakebat": "FakeBat", "fake bat": "FakeBat", "eugenloader": "FakeBat",
-    # Banking Trojans
-    "danabot": "Danabot", "dana bot": "Danabot",
-    "zeus": "Zeus", "zbot": "Zeus",
-    "emotet": "Emotet", "heodo": "Emotet",
-    "trickbot": "TrickBot", "trick bot": "TrickBot", "trickster": "TrickBot",
-    "qakbot": "Qakbot", "qbot": "Qakbot", "pinkslipbot": "Qakbot",
-    "icedid": "IcedID", "iced id": "IcedID", "bokbot": "IcedID",
-    # Pentest tools
-    "cobaltstrike": "CobaltStrike", "cobalt strike": "CobaltStrike", "cs beacon": "CobaltStrike", "beacon": "CobaltStrike",
-    "metasploit": "Metasploit", "meterpreter": "Metasploit",
-    "sliver": "Sliver", "sliver c2": "Sliver",
-    # Legacy
-    "cridex": "Cridex",
-    "geodo": "Geodo",
-    "htbot": "Htbot",
-    "miuref": "Miuref",
-    "neris": "Neris",
-    "nsis-ay": "Nsis-ay", "nsisay": "Nsis-ay", "nsis": "Nsis-ay",
-    "shifu": "Shifu",
-    "tinba": "Tinba", "tiny banker": "Tinba", "tinybanker": "Tinba",
-    "virut": "Virut",
-    # Ransomware
-    "cryptowall": "CryptoWall", "crypto wall": "CryptoWall", "cryptowall3": "CryptoWall", "cryptowall4": "CryptoWall",
-    "locky": "Locky", "locky ransomware": "Locky",
-    "wannacry": "WannaCry", "wanna cry": "WannaCry", "wcry": "WannaCry", "wanacrypt": "WannaCry", "wanacry": "WannaCry",
-    "cerber": "Cerber", "cerber ransomware": "Cerber",
-    "teslacrypt": "TeslaCrypt", "tesla crypt": "TeslaCrypt",
-    "ryuk": "Ryuk", "ryuk ransomware": "Ryuk",
-    "revil": "REvil", "sodinokibi": "REvil", "sodin": "REvil",
-    "conti": "Conti", "conti ransomware": "Conti",
-    "lockbit": "LockBit", "lock bit": "LockBit", "lockbit2": "LockBit", "lockbit3": "LockBit",
-    "blackcat": "BlackCat", "alphv": "BlackCat", "noberus": "BlackCat",
-    "petya": "Petya", "notpetya": "Petya", "goldeneye": "Petya", "expetr": "Petya",
-    "ctb-locker": "CTBLocker", "ctblocker": "CTBLocker", "critroni": "CTBLocker", "ctb locker": "CTBLocker",
-    "ransomware": "CryptoWall",  # Generic ransomware detection defaults to CryptoWall
-}
-
-# System prompt for backend - zero-day & forensic focus
-SYSTEM_PROMPT = """You are an expert cybersecurity analyst specialized in forensic network traffic analysis.
-Your goal is to accurately distinguish between benign and malicious traffic, and identify malware families when traffic is malicious.
-
-CRITICAL: Not all network traffic is malicious. Enterprise networks routinely generate:
-- Low-severity IDS alerts from protocol anomalies (TCP retransmits, RST packets, invalid checksums)
-- Generic protocol decode warnings (these are NOT indicators of compromise)
-- Corporate policy alerts (Dropbox, Flash, streaming) — these are policy violations, NOT malware
-- Informational alerts about normal services (DNS, DHCP, NTP, HTTP browsing)
-
-You MUST classify traffic as "Benign" when:
-- Alerts are predominantly low-severity generic protocol warnings
-- No specific malware signatures are detected in alerts
-- Traffic patterns match normal enterprise/corporate network behavior
-- Alert categories are "Generic Protocol Command Decode", "Not Suspicious Traffic", or "Misc activity"
-
-For every analysis:
-1. **Classification**: FIRST determine if the traffic is Benign or Malicious. Only if malicious, identify the likely malware family using technical fingerprints. DO NOT default to malware classification without strong evidence.
-2. **Technical Forensic Evidence**: Detail **Session-Specific Indicators (SSIs)** found in the data. Specify IPs, ports, packet sizes, byte counts, protocol offsets, or specific observed strings.
-3. **Boilerplate Avoidance**: DO NOT use generic phrases like 'observed unusual pattern'. Focus only on what is in the provided data.
-4. **Name Consistency**: If you identify a malware family, ENSURE that name is used consistently across all output fields.
-5. **MITRE ATT&CK**: Map techniques accurately to the observed data. For benign traffic, return an empty list.
-Return your findings in the requested JSON format."""
+# Legacy aliases kept so ``from backend.app.llm_client import MALWARE_NETWORK_INDICATORS``
+# (and similar) continues to work without changes in downstream code.
+# The actual dicts are re-exported from the import above.
 
 
 class LLMClient:
@@ -1686,131 +1419,19 @@ Provide your findings in a structured JSON format with this exact structure:
 
     def _get_technique_name(self, tech_id: str) -> str:
         """Get the name for a MITRE ATT&CK technique ID using the comprehensive database."""
-        from .mitre_database import get_technique_name
-        return get_technique_name(tech_id)
+        return get_mitre_technique_name(tech_id)
 
     def _validate_and_fix_mitre_techniques(self, techniques: List[Dict[str, str]]) -> List[Dict[str, str]]:
-        """
-        Validate MITRE technique IDs and fix incorrect names.
-
-        This catches issues like T1053 being labeled as "Pivot" when it should be
-        "Scheduled Task/Job".
-
-        Args:
-            techniques: List of {"id": "T1XXX", "name": "..."} dicts
-
-        Returns:
-            List of validated/corrected technique dicts
-        """
-        from .mitre_database import validate_and_fix_technique, validate_technique_id
-
-        validated = []
-        for tech in techniques:
-            if not isinstance(tech, dict) or "id" not in tech:
-                continue
-
-            tech_id = tech.get("id", "")
-            provided_name = tech.get("name", "")
-
-            # Validate and fix the technique
-            fixed_id, fixed_name, was_corrected = validate_and_fix_technique(tech_id, provided_name)
-
-            # Check if the ID itself is valid
-            is_valid, _ = validate_technique_id(tech_id)
-
-            if not is_valid:
-                # Log invalid technique ID for debugging
-                print(f"Warning: Invalid MITRE technique ID '{tech_id}' with name '{provided_name}'")
-
-            validated.append({
-                "id": fixed_id,
-                "name": fixed_name,
-                "_validated": is_valid,
-                "_corrected": was_corrected
-            })
-
-        return validated
+        """Validate MITRE technique IDs and fix incorrect names."""
+        return _validate_and_fix_mitre_techniques_fn(techniques)
 
     def _validate_attack_chain(self, attack_chain: List[Dict]) -> List[Dict]:
-        """
-        Validate and fix MITRE techniques in attack chain items.
-
-        Args:
-            attack_chain: List of attack chain stage dicts
-
-        Returns:
-            Attack chain with validated MITRE techniques
-        """
-        validated_chain = []
-        for item in attack_chain:
-            if not isinstance(item, dict):
-                continue
-
-            validated_item = item.copy()
-
-            # Validate MITRE techniques in this stage
-            if "mitre_techniques" in item and item["mitre_techniques"]:
-                validated_item["mitre_techniques"] = self._validate_and_fix_mitre_techniques(
-                    item["mitre_techniques"]
-                )
-
-            validated_chain.append(validated_item)
-
-        return validated_chain
+        """Validate and fix MITRE techniques in attack chain items."""
+        return _validate_attack_chain_fn(attack_chain)
 
     def _validate_output_mitre(self, output: "LLMOutput") -> "LLMOutput":
-        """
-        Validate and fix all MITRE techniques in an LLMOutput object.
-
-        This is the main entry point for MITRE validation, called after
-        the LLM output is parsed.
-
-        Args:
-            output: The LLMOutput object to validate
-
-        Returns:
-            The same LLMOutput with validated/corrected MITRE techniques
-        """
-        from .models import AttackChainItem, MitreTechnique
-
-        # Validate attack_chain techniques
-        if output.attack_chain:
-            validated_chain = []
-            for item in output.attack_chain:
-                # Handle both dict and AttackChainItem
-                if isinstance(item, dict):
-                    item_dict = item
-                else:
-                    item_dict = item.model_dump() if hasattr(item, 'model_dump') else item.__dict__
-
-                if "mitre_techniques" in item_dict and item_dict["mitre_techniques"]:
-                    validated_techs = self._validate_and_fix_mitre_techniques(
-                        [t.model_dump() if hasattr(t, 'model_dump') else t for t in item_dict["mitre_techniques"]]
-                    )
-                    # Remove internal fields before creating model
-                    cleaned_techs = [
-                        {"id": t["id"], "name": t["name"]}
-                        for t in validated_techs
-                    ]
-                    item_dict["mitre_techniques"] = [MitreTechnique(**t) for t in cleaned_techs]
-
-                validated_chain.append(AttackChainItem(**item_dict) if isinstance(item, AttackChainItem) else item_dict)
-
-            output.attack_chain = validated_chain
-
-        # Validate mitre_techniques_overall
-        if output.mitre_techniques_overall:
-            validated_overall = self._validate_and_fix_mitre_techniques(
-                [t.model_dump() if hasattr(t, 'model_dump') else t for t in output.mitre_techniques_overall]
-            )
-            # Remove internal fields
-            cleaned_overall = [
-                {"id": t["id"], "name": t["name"]}
-                for t in validated_overall
-            ]
-            output.mitre_techniques_overall = [MitreTechnique(**t) for t in cleaned_overall]
-
-        return output
+        """Validate and fix all MITRE techniques in an LLMOutput object."""
+        return _validate_output_mitre_fn(output)
 
     async def chat_completion(
         self, messages: List[Dict[str, str]], temperature: Optional[float] = None

@@ -11,18 +11,25 @@ from __future__ import annotations
 import json
 import logging
 import os
-import re
 import uuid
-from datetime import datetime, timezone
 from typing import AsyncGenerator
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from pydantic import BaseModel, Field
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from backend.app.llm_client import LLMClient, LLMConfig
+from backend.app.schemas.chat import (                       # shared Pydantic models
+    ChatCitationOut,
+    ChatRequestBody,
+    ChatResponseBody,
+    ConversationHistoryOut,
+    ConversationRenameRequest,
+    ConversationSummaryOut,
+    EvidenceRefOut,
+)
+from backend.app.services import chat_citations as _cite_svc  # extracted helpers
 from backend.app.services.entity_extractor import extract_entities
 from backend.app.services.evidence_bundles import build_scoped_bundle, parse_context_hint
 from backend.app.services.kb_service import extract_ips_from_context, retrieve as kb_retrieve
@@ -40,141 +47,33 @@ from backend.app.models.job_pcap import JobPcap
 
 logger = logging.getLogger("aipam.chat")
 
-_IPV4_RE = re.compile(r"\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b")
-_CREDENTIAL_CLAIM_RE = re.compile(
-    r"\b(?:password|passwd|pwd|credential(?:s)?)\b\s*(?:is|=|:)\s*['\"]?([A-Za-z0-9!@#$%^&*._-]{3,})",
-    re.IGNORECASE,
-)
-_UNSUPPORTED_CREDENTIAL_ASSERTION_RE = re.compile(
-    r"\b(?:alert indicates a cleartext password was transmitted|cleartext password was transmitted|password was transmitted|credentials? (?:was|were) transmitted)\b",
-    re.IGNORECASE,
-)
-_REFUSAL_RE = re.compile(
-    r"\b(?:i can(?:not|'t) help(?: you)? with(?: this task| that)?|i can(?:not|'t) assist with that|i must refuse|i'm unable to help with that|is there something else i can help you with)\b",
-    re.IGNORECASE,
-)
-_QUOTED_DETAIL_RE = re.compile(r"['\"]([^'\"\n]{5,120})['\"]")
-
 router = APIRouter(dependencies=[Depends(verify_token)], tags=["chat"])
 
-
-# ── Request / Response schemas ────────────────────────────────────────────
-
-class ChatCitationOut(BaseModel):
-    type: str
-    id: str | None = None
-    snippet: str
-
-
-class ChatRequestBody(BaseModel):
-    message: str = Field(..., min_length=1, max_length=4000)
-    conversation_id: str | None = None
-    context_hint: str | None = None
-
-
-class EvidenceRefOut(BaseModel):
-    type: str          # "host", "finding", "alert", "ioc"
-    id: str | None = None
-    label: str         # human-readable label, e.g. "Host 10.0.0.5"
+# Schemas are imported from backend.app.schemas.chat (see imports above).
+# Re-exported here so that ``from backend.app.api.chat import ChatCitationOut``
+# continues to work across the codebase and tests.
+__all__ = [
+    "ChatCitationOut",
+    "ChatRequestBody",
+    "ChatResponseBody",
+    "ConversationHistoryOut",
+    "ConversationRenameRequest",
+    "ConversationSummaryOut",
+    "EvidenceRefOut",
+]
 
 
-class ChatResponseBody(BaseModel):
-    response: str
-    citations: list[ChatCitationOut] = []
-    conversation_id: str
-    confidence: float | None = None
-    evidence_refs: list[EvidenceRefOut] = []
-    suggested_followups: list[str] = []
-
-
-class ConversationSummaryOut(BaseModel):
-    id: str
-    job_id: str
-    created_at: str
-    updated_at: str
-    title: str | None = None
-    message_count: int
-
-
-class ConversationHistoryOut(BaseModel):
-    id: str
-    job_id: str
-    messages: list[dict]
-    created_at: str
-    updated_at: str
-
-
-class ConversationRenameRequest(BaseModel):
-    title: str = Field(..., min_length=1, max_length=200)
-
-
-# ── Helpers ───────────────────────────────────────────────────────────────
+# ── Helpers ─────────────────────────────────────────────────────────────
+# Thin wrappers that delegate to backend.app.services.chat_citations.
+# The underscore-prefixed names are kept for backward compatibility
+# with the many call sites inside this file.
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+    return _cite_svc.now_iso()
 
 
 def _dedupe_citations(citations: list[ChatCitationOut], limit: int = 8) -> list[ChatCitationOut]:
-    deduped: list[ChatCitationOut] = []
-    seen: set[tuple[str, str | None, str]] = set()
-
-    for citation in citations:
-        snippet = (citation.snippet or "").strip()
-        if not snippet:
-            continue
-        key = (citation.type, citation.id, snippet)
-        if key in seen:
-            continue
-        seen.add(key)
-        deduped.append(ChatCitationOut(type=citation.type, id=citation.id, snippet=snippet[:200]))
-        if len(deduped) >= limit:
-            break
-
-    return deduped
-
-
-_CITATION_QUERY_STOPWORDS = {
-    "a", "an", "and", "are", "as", "at", "be", "by", "cite", "cited", "could",
-    "contain", "contains", "data", "did", "do", "does", "evidence", "finding",
-    "findings", "for", "from", "get", "give", "have", "host", "hosts", "how",
-    "i", "in", "is", "it", "job", "list", "me", "name", "names", "of", "on",
-    "or", "please", "question", "recite", "related", "relationship", "relationships",
-    "same", "show", "shown", "source", "sources", "support", "supported", "supports",
-    "tell", "that", "the", "this", "to", "use", "used", "using", "versus",
-    "was", "were", "what", "alert", "alerts",
-    "which", "who", "with", "you",
-}
-
-
-def _extract_query_terms(text: str) -> set[str]:
-    terms = {
-        match.group(0).lower()
-        for match in re.finditer(r"[A-Za-z0-9_.:-]{3,}", text or "")
-    }
-    return {term for term in terms if term not in _CITATION_QUERY_STOPWORDS}
-
-
-def _score_citation_relevance(citation: ChatCitationOut, query_terms: set[str]) -> int:
-    snippet = (citation.snippet or "").lower()
-    if not snippet:
-        return 0
-
-    term_score = 0
-    for term in query_terms:
-        if term in snippet:
-            term_score += 4 if re.search(rf"\b{re.escape(term)}\b", snippet) else 2
-
-    if term_score <= 0:
-        return 0
-
-    score = term_score
-    if citation.type == "knowledge_base":
-        score += 6  # KB citations get strong boost — they represent user-uploaded authoritative data
-    if citation.type == "alert":
-        score += 1
-    if citation.type == "finding":
-        score += 1
-    return score
+    return _cite_svc.dedupe_citations(citations, limit=limit)
 
 
 def _select_relevant_citations(
@@ -184,351 +83,34 @@ def _select_relevant_citations(
     limit: int = 8,
     min_score: int = 1,
 ) -> list[ChatCitationOut]:
-    safe_citations = _dedupe_citations(citations, limit=max(limit * 3, limit))
-    query_terms = _extract_query_terms(user_message or "")
-    if not query_terms:
-        return safe_citations[:limit]
-
-    scored: list[tuple[int, int, ChatCitationOut]] = []
-    for index, citation in enumerate(safe_citations):
-        score = _score_citation_relevance(citation, query_terms)
-        if score >= min_score:
-            scored.append((score, -index, citation))
-
-    if not scored:
-        return []
-
-    scored.sort(reverse=True)
-    return [citation for _, _, citation in scored[:limit]]
+    return _cite_svc.select_relevant_citations(citations, user_message, limit=limit, min_score=min_score)
 
 
 def _build_primary_supporting_evidence_block(
     citations: list[ChatCitationOut],
     user_message: str | None = None,
 ) -> str:
-    safe_citations = _dedupe_citations(citations, limit=6)
-    if not safe_citations:
-        return ""
-
-    lines = ["=== PRIMARY SUPPORTING EVIDENCE FOR THIS QUESTION ==="]
-    if user_message:
-        lines.append(f"Question: {user_message.strip()}")
-    lines.extend([
-        "Prefer answering from the exact names, signatures, IP pairs, counts, and relationships shown below.",
-        "If you list alert or finding names, copy them verbatim from these snippets rather than inventing a label.",
-    ])
-    for citation in safe_citations:
-        lines.append(f"- [{citation.type}] {citation.snippet}")
-    lines.append("=== END PRIMARY SUPPORTING EVIDENCE ===")
-    return "\n".join(lines)
-
-
-def _unique_preserve_order(values: list[str]) -> list[str]:
-    seen: set[str] = set()
-    result: list[str] = []
-    for value in values:
-        cleaned = value.strip()
-        if not cleaned or cleaned in seen:
-            continue
-        seen.add(cleaned)
-        result.append(cleaned)
-    return result
-
-
-def _extract_citation_title(citation: ChatCitationOut) -> str:
-    snippet = (citation.snippet or "").strip()
-    if not snippet:
-        return ""
-    title = re.sub(r"^\[[^\]]+\]\s*", "", snippet)
-    for separator in (":", " (", " |"):
-        if separator in title:
-            title = title.split(separator, 1)[0]
-    return title.strip()
-
-
-def _extract_citation_severity(citation: ChatCitationOut) -> str:
-    match = re.match(r"^\[([^\]]+)\]", (citation.snippet or "").strip())
-    return match.group(1).strip().lower() if match else ""
-
-
-def _extract_citation_detail(citation: ChatCitationOut) -> str:
-    snippet = re.sub(r"^\[[^\]]+\]\s*", "", (citation.snippet or "").strip())
-    title = _extract_citation_title(citation)
-    if title and snippet.startswith(title):
-        detail = snippet[len(title):].lstrip(" :|-")
-        return detail.strip()
-    if ":" in snippet:
-        return snippet.split(":", 1)[1].strip()
-    return ""
-
-
-def _parse_host_summary_citation(citation: ChatCitationOut) -> tuple[str, str, int, int] | None:
-    snippet = (citation.snippet or "").strip()
-    match = re.match(
-        r"^Host\s+([0-9.]+)\s+\(role:\s*([^)]+)\)\s*\|\s*connections=([0-9]+)\s+alerts=([0-9]+)$",
-        snippet,
-    )
-    if not match:
-        return None
-    return match.group(1), match.group(2).strip(), int(match.group(3)), int(match.group(4))
-
-
-def _extract_malware_family_label(title: str) -> str:
-    cleaned = title.strip()
-    if not cleaned.lower().startswith("et malware "):
-        return ""
-    cleaned = cleaned[len("ET MALWARE "):].strip()
-    cleaned = re.sub(r"^Possible\s+", "", cleaned, flags=re.IGNORECASE)
-    for separator in (
-        " CnC ",
-        " Connectivity ",
-        " Beacon ",
-        " Activity ",
-        " Payload",
-        " Check ",
-        " Response",
-        " Download ",
-        " Request ",
-        " Traffic ",
-    ):
-        if separator in cleaned:
-            cleaned = cleaned.split(separator, 1)[0]
-    return cleaned.strip(" :-|")
+    return _cite_svc.build_primary_supporting_evidence_block(citations, user_message)
 
 
 def _build_grounded_direct_answer_from_citations(
     citations: list[ChatCitationOut],
     user_message: str | None = None,
 ) -> tuple[str, list[ChatCitationOut]] | None:
-    question = (user_message or "").lower()
-    all_citations = _dedupe_citations(citations, limit=20)
-    relevant_citations = _select_relevant_citations(all_citations, user_message, limit=8) or all_citations[:8]
-    if not all_citations:
-        return None
-
-    alert_and_finding_titles = _unique_preserve_order([
-        _extract_citation_title(citation)
-        for citation in relevant_citations
-        if citation.type in {"alert", "finding"}
-    ])
-
-    if (
-        "host" in question
-        and "active" in question
-    ):
-        ranked_hosts: list[tuple[int, int, str, str, ChatCitationOut]] = []
-        for citation in all_citations:
-            if citation.type != "host_summary":
-                continue
-            parsed = _parse_host_summary_citation(citation)
-            if not parsed:
-                continue
-            ip, role, connections, alerts = parsed
-            ranked_hosts.append((alerts, connections, ip, role, citation))
-        if ranked_hosts:
-            ranked_hosts.sort(key=lambda item: (-item[0], -item[1], item[2]))
-            used_citations = [item[4] for item in ranked_hosts[:3]]
-            lines = ["The most active hosts in the current job host summaries are:"]
-            for alerts, connections, ip, role, _ in ranked_hosts[:3]:
-                lines.append(f"- {ip} (role: {role}, alerts={alerts}, connections={connections})")
-            lines.append("This ranking comes directly from the current-job host summary counts.")
-            return "\n".join(lines), used_citations
-
-    if "malware" in question and "famil" in question:
-        malware_citations = [
-            citation
-            for citation in all_citations
-            if citation.type in {"alert", "finding"}
-            and _extract_citation_title(citation).lower().startswith("et malware ")
-        ]
-        family_labels = _unique_preserve_order([
-            _extract_malware_family_label(_extract_citation_title(citation))
-            for citation in malware_citations
-        ])
-        if family_labels:
-            lines = ["The current job evidence explicitly mentions these malware family labels:"]
-            lines.extend(f"- {label}" for label in family_labels)
-            lines.append("I am not inferring any additional family names beyond the exact malware-related labels in the cited evidence.")
-            return "\n".join(lines), malware_citations[:6]
-
-    if "severity" in question and any(term in question for term in ("summarize", "summary", "important")):
-        finding_citations = [citation for citation in all_citations if citation.type == "finding"]
-        if finding_citations:
-            grouped: dict[str, list[tuple[str, str]]] = {}
-            for citation in finding_citations:
-                severity = _extract_citation_severity(citation)
-                title = _extract_citation_title(citation)
-                detail = _extract_citation_detail(citation)
-                if not severity or not title:
-                    continue
-                grouped.setdefault(severity, []).append((title, detail))
-
-            if grouped:
-                severity_order = ["critical", "high", "medium", "low", "info"]
-                seen_severities = [sev for sev in severity_order if sev in grouped] + [sev for sev in grouped if sev not in severity_order]
-                lines = ["Based on the current cited findings, the most important findings by severity are:"]
-                for severity in seen_severities:
-                    lines.append(f"{severity.capitalize()} severity:")
-                    for title, detail in grouped[severity][:3]:
-                        if detail:
-                            lines.append(f"- {title} — {detail}")
-                        else:
-                            lines.append(f"- {title}")
-                return "\n".join(lines), finding_citations[:6]
-
-    if (
-        ("name" in question or "names" in question or question.startswith("list"))
-        and ("alert" in question or "finding" in question)
-        and alert_and_finding_titles
-    ):
-        lines = ["The matching alert/finding names in the current job evidence are:"]
-        lines.extend(f"- {title}" for title in alert_and_finding_titles)
-        used_citations = [citation for citation in relevant_citations if citation.type in {"alert", "finding"}]
-        return "\n".join(lines), used_citations
-
-    pair_rows = _unique_preserve_order([
-        f"{match.group(1)} → {match.group(2)} ({_extract_citation_title(citation)})"
-        for citation in relevant_citations
-        for match in re.finditer(r"\(([0-9.]+)\s*→\s*([0-9.]+)\)", citation.snippet or "")
-    ])
-    if "external ip" in question and "relationship" in question and pair_rows:
-        lines = ["The current job evidence shows these suspicious external IP relationships:"]
-        lines.extend(f"- {row}" for row in pair_rows)
-        used_citations = [citation for citation in relevant_citations if "→" in (citation.snippet or "")]
-        return "\n".join(lines), used_citations
-
-    if any(term in question for term in ("beacon", "c2", "cnc")):
-        source_counts: dict[str, int] = {}
-        for citation in relevant_citations:
-            for match in re.finditer(r"\(([0-9.]+)\s*→\s*([0-9.]+)\)", citation.snippet or ""):
-                src_ip = match.group(1)
-                source_counts[src_ip] = source_counts.get(src_ip, 0) + 1
-        if source_counts:
-            best_ip = max(source_counts.items(), key=lambda item: (item[1], item[0]))[0]
-            supporting_titles = _unique_preserve_order([
-                _extract_citation_title(citation)
-                for citation in relevant_citations
-                if best_ip in (citation.snippet or "")
-            ])
-            lines = [
-                f"The best-supported host in the current job evidence is {best_ip}.",
-                "The strongest beacon/C2 evidence tied to that host is:",
-            ]
-            lines.extend(f"- {title}" for title in supporting_titles[:4])
-            used_citations = [citation for citation in relevant_citations if best_ip in (citation.snippet or "")]
-            return "\n".join(lines), used_citations
-
-    if "malware" in question and "suspicious" in question:
-        malware_titles = _unique_preserve_order([
-            title for title in alert_and_finding_titles if any(marker in title.lower() for marker in ("malware", "ransomware", "alphacrypt", "teslacrypt"))
-        ])
-        suspicious_titles = _unique_preserve_order([
-            title for title in alert_and_finding_titles if any(marker in title.lower() for marker in ("hunting", "info", "suspicious")) and title not in malware_titles
-        ])
-        if malware_titles:
-            lines = [
-                "Yes — the current job evidence includes malware-labeled activity, not only generic suspicious traffic.",
-                "Malware-related evidence includes:",
-            ]
-            lines.extend(f"- {title}" for title in malware_titles[:4])
-            if suspicious_titles:
-                lines.append("There is also less specific suspicious traffic evidence such as:")
-                lines.extend(f"- {title}" for title in suspicious_titles[:3])
-            used_citations = [citation for citation in relevant_citations if _extract_citation_title(citation) in {*malware_titles, *suspicious_titles}]
-            return "\n".join(lines), used_citations
-
-    return None
-
-
-def _build_sources_block(citations: list[ChatCitationOut]) -> str:
-    lines = ["Sources used:"]
-    safe_citations = _dedupe_citations(citations)
-    if not safe_citations:
-        lines.append("- No source snippets were available from the current job data.")
-        return "\n".join(lines)
-
-    for citation in safe_citations:
-        # Strip embedded newlines from snippets to prevent formatting breakage
-        clean_snippet = " ".join((citation.snippet or "").split())
-        lines.append(f"- [{citation.type}] {clean_snippet}")
-    return "\n".join(lines)
+    return _cite_svc.build_grounded_direct_answer_from_citations(citations, user_message)
 
 
 def _append_sources_and_limits(response_text: str, citations: list[ChatCitationOut]) -> str:
-    return (
-        f"{response_text.rstrip()}\n\n"
-        f"{_build_sources_block(citations)}\n\n"
-        "Limits: Any detail not shown in the sources above is not available in the collected data for this job."
-    )
-
-
-def _unsupported_response_details(
-    response_text: str,
-    combined_context: str,
-) -> tuple[list[str], list[str], list[str]]:
-    supported_ips = set(_IPV4_RE.findall(combined_context))
-    mentioned_ips = set(_IPV4_RE.findall(response_text))
-    unsupported_ips = sorted(ip for ip in mentioned_ips if ip not in supported_ips)
-    lowered_context = combined_context.lower()
-
-    unsupported_credentials: list[str] = []
-    for match in _CREDENTIAL_CLAIM_RE.finditer(response_text):
-        candidate = match.group(1).strip()
-        if candidate and candidate not in combined_context:
-            unsupported_credentials.append(candidate)
-
-    if _UNSUPPORTED_CREDENTIAL_ASSERTION_RE.search(response_text) and not any(
-        marker in lowered_context for marker in ("password", "passwd", "pwd=", "cleartext")
-    ):
-        unsupported_credentials.append("unsupported_credential_assertion")
-
-    unsupported_quoted_details: list[str] = []
-    # Normalize context for flexible matching (dots, underscores, hyphens → spaces)
-    normalized_context = re.sub(r"[._\-]", " ", lowered_context)
-    for match in _QUOTED_DETAIL_RE.finditer(response_text):
-        candidate = match.group(1).strip()
-        if not candidate:
-            continue
-        candidate_lower = candidate.lower()
-        # Check both raw and normalized forms
-        candidate_normalized = re.sub(r"[._\-]", " ", candidate_lower)
-        if candidate_lower not in lowered_context and candidate_normalized not in normalized_context:
-            unsupported_quoted_details.append(candidate)
-
-    return unsupported_ips, unsupported_credentials, unsupported_quoted_details
+    return _cite_svc.append_sources_and_limits(response_text, citations)
 
 
 def _build_unsupported_claims_response(
     citations: list[ChatCitationOut],
     user_message: str | None = None,
 ) -> str:
-    response_text, _ = _build_unsupported_claims_payload(citations, user_message)
-    return response_text
+    return _cite_svc.build_unsupported_claims_response(citations, user_message)
 
 
-def _build_unsupported_claims_payload(
-    citations: list[ChatCitationOut],
-    user_message: str | None = None,
-) -> tuple[str, list[ChatCitationOut]]:
-    lines = [
-        "I can only answer from the collected data for this job.",
-        "I am not asserting some specific details because they were not supported by the evidence provided to the model.",
-        "",
-        "What the current job data does support:",
-    ]
-
-    safe_citations = _select_relevant_citations(citations, user_message, limit=6)
-    if safe_citations:
-        for citation in safe_citations:
-            lines.append(f"- [{citation.type}] {citation.snippet}")
-    else:
-        lines.append("- No supporting source snippets matching this question were available from the current job data.")
-
-    lines.extend([
-        "",
-        "Limits: Any IP address, credential value, payload content, or other detail not shown above is not available in the collected data for this job.",
-    ])
-    return "\n".join(lines), safe_citations
 
 
 def _finalize_grounded_response_payload(
@@ -537,37 +119,7 @@ def _finalize_grounded_response_payload(
     combined_context: str,
     user_message: str | None = None,
 ) -> tuple[str, list[ChatCitationOut]]:
-    safe_citations = _dedupe_citations(citations, limit=8)
-    synthesized = _build_grounded_direct_answer_from_citations(citations, user_message)
-    if synthesized:
-        synthesized_response, synthesized_citations = synthesized
-        final_citations = _dedupe_citations(synthesized_citations or citations, limit=8)
-        return _append_sources_and_limits(synthesized_response, final_citations), final_citations
-    if not response_text.strip():
-        response_text = "That specific information is not available in the analysis data I have access to."
-    if _REFUSAL_RE.search(response_text):
-        logger.warning("Blocked generic refusal in V2 chat response")
-        return _build_unsupported_claims_payload(safe_citations, user_message)
-    unsupported_ips, unsupported_credentials, unsupported_quoted_details = _unsupported_response_details(
-        response_text,
-        combined_context,
-    )
-    # Hard block on unsupported IPs or credentials (high-risk hallucinations)
-    if unsupported_ips or unsupported_credentials:
-        logger.warning(
-            "Blocked unsupported V2 chat claims (ips=%s, credentials=%s)",
-            unsupported_ips,
-            unsupported_credentials,
-        )
-        return _build_unsupported_claims_payload(safe_citations, user_message)
-    # Quoted detail mismatches are lower-risk — log but allow through
-    # (KB content like names/departments may not match DB context verbatim)
-    if unsupported_quoted_details:
-        logger.info(
-            "Allowing response with minor quoted detail mismatches: %s",
-            unsupported_quoted_details,
-        )
-    return _append_sources_and_limits(response_text, safe_citations), safe_citations
+    return _cite_svc.finalize_grounded_response_payload(response_text, citations, combined_context, user_message)
 
 
 def _finalize_grounded_response(
@@ -576,117 +128,7 @@ def _finalize_grounded_response(
     combined_context: str,
     user_message: str | None = None,
 ) -> str:
-    finalized_text, _ = _finalize_grounded_response_payload(
-        response_text,
-        citations,
-        combined_context,
-        user_message,
-    )
-    return finalized_text
-
-
-# ── Post-processing: evidence refs & dynamic follow-ups ──────────────
-
-_IP_IN_RESPONSE_RE = re.compile(r"\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\b")
-_FINDING_IN_RESPONSE_RE = re.compile(r"\bF-[0-9a-fA-F-]{1,36}\b", re.IGNORECASE)
-_MITRE_IN_RESPONSE_RE = re.compile(r"\bT\d{4}(?:\.\d{3})?\b")
-
-
-def _extract_evidence_refs(
-    response_text: str,
-    citations: list[ChatCitationOut],
-) -> list[EvidenceRefOut]:
-    """Extract structured evidence references from the LLM response and citations."""
-    refs: list[EvidenceRefOut] = []
-    seen: set[str] = set()
-
-    # IPs mentioned in response
-    for match in _IP_IN_RESPONSE_RE.finditer(response_text):
-        ip = match.group(0)
-        if ip not in seen and not ip.startswith("0.") and not ip.startswith("255."):
-            seen.add(ip)
-            refs.append(EvidenceRefOut(type="host", id=ip, label=f"Host {ip}"))
-
-    # Finding IDs mentioned in response
-    for match in _FINDING_IN_RESPONSE_RE.finditer(response_text):
-        fid = match.group(0)
-        key = fid.upper()
-        if key not in seen:
-            seen.add(key)
-            refs.append(EvidenceRefOut(type="finding", id=fid, label=f"Finding {fid}"))
-
-    # Citation-sourced refs
-    for c in citations[:8]:
-        if c.type == "finding" and c.id and c.id.upper() not in seen:
-            seen.add(c.id.upper())
-            title = (c.snippet or "").split(":", 1)[-1].strip()[:60] if ":" in (c.snippet or "") else c.id
-            refs.append(EvidenceRefOut(type="finding", id=c.id, label=f"Finding: {title}"))
-
-    return refs[:10]  # cap at 10
-
-
-def _generate_dynamic_followups(
-    response_text: str,
-    user_message: str,
-    citations: list[ChatCitationOut],
-) -> list[str]:
-    """Generate 2-4 context-aware follow-up questions based on entities in the response."""
-    followups: list[str] = []
-    response_lower = response_text.lower()
-    question_lower = user_message.lower()
-
-    # Collect IPs, findings, MITRE IDs from the response
-    ips = list(dict.fromkeys(_IP_IN_RESPONSE_RE.findall(response_text)))[:5]
-    finding_ids = list(dict.fromkeys(_FINDING_IN_RESPONSE_RE.findall(response_text)))[:5]
-    mitre_ids = list(dict.fromkeys(_MITRE_IN_RESPONSE_RE.findall(response_text)))[:3]
-
-    # Strategies based on what's in the response
-    if ips and "lateral" not in question_lower:
-        # Offer to check lateral movement for mentioned IPs
-        followups.append(
-            f"Check for signs of lateral movement involving {ips[0]}"
-        )
-
-    if ips and len(ips) >= 2 and "relationship" not in question_lower:
-        followups.append(
-            f"What is the relationship between {ips[0]} and {ips[1]}?"
-        )
-
-    if any(kw in response_lower for kw in ("c2", "c&c", "command and control", "beacon")):
-        if "timeline" not in question_lower:
-            followups.append("Show the timeline of C2 communication activity")
-
-    if any(kw in response_lower for kw in ("dns", "domain", "resolution")):
-        if "dns" not in question_lower:
-            followups.append("What suspicious DNS activity was observed?")
-
-    if any(kw in response_lower for kw in ("exfiltration", "data transfer", "upload")):
-        if "exfiltration" not in question_lower:
-            followups.append("Quantify the potential data exfiltration — how much data was sent?")
-
-    if finding_ids and "finding" not in question_lower:
-        followups.append(f"Explain finding {finding_ids[0]} in detail")
-
-    if mitre_ids and "mitre" not in question_lower and "technique" not in question_lower:
-        followups.append(f"What evidence supports MITRE technique {mitre_ids[0]}?")
-
-    if ips and "host" not in question_lower and "role" not in question_lower:
-        ip = ips[1] if len(ips) > 1 else ips[0]
-        followups.append(f"What is the role and behavior of host {ip}?")
-
-    if any(kw in response_lower for kw in ("critical", "high severity", "high-severity")):
-        if "remediation" not in question_lower and "recommend" not in question_lower:
-            followups.append("What remediation actions do you recommend?")
-
-    # Dedupe and cap
-    unique: list[str] = []
-    seen: set[str] = set()
-    for q in followups:
-        key = q.lower().strip()
-        if key not in seen:
-            seen.add(key)
-            unique.append(q)
-    return unique[:4]
+    return _cite_svc.finalize_grounded_response(response_text, citations, combined_context, user_message)
 
 
 def _post_process_response(
@@ -694,10 +136,7 @@ def _post_process_response(
     user_message: str,
     citations: list[ChatCitationOut],
 ) -> tuple[list[EvidenceRefOut], list[str]]:
-    """Post-process the LLM response to extract evidence refs and generate follow-ups."""
-    evidence_refs = _extract_evidence_refs(response_text, citations)
-    followups = _generate_dynamic_followups(response_text, user_message, citations)
-    return evidence_refs, followups
+    return _cite_svc.post_process_response(response_text, user_message, citations)
 
 
 def _chunk_text(text: str, chunk_size: int = 350) -> list[str]:
