@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
-from app.aggregation import aggregate_hosts, diff_change_summaries
-from app.models import AlertRecord, FlowRecord
+from backend.app.aggregation import aggregate_hosts, diff_change_summaries
+from backend.app.domain_models import AlertRecord, FlowRecord
 
 
 def _dt(ts: str) -> datetime:

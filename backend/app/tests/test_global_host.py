@@ -4,7 +4,7 @@ from backend.app.normalize.correlate import correlate_job
 from backend.app.normalize.post_process import update_global_host_stats
 from backend.app.models.global_host import GlobalHost
 from backend.app.models.job import Job
-from backend.app.database_v2 import init_v2_db, get_session_factory
+from backend.app.database_v2 import init_v2_db, get_session_factory, reset_engine
 from backend.app.config_v2 import get_settings
 
 TOKEN = "test-token-v2"
@@ -21,6 +21,7 @@ def test_cross_job_host_forensics(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "aipam_db_path", db_file)
     monkeypatch.setattr(settings, "aipam_job_root", job_root)
     
+    reset_engine()
     init_v2_db()
     session_factory = get_session_factory()
     db = session_factory()

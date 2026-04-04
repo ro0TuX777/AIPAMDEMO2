@@ -5,8 +5,8 @@ import pytest
 
 from unittest.mock import AsyncMock, MagicMock
 
-from app.core.interfaces import AnalysisContext, Finding, ForensicAnalyzer
-from app.core.engine import (
+from backend.app.core.interfaces import AnalysisContext, Finding, ForensicAnalyzer
+from backend.app.core.engine import (
     ForensicEngine,
     ChainOfThoughtAnalyzer,
     ValidationStep,

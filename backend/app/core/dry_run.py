@@ -52,7 +52,7 @@ def main() -> None:
     # Step 2: Parse into FlowRecord (Pydantic model)
     # -----------------------------------------------------------------------
 
-    from app.parsers import parse_zeek_conn
+    from backend.app.legacy_parsers import parse_zeek_conn
 
     flows = parse_zeek_conn([raw_zeek_record])
     flow = flows[0]

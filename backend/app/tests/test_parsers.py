@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
-from app.parsers import parse_zeek_conn, parse_suricata_eve
-from app.models import FlowRecord, AlertRecord
+from backend.app.parsers import parse_zeek_conn, parse_suricata_eve
+from backend.app.domain_models import FlowRecord, AlertRecord
 
 
 def _dt(ts: str) -> datetime:

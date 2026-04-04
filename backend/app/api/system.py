@@ -1,14 +1,20 @@
 """
 System endpoints.
 
-GET /health        – health check
-GET /system/config – static configuration
+GET  /health                    – health check
+GET  /system/config             – static configuration
+POST /integrations/test         – test connectivity to SO / Arkime
+GET  /integrations/settings     – read saved SO / Arkime connection settings
+PUT  /integrations/settings     – save SO / Arkime connection settings
 """
 
 import os
+import logging
 import shutil
+from typing import Optional
 
 from fastapi import APIRouter, Depends, Response
+from pydantic import BaseModel
 
 from backend.app.api.deps import get_request_id, verify_token
 from backend.app.api._state import (
@@ -358,3 +364,153 @@ async def get_ollama_status(
         log.warning("Failed to query Ollama status: %s", e)
 
     return result
+
+
+
+# ═══════════════════════════════════════════════════════════════════════════
+# Integration Settings (Security Onion / Arkime) — dynamic config via DB
+# ═══════════════════════════════════════════════════════════════════════════
+
+_int_log = logging.getLogger(__name__)
+
+# Keys persisted in SettingsDB.values for each integration
+_SO_KEYS = [
+    "security_onion_api_url",
+    "security_onion_username",
+    "security_onion_password",
+]
+_ARKIME_KEYS = [
+    "arkime_api_url",
+    "arkime_api_username",
+    "arkime_api_password",
+]
+
+
+class IntegrationTestRequest(BaseModel):
+    integration_type: str  # "security_onion" or "arkime"
+    url: str
+    username: Optional[str] = None
+    password: Optional[str] = None
+
+
+class IntegrationTestResponse(BaseModel):
+    ok: bool
+    message: str
+    latency_ms: Optional[float] = None
+
+
+class IntegrationSettingsPayload(BaseModel):
+    security_onion_api_url: Optional[str] = None
+    security_onion_username: Optional[str] = None
+    security_onion_password: Optional[str] = None
+    arkime_api_url: Optional[str] = None
+    arkime_api_username: Optional[str] = None
+    arkime_api_password: Optional[str] = None
+
+
+def _get_settings_db_values() -> dict:
+    """Read the singleton SettingsDB row (id=1) and return its values dict."""
+    try:
+        from backend.app.database import get_session
+        from backend.app.db_models import SettingsDB
+        with get_session() as session:
+            row = session.get(SettingsDB, 1)
+            return dict(row.values) if row and row.values else {}
+    except Exception:
+        return {}
+
+
+def _save_settings_db_values(updates: dict) -> dict:
+    """Merge *updates* into the SettingsDB singleton and return the full dict."""
+    from backend.app.database import get_session
+    from backend.app.db_models import SettingsDB
+    with get_session() as session:
+        row = session.get(SettingsDB, 1)
+        if row is None:
+            row = SettingsDB(id=1, values={})
+            session.add(row)
+        current = dict(row.values) if row.values else {}
+        current.update(updates)
+        row.values = current
+        session.commit()
+        session.refresh(row)
+        return dict(row.values)
+
+
+@router.post("/integrations/test", response_model=IntegrationTestResponse)
+async def test_integration(body: IntegrationTestRequest):
+    """Test connectivity to Security Onion or Arkime.
+
+    For Security Onion: tries GET <url>/api/info (unauthenticated endpoint).
+    For Arkime: tries GET <url>/api/version (with optional digest auth).
+    """
+    import time
+    import httpx
+
+    url = body.url.rstrip("/")
+    t0 = time.monotonic()
+
+    try:
+        if body.integration_type == "security_onion":
+            # SO exposes /api/info without authentication
+            async with httpx.AsyncClient(timeout=10, verify=False) as client:
+                resp = await client.get(f"{url}/api/info")
+                latency = round((time.monotonic() - t0) * 1000, 1)
+                if resp.status_code < 400:
+                    return IntegrationTestResponse(ok=True, message=f"Connected to Security Onion ({resp.status_code})", latency_ms=latency)
+                else:
+                    return IntegrationTestResponse(ok=False, message=f"Security Onion returned HTTP {resp.status_code}", latency_ms=latency)
+
+        elif body.integration_type == "arkime":
+            auth = None
+            if body.username and body.password:
+                auth = httpx.DigestAuth(body.username, body.password)
+            async with httpx.AsyncClient(timeout=10, verify=False) as client:
+                resp = await client.get(f"{url}/api/version", auth=auth)
+                latency = round((time.monotonic() - t0) * 1000, 1)
+                if resp.status_code < 400:
+                    return IntegrationTestResponse(ok=True, message=f"Connected to Arkime ({resp.status_code})", latency_ms=latency)
+                else:
+                    return IntegrationTestResponse(ok=False, message=f"Arkime returned HTTP {resp.status_code}", latency_ms=latency)
+
+        else:
+            return IntegrationTestResponse(ok=False, message=f"Unknown integration type: {body.integration_type}")
+
+    except httpx.ConnectError:
+        latency = round((time.monotonic() - t0) * 1000, 1)
+        return IntegrationTestResponse(ok=False, message="Connection refused — is the service running?", latency_ms=latency)
+    except httpx.ConnectTimeout:
+        return IntegrationTestResponse(ok=False, message="Connection timed out — check the IP/URL and firewall rules")
+    except Exception as exc:
+        latency = round((time.monotonic() - t0) * 1000, 1)
+        _int_log.warning("Integration test failed: %s", exc)
+        return IntegrationTestResponse(ok=False, message=str(exc), latency_ms=latency)
+
+
+@router.get("/integrations/settings", response_model=IntegrationSettingsPayload)
+async def get_integration_settings():
+    """Return saved Security Onion + Arkime connection settings."""
+    vals = _get_settings_db_values()
+    return IntegrationSettingsPayload(
+        security_onion_api_url=vals.get("security_onion_api_url"),
+        security_onion_username=vals.get("security_onion_username"),
+        security_onion_password=vals.get("security_onion_password"),
+        arkime_api_url=vals.get("arkime_api_url"),
+        arkime_api_username=vals.get("arkime_api_username"),
+        arkime_api_password=vals.get("arkime_api_password"),
+    )
+
+
+@router.put("/integrations/settings", response_model=IntegrationSettingsPayload)
+async def save_integration_settings(body: IntegrationSettingsPayload):
+    """Persist Security Onion + Arkime connection settings to the database."""
+    updates = {k: v for k, v in body.model_dump().items() if v is not None}
+    vals = _save_settings_db_values(updates)
+    return IntegrationSettingsPayload(
+        security_onion_api_url=vals.get("security_onion_api_url"),
+        security_onion_username=vals.get("security_onion_username"),
+        security_onion_password=vals.get("security_onion_password"),
+        arkime_api_url=vals.get("arkime_api_url"),
+        arkime_api_username=vals.get("arkime_api_username"),
+        arkime_api_password=vals.get("arkime_api_password"),
+    )

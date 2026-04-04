@@ -20,6 +20,7 @@ from backend.app.models.alert import Alert
 from backend.app.models.finding import Finding
 from backend.app.models.ioc import Ioc
 from backend.app.models.job import Job
+from backend.app.models.normalized_event import NormalizedEvent
 from backend.app.models.theory import Theory
 from backend.app.schemas.theory import (
     EvidenceRef,
@@ -47,16 +48,34 @@ def _resolve_evidence_ids(db: Session, job_id: str, ids: list[str]) -> list[Evid
     if not ids:
         return []
 
-    # Batch-lookup all three entity types for this job
-    alerts = {a.alert_id: a for a in db.execute(
-        select(Alert).where(Alert.job_id == job_id, Alert.alert_id.in_(ids))
-    ).scalars().all()}
-    findings = {f.finding_id: f for f in db.execute(
-        select(Finding).where(Finding.job_id == job_id, Finding.finding_id.in_(ids))
-    ).scalars().all()}
-    iocs = {i.ioc_id: i for i in db.execute(
-        select(Ioc).where(Ioc.job_id == job_id, Ioc.ioc_id.in_(ids))
-    ).scalars().all()}
+    # Partition IDs by prefix for efficient lookup
+    ne_ids = [eid for eid in ids if eid.startswith("NE-")]
+    other_ids = [eid for eid in ids if not eid.startswith("NE-")]
+
+    # Batch-lookup alerts, findings, IOCs (non-NE IDs)
+    alerts: dict = {}
+    findings: dict = {}
+    iocs: dict = {}
+    if other_ids:
+        alerts = {a.alert_id: a for a in db.execute(
+            select(Alert).where(Alert.job_id == job_id, Alert.alert_id.in_(other_ids))
+        ).scalars().all()}
+        findings = {f.finding_id: f for f in db.execute(
+            select(Finding).where(Finding.job_id == job_id, Finding.finding_id.in_(other_ids))
+        ).scalars().all()}
+        iocs = {i.ioc_id: i for i in db.execute(
+            select(Ioc).where(Ioc.job_id == job_id, Ioc.ioc_id.in_(other_ids))
+        ).scalars().all()}
+
+    # Batch-lookup NormalizedEvents
+    norm_events: dict = {}
+    if ne_ids:
+        norm_events = {e.event_id: e for e in db.execute(
+            select(NormalizedEvent).where(
+                NormalizedEvent.job_id == job_id,
+                NormalizedEvent.event_id.in_(ne_ids),
+            )
+        ).scalars().all()}
 
     refs: list[EvidenceRef] = []
     for eid in ids:
@@ -67,9 +86,74 @@ def _resolve_evidence_ids(db: Session, job_id: str, ids: list[str]) -> list[Evid
         elif eid in iocs:
             ioc = iocs[eid]
             refs.append(EvidenceRef(id=eid, type="ioc", label=f"{ioc.ioc_type}: {ioc.value}"))
+        elif eid in norm_events:
+            ne = norm_events[eid]
+            refs.append(EvidenceRef(id=eid, type="telemetry", label=_ne_label(ne)))
         else:
             refs.append(EvidenceRef(id=eid, type="unknown", label=eid))
     return refs
+
+
+def _ne_label(ne: NormalizedEvent) -> str:
+    """Build a concise human-readable label for a NormalizedEvent."""
+    parts: list[str] = []
+
+    # Event type (e.g. "process", "auth", "connection")
+    etype = (ne.event_type or "event").replace("_", " ").title()
+    parts.append(etype)
+
+    # Try to extract a meaningful detail from data_json
+    detail = ""
+    if ne.data_json:
+        try:
+            data = json.loads(ne.data_json)
+            # Pick the most informative field available
+            detail = (
+                data.get("CommandLine")
+                or data.get("command_line")
+                or data.get("Image")
+                or data.get("image")
+                or data.get("TargetFilename")
+                or data.get("target_filename")
+                or data.get("sub_type")
+                or data.get("action")
+                or data.get("QueryName")
+                or data.get("query_name")
+                or ""
+            )
+        except Exception:
+            pass
+
+    if detail:
+        # Truncate long command lines
+        if len(detail) > 80:
+            detail = detail[:77] + "..."
+        parts.append(detail)
+    else:
+        # Fall back to network tuple or hostname/username context
+        context_parts = []
+        if ne.src_ip:
+            s = ne.src_ip
+            if ne.src_port:
+                s += f":{ne.src_port}"
+            context_parts.append(s)
+        if ne.dest_ip:
+            d = ne.dest_ip
+            if ne.dest_port:
+                d += f":{ne.dest_port}"
+            context_parts.append(f"→ {d}")
+        if context_parts:
+            parts.append(" ".join(context_parts))
+        elif ne.hostname:
+            parts.append(ne.hostname)
+        elif ne.username:
+            parts.append(ne.username)
+
+    # Append source system tag
+    if ne.source_system:
+        parts.append(f"[{ne.source_system}]")
+
+    return " | ".join(parts)
 
 
 def _theory_to_item(t: Theory, db: Session) -> TheoryItem:

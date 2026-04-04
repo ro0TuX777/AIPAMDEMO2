@@ -6,7 +6,7 @@ from unittest.mock import patch, MagicMock
 
 import pytest
 
-from app.core_engines.selection.smart_model_selector import (
+from backend.app.core_engines.selection.smart_model_selector import (
     ModelSelection,
     SmartModelSelector,
 )
@@ -21,7 +21,7 @@ from app.core_engines.selection.smart_model_selector import (
 def selector() -> SmartModelSelector:
     """SmartModelSelector using default models (no config file needed)."""
     with patch(
-        "app.core_engines.config.model_config_manager.get_model_config_manager",
+        "backend.app.core_engines.config.model_config_manager.get_model_config_manager",
         side_effect=ImportError("no config in test"),
     ):
         sel = SmartModelSelector()
@@ -134,7 +134,7 @@ class TestReloadConfig:
         }
 
         with patch(
-            "app.core_engines.config.model_config_manager.get_model_config_manager",
+            "backend.app.core_engines.config.model_config_manager.get_model_config_manager",
             return_value=mock_manager,
         ):
             sel = SmartModelSelector()
@@ -145,7 +145,7 @@ class TestReloadConfig:
         # Simulate config change
         mock_manager.load_config.return_value["forensic_model"] = "new-forensic-model:70b"
         with patch(
-            "app.core_engines.config.model_config_manager.get_model_config_manager",
+            "backend.app.core_engines.config.model_config_manager.get_model_config_manager",
             return_value=mock_manager,
         ):
             sel.reload_config()

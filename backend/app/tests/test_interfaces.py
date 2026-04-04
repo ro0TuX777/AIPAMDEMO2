@@ -7,7 +7,7 @@ from typing import List
 
 import pytest
 
-from app.core.interfaces import AnalysisContext, Finding, ForensicAnalyzer
+from backend.app.core.interfaces import AnalysisContext, Finding, ForensicAnalyzer
 
 
 class TestAnalysisContext:

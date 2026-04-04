@@ -2,17 +2,22 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from app.settings_runtime import EffectiveSettings, get_effective_settings
-from app.db_models import SettingsDB
-from app.database import get_session, engine
-from sqlmodel import SQLModel
+import pytest
+from sqlmodel import Session, SQLModel, create_engine
+
+from backend.app.settings_runtime import EffectiveSettings, get_effective_settings
+from backend.app.db_models import SettingsDB
+from backend.app import database as database_mod
+from backend.app.database import get_session
 
 
-def setup_module(_) -> None:
-    # Ensure tables exist for this test module.
-    from app import db_models  # noqa: F401
-
-    SQLModel.metadata.create_all(engine)
+@pytest.fixture(autouse=True)
+def _in_memory_db(tmp_path, monkeypatch):
+    """Use an in-memory DB so tests don't need /data/aipam.db."""
+    test_engine = create_engine("sqlite:///:memory:")
+    from backend.app import db_models  # noqa: F401
+    SQLModel.metadata.create_all(test_engine)
+    monkeypatch.setattr(database_mod, "engine", test_engine)
 
 
 def test_effective_settings_fall_back_to_env(tmp_path, monkeypatch) -> None:

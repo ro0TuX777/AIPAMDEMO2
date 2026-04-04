@@ -7,12 +7,19 @@ import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPan
 
 const TYPE_LABELS: Record<string, string> = {
   connection: "CONN", alert: "ALR", dns: "DNS", tls: "TLS",
-  finding: "FND", ioc: "IOC", file: "FILE", unknown: "•",
+  finding: "FND", ioc: "IOC", file: "FILE",
+  c2_callback: "C2", c2_task: "C2T", process: "PROC", unknown: "•",
 };
 
 const SEV_COLORS: Record<string, string> = {
   critical: "border-red-500", high: "border-orange-400",
   medium: "border-amber-400", low: "border-blue-400", info: "border-slate-600",
+};
+
+const STATUS_BADGES: Record<string, { label: string; cls: string }> = {
+  confirmed:     { label: "CONFIRMED",     cls: "text-green-300 bg-green-900/40 border-green-700" },
+  corroborated:  { label: "CORROBORATED",  cls: "text-emerald-300 bg-emerald-900/40 border-emerald-700" },
+  observed:      { label: "OBSERVED",      cls: "text-slate-400 bg-slate-800 border-slate-600" },
 };
 
 export const TimelinePage: React.FC = () => {
@@ -61,7 +68,22 @@ export const TimelinePage: React.FC = () => {
                   </span>
                   <span className="text-xs text-slate-600 uppercase">{evt.type}</span>
                 </div>
-                <p className="text-sm text-slate-300 truncate">{evt.title}</p>
+                <div className="flex items-center gap-2">
+                  <p className="text-sm text-slate-300 truncate">{evt.title}</p>
+                  {evt.evidence_status && evt.evidence_status !== "observed" && (() => {
+                    const badge = STATUS_BADGES[evt.evidence_status] ?? STATUS_BADGES.observed;
+                    return (
+                      <span className={`inline-flex px-1.5 py-0.5 text-[9px] font-semibold border rounded ${badge.cls}`}>
+                        {badge.label}
+                      </span>
+                    );
+                  })()}
+                  {evt.sensor && (
+                    <span className="px-1 py-0.5 text-[9px] font-mono text-slate-500 bg-slate-800/60 rounded">
+                      {evt.sensor}
+                    </span>
+                  )}
+                </div>
                 {evt.description && <p className="text-xs text-slate-500 truncate mt-0.5">{evt.description}</p>}
                 {evt.entities && (evt.entities.src_ip || evt.entities.dest_ip) && (
                   <p className="text-xs text-slate-600 font-mono mt-0.5">

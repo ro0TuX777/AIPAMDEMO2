@@ -217,3 +217,202 @@ def _finding_to_text(finding: Dict[str, Any]) -> str:
         parts.append(f"Hosts: {', '.join(str(h) for h in hosts)}")
 
     return "\n".join(parts)
+
+
+# ── Behavioral Fingerprint Storage ────────────────────────────────────
+
+BEHAVIORAL_COLLECTION = "aipam_behavioral_fingerprints"
+_behavioral_collection = None
+
+
+def get_behavioral_collection(
+    db_path: Optional[str] = None,
+    collection_name: Optional[str] = None,
+):
+    """Lazy-init the behavioral fingerprint ChromaDB collection."""
+    global _behavioral_collection
+
+    if _behavioral_collection is not None:
+        return _behavioral_collection
+
+    try:
+        import chromadb
+    except ImportError:
+        logger.warning("chromadb not installed — behavioral memory disabled")
+        return None
+
+    path = db_path or DEFAULT_CHROMADB_PATH
+    name = collection_name or BEHAVIORAL_COLLECTION
+
+    try:
+        Path(path).mkdir(parents=True, exist_ok=True)
+        # Reuse or create client
+        global _chroma_client
+        if _chroma_client is None:
+            _chroma_client = chromadb.PersistentClient(path=path)
+        _behavioral_collection = _chroma_client.get_or_create_collection(
+            name=name,
+            metadata={"description": "AIPAM behavioral fingerprints from confirmed investigations"},
+        )
+        logger.info("Behavioral memory collection initialized: %s (%d docs)", name,
+                     _behavioral_collection.count())
+        return _behavioral_collection
+    except Exception as exc:
+        logger.error("Failed to initialize behavioral memory: %s", exc)
+        return None
+
+
+def store_behavioral_fingerprints(
+    job_id: str,
+    project_id: str,
+    fingerprints: List[Dict[str, Any]],
+    *,
+    confirmed_only: bool = True,
+) -> int:
+    """Index behavioral fingerprints into the global memory.
+
+    Args:
+        job_id: Source job ID
+        project_id: Source project ID
+        fingerprints: List of BehavioralFingerprint.to_dict() results
+        confirmed_only: If True (default), only index fingerprints with
+                        confidence >= 0.5. This is the contamination guard.
+
+    Returns:
+        Number of fingerprints indexed
+    """
+    collection = get_behavioral_collection()
+    if collection is None:
+        return 0
+
+    # Contamination guard: filter low-confidence fingerprints
+    if confirmed_only:
+        valid = [fp for fp in fingerprints if fp.get("confidence", 0) >= 0.5]
+        skipped = len(fingerprints) - len(valid)
+        if skipped:
+            logger.info(
+                "Behavioral memory: %d fingerprints skipped (below confidence threshold)",
+                skipped,
+            )
+    else:
+        valid = list(fingerprints)
+
+    indexed = 0
+    for i, fp in enumerate(valid):
+        doc_id = f"{job_id}-fp-{i}"
+        doc_text = fp.get("text", "")
+        if not doc_text:
+            continue
+
+        metadata = {
+            "job_id": job_id,
+            "project_id": project_id,
+            "fingerprint_type": fp.get("fingerprint_type", ""),
+            "label": fp.get("label", ""),
+            "confidence": float(fp.get("confidence", 0)),
+            "exercise_id": fp.get("source_exercise_id", ""),
+        }
+
+        try:
+            collection.upsert(
+                ids=[doc_id],
+                documents=[doc_text],
+                metadatas=[metadata],
+            )
+            indexed += 1
+        except Exception as exc:
+            logger.warning("Failed to index fingerprint %s: %s", doc_id, exc)
+
+    logger.info(
+        "Behavioral memory: indexed %d/%d fingerprints for job %s",
+        indexed, len(valid), job_id,
+    )
+    return indexed
+
+
+def query_behavioral_memory(
+    query: str,
+    top_k: int = 5,
+    fingerprint_type: Optional[str] = None,
+    exercise_id: Optional[str] = None,
+) -> List[Dict[str, Any]]:
+    """Semantic search across behavioral fingerprints.
+
+    Args:
+        query: Natural language query or behavioral description
+        top_k: Max results
+        fingerprint_type: Optional filter by type (beacon_profile, auth_abuse, etc.)
+        exercise_id: Optional filter by exercise
+
+    Returns:
+        List of dicts with keys: document, metadata, distance, relevance
+    """
+    collection = get_behavioral_collection()
+    if collection is None:
+        return []
+
+    if collection.count() == 0:
+        return []
+
+    where_filter: Optional[Dict[str, Any]] = None
+    if fingerprint_type and exercise_id:
+        where_filter = {
+            "$and": [
+                {"fingerprint_type": fingerprint_type},
+                {"exercise_id": exercise_id},
+            ]
+        }
+    elif fingerprint_type:
+        where_filter = {"fingerprint_type": fingerprint_type}
+    elif exercise_id:
+        where_filter = {"exercise_id": exercise_id}
+
+    try:
+        kwargs: Dict[str, Any] = {
+            "query_texts": [query],
+            "n_results": min(top_k, collection.count()),
+        }
+        if where_filter:
+            kwargs["where"] = where_filter
+
+        results = collection.query(**kwargs)
+
+        hits: List[Dict[str, Any]] = []
+        if results and results.get("documents"):
+            docs = results["documents"][0]
+            metas = results.get("metadatas", [[]])[0]
+            distances = results.get("distances", [[]])[0]
+
+            for j, doc in enumerate(docs):
+                dist = distances[j] if j < len(distances) else 1.0
+                hits.append({
+                    "document": doc,
+                    "metadata": metas[j] if j < len(metas) else {},
+                    "distance": dist,
+                    "relevance": max(0, 1.0 - dist),
+                })
+
+        return hits
+    except Exception as exc:
+        logger.error("Behavioral memory query failed: %s", exc)
+        return []
+
+
+def get_behavioral_memory_stats() -> Dict[str, Any]:
+    """Return stats about the behavioral fingerprint store."""
+    collection = get_behavioral_collection()
+    if collection is None:
+        return {"available": False, "count": 0}
+
+    return {
+        "available": True,
+        "count": collection.count(),
+        "collection_name": BEHAVIORAL_COLLECTION,
+        "path": DEFAULT_CHROMADB_PATH,
+    }
+
+
+def reset_behavioral_collection() -> None:
+    """Reset the behavioral collection (for testing)."""
+    global _behavioral_collection
+    _behavioral_collection = None

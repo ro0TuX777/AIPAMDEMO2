@@ -1,0 +1,23 @@
+[
+  {
+    "timestamp": "2026-03-15T14:32:00.000Z",
+    "task_id": "task-whoami-001",
+    "agent_id": "beacon-001",
+    "operator": "red-team-1",
+    "command": "shell whoami",
+    "framework": "cobalt_strike",
+    "status": "completed",
+    "completed_at": "2026-03-15T14:33:30.000Z"
+  },
+  {
+    "timestamp": "2026-03-15T14:34:00.000Z",
+    "task_id": "task-pslist-002",
+    "agent_id": "beacon-001",
+    "operator": "red-team-1",
+    "command": "ps",
+    "framework": "cobalt_strike",
+    "status": "completed",
+    "completed_at": "2026-03-15T14:34:30.000Z"
+  }
+]
+

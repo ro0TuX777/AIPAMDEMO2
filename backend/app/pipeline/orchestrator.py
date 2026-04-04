@@ -301,112 +301,136 @@ def run_pipeline(
     if job is None:
         raise ValueError(f"Job {job_id} not found")
 
-    logger.info("Starting pipeline for job %s (profile=%s)", job_id, job.execution_profile)
+    logger.info("Starting pipeline for job %s (profile=%s, source_type=%s)",
+                job_id, job.execution_profile, job.source_type)
     _update_job_status(db, job, "running")
     job.started_at = _now_iso()
     db.commit()
 
     profile: Profile = job.execution_profile  # type: ignore[assignment]
 
+    # Determine what this job contains
+    _source_type = job.source_type or "pcap"
+    has_pcaps = _source_type in ("pcap", "pcap+logs")
+    has_telemetry_bundle = _source_type in ("pcap+logs", "log_bundle", "c2_export", "netflow", "exercise_bundle")
+    # Also check for manifest on disk (fallback for hybrid jobs)
+    _manifest_check_deferred = has_telemetry_bundle
+
     # --- Step 1: Setup job directory ---
     try:
         job_dir = create_job_directory(job_root, job_id)
 
-        from sqlalchemy import select as sa_select
-        from backend.app.pipeline.job_dir import compute_pcap_sha256
+        if has_pcaps:
+            from sqlalchemy import select as sa_select
+            from backend.app.pipeline.job_dir import compute_pcap_sha256
 
-        # Look up JobPcap records for multi-PCAP support
-        pcap_query = sa_select(JobPcap).where(JobPcap.job_id == job_id)
-        if pcap_label:
-            pcap_query = pcap_query.where(JobPcap.label == pcap_label)
-        pcap_query = pcap_query.order_by(JobPcap.ordinal)
-        pcap_records = db.execute(pcap_query).scalars().all()
+            # Look up JobPcap records for multi-PCAP support
+            pcap_query = sa_select(JobPcap).where(JobPcap.job_id == job_id)
+            if pcap_label:
+                pcap_query = pcap_query.where(JobPcap.label == pcap_label)
+            pcap_query = pcap_query.order_by(JobPcap.ordinal)
+            pcap_records = db.execute(pcap_query).scalars().all()
 
-        total_pcap_size = 0
+            total_pcap_size = 0
 
-        if pcap_records:
-            # Multi-PCAP path: link each PCAP with its label
-            for rec in pcap_records:
-                upload_dir = upload_root / rec.upload_id
-                found = list(upload_dir.glob("*.pcap")) + list(upload_dir.glob("*.pcapng"))
-                if not found:
-                    raise FileNotFoundError(f"No PCAP found in {upload_dir} for upload {rec.upload_id}")
-                pcap_source = found[0]
-                total_pcap_size += pcap_source.stat().st_size
-                label = rec.label or "before"
-                link_pcap_labeled(job_dir, pcap_source, label)
-            logger.info("Linked %d PCAPs for job %s", len(pcap_records), job_id)
-        else:
-            # Fallback: single-PCAP legacy path
-            upload_dir = upload_root / (job.upload_id or "")
-            pcap_files = list(upload_dir.glob("*.pcap")) + list(upload_dir.glob("*.pcapng"))
-            if not pcap_files:
-                raise FileNotFoundError(f"No PCAP found in {upload_dir}")
-            pcap_source = pcap_files[0]
-            total_pcap_size = pcap_source.stat().st_size
-            link_pcap(job_dir, pcap_source)
+            if pcap_records:
+                # Multi-PCAP path: link each PCAP with its label
+                for rec in pcap_records:
+                    upload_dir = upload_root / rec.upload_id
+                    found = list(upload_dir.glob("*.pcap")) + list(upload_dir.glob("*.pcapng"))
+                    if not found:
+                        raise FileNotFoundError(f"No PCAP found in {upload_dir} for upload {rec.upload_id}")
+                    pcap_source = found[0]
+                    total_pcap_size += pcap_source.stat().st_size
+                    label = rec.label or "before"
+                    link_pcap_labeled(job_dir, pcap_source, label)
+                logger.info("Linked %d PCAPs for job %s", len(pcap_records), job_id)
+            else:
+                # Fallback: single-PCAP legacy path
+                upload_dir = upload_root / (job.upload_id or "")
+                pcap_files = list(upload_dir.glob("*.pcap")) + list(upload_dir.glob("*.pcapng"))
+                if not pcap_files:
+                    if has_telemetry_bundle:
+                        # Hybrid job but no PCAPs found — degrade to bundle-only
+                        logger.warning("No PCAPs found for hybrid job %s — running bundle-only", job_id)
+                        has_pcaps = False
+                    else:
+                        raise FileNotFoundError(f"No PCAP found in {upload_dir}")
+                else:
+                    pcap_source = pcap_files[0]
+                    total_pcap_size = pcap_source.stat().st_size
+                    link_pcap(job_dir, pcap_source)
 
-        # Preflight disk check
-        preflight = check_disk_space(
-            pcap_size_bytes=total_pcap_size,
-            job_root=job_root,
-            preflight_multiplier=preflight_multiplier,
-        )
-        if not preflight.ok:
-            _update_job_status(db, job, "failed", preflight.message)
-            return "failed"
+            if has_pcaps:
+                # Preflight disk check
+                preflight = check_disk_space(
+                    pcap_size_bytes=total_pcap_size,
+                    job_root=job_root,
+                    preflight_multiplier=preflight_multiplier,
+                )
+                if not preflight.ok:
+                    _update_job_status(db, job, "failed", preflight.message)
+                    return "failed"
 
-        # Compute SHA of the first PCAP for backward compat
-        first_pcap = list((job_dir / "input").glob("*.pcap")) + list((job_dir / "input").glob("*.pcapng"))
-        if first_pcap:
-            pcap_sha = compute_pcap_sha256(first_pcap[0])
-            job.pcap_sha256 = pcap_sha
-            db.commit()
+                # Compute SHA of the first PCAP for backward compat
+                first_pcap = list((job_dir / "input").glob("*.pcap")) + list((job_dir / "input").glob("*.pcapng"))
+                if first_pcap:
+                    pcap_sha = compute_pcap_sha256(first_pcap[0])
+                    job.pcap_sha256 = pcap_sha
+                    db.commit()
 
-            write_input_meta(
-                job_dir,
-                job_id=job_id,
-                pcap_filename=job.pcap_filename or first_pcap[0].name,
-                pcap_sha256=pcap_sha,
-                execution_profile=profile,
-            )
+                    write_input_meta(
+                        job_dir,
+                        job_id=job_id,
+                        pcap_filename=job.pcap_filename or first_pcap[0].name,
+                        pcap_sha256=pcap_sha,
+                        execution_profile=profile,
+                    )
 
     except Exception as exc:
         logger.error("Pipeline setup failed for job %s: %s", job_id, exc)
         _update_job_status(db, job, "failed", str(exc))
         return "failed"
 
-    # --- Re-analysis isolation ---
-    # When re-analysing a single phase:
-    #   1. Hide non-target PCAPs so sensors only process the target file
-    #   2. Clean old sensor output dirs so the correlator doesn't re-ingest
-    #      "before" data that's already persisted in the DB
+    # --- Re-analysis isolation (PCAP only) ---
     _hidden_pcaps: list[tuple[Path, Path]] = []
-    if pcap_label:
-        import shutil as _shutil
+    stages: list[Any] = []
+    sensors: list[Any] = []
+    sensor_results: list[SensorResult] = []
+    has_errors = False
 
-        input_dir = job_dir / "input"
-        safe_label = "".join(c if c.isalnum() or c in "-_" else "_" for c in pcap_label)
-        for p in sorted(input_dir.iterdir()):
-            if p.is_symlink():
-                continue
-            if p.suffix.lower() in (".pcap", ".pcapng") and p.stem != safe_label:
-                hidden = p.with_suffix(p.suffix + ".hidden")
-                p.rename(hidden)
-                _hidden_pcaps.append((hidden, p))
-                logger.info("Hid non-target PCAP %s during re-analysis", p.name)
+    if has_pcaps:
+        # When re-analysing a single phase:
+        #   1. Hide non-target PCAPs so sensors only process the target file
+        #   2. Clean old sensor output dirs so the correlator doesn't re-ingest
+        #      "before" data that's already persisted in the DB
+        if pcap_label:
+            import shutil as _shutil
 
-        # Clean old sensor output directories so correlator only sees new data
-        sensors_dir = job_dir / "sensors"
-        if sensors_dir.exists():
-            for sd in sensors_dir.iterdir():
-                if sd.is_dir():
-                    _shutil.rmtree(sd)
-                    logger.info("Cleaned old sensor output: %s", sd.name)
+            input_dir = job_dir / "input"
+            safe_label = "".join(c if c.isalnum() or c in "-_" else "_" for c in pcap_label)
+            for p in sorted(input_dir.iterdir()):
+                if p.is_symlink():
+                    continue
+                if p.suffix.lower() in (".pcap", ".pcapng") and p.stem != safe_label:
+                    hidden = p.with_suffix(p.suffix + ".hidden")
+                    p.rename(hidden)
+                    _hidden_pcaps.append((hidden, p))
+                    logger.info("Hid non-target PCAP %s during re-analysis", p.name)
 
-    # --- Step 2-3: Run stages (Zeek, Suricata) ---
-    stages = get_stages_for_profile(profile)
-    total_steps = len(stages) + len(get_sensors_for_profile(profile)) + 5  # +5 for correlate + index + theories + slices + annotations
+            # Clean old sensor output directories so correlator only sees new data
+            sensors_dir = job_dir / "sensors"
+            if sensors_dir.exists():
+                for sd in sensors_dir.iterdir():
+                    if sd.is_dir():
+                        _shutil.rmtree(sd)
+                        logger.info("Cleaned old sensor output: %s", sd.name)
+
+    # --- Step 2-3: Run stages (Zeek, Suricata) — PCAP only ---
+    stages = get_stages_for_profile(profile) if has_pcaps else []
+    sensors = get_sensors_for_profile(profile) if has_pcaps else []
+    # +6 for telemetry + correlate + index + theories + slices + annotations
+    total_steps = len(stages) + len(sensors) + 6
     step_num = 0
     for stage_def in stages:
         step_num += 1
@@ -512,11 +536,7 @@ def run_pipeline(
     # The actual extraction happens in file_triage sensor (Step 5).
     # We write the manifest after sensors complete (see below).
 
-    # --- Step 5: Run sensors in deterministic order ---
-    sensors = get_sensors_for_profile(profile)
-    sensor_results: list[SensorResult] = []
-    has_errors = False
-
+    # --- Step 5: Run sensors in deterministic order (PCAP only) ---
     for sensor_def in sensors:
         # Check skip conditions — resolve required inputs to sensor output dirs
         if sensor_def.skip_if_missing_inputs:
@@ -601,6 +621,38 @@ def run_pipeline(
         )
     except Exception as exc:
         logger.debug("Failed to publish sensor partial result: %s", exc)
+
+    # --- Step 5b: Telemetry pipeline (log bundles) ---
+    # Runs for hybrid (pcap+logs) and bundle-only jobs when a source_manifest.json exists.
+    _manifest_path = job_dir / "input" / "telemetry" / "source_manifest.json"
+    if not _manifest_path.exists():
+        # Also check alternate location
+        _manifest_path = job_dir / "source_manifest.json"
+    if has_telemetry_bundle or _manifest_path.exists():
+        step_num += 1
+        _emit(job_id, "stage.status", stage="telemetry", status="running",
+              step=step_num, total_steps=total_steps)
+        try:
+            from backend.app.pipeline.telemetry_pipeline import run_telemetry_pipeline
+
+            telemetry_result = run_telemetry_pipeline(
+                job_id=job_id,
+                job_dir=job_dir,
+                db=db,
+                exercise_id=job.exercise_id,
+            )
+            logger.info("Telemetry pipeline for job %s: %s", job_id, telemetry_result)
+            parsed = telemetry_result.get("parsed", 0)
+            correlated = telemetry_result.get("correlated", 0)
+            _emit(job_id, "stage.status", stage="telemetry", status="completed",
+                  step=step_num, total_steps=total_steps,
+                  message=f"parsed={parsed} correlated={correlated}")
+            _completed_stages.append("telemetry")
+        except Exception as exc:
+            logger.error("Telemetry pipeline failed for job %s: %s", job_id, exc, exc_info=True)
+            has_errors = True
+            _emit(job_id, "stage.status", stage="telemetry", status="failed",
+                  step=step_num, total_steps=total_steps, message=str(exc))
 
     # --- Step 6-8: Normalize, Correlate, Persist ---
     step_num += 1

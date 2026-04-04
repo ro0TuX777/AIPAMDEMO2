@@ -1,0 +1,27 @@
+[
+  {
+    "timestamp": "2026-03-15T14:32:00.000Z",
+    "client_ip": "192.168.1.100",
+    "method": "GET",
+    "url": "https://suspicious.example.com/update.bin",
+    "status_code": 200,
+    "content_type": "application/octet-stream",
+    "bytes_transferred": 524288,
+    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+    "category": "uncategorized",
+    "action": "allowed"
+  },
+  {
+    "timestamp": "2026-03-15T14:33:00.000Z",
+    "client_ip": "192.168.1.100",
+    "method": "POST",
+    "url": "https://suspicious.example.com/api/callback",
+    "status_code": 200,
+    "content_type": "application/json",
+    "bytes_transferred": 128,
+    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+    "category": "uncategorized",
+    "action": "allowed"
+  }
+]
+

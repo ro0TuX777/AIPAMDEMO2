@@ -2,7 +2,7 @@ import json
 from backend.app.pipeline.sensor_handlers import handle_file_triage
 from backend.app.normalize.correlate import correlate_job
 from backend.app.models.file import File
-from backend.app.database_v2 import init_v2_db, get_session_factory
+from backend.app.database_v2 import init_v2_db, get_session_factory, reset_engine
 from backend.app.config_v2 import get_settings
 from sqlalchemy import select
 
@@ -24,6 +24,7 @@ def test_yara_scanning_logic(tmp_path, monkeypatch):
     monkeypatch.setattr(settings, "aipam_yara_rules_dir", yara_dir)
     
     # Initialize DB
+    reset_engine()
     init_v2_db()
     session_factory = get_session_factory()
     db = session_factory()

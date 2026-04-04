@@ -8,9 +8,9 @@ from typing import List
 import pytest
 from sqlmodel import Session, SQLModel, create_engine, select
 
-from app.db_models import AlertDB, EvidenceDB, FindingDB, FlowDB
-from app.domain.evidence_store import link_evidence, persist_alerts, persist_flows
-from app.models import AlertRecord, FlowRecord
+from backend.app.db_models import AlertDB, EvidenceDB, FindingDB, FlowDB
+from backend.app.domain.evidence_store import link_evidence, persist_alerts, persist_flows
+from backend.app.domain_models import AlertRecord, FlowRecord
 
 
 @pytest.fixture

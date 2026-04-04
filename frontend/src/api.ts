@@ -61,6 +61,23 @@ export interface PcapUploadItem {
   label?: string;
 }
 
+export interface BundleUploadItem {
+  upload_id: string;
+  label?: string;  // phase label: "before", "during", "after", or custom
+}
+
+export interface JobLogSourceItem {
+  id: number;
+  upload_id?: string | null;
+  label?: string | null;
+  filename: string;
+  source_system?: string | null;
+  parser_hint?: string | null;
+  ordinal: number;
+  size_bytes?: number | null;
+  sha256?: string | null;
+}
+
 export interface JobPcapItem {
   id: number;
   upload_id: string;
@@ -71,6 +88,15 @@ export interface JobPcapItem {
   sha256?: string | null;
 }
 
+export type SourceType = "pcap" | "log_bundle" | "netflow_bundle" | "c2_bundle" | "exercise_bundle";
+
+export interface BundleSourceEntry {
+  filename: string;
+  source_system?: string;   // e.g. "sysmon", "paloalto", "cobalt_strike"
+  parser_hint?: string;     // suggested parser name
+  label?: string;           // user-supplied tag
+}
+
 export interface JobCreateRequest {
   upload_id?: string;           // backward compat: single upload
   uploads?: PcapUploadItem[];   // multi-PCAP: list of uploads with optional labels
@@ -78,6 +104,12 @@ export interface JobCreateRequest {
   notes?: string;
   execution_profile: ExecutionProfile;
   priority?: Priority;
+  // --- Telemetry fusion fields ---
+  source_type?: SourceType;
+  exercise_id?: string;
+  bundle_entries?: BundleSourceEntry[];
+  // --- Hybrid job: attach labeled log bundles alongside PCAPs ---
+  bundle_uploads?: BundleUploadItem[];
 }
 
 export interface JobCreateResponse {
@@ -149,6 +181,7 @@ export interface JobDetail extends JobListItem {
   stages?: StageItem[];
   sensors?: SensorItem[];
   pcaps?: JobPcapItem[];
+  log_sources?: JobLogSourceItem[];
 }
 
 export interface JobGetResponse {
@@ -428,6 +461,32 @@ export interface EvidenceGraphResponse {
   edges: GraphEdge[];
   node_count: number;
   edge_count: number;
+}
+
+// ─── Storyline ──────────────────────────────────────────────────────────────
+
+export interface StorylineStage {
+  name: string;
+  display_name: string;
+  node_count: number;
+  edge_count: number;
+  confidence: number;
+  summary: string;
+  host_ips: string[];
+  time_start?: string | null;
+  time_end?: string | null;
+  node_ids: string[];
+}
+
+export interface StorylineResponse {
+  schema_version: string;
+  job_id: string;
+  stages: StorylineStage[];
+  host_timelines: Record<string, string[]>;
+  narrative: string;
+  total_nodes: number;
+  total_edges: number;
+  unclassified_count: number;
 }
 
 // ─── Files ──────────────────────────────────────────────────────────────────
@@ -882,6 +941,8 @@ export interface TimelineItem {
   severity?: Severity;
   entities?: TimelineEntityFields;
   refs?: TimelineRefs;
+  evidence_status?: string | null;
+  sensor?: string | null;
 }
 
 export interface TimelineListResponse {
@@ -1414,6 +1475,42 @@ export const api = {
       { explanation_feedback },
     );
   },
+  uploadBundle(file: File, onProgress?: (pct: number) => void): Promise<UploadCreateResponse> {
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", `${API_BASE}/uploads/bundle`);
+
+      const headers = authHeaders();
+      Object.keys(headers).forEach(k => xhr.setRequestHeader(k, headers[k]));
+      xhr.setRequestHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(file.name)}"`);
+
+      if (onProgress) {
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            const pct = Math.round((e.loaded / e.total) * 100);
+            onProgress(pct);
+          }
+        };
+      }
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            resolve(JSON.parse(xhr.responseText));
+          } catch (err) {
+            reject(new Error("Invalid JSON response from server"));
+          }
+        } else {
+          let msg = `Upload failed with status ${xhr.status}`;
+          try { msg = JSON.parse(xhr.responseText).detail || msg; } catch {}
+          reject(new Error(msg));
+        }
+      };
+
+      xhr.onerror = () => reject(new Error("Network error during upload"));
+      xhr.send(file);
+    });
+  },
   validateUpload(uploadId: string): Promise<UploadValidateResponse> {
     return post<UploadValidateResponse>(`/uploads/${uploadId}/validate`);
   },
@@ -1607,6 +1704,9 @@ export const api = {
   getEvidenceGraph(jobId: string, include?: string[]): Promise<EvidenceGraphResponse> {
     const params = include?.length ? `?include=${include.join(",")}` : "";
     return get<EvidenceGraphResponse>(`/jobs/${jobId}/evidence-graph${params}`);
+  },
+  getStoryline(jobId: string): Promise<StorylineResponse> {
+    return get<StorylineResponse>(`/jobs/${jobId}/storyline`);
   },
   generateEvidencePackage(jobId: string): Promise<EvidencePackageCreateResponse> {
     return post<EvidencePackageCreateResponse>(`/jobs/${jobId}/artifacts/evidence-package`);
@@ -1896,6 +1996,26 @@ export const api = {
   triggerSecurityOnionImport(jobId: string): Promise<SecurityOnionImportResponse> {
     return post<SecurityOnionImportResponse>(`/jobs/${jobId}/security_onion/import`);
   },
+
+  // ── Telemetry event detail ──────────────────────────────────────────
+  getTelemetryEventDetail(jobId: string, eventId: string): Promise<TelemetryEventDetail> {
+    return get<TelemetryEventDetail>(`/jobs/${jobId}/telemetry/${encodeURIComponent(eventId)}`);
+  },
+
+  // ── Integration Settings (Security Onion / Arkime) ───────────────────
+  getIntegrationSettings(): Promise<IntegrationSettingsPayload> {
+    return get<IntegrationSettingsPayload>("/integrations/settings");
+  },
+  saveIntegrationSettings(values: IntegrationSettingsPayload): Promise<IntegrationSettingsPayload> {
+    return request<IntegrationSettingsPayload>(`${API_BASE}/integrations/settings`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(values),
+    });
+  },
+  testIntegrationConnection(body: IntegrationTestRequest): Promise<IntegrationTestResponse> {
+    return post<IntegrationTestResponse>("/integrations/test", body);
+  },
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1907,6 +2027,56 @@ export interface SettingsPayload { [key: string]: any }
 export interface EffectiveSettingsResponse { [key: string]: any }
 export interface OllamaModelInfo { name: string; size: number; family: string; parameter_size: string; quantization: string }
 export interface SetupStatusResponse { model_configured: boolean; llm_model_name: string | null }
+
+// ─── Telemetry Event Detail ─────────────────────────────────────────────────
+export interface TelemetryEventDetail {
+  event_id: string;
+  event_type: string;
+  timestamp: string;
+  source_type: string | null;
+  source_system: string | null;
+  source_filename: string | null;
+  parser_name: string | null;
+  parser_version: string | null;
+  evidence_status: string;
+  corroboration_score: number;
+  src_ip: string | null;
+  dest_ip: string | null;
+  src_port: number | null;
+  dest_port: number | null;
+  hostname: string | null;
+  username: string | null;
+  proto: string | null;
+  community_id: string | null;
+  session_id: string | null;
+  process_guid: string | null;
+  pcap_label: string | null;
+  data: Record<string, any>;
+  correlation_keys: Record<string, any>;
+  tags: string[];
+  raw_ref: string | null;
+}
+
+// ─── Integration Settings ──────────────────────────────────────────────────
+export interface IntegrationSettingsPayload {
+  security_onion_api_url?: string | null;
+  security_onion_username?: string | null;
+  security_onion_password?: string | null;
+  arkime_api_url?: string | null;
+  arkime_api_username?: string | null;
+  arkime_api_password?: string | null;
+}
+export interface IntegrationTestRequest {
+  integration_type: "security_onion" | "arkime";
+  url: string;
+  username?: string;
+  password?: string;
+}
+export interface IntegrationTestResponse {
+  ok: boolean;
+  message: string;
+  latency_ms?: number | null;
+}
 
 // ─── Ollama GPU status ──────────────────────────────────────────────────────
 export interface LoadedModelInfo {
@@ -2098,7 +2268,7 @@ export interface CorrelationMatch {
   job_id: string;
   job_name: string;
   job_created_at: string | null;
-  match_type: "same_host" | "same_ioc" | "same_mitre" | "similar_pattern";
+  match_type: "same_host" | "same_ioc" | "same_mitre" | "similar_pattern" | "behavioral_similarity";
   matched_entity: string;
   matched_item_id: string | null;
   matched_title: string | null;
@@ -2130,7 +2300,7 @@ export interface RelatedJob {
   job_id: string;
   job_name: string;
   job_created_at: string | null;
-  overlap_type: "shared_hosts" | "shared_iocs" | "shared_mitre";
+  overlap_type: "shared_hosts" | "shared_iocs" | "shared_mitre" | "shared_behavior";
   shared_entities: string[];
   relevance_score: number;
 }

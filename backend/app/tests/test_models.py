@@ -1,6 +1,6 @@
 from datetime import datetime
 
-from app.models import FlowRecord
+from backend.app.domain_models import FlowRecord
 
 
 def test_flowrecord_basic():
@@ -26,7 +26,7 @@ def test_flowrecord_basic():
 
 
 
-from app.models import AnalysisSummary, HostFinding, JobResult
+from backend.app.domain_models import AnalysisSummary, HostFinding, JobResult
 
 
 def test_jobresult_round_trip_with_raw_alerts_and_llm_summary():

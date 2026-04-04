@@ -1,0 +1,37 @@
+[
+  {
+    "EventID": 4624,
+    "TimeCreated": "2026-03-15T14:30:00.000Z",
+    "Computer": "WORKSTATION-01",
+    "Channel": "Security",
+    "Provider": "Microsoft-Windows-Security-Auditing",
+    "EventData": {
+      "TargetUserName": "jdoe",
+      "TargetDomainName": "CORP",
+      "LogonType": "10",
+      "IpAddress": "192.168.1.100",
+      "IpPort": "49152",
+      "WorkstationName": "WORKSTATION-01",
+      "LogonProcessName": "User32",
+      "AuthenticationPackageName": "Negotiate"
+    }
+  },
+  {
+    "EventID": 4625,
+    "TimeCreated": "2026-03-15T14:31:00.000Z",
+    "Computer": "WORKSTATION-01",
+    "Channel": "Security",
+    "Provider": "Microsoft-Windows-Security-Auditing",
+    "EventData": {
+      "TargetUserName": "admin",
+      "TargetDomainName": "CORP",
+      "LogonType": "3",
+      "IpAddress": "10.0.0.50",
+      "IpPort": "52431",
+      "FailureReason": "%%2313",
+      "Status": "0xc000006d",
+      "SubStatus": "0xc000006a"
+    }
+  }
+]
+

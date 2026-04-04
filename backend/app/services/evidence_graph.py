@@ -24,6 +24,7 @@ from backend.app.models.finding import Finding
 from backend.app.models.host import Host
 from backend.app.models.ioc import Ioc
 from backend.app.models.job import Job
+from backend.app.models.normalized_event import NormalizedEvent
 from backend.app.models.slice import IncidentSlice
 from backend.app.models.theory import Theory
 
@@ -37,6 +38,7 @@ NODE_THEORY = "theory"
 NODE_SLICE = "slice"
 NODE_IOC = "ioc"
 NODE_ANNOTATION = "annotation"
+NODE_TELEMETRY = "telemetry"
 
 # ── Severity ordering for visual weight ───────────────────────────────
 _SEV_RANK = {"critical": 4, "high": 3, "medium": 2, "low": 1, "info": 0}
@@ -54,6 +56,17 @@ def _parse_json_list(raw: str | None) -> list[str]:
         return list(parsed) if isinstance(parsed, list) else []
     except Exception:
         return []
+
+
+def _parse_data_json(raw: str | None) -> dict:
+    """Parse a JSON blob into a dict, returning {} on failure."""
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+        return parsed if isinstance(parsed, dict) else {}
+    except Exception:
+        return {}
 
 
 # ── Graph builder ─────────────────────────────────────────────────────
@@ -83,7 +96,7 @@ def build_evidence_graph(
         raise ValueError(f"Job {job_id} not found")
 
     all_types = {NODE_HOST, NODE_ALERT, NODE_FINDING, NODE_THEORY,
-                 NODE_SLICE, NODE_IOC, NODE_ANNOTATION}
+                 NODE_SLICE, NODE_IOC, NODE_ANNOTATION, NODE_TELEMETRY}
     want = include_types if include_types else all_types
 
     nodes: list[dict[str, Any]] = []
@@ -267,6 +280,149 @@ def build_evidence_graph(
                 target = f"finding:{fid}"
                 if target in node_ids:
                     _add_edge(f"annotation:{ann.annotation_id}", target, "related_to")
+
+    # ── 8. Telemetry (NormalizedEvents) ─────────────────────────────
+    tel_events: list[NormalizedEvent] = []
+    if NODE_TELEMETRY in want:
+        tel_events = list(db.execute(
+            select(NormalizedEvent).where(NormalizedEvent.job_id == job_id)
+        ).scalars().all())
+
+        # Build lookup indices for semantic edge generation
+        _c2_callbacks: list[NormalizedEvent] = []
+        _c2_tasks: list[NormalizedEvent] = []
+        _by_session: dict[str, list[NormalizedEvent]] = {}
+        _by_host_ts: list[NormalizedEvent] = []
+
+        for te in tel_events:
+            sev = "medium" if te.evidence_status in ("corroborated", "confirmed") else "info"
+            label = f"{te.event_type}: {te.source_system or te.parser_name or 'unknown'}"
+            if te.hostname:
+                label += f" @ {te.hostname}"
+            _add_node(f"telemetry:{te.event_id}", label[:60],
+                       NODE_TELEMETRY, sev, {
+                           "event_type": te.event_type,
+                           "source_system": te.source_system,
+                           "evidence_status": te.evidence_status,
+                           "corroboration_score": te.corroboration_score,
+                           "ts": te.timestamp,
+                       })
+
+            te_key = f"telemetry:{te.event_id}"
+
+            # ── Basic host edges ──
+            if te.src_ip:
+                host_key = f"host:{te.src_ip}"
+                if host_key in node_ids:
+                    _add_edge(te_key, host_key, "observed_on")
+            if te.dest_ip:
+                host_key = f"host:{te.dest_ip}"
+                if host_key in node_ids:
+                    _add_edge(te_key, host_key, "targeted")
+
+            # ── Semantic edges by event_type ──
+            if te.event_type == "process" and te.src_ip:
+                host_key = f"host:{te.src_ip}"
+                if host_key in node_ids:
+                    _add_edge(te_key, host_key, "executed_on")
+
+            if te.event_type == "auth" and te.src_ip:
+                host_key = f"host:{te.src_ip}"
+                if host_key in node_ids:
+                    _add_edge(te_key, host_key, "authenticated_as")
+
+            if te.event_type in ("connection", "netflow") and te.dest_ip:
+                data = _parse_data_json(te.data_json)
+                if data.get("service") in ("http", "https", "ftp"):
+                    host_key = f"host:{te.dest_ip}"
+                    if host_key in node_ids:
+                        _add_edge(te_key, host_key, "downloaded_from")
+
+            if te.event_type in ("connection", "netflow") and te.dest_ip and te.src_ip:
+                # Beaconing edge: confirmed or corroborated connection → C2 target
+                if te.evidence_status in ("confirmed", "corroborated"):
+                    dest_key = f"host:{te.dest_ip}"
+                    if dest_key in node_ids:
+                        _add_edge(te_key, dest_key, "beaconed_to")
+
+            # Track C2 events for confirmed_by edges
+            if te.event_type == "c2_callback":
+                _c2_callbacks.append(te)
+            elif te.event_type == "c2_task":
+                _c2_tasks.append(te)
+
+            # Track for session/temporal edges
+            if te.session_id:
+                _by_session.setdefault(te.session_id, []).append(te)
+            _by_host_ts.append(te)
+
+            # ── Alert correlation (community_id) ──
+            if te.community_id and NODE_ALERT in want:
+                for a in alerts:
+                    if a.community_id == te.community_id:
+                        _add_edge(te_key, f"alert:{a.alert_id}", "correlated")
+
+        # ── confirmed_by edges: C2 callbacks/tasks → matching observed events ──
+        for cb in _c2_callbacks:
+            cb_key = f"telemetry:{cb.event_id}"
+            for te in tel_events:
+                if te.event_type in ("connection", "netflow") and te.event_id != cb.event_id:
+                    if (te.src_ip == cb.src_ip and te.dest_ip == cb.dest_ip
+                            and te.dest_port == cb.dest_port):
+                        _add_edge(f"telemetry:{te.event_id}", cb_key, "confirmed_by")
+
+        for task in _c2_tasks:
+            task_key = f"telemetry:{task.event_id}"
+            task_data = _parse_data_json(task.data_json)
+            agent_id = task_data.get("agent_id")
+            if not agent_id:
+                continue
+            # Find the callback that maps this agent to a host IP
+            agent_ip = None
+            for cb in _c2_callbacks:
+                cb_data = _parse_data_json(cb.data_json)
+                if cb_data.get("agent_id") == agent_id:
+                    agent_ip = cb.src_ip
+                    break
+            if agent_ip:
+                for te in tel_events:
+                    if te.event_type == "process" and te.src_ip == agent_ip:
+                        _add_edge(f"telemetry:{te.event_id}", task_key, "confirmed_by")
+
+        # ── same_session edges ──
+        for _sid, members in _by_session.items():
+            if len(members) > 1:
+                for i in range(len(members) - 1):
+                    _add_edge(f"telemetry:{members[i].event_id}",
+                              f"telemetry:{members[i + 1].event_id}", "same_session")
+
+        # ── occurred_before edges (temporal, same host, within 5 min) ──
+        _by_host_ts.sort(key=lambda e: (e.src_ip or "", e.timestamp or ""))
+        for i in range(len(_by_host_ts) - 1):
+            a_evt = _by_host_ts[i]
+            b_evt = _by_host_ts[i + 1]
+            if (a_evt.src_ip and a_evt.src_ip == b_evt.src_ip
+                    and a_evt.timestamp and b_evt.timestamp
+                    and a_evt.event_id != b_evt.event_id):
+                try:
+                    from datetime import datetime as _dt
+                    ta = _dt.fromisoformat(a_evt.timestamp.replace("Z", "+00:00"))
+                    tb = _dt.fromisoformat(b_evt.timestamp.replace("Z", "+00:00"))
+                    if 0 <= (tb - ta).total_seconds() <= 300:
+                        _add_edge(f"telemetry:{a_evt.event_id}",
+                                  f"telemetry:{b_evt.event_id}", "occurred_before")
+                except (ValueError, TypeError):
+                    pass
+
+        # ── caused_by edges: findings linked to telemetry via evidence_json ──
+        if NODE_FINDING in want:
+            for f in findings:
+                ev_data = _parse_data_json(getattr(f, "evidence_json", None))
+                linked_ids = ev_data.get("event_ids", []) if isinstance(ev_data, dict) else []
+                for eid in linked_ids:
+                    te_key = f"telemetry:{eid}"
+                    if te_key in node_ids:
+                        _add_edge(f"finding:{f.finding_id}", te_key, "caused_by")
 
     logger.info("Evidence graph for job %s: %d nodes, %d edges",
                 job_id, len(nodes), len(edges))

@@ -3,12 +3,12 @@ from __future__ import annotations
 from typing import Dict
 from datetime import datetime
 
-from app.llm_chunking import (
+from backend.app.llm_chunking import (
     aggregate_llm_results,
     build_llm_chunks,
     score_change_summaries,
 )
-from app.models import (
+from backend.app.domain_models import (
     AlertRecord,
     AnalysisSummary,
     ChangeSummary,
@@ -107,7 +107,7 @@ def test_build_llm_chunks_respects_host_ordering_and_chunk_size():
 
 
 def test_aggregate_llm_results_merges_severity_hosts_and_key_findings():
-    from app.models import AttackChainItem, HostFindingLLM, LLMOutput, MitreTechnique
+    from backend.app.domain_models import AttackChainItem, HostFindingLLM, LLMOutput, MitreTechnique
 
     outputs = [
         LLMOutput(

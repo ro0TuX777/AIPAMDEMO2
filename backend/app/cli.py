@@ -510,6 +510,16 @@ def cmd_support_bundle(args):
                 if metrics_path.exists():
                     tar.add(str(metrics_path), arcname=f"{bundle_root}/jobs/{job.job_id}/job_metrics.json")
 
+                # Telemetry pipeline diagnostics
+                diag_path = job_root / job.job_id / "telemetry_diagnostics.json"
+                if diag_path.exists():
+                    tar.add(str(diag_path), arcname=f"{bundle_root}/jobs/{job.job_id}/telemetry_diagnostics.json")
+
+                # Source manifest (useful for understanding what was ingested)
+                manifest_path = job_root / job.job_id / "source_manifest.json"
+                if manifest_path.exists():
+                    tar.add(str(manifest_path), arcname=f"{bundle_root}/jobs/{job.job_id}/source_manifest.json")
+
                 # Sensor container logs (NOT raw pcap data)
                 sensors_dir = job_root / job.job_id / "sensors"
                 if sensors_dir.exists():

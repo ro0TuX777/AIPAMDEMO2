@@ -19,10 +19,13 @@ class Job(Base):
     )
     execution_profile = Column(String, nullable=False)
     priority = Column(String, nullable=False, default="normal")
+    source_type = Column(String, nullable=False, default="pcap")  # SourceType enum value
+    exercise_id = Column(String, nullable=True)                   # links to exercise/campaign
     upload_id = Column(String, nullable=True)
     pcap_filename = Column(Text, nullable=True)
     pcap_size_bytes = Column(Integer, nullable=True)
     pcap_sha256 = Column(String, nullable=True)
+    source_manifest_json = Column(Text, nullable=True)            # JSON SourceManifest
     error_summary = Column(Text, nullable=True)
     created_at = Column(String, nullable=False)
     started_at = Column(String, nullable=True)

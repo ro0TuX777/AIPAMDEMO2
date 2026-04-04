@@ -1,7 +1,7 @@
 """Tests for app/llm/parsers.py — JSON extraction, repair, and text helpers."""
 
 
-from app.llm.parsers import (
+from backend.app.llm.parsers import (
     parse_llm_response,
     repair_llm_output,
     extract_mitre_techniques,

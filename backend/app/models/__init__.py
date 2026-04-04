@@ -21,11 +21,13 @@ from backend.app.models.upload import Upload
 from backend.app.models.chat import ChatConversation, ChatMessage
 from backend.app.models.knowledge_base import KBDocument
 from backend.app.models.job_pcap import JobPcap
+from backend.app.models.job_log_source import JobLogSource
 from backend.app.models.theory import Theory
 from backend.app.models.slice import IncidentSlice
 from backend.app.models.context_annotation import ContextAnnotation
 from backend.app.models.report import Report
 from backend.app.models.proof import Proof, ProofItem
+from backend.app.models.normalized_event import NormalizedEvent
 
 __all__ = [
     "JobStatus",
@@ -33,6 +35,7 @@ __all__ = [
     "Job",
     "JobSensor",
     "JobPcap",
+    "JobLogSource",
     "Finding",
     "Host",
     "GlobalHost",
@@ -54,5 +57,6 @@ __all__ = [
     "Report",
     "Proof",
     "ProofItem",
+    "NormalizedEvent",
 ]
 

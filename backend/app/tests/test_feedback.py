@@ -5,7 +5,7 @@ import pytest
 from datetime import datetime
 from sqlmodel import Session, create_engine, SQLModel
 
-from app.db_models import FindingDB
+from backend.app.db_models import FindingDB
 
 
 # -------------------------------------------------------------------------
@@ -109,14 +109,14 @@ class TestFindingVerifyRequest:
     """Validate the schemas for verify requests."""
 
     def test_valid_request(self):
-        from app.schemas import FindingVerifyRequest
+        from backend.app.schemas import FindingVerifyRequest
 
         req = FindingVerifyRequest(status="confirmed", notes="Looks legit")
         assert req.status == "confirmed"
         assert req.notes == "Looks legit"
 
     def test_status_values(self):
-        from app.schemas import VALID_ANALYST_STATUSES
+        from backend.app.schemas import VALID_ANALYST_STATUSES
 
         assert "unverified" in VALID_ANALYST_STATUSES
         assert "confirmed" in VALID_ANALYST_STATUSES

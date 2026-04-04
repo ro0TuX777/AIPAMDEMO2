@@ -1,12 +1,13 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { api, type ExecutionProfile, type PcapUploadItem } from "../api";
+import { api, type ExecutionProfile, type PcapUploadItem, type BundleUploadItem, type SourceType, type IntegrationSettingsPayload } from "../api";
 import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
 
 type Step = "select" | "uploading" | "creating" | "error";
 
 const LABEL_PRESETS = ["", "before", "during", "after", "baseline", "exploit"];
 const MAX_PCAPS = 10;
+const MAX_BUNDLES = 5;
 const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024; // 2 GB
 
 const fmtSize = (bytes: number) => bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${(bytes / 1e6).toFixed(1)} MB`;
@@ -42,6 +43,13 @@ export const NewAnalysisPage: React.FC = () => {
   // Source tab
   const [mode, setMode] = useState<"upload" | "security_onion" | "arkime">("upload");
 
+  // Optional bundle attachments for hybrid PCAP+logs jobs (multiple, with labels)
+  interface BundleEntry { file: File; label: string; }
+  const hybridBundleInputRef = useRef<HTMLInputElement>(null);
+  const [bundleEntries, setBundleEntries] = useState<BundleEntry[]>([]);
+
+
+
   // Security Onion form state
   const [soStartTime, setSoStartTime] = useState("");
   const [soEndTime, setSoEndTime] = useState("");
@@ -64,6 +72,71 @@ export const NewAnalysisPage: React.FC = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [rejectedFiles, setRejectedFiles] = useState<RejectedFile[]>([]);
+
+  // ── Integration connection settings ─────────────────────────────────────
+  const [soApiUrl, setSoApiUrl] = useState("");
+  const [soUsername, setSoUsername] = useState("");
+  const [soPassword, setSoPassword] = useState("");
+  const [soTestResult, setSoTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [soTesting, setSoTesting] = useState(false);
+  const [soSaving, setSoSaving] = useState(false);
+
+  const [arkimeApiUrl, setArkimeApiUrl] = useState("");
+  const [arkimeUsername, setArkimeUsername] = useState("");
+  const [arkimePassword, setArkimePassword] = useState("");
+  const [arkimeTestResult, setArkimeTestResult] = useState<{ ok: boolean; message: string } | null>(null);
+  const [arkimeTesting, setArkimeTesting] = useState(false);
+  const [arkimeSaving, setArkimeSaving] = useState(false);
+
+  // Load saved integration settings on mount
+  useEffect(() => {
+    api.getIntegrationSettings().then((s) => {
+      if (s.security_onion_api_url) setSoApiUrl(s.security_onion_api_url);
+      if (s.security_onion_username) setSoUsername(s.security_onion_username);
+      if (s.security_onion_password) setSoPassword(s.security_onion_password);
+      if (s.arkime_api_url) setArkimeApiUrl(s.arkime_api_url);
+      if (s.arkime_api_username) setArkimeUsername(s.arkime_api_username);
+      if (s.arkime_api_password) setArkimePassword(s.arkime_api_password);
+    }).catch(() => { /* settings not available yet */ });
+  }, []);
+
+  const handleTestSo = async () => {
+    if (!soApiUrl) return;
+    setSoTesting(true);
+    setSoTestResult(null);
+    try {
+      const res = await api.testIntegrationConnection({ integration_type: "security_onion", url: soApiUrl, username: soUsername, password: soPassword });
+      setSoTestResult({ ok: res.ok, message: res.latency_ms ? `${res.message} (${res.latency_ms}ms)` : res.message });
+    } catch (err: any) {
+      setSoTestResult({ ok: false, message: err?.message || "Test failed" });
+    } finally { setSoTesting(false); }
+  };
+
+  const handleSaveSo = async () => {
+    setSoSaving(true);
+    try {
+      await api.saveIntegrationSettings({ security_onion_api_url: soApiUrl, security_onion_username: soUsername, security_onion_password: soPassword });
+    } finally { setSoSaving(false); }
+  };
+
+  const handleTestArkime = async () => {
+    if (!arkimeApiUrl) return;
+    setArkimeTesting(true);
+    setArkimeTestResult(null);
+    try {
+      const res = await api.testIntegrationConnection({ integration_type: "arkime", url: arkimeApiUrl, username: arkimeUsername, password: arkimePassword });
+      setArkimeTestResult({ ok: res.ok, message: res.latency_ms ? `${res.message} (${res.latency_ms}ms)` : res.message });
+    } catch (err: any) {
+      setArkimeTestResult({ ok: false, message: err?.message || "Test failed" });
+    } finally { setArkimeTesting(false); }
+  };
+
+  const handleSaveArkime = async () => {
+    setArkimeSaving(true);
+    try {
+      await api.saveIntegrationSettings({ arkime_api_url: arkimeApiUrl, arkime_api_username: arkimeUsername, arkime_api_password: arkimePassword });
+    } finally { setArkimeSaving(false); }
+  };
 
   // ── Multi-file helpers ──────────────────────────────────────────────────
   const addFiles = (files: FileList | File[]) => {
@@ -109,6 +182,8 @@ export const NewAnalysisPage: React.FC = () => {
 
   const reset = () => { setEntries([]); setStep("select"); setError(null); setProgress(""); setCurrentFilePct(0); };
 
+
+
   // ── V2 Upload Flow (multi-PCAP) ──────────────────────────────────────────
   const handleSubmit = async () => {
     if (entries.length === 0) return;
@@ -131,6 +206,16 @@ export const NewAnalysisPage: React.FC = () => {
         uploads.push({ upload_id: upload.upload_id, label: e.label || undefined });
       }
 
+      // Upload optional labeled log bundles for hybrid PCAP+logs analysis
+      const bundleUploads: BundleUploadItem[] = [];
+      for (let bi = 0; bi < bundleEntries.length; bi++) {
+        const be = bundleEntries[bi];
+        setProgress(`Uploading log bundle ${bi + 1}/${bundleEntries.length}: ${be.file.name}…`);
+        setCurrentFilePct(0);
+        const bundleUpload = await api.uploadBundle(be.file, (pct) => setCurrentFilePct(pct));
+        bundleUploads.push({ upload_id: bundleUpload.upload_id, label: be.label || undefined });
+      }
+
       setStep("creating");
       setProgress("Creating job…");
       const job = await api.createJob({
@@ -138,6 +223,7 @@ export const NewAnalysisPage: React.FC = () => {
         execution_profile: profile,
         ...(jobName ? { job_name: jobName } : {}),
         ...(notes ? { notes } : {}),
+        ...(bundleUploads.length > 0 ? { bundle_uploads: bundleUploads } : {}),
       });
       reset();
       navigate(`/jobs/${job.job_id}`);
@@ -199,7 +285,7 @@ export const NewAnalysisPage: React.FC = () => {
             className={mode === "upload" ? "font-semibold text-emerald-400" : "text-slate-400"}
             onClick={() => setMode("upload")}
           >
-            Upload PCAP
+            Upload Evidence
           </button>
           <button
             data-testid="tab-security-onion"
@@ -219,7 +305,7 @@ export const NewAnalysisPage: React.FC = () => {
 
         {mode === "upload" && (
           <div className="space-y-4" data-testid="form-upload">
-            <p className="text-xs text-slate-500">Upload one or more PCAP files. Optional labels help compare snapshots (e.g. before/during/after).</p>
+            <p className="text-xs text-slate-500">Upload PCAP files and/or log bundles. Optional labels help compare snapshots (e.g. before/during/after).</p>
             <p className="text-xs text-slate-500">
               Max <strong>{fmtSize(MAX_FILE_SIZE)}</strong> per file &middot; up to <strong>{MAX_PCAPS}</strong> files per job
             </p>
@@ -332,6 +418,71 @@ export const NewAnalysisPage: React.FC = () => {
                   />
                 </div>
 
+                {/* Optional Log Bundle Attachments (with phase labels) */}
+                <div className="border border-slate-700 rounded-lg p-3 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <label className="text-sm text-slate-300 font-medium">📎 Attach Log Bundles (optional)</label>
+                    {bundleEntries.length > 0 && (
+                      <button onClick={() => setBundleEntries([])} className="text-xs text-red-400 hover:text-red-300">Remove all</button>
+                    )}
+                  </div>
+                  <p className="text-xs text-slate-500">
+                    Attach log files or archives (Sysmon, EVTX, auth logs, CSV, JSON, etc.) to correlate with PCAPs.
+                    Use labels to tag each file by phase (before/during/after).
+                  </p>
+
+                  {bundleEntries.length < MAX_BUNDLES && (
+                    <div
+                      className="border border-dashed border-slate-600 rounded p-3 text-center cursor-pointer hover:border-slate-400 transition-colors"
+                      onClick={() => hybridBundleInputRef.current?.click()}
+                      onDragOver={e => { e.preventDefault(); e.stopPropagation(); }}
+                      onDrop={e => {
+                        e.preventDefault();
+                        const files = Array.from(e.dataTransfer.files);
+                        const newEntries = files.slice(0, MAX_BUNDLES - bundleEntries.length).map(f => ({ file: f, label: "" }));
+                        setBundleEntries(prev => [...prev, ...newEntries]);
+                      }}
+                    >
+                      <input ref={hybridBundleInputRef} type="file" accept=".zip,.tar.gz,.tgz,.tar.bz2,.tar,.json,.jsonl,.ndjson,.evtx,.log,.csv,.xml,.txt" multiple className="hidden"
+                        onChange={e => {
+                          if (e.target.files) {
+                            const files = Array.from(e.target.files);
+                            const newEntries = files.slice(0, MAX_BUNDLES - bundleEntries.length).map(f => ({ file: f, label: "" }));
+                            setBundleEntries(prev => [...prev, ...newEntries]);
+                            e.target.value = "";
+                          }
+                        }} />
+                      <span className="text-slate-500 text-xs">
+                        {bundleEntries.length === 0 ? "Drop log file(s) or archive(s) here or click to browse" : `+ Add more files (${bundleEntries.length}/${MAX_BUNDLES})`}
+                      </span>
+                    </div>
+                  )}
+
+                  {bundleEntries.length > 0 && (
+                    <div className="space-y-1">
+                      {bundleEntries.map((be, i) => (
+                        <div key={i} className="flex items-center gap-2 bg-slate-800/60 rounded px-2 py-1.5 text-sm">
+                          <span className="text-emerald-300">📦</span>
+                          <span className="truncate flex-1 text-slate-200" title={be.file.name}>
+                            {be.file.name} <span className="text-slate-500">({fmtSize(be.file.size)})</span>
+                          </span>
+                          <select value={be.label} onChange={ev => {
+                            const updated = [...bundleEntries];
+                            updated[i] = { ...updated[i], label: ev.target.value };
+                            setBundleEntries(updated);
+                          }}
+                            className="bg-slate-700 border border-slate-600 rounded px-1.5 py-0.5 text-xs text-slate-300 w-24">
+                            <option value="">No label</option>
+                            {LABEL_PRESETS.filter(l => l).map(l => <option key={l} value={l}>{l}</option>)}
+                          </select>
+                          <button onClick={() => setBundleEntries(prev => prev.filter((_, j) => j !== i))}
+                            className="text-red-400 hover:text-red-300 text-xs">✕</button>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
                 {/* Actions */}
                 <div className="flex justify-end gap-2">
                   <button onClick={handleSubmit} disabled={entries.length === 0}
@@ -370,6 +521,50 @@ export const NewAnalysisPage: React.FC = () => {
 
         {mode === "security_onion" && (
           <form className="space-y-4" onSubmit={handleLegacySubmit} data-testid="form-security-onion">
+            {/* ── Connection Settings ─────────────────────────── */}
+            <div className="border border-slate-700/50 rounded-lg p-4 space-y-3 bg-slate-900/30">
+              <h3 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
+                <svg className="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                Security Onion Connection
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="md:col-span-3">
+                  <label className="block mb-1 text-slate-400 text-xs">API URL (e.g. https://172.16.0.15)</label>
+                  <input type="text" className="bg-slate-900 border border-slate-700 rounded px-2 py-1 w-full text-slate-200 text-sm"
+                    value={soApiUrl} onChange={(e) => setSoApiUrl(e.target.value)} placeholder="https://172.16.0.15" data-testid="input-so-api-url" />
+                </div>
+                <div>
+                  <label className="block mb-1 text-slate-400 text-xs">Username</label>
+                  <input type="text" className="bg-slate-900 border border-slate-700 rounded px-2 py-1 w-full text-slate-200 text-sm"
+                    value={soUsername} onChange={(e) => setSoUsername(e.target.value)} placeholder="analyst@example.com" data-testid="input-so-conn-username" />
+                </div>
+                <div>
+                  <label className="block mb-1 text-slate-400 text-xs">Password</label>
+                  <input type="password" className="bg-slate-900 border border-slate-700 rounded px-2 py-1 w-full text-slate-200 text-sm"
+                    value={soPassword} onChange={(e) => setSoPassword(e.target.value)} data-testid="input-so-conn-password" />
+                </div>
+                <div className="flex items-end gap-2">
+                  <button type="button" onClick={handleTestSo} disabled={soTesting || !soApiUrl}
+                    className="rounded bg-cyan-700 px-3 py-1 text-xs font-medium hover:bg-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                    data-testid="btn-test-so">
+                    {soTesting ? "Testing…" : "Test Connection"}
+                  </button>
+                  <button type="button" onClick={handleSaveSo} disabled={soSaving || !soApiUrl}
+                    className="rounded bg-slate-700 px-3 py-1 text-xs font-medium hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                    data-testid="btn-save-so">
+                    {soSaving ? "Saving…" : "Save"}
+                  </button>
+                </div>
+              </div>
+              {soTestResult && (
+                <div className={`text-xs px-2 py-1 rounded ${soTestResult.ok ? "bg-emerald-900/40 text-emerald-400" : "bg-red-900/40 text-red-400"}`}>
+                  {soTestResult.ok ? "✓" : "✗"} {soTestResult.message}
+                </div>
+              )}
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block mb-1 text-slate-300">Start Time (local)</label>
@@ -527,6 +722,50 @@ export const NewAnalysisPage: React.FC = () => {
 
         {mode === "arkime" && (
           <form className="space-y-4" onSubmit={handleLegacySubmit} data-testid="form-arkime">
+            {/* ── Connection Settings ─────────────────────────── */}
+            <div className="border border-slate-700/50 rounded-lg p-4 space-y-3 bg-slate-900/30">
+              <h3 className="text-sm font-semibold text-slate-300 flex items-center gap-2">
+                <svg className="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+                </svg>
+                Arkime Connection
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="md:col-span-3">
+                  <label className="block mb-1 text-slate-400 text-xs">API URL (e.g. http://arkime:8005)</label>
+                  <input type="text" className="bg-slate-900 border border-slate-700 rounded px-2 py-1 w-full text-slate-200 text-sm"
+                    value={arkimeApiUrl} onChange={(e) => setArkimeApiUrl(e.target.value)} placeholder="http://arkime:8005" data-testid="input-arkime-conn-url" />
+                </div>
+                <div>
+                  <label className="block mb-1 text-slate-400 text-xs">Username</label>
+                  <input type="text" className="bg-slate-900 border border-slate-700 rounded px-2 py-1 w-full text-slate-200 text-sm"
+                    value={arkimeUsername} onChange={(e) => setArkimeUsername(e.target.value)} placeholder="admin" data-testid="input-arkime-conn-username" />
+                </div>
+                <div>
+                  <label className="block mb-1 text-slate-400 text-xs">Password / Token</label>
+                  <input type="password" className="bg-slate-900 border border-slate-700 rounded px-2 py-1 w-full text-slate-200 text-sm"
+                    value={arkimePassword} onChange={(e) => setArkimePassword(e.target.value)} data-testid="input-arkime-conn-password" />
+                </div>
+                <div className="flex items-end gap-2">
+                  <button type="button" onClick={handleTestArkime} disabled={arkimeTesting || !arkimeApiUrl}
+                    className="rounded bg-cyan-700 px-3 py-1 text-xs font-medium hover:bg-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                    data-testid="btn-test-arkime">
+                    {arkimeTesting ? "Testing…" : "Test Connection"}
+                  </button>
+                  <button type="button" onClick={handleSaveArkime} disabled={arkimeSaving || !arkimeApiUrl}
+                    className="rounded bg-slate-700 px-3 py-1 text-xs font-medium hover:bg-slate-600 disabled:opacity-50 disabled:cursor-not-allowed"
+                    data-testid="btn-save-arkime">
+                    {arkimeSaving ? "Saving…" : "Save"}
+                  </button>
+                </div>
+              </div>
+              {arkimeTestResult && (
+                <div className={`text-xs px-2 py-1 rounded ${arkimeTestResult.ok ? "bg-emerald-900/40 text-emerald-400" : "bg-red-900/40 text-red-400"}`}>
+                  {arkimeTestResult.ok ? "✓" : "✗"} {arkimeTestResult.message}
+                </div>
+              )}
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block mb-1 text-slate-300">Start Time (local)</label>
@@ -613,6 +852,8 @@ export const NewAnalysisPage: React.FC = () => {
             </button>
           </form>
         )}
+
+
       </div>
     </div>
     <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />

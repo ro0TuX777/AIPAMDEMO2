@@ -16,6 +16,7 @@ export const JOB_SUB_TABS = [
   { label: "Files", path: "files" },
   { label: "Timeline", path: "timeline" },
   { label: "IOCs", path: "iocs" },
+  { label: "Storyline", path: "storyline" },
   { label: "Graph", path: "graph" },
   { label: "Artifacts", path: "artifacts" },
   { label: "AI Chat", path: "chat" },

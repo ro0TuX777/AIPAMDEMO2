@@ -41,6 +41,7 @@ from backend.app.models.file import File
 from backend.app.models.ioc import Ioc
 from backend.app.models.job import Job
 from backend.app.models.job_pcap import JobPcap
+from backend.app.models.job_log_source import JobLogSource
 from backend.app.models.sensor import JobSensor
 from backend.app.models.timeline import TimelineEvent
 from backend.app.models.upload import Upload
@@ -48,6 +49,7 @@ from backend.app.schemas.common import (
     ExecutionProfile,
     JobStatus,
     PageInfo,
+    SourceType,
 )
 from backend.app.schemas.file import FileItem, FileListResponse
 from backend.app.schemas.ioc import IocItem, IocListResponse
@@ -62,12 +64,15 @@ from backend.app.schemas.job import (
     JobGraphResponse,
     JobListItem,
     JobListResponse,
+    JobLogSourceItem,
     JobPcapItem,
     PcapUploadItem,
     SensorItem,
     SensorListResponse,
     SensorProvenance,
     SensorStats,
+    StorylineResponse,
+    StorylineStage,
 )
 from backend.app.schemas.arkime import ArkimeImportResponse, ArkimeStatusResponse
 from backend.app.schemas.system import (
@@ -125,9 +130,20 @@ async def create_job(
     db: Session = Depends(get_db),
     settings: Settings = Depends(get_settings),
 ):
-    """Create a new analysis job from one or more validated uploads."""
+    """Create a new analysis job from one or more validated uploads.
+
+    Supports:
+      - PCAP-only jobs (upload PCAPs)
+      - Bundle-only jobs (upload log/C2/netflow archive, source_type != pcap)
+      - Hybrid jobs (PCAPs + bundle_upload_id in same request for fused analysis)
+    """
     response.headers["X-Request-Id"] = request_id
 
+    # ── Bundle-only path (no PCAPs) ──
+    if body.source_type != SourceType.pcap and not body.uploads and not body.bundle_upload_id:
+        return _create_bundle_job(body, db, settings)
+
+    # ── PCAP path (optionally with attached log bundle) ──
     upload_items = _resolve_upload_list(body)
 
     if len(upload_items) > MAX_PCAPS_PER_JOB:
@@ -152,6 +168,60 @@ async def create_job(
     job_dir: Path = settings.aipam_job_root / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
 
+    # ── Stage log bundle(s) if attached (hybrid PCAP + logs job) ──
+    manifest_json: str | None = None
+    has_bundle = False
+    if body.bundle_uploads:
+        from backend.app.pipeline.bundle_stager import stage_bundle
+
+        bundle_hints = None
+        if body.bundle_entries:
+            bundle_hints = [e.model_dump() for e in body.bundle_entries]
+
+        merged_manifest = None
+        for b_item in body.bundle_uploads:
+            bundle_upload: Upload | None = db.get(Upload, b_item.upload_id)
+            if bundle_upload is None:
+                raise HTTPException(
+                    status_code=400,
+                    detail=f"Bundle upload {b_item.upload_id} not found",
+                )
+
+            archive_path = settings.aipam_upload_root / b_item.upload_id / bundle_upload.filename
+            if not archive_path.exists():
+                raise HTTPException(status_code=400, detail="Bundle archive file missing from disk")
+
+            try:
+                manifest = stage_bundle(
+                    archive_path=archive_path,
+                    job_dir=job_dir,
+                    job_id=job_id,
+                    source_type=SourceType.log_bundle,
+                    exercise_id=body.exercise_id,
+                    bundle_entries=bundle_hints,
+                    label=b_item.label,
+                )
+                if merged_manifest is None:
+                    merged_manifest = manifest
+                else:
+                    # Merge entries from additional bundles into the first manifest
+                    merged_manifest.entries.extend(manifest.entries)
+                has_bundle = True
+            except ValueError as exc:
+                raise HTTPException(status_code=400, detail=f"Bundle staging failed: {exc}")
+
+        if merged_manifest is not None:
+            # Re-persist the merged manifest
+            manifest_path = job_dir / "source_manifest.json"
+            manifest_path.write_text(
+                merged_manifest.model_dump_json(indent=2),
+                encoding="utf-8",
+            )
+            manifest_json = merged_manifest.model_dump_json()
+
+    # Determine source_type for the job
+    source_type = "pcap+logs" if has_bundle else SourceType.pcap.value
+
     # Use first PCAP for backward-compat fields on the Job model
     first_upload = uploads[0]
     job = Job(
@@ -165,6 +235,9 @@ async def create_job(
         pcap_filename=first_upload.filename if len(uploads) == 1 else f"{len(uploads)} PCAPs",
         pcap_size_bytes=total_size,
         pcap_sha256=first_upload.sha256 if len(uploads) == 1 else None,
+        source_type=source_type,
+        exercise_id=body.exercise_id,
+        source_manifest_json=manifest_json,
         created_at=_now_iso(),
     )
     db.add(job)
@@ -181,6 +254,112 @@ async def create_job(
             sha256=upload.sha256,
         )
         db.add(pcap_rec)
+
+    # Create JobLogSource records from manifest entries (traceability)
+    if merged_manifest is not None:
+        for ordinal, entry in enumerate(merged_manifest.entries):
+            log_rec = JobLogSource(
+                job_id=job_id,
+                upload_id=None,  # bundle uploads don't map 1:1 to log files
+                label=entry.label,
+                filename=entry.filename,
+                source_system=entry.source_system,
+                parser_hint=entry.parser_hint,
+                ordinal=ordinal,
+                size_bytes=entry.size_bytes,
+                sha256=entry.sha256,
+            )
+            db.add(log_rec)
+
+    db.commit()
+
+    # Dispatch the pipeline to the Celery worker
+    _dispatch_job(job_id)
+
+    return JobCreateResponse(schema_version="1.0", job_id=job_id)
+
+
+def _create_bundle_job(
+    body: JobCreateRequest,
+    db: Session,
+    settings: Settings,
+) -> JobCreateResponse:
+    """Create a job from a telemetry bundle (log/C2/netflow/exercise).
+
+    The bundle archive must have been uploaded via ``POST /uploads/bundle``
+    first.  The ``upload_id`` in the request body references that upload.
+    """
+    from backend.app.pipeline.bundle_stager import stage_bundle
+
+    if not body.upload_id:
+        raise HTTPException(status_code=400, detail="upload_id required for bundle jobs")
+
+    upload: Upload | None = db.get(Upload, body.upload_id)
+    if upload is None:
+        raise HTTPException(status_code=400, detail=f"Upload {body.upload_id} not found")
+
+    archive_path = settings.aipam_upload_root / body.upload_id / upload.filename
+    if not archive_path.exists():
+        raise HTTPException(status_code=400, detail="Upload file missing from disk")
+
+    job_id = str(uuid.uuid4())
+
+    # Create job directory with telemetry sub-tree
+    job_dir: Path = settings.aipam_job_root / job_id
+    job_dir.mkdir(parents=True, exist_ok=True)
+    (job_dir / "input").mkdir(exist_ok=True)
+    (job_dir / "normalized").mkdir(exist_ok=True)
+    (job_dir / "sensors").mkdir(exist_ok=True)
+    (job_dir / "report").mkdir(exist_ok=True)
+
+    # Extract bundle and build manifest
+    bundle_hints = None
+    if body.bundle_entries:
+        bundle_hints = [e.model_dump() for e in body.bundle_entries]
+
+    try:
+        manifest = stage_bundle(
+            archive_path=archive_path,
+            job_dir=job_dir,
+            job_id=job_id,
+            source_type=body.source_type,
+            exercise_id=body.exercise_id,
+            bundle_entries=bundle_hints,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+
+    job = Job(
+        job_id=job_id,
+        job_name=body.job_name or f"{body.source_type.value} analysis",
+        notes=body.notes,
+        status="queued",
+        execution_profile=body.execution_profile.value,
+        priority=body.priority.value,
+        upload_id=body.upload_id,
+        pcap_filename=None,
+        pcap_size_bytes=upload.size_bytes,
+        source_type=body.source_type.value,
+        exercise_id=body.exercise_id,
+        source_manifest_json=manifest.model_dump_json(),
+        created_at=_now_iso(),
+    )
+    db.add(job)
+
+    # Create JobLogSource records from manifest entries (traceability)
+    for ordinal, entry in enumerate(manifest.entries):
+        log_rec = JobLogSource(
+            job_id=job_id,
+            upload_id=body.upload_id,
+            label=entry.label,
+            filename=entry.filename,
+            source_system=entry.source_system,
+            parser_hint=entry.parser_hint,
+            ordinal=ordinal,
+            size_bytes=entry.size_bytes,
+            sha256=entry.sha256,
+        )
+        db.add(log_rec)
 
     db.commit()
 
@@ -417,6 +596,12 @@ async def get_job(
         select(JobPcap).where(JobPcap.job_id == job_id).order_by(JobPcap.ordinal)
     ).scalars().all()
     detail.pcaps = [JobPcapItem.model_validate(r) for r in pcap_rows]
+
+    # Attach per-job log source records (traceability)
+    log_rows = db.execute(
+        select(JobLogSource).where(JobLogSource.job_id == job_id).order_by(JobLogSource.ordinal)
+    ).scalars().all()
+    detail.log_sources = [JobLogSourceItem.model_validate(r) for r in log_rows]
 
     return JobGetResponse(job=detail)
 
@@ -859,6 +1044,8 @@ async def job_timeline(
             severity=t.severity,
             entities=details.get("entities"),
             refs=details.get("refs"),
+            evidence_status=details.get("evidence_status"),
+            sensor=details.get("sensor"),
         ))
 
     return TimelineListResponse(items=result_items, page=page)
@@ -1071,6 +1258,41 @@ async def job_evidence_graph(
         edges=edges,
         node_count=len(nodes),
         edge_count=len(edges),
+    )
+
+
+# ---------- GET /jobs/{jobId}/storyline ----------
+
+@router.get("/jobs/{job_id}/storyline", response_model=StorylineResponse)
+async def job_storyline(
+    job_id: str,
+    db: Session = Depends(get_db),
+):
+    """Reconstruct the attack storyline for a job.
+
+    Returns kill-chain-aligned stages with confidence scores, host timelines,
+    and a human-readable narrative.
+    """
+    from backend.app.services.storyline import reconstruct_storyline
+
+    _require_job(db, job_id)
+
+    try:
+        result = reconstruct_storyline(db, job_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc))
+
+    d = result.to_dict()
+    stages = [StorylineStage(**s) for s in d["stages"]]
+
+    return StorylineResponse(
+        job_id=d["job_id"],
+        stages=stages,
+        host_timelines=d["host_timelines"],
+        narrative=d["narrative"],
+        total_nodes=d["total_nodes"],
+        total_edges=d["total_edges"],
+        unclassified_count=d["unclassified_count"],
     )
 
 

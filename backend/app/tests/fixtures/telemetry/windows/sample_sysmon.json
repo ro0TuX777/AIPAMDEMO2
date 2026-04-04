@@ -1,0 +1,40 @@
+[
+  {
+    "EventID": 1,
+    "TimeCreated": "2026-03-15T14:32:00.000Z",
+    "Computer": "WORKSTATION-01",
+    "Channel": "Microsoft-Windows-Sysmon/Operational",
+    "Provider": "Microsoft-Windows-Sysmon",
+    "EventData": {
+      "ProcessGuid": "{12345678-abcd-1234-abcd-123456789012}",
+      "ProcessId": "4832",
+      "Image": "C:\\Windows\\System32\\cmd.exe",
+      "CommandLine": "cmd.exe /c whoami",
+      "User": "CORP\\jdoe",
+      "ParentProcessGuid": "{12345678-abcd-1234-abcd-123456789013}",
+      "ParentImage": "C:\\Windows\\explorer.exe",
+      "ParentCommandLine": "C:\\Windows\\explorer.exe",
+      "Hashes": "SHA256=A1B2C3D4E5F6..."
+    }
+  },
+  {
+    "EventID": 3,
+    "TimeCreated": "2026-03-15T14:33:00.000Z",
+    "Computer": "WORKSTATION-01",
+    "Channel": "Microsoft-Windows-Sysmon/Operational",
+    "Provider": "Microsoft-Windows-Sysmon",
+    "EventData": {
+      "ProcessGuid": "{12345678-abcd-1234-abcd-123456789012}",
+      "ProcessId": "4832",
+      "Image": "C:\\Windows\\System32\\cmd.exe",
+      "User": "CORP\\jdoe",
+      "Protocol": "tcp",
+      "SourceIp": "192.168.1.100",
+      "SourcePort": "49200",
+      "DestinationIp": "10.10.10.10",
+      "DestinationPort": "443",
+      "DestinationHostname": "suspicious.example.com"
+    }
+  }
+]
+

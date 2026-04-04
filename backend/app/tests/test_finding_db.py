@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 import pytest
 from sqlmodel import Session, SQLModel, create_engine, select
 
-from app.db_models import FindingDB, PipelineCheckpointDB
+from backend.app.db_models import FindingDB, PipelineCheckpointDB
 
 
 @pytest.fixture

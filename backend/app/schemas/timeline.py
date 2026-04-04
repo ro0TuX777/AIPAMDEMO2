@@ -30,6 +30,8 @@ class TimelineItem(BaseModel):
     severity: Severity | None = None
     entities: TimelineEntityFields | None = None
     refs: TimelineRefs | None = None
+    evidence_status: str | None = None  # "observed" | "confirmed" | "corroborated"
+    sensor: str | None = None           # provenance: which sensor produced this
 
 
 class TimelineListResponse(BaseModel):

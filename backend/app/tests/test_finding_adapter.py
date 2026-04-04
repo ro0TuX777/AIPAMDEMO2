@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 
-from app.domain.finding_adapter import llm_output_to_findings
-from app.models import (
+from backend.app.domain.finding_adapter import llm_output_to_findings
+from backend.app.domain_models import (
     Anomaly,
     AttackChainItem,
     HostFindingLLM,

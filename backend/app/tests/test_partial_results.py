@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 import pytest
 from sqlmodel import Session, SQLModel, create_engine
 
-from app.partial_results import (
+from backend.app.partial_results import (
     delete_partial_result,
     get_partial_result,
     save_partial_result,
@@ -21,7 +21,7 @@ def _patch_engine(monkeypatch, tmp_path):
     test_engine = create_engine(f"sqlite:///{db_path}")
 
     # Import all models so tables are registered
-    from app.db_models import (  # noqa: F401
+    from backend.app.db_models import (  # noqa: F401
         JobDB,
         JobResultDB,
         PartialJobResultDB,
@@ -31,8 +31,8 @@ def _patch_engine(monkeypatch, tmp_path):
 
     # Seed a parent JobDB row (required by FK)
     with Session(test_engine) as session:
-        from app.db_models import JobDB
-        from app.models import JobStatus
+        from backend.app.db_models import JobDB
+        from backend.app.domain_models import JobStatus
 
         session.add(
             JobDB(
@@ -47,7 +47,7 @@ def _patch_engine(monkeypatch, tmp_path):
         session.commit()
 
     # Patch the engine used by partial_results
-    import app.partial_results as pr_mod
+    import backend.app.partial_results as pr_mod
     monkeypatch.setattr(pr_mod, "engine", test_engine)
 
     return test_engine

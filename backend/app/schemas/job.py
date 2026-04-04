@@ -10,6 +10,7 @@ from backend.app.schemas.common import (
     JobStatus,
     PageInfo,
     Priority,
+    SourceType,
 )
 
 
@@ -19,6 +20,20 @@ class PcapUploadItem(BaseModel):
     label: str | None = None  # optional phase label: "before", "during", "after", or custom
 
 
+class BundleUploadItem(BaseModel):
+    """A single log bundle upload to attach to a job (with optional phase label)."""
+    upload_id: str
+    label: str | None = None  # optional phase label: "before", "during", "after", or custom
+
+
+class BundleSourceEntry(BaseModel):
+    """A single file entry within a log/C2/netflow bundle."""
+    filename: str
+    source_system: str | None = None      # e.g. "sysmon", "paloalto", "cobalt_strike"
+    parser_hint: str | None = None        # suggested parser name
+    label: str | None = None              # user-supplied tag
+
+
 class JobCreateRequest(BaseModel):
     upload_id: str | None = None          # backward-compat: single upload
     uploads: list[PcapUploadItem] | None = None  # multi-PCAP: list of uploads with optional labels
@@ -26,6 +41,12 @@ class JobCreateRequest(BaseModel):
     notes: str | None = None
     execution_profile: ExecutionProfile
     priority: Priority = Priority.normal
+    # --- Telemetry fusion fields ---
+    source_type: SourceType = SourceType.pcap
+    exercise_id: str | None = None
+    bundle_entries: list[BundleSourceEntry] | None = None  # metadata for non-PCAP bundles
+    # --- Hybrid job: attach log bundles alongside PCAPs ---
+    bundle_uploads: list[BundleUploadItem] | None = None  # labeled log bundles to fuse with PCAPs
 
 
 class JobCreateResponse(BaseModel):
@@ -41,6 +62,21 @@ class JobPcapItem(BaseModel):
     upload_id: str
     label: str | None = None
     filename: str
+    ordinal: int
+    size_bytes: int | None = None
+    sha256: str | None = None
+
+
+class JobLogSourceItem(BaseModel):
+    """A log file associated with a job (for traceability)."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    upload_id: str | None = None
+    label: str | None = None
+    filename: str
+    source_system: str | None = None
+    parser_hint: str | None = None
     ordinal: int
     size_bytes: int | None = None
     sha256: str | None = None
@@ -118,6 +154,9 @@ class JobListItem(BaseModel):
     pcap_filename: str | None = None
     pcap_size_bytes: int | None = None
     error_summary: str | None = None
+    # --- Telemetry fusion fields ---
+    source_type: SourceType = SourceType.pcap
+    exercise_id: str | None = None
 
 
 class JobListResponse(BaseModel):
@@ -131,6 +170,7 @@ class JobDetail(JobListItem):
     stages: list[StageItem] = []
     sensors: list[SensorItem] = []
     pcaps: list[JobPcapItem] = []
+    log_sources: list[JobLogSourceItem] = []
 
 
 class JobGetResponse(BaseModel):
@@ -165,4 +205,32 @@ class EvidenceGraphResponse(BaseModel):
     edges: list[GraphEdge]
     node_count: int = 0
     edge_count: int = 0
+
+
+# ── Storyline schemas ────────────────────────────────────────────────
+
+class StorylineStage(BaseModel):
+    """A single kill-chain stage in the attack storyline."""
+    name: str
+    display_name: str
+    node_count: int = 0
+    edge_count: int = 0
+    confidence: float = 0.0
+    summary: str = ""
+    host_ips: list[str] = []
+    time_start: str | None = None
+    time_end: str | None = None
+    node_ids: list[str] = []
+
+
+class StorylineResponse(BaseModel):
+    """Response for GET /jobs/{id}/storyline."""
+    schema_version: str = SCHEMA_VERSION
+    job_id: str
+    stages: list[StorylineStage] = []
+    host_timelines: dict[str, list[str]] = {}
+    narrative: str = ""
+    total_nodes: int = 0
+    total_edges: int = 0
+    unclassified_count: int = 0
 

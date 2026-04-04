@@ -505,6 +505,39 @@ export const JobDetailPage: React.FC = () => {
         </div>
       )}
 
+      {/* Evidence Sources panel — shows all PCAPs + log files with provenance */}
+      {((job.pcaps && job.pcaps.length > 0) || (job.log_sources && job.log_sources.length > 0)) && (
+        <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-4">
+          <h3 className="text-sm font-semibold text-slate-300 mb-3 flex items-center gap-2">
+            <svg className="w-4 h-4 text-cyan-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+            </svg>
+            Evidence Sources
+          </h3>
+          <div className="space-y-2">
+            {job.pcaps && job.pcaps.map((p, i) => (
+              <div key={`pcap-${p.id ?? i}`} className="flex items-center gap-3 px-3 py-2 rounded bg-slate-800/60 border border-slate-700/50 text-xs">
+                <span className="px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 font-medium uppercase tracking-wide" style={{fontSize: '0.65rem'}}>PCAP</span>
+                {p.label && <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 font-medium">{p.label}</span>}
+                <span className="text-slate-300 font-mono truncate">{p.filename}</span>
+                {p.size_bytes ? <span className="text-slate-500 ml-auto whitespace-nowrap">{(p.size_bytes / 1048576).toFixed(1)} MB</span> : null}
+                {p.sha256 && <span className="text-slate-600 font-mono truncate max-w-[120px]" title={p.sha256}>{p.sha256.slice(0, 12)}…</span>}
+              </div>
+            ))}
+            {job.log_sources && job.log_sources.map((ls, i) => (
+              <div key={`log-${ls.id ?? i}`} className="flex items-center gap-3 px-3 py-2 rounded bg-slate-800/60 border border-slate-700/50 text-xs">
+                <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-medium uppercase tracking-wide" style={{fontSize: '0.65rem'}}>LOG</span>
+                {ls.label && <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 font-medium">{ls.label}</span>}
+                <span className="text-slate-300 font-mono truncate">{ls.filename}</span>
+                {ls.source_system && <span className="px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-300">{ls.source_system}</span>}
+                {ls.size_bytes ? <span className="text-slate-500 ml-auto whitespace-nowrap">{(ls.size_bytes / 1024).toFixed(1)} KB</span> : null}
+                {ls.sha256 && <span className="text-slate-600 font-mono truncate max-w-[120px]" title={ls.sha256}>{ls.sha256.slice(0, 12)}…</span>}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {/* SSE Step Progress (shown while pipeline is running) */}
       {progress && !isTerminal(job.status) && (
         <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-4">

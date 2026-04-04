@@ -7,9 +7,9 @@ from typing import List
 
 import pytest
 
-from app.domain.forensic_data import ForensicData
-from app.domain.finding import Finding, FindingSeverity
-from app.analyzers.base import BaseAnalyzer
+from backend.app.domain.forensic_data import ForensicData
+from backend.app.domain.finding import Finding, FindingSeverity
+from backend.app.analyzers.base import BaseAnalyzer
 
 
 # ---------------------------------------------------------------------------

@@ -16,8 +16,8 @@ Tests all detection heuristics:
 from datetime import datetime, timedelta
 import uuid
 
-from app.models import FlowRecord
-from app.anomaly_detector import AnomalyDetector, AnomalyFinding, AnomalyReport
+from backend.app.domain_models import FlowRecord
+from backend.app.anomaly_detector import AnomalyDetector, AnomalyFinding, AnomalyReport
 
 
 def create_flow(

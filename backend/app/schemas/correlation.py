@@ -11,8 +11,8 @@ from pydantic import BaseModel, Field
 
 # ── Match types ───────────────────────────────────────────────────────
 
-MatchType = Literal["same_host", "same_ioc", "same_mitre", "similar_pattern"]
-OverlapType = Literal["shared_hosts", "shared_iocs", "shared_mitre"]
+MatchType = Literal["same_host", "same_ioc", "same_mitre", "similar_pattern", "behavioral_similarity"]
+OverlapType = Literal["shared_hosts", "shared_iocs", "shared_mitre", "shared_behavior"]
 
 
 class CorrelationMatch(BaseModel):

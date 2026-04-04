@@ -1,0 +1,30 @@
+[
+  {
+    "timestamp": "2026-03-15T14:32:30.000Z",
+    "agent_id": "beacon-001",
+    "callback_type": "checkin",
+    "source_ip": "192.168.1.100",
+    "dest_ip": "10.10.10.10",
+    "dest_port": 443,
+    "uri": "/api/callback",
+    "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+    "sleep_seconds": 60,
+    "jitter_pct": 10,
+    "framework": "cobalt_strike",
+    "operator": "red-team-1"
+  },
+  {
+    "timestamp": "2026-03-15T14:33:30.000Z",
+    "agent_id": "beacon-001",
+    "callback_type": "task_result",
+    "source_ip": "192.168.1.100",
+    "dest_ip": "10.10.10.10",
+    "dest_port": 443,
+    "uri": "/api/callback",
+    "task_id": "task-whoami-001",
+    "task_output": "CORP\\jdoe",
+    "framework": "cobalt_strike",
+    "operator": "red-team-1"
+  }
+]
+

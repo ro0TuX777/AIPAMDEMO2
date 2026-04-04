@@ -13,8 +13,10 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pytest
 
-from app.models import AlertRecord, FlowRecord
-from app.flow_vectorstore import (
+lancedb = pytest.importorskip("lancedb", reason="lancedb not installed")
+
+from backend.app.domain_models import AlertRecord, FlowRecord
+from backend.app.flow_vectorstore import (
     _humanize_bytes,
     _table_name,
     delete_flow_index,
@@ -120,7 +122,7 @@ def lance_dir(tmp_path):
     mock_settings.embedding_model_name = "sentence-transformers/all-MiniLM-L6-v2"
     mock_settings.embedding_model_path = None
 
-    import app.flow_vectorstore as fvs
+    import backend.app.flow_vectorstore as fvs
 
     # Reset module singletons
     fvs._lance_db = None

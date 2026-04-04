@@ -1,0 +1,96 @@
+[
+  {
+    "EventID": 4624,
+    "TimeCreated": "2026-03-28T08:30:00.000Z",
+    "Computer": "WORKSTATION-07",
+    "Channel": "Security",
+    "Provider": "Microsoft-Windows-Security-Auditing",
+    "EventData": {
+      "TargetUserName": "t.analyst",
+      "TargetDomainName": "ACME",
+      "LogonType": "10",
+      "IpAddress": "203.0.113.77",
+      "IpPort": "54210",
+      "WorkstationName": "EXT-LAPTOP",
+      "LogonProcessName": "User32",
+      "AuthenticationPackageName": "Negotiate"
+    }
+  },
+  {
+    "EventID": 4625,
+    "TimeCreated": "2026-03-28T08:25:00.000Z",
+    "Computer": "WORKSTATION-07",
+    "Channel": "Security",
+    "Provider": "Microsoft-Windows-Security-Auditing",
+    "EventData": {
+      "TargetUserName": "administrator",
+      "TargetDomainName": "ACME",
+      "LogonType": "10",
+      "IpAddress": "203.0.113.77",
+      "IpPort": "54180",
+      "FailureReason": "%%2313",
+      "Status": "0xc000006d",
+      "SubStatus": "0xc000006a"
+    }
+  },
+  {
+    "EventID": 4625,
+    "TimeCreated": "2026-03-28T08:26:00.000Z",
+    "Computer": "WORKSTATION-07",
+    "Channel": "Security",
+    "Provider": "Microsoft-Windows-Security-Auditing",
+    "EventData": {
+      "TargetUserName": "admin",
+      "TargetDomainName": "ACME",
+      "LogonType": "10",
+      "IpAddress": "203.0.113.77",
+      "IpPort": "54185",
+      "FailureReason": "%%2313",
+      "Status": "0xc000006d",
+      "SubStatus": "0xc000006a"
+    }
+  },
+  {
+    "EventID": 4625,
+    "TimeCreated": "2026-03-28T08:27:00.000Z",
+    "Computer": "WORKSTATION-07",
+    "Channel": "Security",
+    "Provider": "Microsoft-Windows-Security-Auditing",
+    "EventData": {
+      "TargetUserName": "t.analyst",
+      "TargetDomainName": "ACME",
+      "LogonType": "10",
+      "IpAddress": "203.0.113.77",
+      "IpPort": "54190",
+      "FailureReason": "%%2313",
+      "Status": "0xc000006d",
+      "SubStatus": "0xc000006a"
+    }
+  },
+  {
+    "EventID": 4672,
+    "TimeCreated": "2026-03-28T08:31:00.000Z",
+    "Computer": "WORKSTATION-07",
+    "Channel": "Security",
+    "Provider": "Microsoft-Windows-Security-Auditing",
+    "EventData": {
+      "SubjectUserName": "t.analyst",
+      "SubjectDomainName": "ACME",
+      "PrivilegeList": "SeDebugPrivilege\n\t\t\tSeImpersonatePrivilege"
+    }
+  },
+  {
+    "EventID": 4688,
+    "TimeCreated": "2026-03-28T08:35:00.000Z",
+    "Computer": "WORKSTATION-07",
+    "Channel": "Security",
+    "Provider": "Microsoft-Windows-Security-Auditing",
+    "EventData": {
+      "NewProcessName": "C:\\Windows\\System32\\whoami.exe",
+      "SubjectUserName": "t.analyst",
+      "SubjectDomainName": "ACME",
+      "CommandLine": "whoami /all",
+      "ParentProcessName": "C:\\Windows\\System32\\cmd.exe"
+    }
+  }
+]

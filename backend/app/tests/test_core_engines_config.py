@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.core_engines.config.model_config_manager import (
+from backend.app.core_engines.config.model_config_manager import (
     ModelConfig,
     ModelConfigManager,
 )
@@ -113,7 +113,7 @@ class TestOllamaAPI:
             ]
         }
 
-        with patch("app.core_engines.config.model_config_manager.httpx.Client") as mock_client:
+        with patch("backend.app.core_engines.config.model_config_manager.httpx.Client") as mock_client:
             mock_client.return_value.__enter__ = MagicMock(return_value=MagicMock(get=MagicMock(return_value=mock_resp)))
             mock_client.return_value.__exit__ = MagicMock(return_value=False)
             assert manager.validate_model("aipam-trafficllm-v4") is True
@@ -123,7 +123,7 @@ class TestOllamaAPI:
         mock_resp.status_code = 200
         mock_resp.json.return_value = {"models": []}
 
-        with patch("app.core_engines.config.model_config_manager.httpx.Client") as mock_client:
+        with patch("backend.app.core_engines.config.model_config_manager.httpx.Client") as mock_client:
             mock_client.return_value.__enter__ = MagicMock(return_value=MagicMock(get=MagicMock(return_value=mock_resp)))
             mock_client.return_value.__exit__ = MagicMock(return_value=False)
             assert manager.validate_model("nonexistent-model") is False
@@ -153,7 +153,7 @@ class TestCurrentSelection:
             ]
         }
 
-        with patch("app.core_engines.config.model_config_manager.httpx.Client") as mock_client:
+        with patch("backend.app.core_engines.config.model_config_manager.httpx.Client") as mock_client:
             mock_client.return_value.__enter__ = MagicMock(return_value=MagicMock(get=MagicMock(return_value=mock_resp)))
             mock_client.return_value.__exit__ = MagicMock(return_value=False)
 

@@ -195,6 +195,79 @@ _MATCH_TYPE_BUCKET: dict[str, Literal["hosts", "iocs", "mitre"]] = {
     "same_mitre": "mitre",
 }
 
+# ── Behavioral Similarity ─────────────────────────────────────────────
+
+_WEIGHT_BEHAVIOR = 0.30  # Weight for behavioral similarity in relevance scoring
+
+
+def find_behavioral_matches(
+    db: Session,
+    job_id: str,
+    job_map: JobMap | None = None,
+    top_k: int = 10,
+) -> list[CorrelationMatch]:
+    """Find behaviorally similar prior jobs using forensic memory.
+
+    Queries the behavioral fingerprint memory for the current job's
+    confirmed findings and returns matches from other jobs.
+    """
+    if job_map is None:
+        job_map = _job_lookup(db)
+
+    try:
+        from backend.app.forensic_memory import query_behavioral_memory
+        from backend.app.services.behavioral_memory import extract_all_fingerprints
+    except ImportError:
+        logger.debug("Behavioral memory not available for correlation")
+        return []
+
+    # Extract fingerprints from the current job to use as queries
+    fingerprints = extract_all_fingerprints(db, job_id)
+    if not fingerprints:
+        return []
+
+    matches: list[CorrelationMatch] = []
+    seen_jobs: set[str] = set()
+
+    for fp in fingerprints[:10]:  # Limit queries to avoid excessive lookups
+        hits = query_behavioral_memory(
+            fp.text,
+            top_k=3,
+            fingerprint_type=fp.fingerprint_type,
+        )
+        for hit in hits:
+            meta = hit.get("metadata", {})
+            hit_job_id = meta.get("job_id", "")
+            if not hit_job_id or hit_job_id == job_id:
+                continue
+
+            relevance = hit.get("relevance", 0)
+            if relevance < 0.3:
+                continue
+
+            dedup_key = (hit_job_id, meta.get("fingerprint_type", ""))
+            if dedup_key in seen_jobs:
+                continue
+            seen_jobs.add(dedup_key)
+
+            jname, jcreated = _resolve_job(job_map, hit_job_id)
+            fp_type = meta.get("fingerprint_type", "behavioral")
+            label = meta.get("label", "")
+
+            matches.append(CorrelationMatch(
+                job_id=hit_job_id,
+                job_name=jname,
+                job_created_at=jcreated,
+                match_type="behavioral_similarity",
+                matched_entity=f"{fp_type}:{label}",
+                context=f"Behavioral similarity ({fp_type}): {label} — relevance {relevance:.2f}",
+                similarity_score=round(relevance, 2),
+            ))
+
+    # Sort by similarity, deduplicate by job
+    matches.sort(key=lambda m: m.similarity_score, reverse=True)
+    return matches[:top_k]
+
 
 def detect_campaigns(
     db: Session, job_id: str, all_matches: list[CorrelationMatch],
@@ -293,12 +366,13 @@ def get_correlations(
 
     ioc_values = [ioc] if ioc else None  # None → auto-fetch all
 
-    # Collect matches from all three dimensions
+    # Collect matches from all dimensions (including behavioral)
     all_matches: list[CorrelationMatch] = []
     all_matches.extend(find_host_matches(db, job_id, hosts, job_map))
     all_matches.extend(find_ioc_matches(db, job_id, ioc_values, job_map))
     if not host and not ioc:
         all_matches.extend(find_mitre_matches(db, job_id, job_map))
+        all_matches.extend(find_behavioral_matches(db, job_id, job_map))
 
     # Rank by similarity then cap
     all_matches.sort(key=lambda m: m.similarity_score, reverse=True)
@@ -386,23 +460,54 @@ def get_related_jobs(db: Session, job_id: str) -> RelatedJobsResponse:
         ).all():
             job_overlaps[r[0]]["mitre"].add(cat)
 
+    # Behavioral similarity — boost scores for jobs with similar fingerprints
+    behavioral_scores: dict[str, float] = {}
+    try:
+        behavioral_matches = find_behavioral_matches(db, job_id, job_map, top_k=20)
+        for bm in behavioral_matches:
+            if bm.job_id not in behavioral_scores:
+                behavioral_scores[bm.job_id] = 0.0
+            behavioral_scores[bm.job_id] = max(
+                behavioral_scores[bm.job_id], bm.similarity_score,
+            )
+    except Exception:
+        logger.debug("Behavioral matching unavailable for related-jobs", exc_info=True)
+
     # Assemble ranked list
     related: list[RelatedJob] = []
     for jid, overlaps in job_overlaps.items():
         jname, jcreated = _resolve_job(job_map, jid)
         all_entities = sorted(overlaps["hosts"] | overlaps["iocs"] | overlaps["mitre"])
-        score = min(
-            1.0,
+        base_score = (
             len(overlaps["hosts"]) * _WEIGHT_HOST
             + len(overlaps["iocs"]) * _WEIGHT_IOC
-            + len(overlaps["mitre"]) * _WEIGHT_MITRE,
+            + len(overlaps["mitre"]) * _WEIGHT_MITRE
         )
+        behavior_boost = behavioral_scores.get(jid, 0.0) * _WEIGHT_BEHAVIOR
+        score = min(1.0, base_score + behavior_boost)
+
+        overlap_type = _primary_overlap_type(overlaps)
+        if behavior_boost > base_score and jid in behavioral_scores:
+            overlap_type = "shared_behavior"
+
         related.append(RelatedJob(
             job_id=jid, job_name=jname, job_created_at=jcreated,
-            overlap_type=_primary_overlap_type(overlaps),
+            overlap_type=overlap_type,
             shared_entities=all_entities,
             relevance_score=round(score, 2),
         ))
+
+    # Also add jobs found purely through behavioral similarity
+    existing_jids = {r.job_id for r in related}
+    for jid, bscore in behavioral_scores.items():
+        if jid not in existing_jids and bscore >= 0.4:
+            jname, jcreated = _resolve_job(job_map, jid)
+            related.append(RelatedJob(
+                job_id=jid, job_name=jname, job_created_at=jcreated,
+                overlap_type="shared_behavior",
+                shared_entities=[],
+                relevance_score=round(min(1.0, bscore * _WEIGHT_BEHAVIOR), 2),
+            ))
 
     related.sort(key=lambda r: r.relevance_score, reverse=True)
     return RelatedJobsResponse(job_id=job_id, related_jobs=related[:20])

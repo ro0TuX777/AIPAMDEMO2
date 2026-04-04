@@ -169,6 +169,21 @@ def init_v2_db() -> None:
                     text("ALTER TABLE proofs ADD COLUMN mode VARCHAR DEFAULT 'soc_handoff'")
                 )
 
+    # Telemetry Fusion: add source_type, exercise_id, source_manifest_json to jobs
+    if inspector.has_table("jobs"):
+        job_cols = {c["name"] for c in inspector.get_columns("jobs")}
+        _new_job_cols = [
+            ("source_type", "VARCHAR DEFAULT 'pcap'"),
+            ("exercise_id", "VARCHAR"),
+            ("source_manifest_json", "TEXT"),
+        ]
+        for col_name, col_type in _new_job_cols:
+            if col_name not in job_cols:
+                with engine.begin() as connection:
+                    connection.execute(
+                        text(f"ALTER TABLE jobs ADD COLUMN {col_name} {col_type}")
+                    )
+
 def reset_engine() -> None:
     """Reset engine and session factory. Used in tests."""
     global _engine, _SessionLocal

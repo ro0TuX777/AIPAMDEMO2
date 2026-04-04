@@ -1,0 +1,26 @@
+[
+  {
+    "timestamp": "2026-03-15T14:30:00.000Z",
+    "modem_id": "VSAT-TERM-01",
+    "event_type": "link_status",
+    "satellite": "SAT-KU-7",
+    "signal_strength_dbm": -68.5,
+    "snr_db": 12.3,
+    "link_state": "active",
+    "bandwidth_kbps": 2048,
+    "latency_ms": 650,
+    "interface": "eth0"
+  },
+  {
+    "timestamp": "2026-03-15T14:35:00.000Z",
+    "modem_id": "VSAT-TERM-01",
+    "event_type": "config_change",
+    "satellite": "SAT-KU-7",
+    "change_type": "frequency_repoint",
+    "old_value": "14.250 GHz",
+    "new_value": "14.375 GHz",
+    "initiated_by": "remote_noc",
+    "interface": "eth0"
+  }
+]
+

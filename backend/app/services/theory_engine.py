@@ -21,6 +21,7 @@ from backend.app.models.alert import Alert
 from backend.app.models.finding import Finding
 from backend.app.models.host import Host
 from backend.app.models.ioc import Ioc
+from backend.app.models.normalized_event import NormalizedEvent
 from backend.app.models.theory import Theory
 
 logger = logging.getLogger(__name__)
@@ -57,6 +58,12 @@ _HYPOTHESIS_PATTERNS: dict[str, list[str]] = {
         r"admin", r"legitimate.*tool", r"powershell",
         r"ssh.*session", r"rdp.*session", r"remote.*admin",
         r"sysadmin", r"management",
+    ],
+    "credential_abuse": [
+        r"brute", r"credential", r"spray", r"password",
+        r"kerberoast", r"mimikatz", r"lsass", r"ntlm",
+        r"pass.the.hash", r"golden.ticket", r"silver.ticket",
+        r"credential.dump", r"logon.fail", r"account.lock",
     ],
 }
 
@@ -100,7 +107,17 @@ def _gather_evidence(db: Session, job_id: str, host_ip: str | None = None, pcap_
         ))
     iocs = db.execute(iq).scalars().all()
 
-    return {"findings": findings, "alerts": alerts, "iocs": iocs}
+    # NormalizedEvents (telemetry)
+    teq = select(NormalizedEvent).where(NormalizedEvent.job_id == job_id)
+    if host_ip:
+        teq = teq.where(or_(
+            NormalizedEvent.src_ip == host_ip,
+            NormalizedEvent.dest_ip == host_ip,
+            NormalizedEvent.hostname == host_ip,
+        ))
+    telemetry = db.execute(teq).scalars().all()
+
+    return {"findings": findings, "alerts": alerts, "iocs": iocs, "telemetry": telemetry}
 
 
 # ── Hypothesis scoring ────────────────────────────────────────────────
@@ -163,7 +180,27 @@ def _score_hypothesis(
             ioc_count += 1
             supporting.append(ioc.ioc_id)
 
-    raw_score = findings_score + alerts_score + iocs_score
+    # Score telemetry (NormalizedEvents)
+    telemetry_score = 0.0
+    telemetry_count = 0
+    for evt in evidence.get("telemetry", []):
+        text = f"{evt.event_type} {evt.source_system or ''} {evt.data_json or ''}"
+        matched = any(rx.search(text) for rx in compiled)
+        if matched:
+            # Confirmed evidence (C2-corroborated) gets the highest weight
+            if evt.evidence_status == "confirmed":
+                status_weight = 0.9
+            elif evt.evidence_status == "corroborated":
+                status_weight = 0.6
+            else:
+                status_weight = 0.3
+            corr_bonus = (evt.corroboration_score or 0.0) * 0.2
+            contribution = (status_weight + corr_bonus) * 0.25
+            telemetry_score += contribution
+            telemetry_count += 1
+            supporting.append(evt.event_id)
+
+    raw_score = findings_score + alerts_score + iocs_score + telemetry_score
     # Normalize to 0-1 range (cap at 1.0)
     score = min(round(raw_score, 3), 1.0)
 
@@ -171,9 +208,11 @@ def _score_hypothesis(
         "findings": round(findings_score, 3),
         "alerts": round(alerts_score, 3),
         "iocs": round(iocs_score, 3),
+        "telemetry": round(telemetry_score, 3),
         "finding_count": finding_count,
         "alert_count": alert_count,
         "ioc_count": ioc_count,
+        "telemetry_count": telemetry_count,
     }
 
     return score, supporting, contradicting, breakdown
@@ -200,8 +239,8 @@ def _score_benign(evidence: dict[str, Any]) -> tuple[float, list[str], list[str]
     )
 
     breakdown: dict[str, Any] = {
-        "findings": 0.0, "alerts": 0.0, "iocs": 0.0,
-        "finding_count": 0, "alert_count": 0, "ioc_count": 0,
+        "findings": 0.0, "alerts": 0.0, "iocs": 0.0, "telemetry": 0.0,
+        "finding_count": 0, "alert_count": 0, "ioc_count": 0, "telemetry_count": 0,
         "reason": "",
     }
 
@@ -268,8 +307,8 @@ def generate_theories(
     # Always add inconclusive as fallback
     if not scored or max(s[1] for s in scored) < 0.2:
         scored.append(("inconclusive", 0.15, [], [], {
-            "findings": 0.0, "alerts": 0.0, "iocs": 0.0,
-            "finding_count": 0, "alert_count": 0, "ioc_count": 0,
+            "findings": 0.0, "alerts": 0.0, "iocs": 0.0, "telemetry": 0.0,
+            "finding_count": 0, "alert_count": 0, "ioc_count": 0, "telemetry_count": 0,
             "reason": "Insufficient evidence for any hypothesis",
         }))
 
@@ -345,6 +384,7 @@ _HYPOTHESIS_LABELS: dict[str, str] = {
     "lateral_movement": "Lateral Movement",
     "exfiltration": "Data Exfiltration",
     "admin_tools": "Legitimate Admin Activity",
+    "credential_abuse": "Credential Abuse / Theft",
     "benign": "Benign / Normal Traffic",
     "inconclusive": "Inconclusive — Insufficient Evidence",
 }

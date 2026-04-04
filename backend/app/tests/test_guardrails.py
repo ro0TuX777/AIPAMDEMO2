@@ -6,9 +6,9 @@ from datetime import datetime
 
 from sqlmodel import Session, create_engine, SQLModel
 
-from app.core.interfaces import Finding
-from app.core.guardrails import FlowExistenceGuardrail
-from app.db_models import FlowDB
+from backend.app.core.interfaces import Finding
+from backend.app.core.guardrails import FlowExistenceGuardrail
+from backend.app.db_models import FlowDB
 
 
 # -------------------------------------------------------------------------

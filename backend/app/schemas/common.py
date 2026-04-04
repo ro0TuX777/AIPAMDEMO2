@@ -70,6 +70,45 @@ class PageInfo(BaseModel):
     has_more: bool
 
 
+class SourceType(str, Enum):
+    """Job source type — what kind of telemetry the job ingests."""
+    pcap = "pcap"
+    pcap_logs = "pcap+logs"
+    log_bundle = "log_bundle"
+    netflow_bundle = "netflow_bundle"
+    c2_bundle = "c2_bundle"
+    exercise_bundle = "exercise_bundle"
+
+
+class EvidenceStatus(str, Enum):
+    """Evidence confidence lifecycle."""
+    observed = "observed"        # raw extraction, single source
+    inferred = "inferred"        # derived via analysis/heuristic
+    corroborated = "corroborated"  # confirmed by 2+ independent sources
+    confirmed = "confirmed"      # validated by ground-truth (e.g. C2 logs)
+
+
+class NormalizedEventType(str, Enum):
+    """Canonical event families for multi-source normalization."""
+    connection = "connection"
+    netflow = "netflow"
+    dns = "dns"
+    http = "http"
+    proxy = "proxy"
+    tls = "tls"
+    alert = "alert"
+    auth = "auth"
+    process = "process"
+    file = "file"
+    config_change = "config_change"
+    asset_status = "asset_status"
+    interface_event = "interface_event"
+    c2_callback = "c2_callback"
+    c2_task = "c2_task"
+    finding = "finding"
+    ioc = "ioc"
+
+
 class ErrorCode(str, Enum):
     # Foundational Errors
     ERR_DISK_FULL = "ERR_DISK_FULL"

@@ -5,8 +5,8 @@ import pytest
 from datetime import datetime
 from sqlmodel import Session, create_engine, SQLModel
 
-from app.core.correlation import CampaignCorrelator, _extract_ips
-from app.db_models import FindingDB
+from backend.app.core.correlation import CampaignCorrelator, _extract_ips
+from backend.app.db_models import FindingDB
 
 
 # -------------------------------------------------------------------------

@@ -5,9 +5,10 @@ import { api, type RelatedJob } from "../api";
 
 /** Overlap-type display config: label + Tailwind colour classes. */
 const OVERLAP_CONFIG: Record<string, { label: string; color: string }> = {
-  shared_iocs:  { label: "IOCs",  color: "text-red-400 bg-red-400/10" },
-  shared_hosts: { label: "Hosts", color: "text-blue-400 bg-blue-400/10" },
-  shared_mitre: { label: "MITRE", color: "text-amber-400 bg-amber-400/10" },
+  shared_iocs:     { label: "IOCs",     color: "text-red-400 bg-red-400/10" },
+  shared_hosts:    { label: "Hosts",    color: "text-blue-400 bg-blue-400/10" },
+  shared_mitre:    { label: "MITRE",    color: "text-amber-400 bg-amber-400/10" },
+  shared_behavior: { label: "Behavior", color: "text-violet-400 bg-violet-400/10" },
 };
 
 const FALLBACK_OVERLAP = { label: "Other", color: "text-slate-400 bg-slate-700" };
@@ -67,13 +68,19 @@ export const RelatedJobsSidebar: React.FC<RelatedJobsSidebarProps> = ({ jobId })
             </div>
             <div className="flex items-center justify-between mt-1">
               <span className="text-[10px] text-slate-500 truncate max-w-[60%]">
-                {rj.shared_entities.slice(0, 3).join(", ")}
-                {rj.shared_entities.length > 3 ? ` +${rj.shared_entities.length - 3}` : ""}
+                {rj.overlap_type === "shared_behavior" && rj.shared_entities.length === 0
+                  ? "behavioral fingerprint match"
+                  : (
+                    <>
+                      {rj.shared_entities.slice(0, 3).join(", ")}
+                      {rj.shared_entities.length > 3 ? ` +${rj.shared_entities.length - 3}` : ""}
+                    </>
+                  )}
               </span>
               <div className="flex items-center gap-1">
                 <div className="w-10 h-1.5 bg-slate-800 rounded-full overflow-hidden">
                   <div
-                    className="h-full bg-emerald-500 rounded-full"
+                    className={`h-full rounded-full ${rj.overlap_type === "shared_behavior" ? "bg-violet-500" : "bg-emerald-500"}`}
                     style={{ width: `${Math.round(rj.relevance_score * 100)}%` }}
                   />
                 </div>

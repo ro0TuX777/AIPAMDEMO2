@@ -45,7 +45,7 @@ const MITRE_MAP: Record<string, { tactic: string; id: string }> = {
 };
 
 const EVIDENCE_TYPE_LABELS: Record<string, string> = {
-  alert: "ALR", finding: "FND", ioc: "IOC", unknown: "—",
+  alert: "ALR", finding: "FND", ioc: "IOC", telemetry: "TEL", unknown: "—",
 };
 
 const HYP_COLORS: Record<string, string> = {
@@ -111,6 +111,7 @@ function EvidenceChip({ ref_, jobId, variant }: { ref_: EvidenceRef; jobId: stri
     alert: `/jobs/${jobId}/alerts/${encodeURIComponent(ref_.id)}`,
     finding: `/jobs/${jobId}/findings/${encodeURIComponent(ref_.id)}`,
     ioc: `/jobs/${jobId}/iocs`,
+    telemetry: `/jobs/${jobId}/telemetry/${encodeURIComponent(ref_.id)}`,
   };
   const href = hrefMap[ref_.type] || `/jobs/${jobId}/findings`;
   const baseClass = variant === "supporting"

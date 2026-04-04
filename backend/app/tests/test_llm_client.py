@@ -7,8 +7,8 @@ from typing import Any, Dict
 import httpx
 import pytest
 
-from app.llm_client import LLMClient, LLMConfig
-from app.models import LLMOutput
+from backend.app.llm_client import LLMClient, LLMConfig
+from backend.app.domain_models import LLMOutput
 
 
 class _DummyAsyncClientError:
