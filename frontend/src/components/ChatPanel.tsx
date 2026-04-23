@@ -209,6 +209,18 @@ export function ChatPanel({ jobId, initialMessage, contextHint, onClose }: ChatP
                                     }
                                     return updated;
                                 });
+                            } else if (evt.type === "replace") {
+                                // Backend rewrote the response during finalize; swap content.
+                                accumulated = evt.content || "";
+                                const current = accumulated;
+                                setMessages((prev) => {
+                                    const updated = [...prev];
+                                    const last = updated[updated.length - 1];
+                                    if (last && last.role === "assistant") {
+                                        updated[updated.length - 1] = { ...last, content: current };
+                                    }
+                                    return updated;
+                                });
                             } else if (evt.type === "error") {
                                 accumulated += "\n\nError: " + (evt.content || evt.error || "Unknown error");
                                 const current = accumulated;

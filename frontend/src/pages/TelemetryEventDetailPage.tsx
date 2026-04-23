@@ -10,15 +10,72 @@ const STATUS_COLORS: Record<string, string> = {
   observed: "bg-slate-800 text-slate-400 border-slate-600",
 };
 
-function Field({ label, value }: { label: string; value: React.ReactNode }) {
+function HelpIcon({ text }: { text: React.ReactNode }) {
+  return (
+    <span className="relative inline-flex group">
+      <span className="ml-1 inline-flex items-center justify-center w-3.5 h-3.5 rounded-full border border-slate-600 text-[9px] text-slate-400 cursor-help select-none font-semibold">
+        ?
+      </span>
+      <span
+        role="tooltip"
+        className="absolute left-1/2 -translate-x-1/2 top-full mt-1 z-50 hidden group-hover:block group-focus-within:block
+                   w-80 p-3 rounded-lg bg-slate-950/95 border border-slate-700 shadow-2xl
+                   text-[11px] leading-relaxed text-slate-200 normal-case tracking-normal font-normal"
+      >
+        {text}
+      </span>
+    </span>
+  );
+}
+
+function Field({
+  label, value, help,
+}: {
+  label: string; value: React.ReactNode; help?: React.ReactNode;
+}) {
   if (value === null || value === undefined || value === "") return null;
   return (
     <div className="flex flex-col gap-0.5">
-      <span className="text-[10px] uppercase tracking-wider text-slate-500">{label}</span>
+      <span className="text-[10px] uppercase tracking-wider text-slate-500 flex items-center">
+        {label}
+        {help && <HelpIcon text={help} />}
+      </span>
       <span className="text-sm text-slate-200 break-all">{value}</span>
     </div>
   );
 }
+
+const CORROBORATION_HELP = (
+  <div className="space-y-2">
+    <p>
+      <strong className="text-slate-100">Corroboration Score (0.00 – 1.00)</strong> measures how
+      strongly this single log event is backed up by independent evidence from other sources.
+    </p>
+    <p className="text-slate-400">Two engines contribute:</p>
+    <ul className="list-disc pl-4 text-slate-300 space-y-1">
+      <li>
+        <strong>Multi-source correlator</strong> — boosts the score when ≥2 different sources share a
+        correlation key (community_id +0.30, process_guid +0.25, IPs +0.10, hostname/username +0.05),
+        plus +0.15 per extra source.
+      </li>
+      <li>
+        <strong>Temporal correlator</strong> — adds <strong>+0.30</strong> when this log event shares
+        an IP with a PCAP alert or connection within ±30s.
+      </li>
+    </ul>
+    <p className="text-slate-400 pt-1 border-t border-slate-800">
+      <strong className="text-slate-200">0.00</strong> observed only ·{" "}
+      <strong className="text-cyan-400">0.30</strong> one cross-source confirmation ·{" "}
+      <strong className="text-emerald-400">≥ 0.80</strong> strongly backed.
+    </p>
+  </div>
+);
+
+const STATUS_HELP: Record<string, React.ReactNode> = {
+  observed: "Only a single source reported this event — no other telemetry vouches for it yet.",
+  corroborated: "At least one other independent source confirms this event (shared correlation keys or matching IP within ±30s of a PCAP event).",
+  confirmed: "Analyst-confirmed — a human reviewer has verified this event as a true positive.",
+};
 
 export function TelemetryEventDetailPage() {
   const { jobId, eventId } = useParams<{ jobId: string; eventId: string }>();
@@ -52,7 +109,10 @@ export function TelemetryEventDetailPage() {
           <p className="text-xs text-slate-500 font-mono">{evt.event_id}</p>
         </div>
         <div className="flex items-center gap-2">
-          <span className={`px-2 py-0.5 text-xs rounded border ${statusClass}`}>{evt.evidence_status}</span>
+          <span className={`px-2 py-0.5 text-xs rounded border inline-flex items-center ${statusClass}`}>
+            {evt.evidence_status}
+            <HelpIcon text={STATUS_HELP[evt.evidence_status] ?? "Unknown evidence status."} />
+          </span>
           {evt.pcap_label && (
             <span className="px-2 py-0.5 text-xs rounded bg-indigo-900/40 text-indigo-300 border border-indigo-700">{evt.pcap_label}</span>
           )}
@@ -68,7 +128,11 @@ export function TelemetryEventDetailPage() {
           <Field label="Source Type" value={evt.source_type} />
           <Field label="Parser" value={evt.parser_name ? `${evt.parser_name} v${evt.parser_version || "?"}` : null} />
           <Field label="Timestamp" value={evt.timestamp} />
-          <Field label="Corroboration Score" value={evt.corroboration_score > 0 ? evt.corroboration_score.toFixed(2) : null} />
+          <Field
+            label="Corroboration Score"
+            value={evt.corroboration_score > 0 ? evt.corroboration_score.toFixed(2) : null}
+            help={CORROBORATION_HELP}
+          />
         </div>
       </section>
 

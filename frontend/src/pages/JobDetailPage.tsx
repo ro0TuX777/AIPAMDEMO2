@@ -525,17 +525,75 @@ export const JobDetailPage: React.FC = () => {
               </div>
             ))}
             {job.log_sources && job.log_sources.map((ls, i) => (
-              <div key={`log-${ls.id ?? i}`} className="flex items-center gap-3 px-3 py-2 rounded bg-slate-800/60 border border-slate-700/50 text-xs">
+              <div key={`log-${ls.id ?? i}`} className={`flex items-center gap-3 px-3 py-2 rounded bg-slate-800/60 text-xs ${
+                ls.parse_status === "skipped" ? "border border-amber-700/40" :
+                ls.parse_status === "error" ? "border border-red-700/40" :
+                "border border-slate-700/50"
+              }`}>
                 <span className="px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-medium uppercase tracking-wide" style={{fontSize: '0.65rem'}}>LOG</span>
                 {ls.label && <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-400 font-medium">{ls.label}</span>}
                 <span className="text-slate-300 font-mono truncate">{ls.filename}</span>
                 {ls.source_system && <span className="px-1.5 py-0.5 rounded bg-violet-500/20 text-violet-300">{ls.source_system}</span>}
+                {/* Parse status badge */}
+                {ls.parse_status === "ok" && (
+                  <span className="px-1.5 py-0.5 rounded bg-emerald-900/40 text-emerald-400" title={`Parsed by ${ls.parse_parser ?? "unknown"}`}>
+                    ✓ {ls.parse_events ?? 0} events
+                  </span>
+                )}
+                {ls.parse_status === "skipped" && (
+                  <span className="px-1.5 py-0.5 rounded bg-amber-900/40 text-amber-400" title={ls.parse_error ?? "No parser found"}>
+                    ⚠ Skipped
+                  </span>
+                )}
+                {ls.parse_status === "error" && (
+                  <span className="px-1.5 py-0.5 rounded bg-red-900/40 text-red-400" title={ls.parse_error ?? "Parse error"}>
+                    ✗ Error
+                  </span>
+                )}
                 {ls.size_bytes ? <span className="text-slate-500 ml-auto whitespace-nowrap">{(ls.size_bytes / 1024).toFixed(1)} KB</span> : null}
                 {ls.sha256 && <span className="text-slate-600 font-mono truncate max-w-[120px]" title={ls.sha256}>{ls.sha256.slice(0, 12)}…</span>}
               </div>
             ))}
           </div>
+          {/* Parse status summary banner */}
+          {(() => {
+            const skipped = (job.log_sources ?? []).filter(ls => ls.parse_status === "skipped").length;
+            const errored = (job.log_sources ?? []).filter(ls => ls.parse_status === "error").length;
+            if (skipped === 0 && errored === 0) return null;
+            return (
+              <div className="mt-3 px-3 py-2 rounded bg-amber-900/20 border border-amber-700/30 text-xs text-amber-400 flex items-start gap-2">
+                <span className="mt-0.5">⚠</span>
+                <div>
+                  <strong>{skipped + errored} of {(job.log_sources ?? []).length} log file(s)</strong> could not be parsed.
+                  {" "}These logs will not be correlated with PCAP data. To improve correlation, upload logs in a supported format
+                  {" "}(Sysmon JSON, Windows EVTX, Linux auth.log, firewall JSON, DNS logs).
+                  {errored > 0 && <span className="text-red-400"> {errored} file(s) had parse errors.</span>}
+                </div>
+              </div>
+            );
+          })()}
         </div>
+      )}
+
+      {/* Temporal Correlations — compact summary, full view in dedicated tab */}
+      {(job.temporal_correlations ?? []).length > 0 && (
+        <Link
+          to={`/jobs/${jobId}/correlations`}
+          className="block bg-slate-900/50 border border-slate-800 hover:border-cyan-700/60 hover:bg-slate-900/80 rounded-lg p-3 transition-colors"
+        >
+          <div className="flex items-center gap-3">
+            <svg className="w-4 h-4 text-cyan-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 10V3L4 14h7v7l9-11h-7z" />
+            </svg>
+            <div className="flex-1 min-w-0">
+              <div className="text-sm font-semibold text-slate-200">Temporal Correlations</div>
+              <div className="text-xs text-slate-500">
+                {job.temporal_correlations!.length}+ log ↔ PCAP matches — click to open the Correlations tab
+              </div>
+            </div>
+            <span className="text-xs text-cyan-400 font-mono">View →</span>
+          </div>
+        </Link>
       )}
 
       {/* SSE Step Progress (shown while pipeline is running) */}

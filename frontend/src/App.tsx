@@ -28,6 +28,7 @@ import { InvestigationQueuePage } from "./pages/InvestigationQueuePage";
 import { ComparePage } from "./pages/ComparePage";
 import { ProofBuilderPage } from "./pages/ProofBuilderPage";
 import { TelemetryEventDetailPage } from "./pages/TelemetryEventDetailPage";
+import { TemporalCorrelationsPage } from "./pages/TemporalCorrelationsPage";
 import { GlobalHostsPage } from "./pages/GlobalHostsPage";
 import { GlobalHostDetailPage } from "./pages/GlobalHostDetailPage";
 import { ModelSetupModal } from "./components/ModelSetupModal";
@@ -171,6 +172,7 @@ export const App: React.FC = () => {
           <Route path="/jobs/:jobId/proof" element={<ProofBuilderPage />} />
           <Route path="/jobs/:jobId/proof/:proofId" element={<ProofBuilderPage />} />
           <Route path="/jobs/:jobId/telemetry/:eventId" element={<TelemetryEventDetailPage />} />
+          <Route path="/jobs/:jobId/correlations" element={<TemporalCorrelationsPage />} />
 
           {/* New analysis (V1 upload flow) */}
           <Route path="/new" element={<NewAnalysisPage />} />

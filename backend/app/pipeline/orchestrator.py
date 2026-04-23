@@ -702,6 +702,23 @@ def run_pipeline(
     except Exception as exc:
         logger.debug("Failed to publish correlate partial result: %s", exc)
 
+    # --- Step: Cross-source temporal correlation (logs ↔ PCAPs) ───────
+    if has_pcaps and has_telemetry_bundle:
+        step_num += 1
+        _emit(job_id, "stage.status", stage="temporal_correlate", status="running",
+              step=step_num, total_steps=total_steps)
+        try:
+            from backend.app.services.temporal_correlator import correlate_temporal
+            tc_result = correlate_temporal(db, job_id)
+            logger.info("Temporal correlation for job %s: %s", job_id, tc_result)
+            _emit(job_id, "stage.status", stage="temporal_correlate", status="completed",
+                  step=step_num, total_steps=total_steps,
+                  message=f"matches={tc_result.get('matches', 0)} upgraded={tc_result.get('upgraded_events', 0)}")
+        except Exception as exc:
+            logger.error("Temporal correlation failed for job %s: %s", job_id, exc, exc_info=True)
+            _emit(job_id, "stage.status", stage="temporal_correlate", status="failed",
+                  step=step_num, total_steps=total_steps, message=str(exc))
+
     # --- Step 9: Auto-index pipeline outputs for RAG ───────────────
     step_num += 1
     _emit(job_id, "stage.status", stage="index", status="running",

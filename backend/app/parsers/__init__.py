@@ -35,12 +35,14 @@ def register_all_parsers() -> ParserRegistry:
     from backend.app.parsers.c2_tasking import C2TaskingParser
     from backend.app.parsers.dns import DnsParser
     from backend.app.parsers.firewall import FirewallParser
+    from backend.app.parsers.generic import GenericLogParser
     from backend.app.parsers.linux_auth import LinuxAuthParser
     from backend.app.parsers.proxy import ProxyParser
     from backend.app.parsers.sysmon import SysmonParser
     from backend.app.parsers.windows_evtx import WindowsEvtxParser
 
     registry = get_parser_registry()
+    # Register specialised parsers first (higher priority)
     for parser_cls in (
         WindowsEvtxParser,
         SysmonParser,
@@ -50,6 +52,8 @@ def register_all_parsers() -> ParserRegistry:
         DnsParser,
         C2CallbackParser,
         C2TaskingParser,
+        # Generic fallback — MUST be last so specialised parsers get first pick
+        GenericLogParser,
     ):
         registry.register(parser_cls())
     return registry

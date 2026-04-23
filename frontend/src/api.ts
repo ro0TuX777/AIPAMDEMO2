@@ -76,6 +76,11 @@ export interface JobLogSourceItem {
   ordinal: number;
   size_bytes?: number | null;
   sha256?: string | null;
+  // Parse diagnostics
+  parse_status?: string | null;   // "ok" | "skipped" | "error"
+  parse_parser?: string | null;   // parser name
+  parse_events?: number | null;   // events produced
+  parse_error?: string | null;    // error/skip reason
 }
 
 export interface JobPcapItem {
@@ -176,12 +181,38 @@ export interface SensorItem {
   error_code?: string | null;
 }
 
+export interface TemporalCorrelationItem {
+  id: number;
+  log_event_id: string;
+  log_source?: string | null;
+  log_source_filename?: string | null;
+  log_event_type?: string | null;
+  log_timestamp: string;
+  log_summary?: string | null;
+  pcap_entity_type: string;     // "alert" | "connection"
+  pcap_entity_id: string;
+  pcap_summary?: string | null;
+  pcap_timestamp: string;
+  shared_ip: string;
+  time_delta_seconds: number;
+  match_score: number;
+  match_type: string;
+}
+
+export interface TemporalCorrelationsResponse {
+  schema_version: string;
+  items: TemporalCorrelationItem[];
+  page: { next_cursor?: string | null; has_more: boolean };
+  total: number;
+}
+
 export interface JobDetail extends JobListItem {
   metrics?: JobMetrics;
   stages?: StageItem[];
   sensors?: SensorItem[];
   pcaps?: JobPcapItem[];
   log_sources?: JobLogSourceItem[];
+  temporal_correlations?: TemporalCorrelationItem[];
 }
 
 export interface JobGetResponse {
@@ -1783,6 +1814,17 @@ export const api = {
   getTemporalExportUrl(jobId: string, format: "markdown" | "html" = "markdown"): string {
     const tokenQs = _token ? `?token=${encodeURIComponent(_token)}&format=${format}` : `?format=${format}`;
     return `${API_BASE}/jobs/${jobId}/temporal-export${tokenQs}`;
+  },
+  getTemporalCorrelations(
+    jobId: string,
+    opts: { offset?: number; limit?: number; minScore?: number } = {},
+  ): Promise<TemporalCorrelationsResponse> {
+    const qs = new URLSearchParams();
+    if (opts.offset != null) qs.set("offset", String(opts.offset));
+    if (opts.limit != null) qs.set("limit", String(opts.limit));
+    if (opts.minScore != null) qs.set("min_score", String(opts.minScore));
+    const suffix = qs.toString() ? `?${qs.toString()}` : "";
+    return get<TemporalCorrelationsResponse>(`/jobs/${jobId}/temporal-correlations${suffix}`);
   },
 
   // ── PCAP Management ─────────────────────────────────────────────────

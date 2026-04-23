@@ -28,6 +28,7 @@ from backend.app.models.context_annotation import ContextAnnotation
 from backend.app.models.report import Report
 from backend.app.models.proof import Proof, ProofItem
 from backend.app.models.normalized_event import NormalizedEvent
+from backend.app.models.temporal_correlation import TemporalCorrelation
 
 __all__ = [
     "JobStatus",
@@ -58,5 +59,6 @@ __all__ = [
     "Proof",
     "ProofItem",
     "NormalizedEvent",
+    "TemporalCorrelation",
 ]
 

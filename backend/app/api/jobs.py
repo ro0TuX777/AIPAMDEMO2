@@ -73,6 +73,8 @@ from backend.app.schemas.job import (
     SensorStats,
     StorylineResponse,
     StorylineStage,
+    TemporalCorrelationItem,
+    TemporalCorrelationsResponse,
 )
 from backend.app.schemas.arkime import ArkimeImportResponse, ArkimeStatusResponse
 from backend.app.schemas.system import (
@@ -597,14 +599,103 @@ async def get_job(
     ).scalars().all()
     detail.pcaps = [JobPcapItem.model_validate(r) for r in pcap_rows]
 
-    # Attach per-job log source records (traceability)
+    # Attach per-job log source records (traceability) + parse diagnostics
     log_rows = db.execute(
         select(JobLogSource).where(JobLogSource.job_id == job_id).order_by(JobLogSource.ordinal)
     ).scalars().all()
-    detail.log_sources = [JobLogSourceItem.model_validate(r) for r in log_rows]
+
+    # Load telemetry parse diagnostics (if available)
+    diag_map: dict[str, dict] = {}
+    try:
+        from backend.app.config_v2 import get_settings
+        job_dir = get_settings().aipam_job_root / job_id
+        diag_path = job_dir / "telemetry_diagnostics.json"
+        if diag_path.exists():
+            import json as _json
+            diag_data = _json.loads(diag_path.read_text(encoding="utf-8"))
+            for fd in diag_data.get("files", []):
+                diag_map[fd["filename"]] = fd
+    except Exception:
+        pass  # diagnostics are best-effort
+
+    log_items: list[JobLogSourceItem] = []
+    for r in log_rows:
+        item = JobLogSourceItem.model_validate(r)
+        diag = diag_map.get(item.filename)
+        if diag:
+            item.parse_status = diag.get("status")
+            item.parse_parser = diag.get("parser_name")
+            item.parse_events = diag.get("events_produced", 0)
+            item.parse_error = diag.get("error")
+        log_items.append(item)
+    detail.log_sources = log_items
+
+    # Attach temporal correlations (log ↔ PCAP matches)
+    try:
+        from backend.app.models.temporal_correlation import TemporalCorrelation
+        tc_rows = db.execute(
+            select(TemporalCorrelation)
+            .where(TemporalCorrelation.job_id == job_id)
+            .order_by(TemporalCorrelation.match_score.desc())
+            .limit(200)
+        ).scalars().all()
+        detail.temporal_correlations = [TemporalCorrelationItem.model_validate(r) for r in tc_rows]
+    except Exception:
+        pass  # table may not exist yet
 
     return JobGetResponse(job=detail)
 
+
+# ---------- GET /jobs/{jobId}/temporal-correlations ----------
+
+@router.get("/jobs/{job_id}/temporal-correlations", response_model=TemporalCorrelationsResponse)
+async def list_temporal_correlations(
+    job_id: str,
+    response: Response,
+    offset: int = 0,
+    limit: int = 200,
+    min_score: float = 0.0,
+    request_id: str = Depends(get_request_id),
+    db: Session = Depends(get_db),
+):
+    """Return the full paginated list of log ↔ PCAP temporal correlations.
+
+    Supports offset/limit pagination so the dedicated UI tab can load more
+    than the 200-row preview returned with the JobDetail response.
+    """
+    _require_job(db, job_id)
+    response.headers["X-Request-Id"] = request_id
+
+    from backend.app.models.temporal_correlation import TemporalCorrelation
+    from sqlalchemy import func as sa_func
+
+    limit = max(1, min(limit, 1000))
+    offset = max(0, offset)
+
+    total = db.execute(
+        select(sa_func.count(TemporalCorrelation.id))
+        .where(TemporalCorrelation.job_id == job_id)
+        .where(TemporalCorrelation.match_score >= min_score)
+    ).scalar_one()
+
+    rows = db.execute(
+        select(TemporalCorrelation)
+        .where(TemporalCorrelation.job_id == job_id)
+        .where(TemporalCorrelation.match_score >= min_score)
+        .order_by(TemporalCorrelation.match_score.desc(), TemporalCorrelation.id.asc())
+        .offset(offset)
+        .limit(limit)
+    ).scalars().all()
+
+    items = [TemporalCorrelationItem.model_validate(r) for r in rows]
+    has_more = (offset + len(items)) < total
+    next_cursor = str(offset + limit) if has_more else None
+
+    return TemporalCorrelationsResponse(
+        items=items,
+        page=PageInfo(next_cursor=next_cursor, has_more=has_more),
+        total=total,
+    )
 
 
 def _require_job(db: Session, job_id: str) -> Job:

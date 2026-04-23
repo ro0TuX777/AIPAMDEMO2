@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useEffect, useMemo } from "react";
+import React, { useState, useCallback, useEffect } from "react";
 import { useParams, Link, useSearchParams } from "react-router-dom";
 import { JobSubPageNav } from "../components/JobSubPageNav";
 import { useQuery } from "@tanstack/react-query";
@@ -30,10 +30,22 @@ const DOC_LABELS: Record<string, string> = {
 
 export const ChatPage: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
-  const [searchParams] = useSearchParams();
+  const [searchParams, setSearchParams] = useSearchParams();
   const { activeHelpField, setActiveHelpField, toggleHelp } = usePageHelp();
-  const initialAsk = useMemo(() => searchParams.get("ask") || undefined, [searchParams]);
-  const contextHint = useMemo(() => searchParams.get("hint") || undefined, [searchParams]);
+  // Capture ?ask= and ?hint= ONCE on first mount, then strip them from the URL.
+  // Without this, navigating away and back would re-submit the same question
+  // because ChatPanel re-reads initialMessage on every mount.
+  const [initialAsk] = useState<string | undefined>(() => searchParams.get("ask") || undefined);
+  const [contextHint] = useState<string | undefined>(() => searchParams.get("hint") || undefined);
+  useEffect(() => {
+    if (searchParams.has("ask") || searchParams.has("hint")) {
+      const next = new URLSearchParams(searchParams);
+      next.delete("ask");
+      next.delete("hint");
+      setSearchParams(next, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   const [kbOpen, setKbOpen] = useState(false);
 
   // ── KB state ──

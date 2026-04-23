@@ -81,6 +81,12 @@ class JobLogSourceItem(BaseModel):
     size_bytes: int | None = None
     sha256: str | None = None
 
+    # Parse diagnostics (populated from telemetry_diagnostics.json)
+    parse_status: str | None = None         # "ok" | "skipped" | "error"
+    parse_parser: str | None = None         # parser name that handled it
+    parse_events: int | None = None         # events produced
+    parse_error: str | None = None          # error/skip reason
+
 
 # --- Metrics / Stages / Sensors (embedded in JobGetResponse) ---
 
@@ -165,12 +171,42 @@ class JobListResponse(BaseModel):
     page: PageInfo
 
 
+class TemporalCorrelationItem(BaseModel):
+    """A temporal match between a log event and a PCAP-derived event."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    log_event_id: str
+    log_source: str | None = None
+    log_source_filename: str | None = None
+    log_event_type: str | None = None
+    log_timestamp: str
+    log_summary: str | None = None
+    pcap_entity_type: str              # "alert" | "connection"
+    pcap_entity_id: str
+    pcap_summary: str | None = None
+    pcap_timestamp: str
+    shared_ip: str
+    time_delta_seconds: float
+    match_score: float
+    match_type: str
+
+
 class JobDetail(JobListItem):
     metrics: JobMetrics | None = None
     stages: list[StageItem] = []
     sensors: list[SensorItem] = []
     pcaps: list[JobPcapItem] = []
     log_sources: list[JobLogSourceItem] = []
+    temporal_correlations: list[TemporalCorrelationItem] = []
+
+
+class TemporalCorrelationsResponse(BaseModel):
+    """Paginated list of temporal correlations for a job."""
+    schema_version: str = SCHEMA_VERSION
+    items: list[TemporalCorrelationItem]
+    page: PageInfo
+    total: int
 
 
 class JobGetResponse(BaseModel):

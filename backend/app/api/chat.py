@@ -1036,33 +1036,54 @@ async def chat_about_job_stream(
     client = _make_llm_client(settings)
 
     async def event_generator() -> AsyncGenerator[str, None]:
-        """Yield SSE events: final meta, token chunks, then [DONE]."""
-        full_response: list[str] = []
+        """Stream SSE events: live tokens as the LLM generates, then meta + [DONE].
+
+        Previously this generator buffered the entire response before emitting
+        any tokens, so users saw only "Thinking…" until the full LLM call had
+        returned.  We now forward each token to the browser as soon as the
+        LLM yields it, and only run citation finalization / persistence at
+        the end.  Any delta produced by finalization (typically an appended
+        "Sources used:" block) is emitted as additional token events so the
+        final rendered text matches what is saved to the database.
+        """
+        # Tell the frontend which conversation this stream belongs to as early
+        # as possible — useful so the UI can save/resume even if the user
+        # closes the tab mid-stream.
+        yield f"data: {json.dumps({'type': 'meta', 'conversation_id': conv_id})}\n\n"
+
+        streamed_parts: list[str] = []
+        error_text: str | None = None
         try:
             async for token in client.chat_completion_stream(messages, temperature=0.3):
                 if token:
-                    full_response.append(token)
+                    streamed_parts.append(token)
+                    yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
         except Exception as exc:
             logger.exception("LLM streaming failed for job %s", job_id)
-            final_citations = _dedupe_citations(citations, limit=8)
-            error_text = _append_sources_and_limits(
-                f"Error: {str(exc)[:200]}",
-                final_citations,
-            )
-            full_response = [error_text]
-        else:
-            error_text = None
+            error_text = f"Error: {str(exc)[:200]}"
 
-        # Save the complete assistant message
+        streamed_text = "".join(streamed_parts)
+
         if error_text is None:
             response_text, final_citations = _finalize_grounded_response_payload(
-                "".join(full_response),
-                citations,
-                combined_context,
-                body.message,
+                streamed_text, citations, combined_context, body.message,
             )
+            # If finalize appended content (e.g. the "Sources used:" block),
+            # emit the delta so the on-screen text matches what we persist.
+            if response_text != streamed_text:
+                if response_text.startswith(streamed_text):
+                    extra = response_text[len(streamed_text):]
+                    if extra:
+                        yield f"data: {json.dumps({'type': 'token', 'content': extra})}\n\n"
+                else:
+                    # Rare: finalize rewrote the response entirely.  Tell the
+                    # frontend to replace the streamed content.
+                    yield f"data: {json.dumps({'type': 'replace', 'content': response_text})}\n\n"
         else:
-            response_text = "".join(full_response)
+            final_citations = _dedupe_citations(citations, limit=8)
+            response_text = _append_sources_and_limits(error_text, final_citations)
+            # No live tokens were streamed (error before first chunk); emit as one block.
+            yield f"data: {json.dumps({'type': 'token', 'content': response_text})}\n\n"
 
         evidence_refs, suggested_followups = _post_process_response(
             response_text, body.message, final_citations,
@@ -1083,9 +1104,6 @@ async def chat_about_job_stream(
             db.commit()
         except Exception:
             logger.exception("Failed to persist assistant message for conv %s", conv_id)
-
-        for chunk in _chunk_text(response_text):
-            yield f"data: {json.dumps({'type': 'token', 'content': chunk})}\n\n"
 
         yield "data: [DONE]\n\n"
 

@@ -184,6 +184,20 @@ def init_v2_db() -> None:
                         text(f"ALTER TABLE jobs ADD COLUMN {col_name} {col_type}")
                     )
 
+    # Temporal Correlation: add enriched log summary columns for side-by-side display
+    if inspector.has_table("temporal_correlations"):
+        tc_cols = {c["name"] for c in inspector.get_columns("temporal_correlations")}
+        _new_tc_cols = [
+            ("log_summary", "TEXT"),
+            ("log_source_filename", "VARCHAR"),
+        ]
+        for col_name, col_type in _new_tc_cols:
+            if col_name not in tc_cols:
+                with engine.begin() as connection:
+                    connection.execute(
+                        text(f"ALTER TABLE temporal_correlations ADD COLUMN {col_name} {col_type}")
+                    )
+
 def reset_engine() -> None:
     """Reset engine and session factory. Used in tests."""
     global _engine, _SessionLocal
