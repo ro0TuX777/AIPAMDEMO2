@@ -30,13 +30,13 @@ echo ""
 # ── Preflight checks ──
 echo -e "${YELLOW}[1/4]${NC} Checking prerequisites..."
 
-for img in aipam-backend aipam-frontend aipam-worker; do
+for img in aipam-app aipam-frontend; do
     if ! docker images --format '{{.Repository}}' | grep -q "^${img}$"; then
         echo -e "  ${RED}x Docker image '$img' not found. Run 'docker compose build' first.${NC}"
         exit 1
     fi
 done
-echo -e "  ${GREEN}ok${NC} Docker images found (aipam-backend, aipam-frontend, aipam-worker)"
+echo -e "  ${GREEN}ok${NC} Docker images found (aipam-app, aipam-frontend)"
 
 # ── Create output directory ──
 rm -rf "$OUTPUT_DIR"
@@ -44,7 +44,7 @@ mkdir -p "$OUTPUT_DIR"
 
 # ── 2. Export Docker images ──
 echo -e "${YELLOW}[2/4]${NC} Exporting Docker images (this takes a few minutes)..."
-docker save aipam-backend:latest aipam-frontend:latest aipam-worker:latest \
+docker save aipam-app:latest aipam-frontend:latest \
     | gzip > "$OUTPUT_DIR/docker-images.tar.gz"
 echo -e "  ${GREEN}ok${NC} Images saved ($(du -h "$OUTPUT_DIR/docker-images.tar.gz" | cut -f1))"
 
@@ -132,6 +132,14 @@ if [ -d "$INSTALL_DIR" ]; then
 fi
 tar -xzf "$SCRIPT_DIR/repo.tar.gz" -C "$HOME"
 echo -e "  ${GREEN}ok${NC} Source code updated at $INSTALL_DIR"
+
+# Restore server-specific .env from backup (the SQLite DB containing SO/Arkime
+# UI-configured integration settings is in a named Docker volume and is preserved
+# automatically across docker compose down/up cycles).
+if [ -n "$BACKUP" ] && [ -f "$BACKUP/.env" ]; then
+    cp "$BACKUP/.env" "$INSTALL_DIR/.env"
+    echo -e "  ${GREEN}ok${NC} Restored .env from backup"
+fi
 
 # ── 3. Load new Docker images ──
 echo -e "${YELLOW}[3/4]${NC} Loading updated Docker images..."
