@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine, event, select
-from sqlalchemy.orm import Session, sessionmaker
+from sqlalchemy.orm import Session
 
 from backend.app.database_v2 import Base, _set_sqlite_pragmas
 from backend.app.models.job import Job

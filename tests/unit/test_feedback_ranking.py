@@ -13,7 +13,6 @@ Covers:
 import uuid
 from datetime import datetime, timezone
 
-import pytest
 
 AUTH = {"Authorization": "Bearer test-token-v2"}
 
@@ -465,12 +464,12 @@ class TestRankingIntegration:
                           title="Old FP", severity="medium")
 
         # Now create two NEW unreviewed items — same severity/confidence
-        trusted_item = _seed_finding(db, job.job_id, sensor="trusted_sensor",
-                                      severity="medium", confidence=0.5,
-                                      title="Trusted finding")
-        noisy_item = _seed_finding(db, job.job_id, sensor="noisy_sensor",
-                                    severity="medium", confidence=0.5,
-                                    title="Noisy finding")
+        _seed_finding(db, job.job_id, sensor="trusted_sensor",
+                      severity="medium", confidence=0.5,
+                      title="Trusted finding")
+        _seed_finding(db, job.job_id, sensor="noisy_sensor",
+                      severity="medium", confidence=0.5,
+                      title="Noisy finding")
 
         from backend.app.services.ranking import build_investigation_queue
         items, summary = build_investigation_queue(db, job.job_id)

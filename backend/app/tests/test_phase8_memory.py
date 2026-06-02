@@ -367,7 +367,6 @@ class TestContaminationGuard:
 class TestMemoryQuery:
     def test_query_empty_memory(self):
         from backend.app.forensic_memory import (
-            get_behavioral_memory_stats,
             query_behavioral_memory,
             reset_behavioral_collection,
         )

@@ -6,7 +6,7 @@ all SQLModel tables once per session.
 """
 
 import pytest
-from sqlmodel import SQLModel, create_engine
+from sqlmodel import create_engine
 
 from backend.app import database as _v1_db
 

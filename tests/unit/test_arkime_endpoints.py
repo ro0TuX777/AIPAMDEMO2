@@ -13,7 +13,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 
 from backend.app.models.alert import Alert
 from backend.app.models.finding import Finding
@@ -116,7 +115,7 @@ class TestArkimeDisabled:
         client, db = app_client
         job_id = _uid()
         _insert_job(db, job_id)
-        alert = _insert_alert(db, job_id, "a-1", community_id="1:abc")
+        _insert_alert(db, job_id, "a-1", community_id="1:abc")
 
         with patch("backend.app.connectors.ArkimeConnector") as MockCls:
             mock = MockCls.return_value

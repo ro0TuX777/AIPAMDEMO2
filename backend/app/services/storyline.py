@@ -14,7 +14,6 @@ Public API:
 
 from __future__ import annotations
 
-import json
 import logging
 import re
 from dataclasses import dataclass, field
@@ -179,7 +178,6 @@ _DISPLAY_NAMES = {
 def _classify_node(node: dict[str, Any], edges: list[dict[str, Any]]) -> str | None:
     """Return the best-fit stage name for a node, or None."""
     meta = node.get("meta", {}) or {}
-    ntype = node.get("type", "")
     nid = node.get("id", "")
     label = node.get("label", "")
 
@@ -238,7 +236,6 @@ def _extract_host_ips(node_ids: list[str], nodes_by_id: dict[str, dict]) -> list
         else:
             node = nodes_by_id.get(nid, {})
             meta = node.get("meta", {}) or {}
-            ts = meta.get("ts", "")
             # Extract from src_ip-like patterns in node id
             if "src_ip" in meta:
                 ips.add(meta["src_ip"])

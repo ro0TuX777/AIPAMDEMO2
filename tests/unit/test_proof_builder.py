@@ -25,7 +25,6 @@ from backend.app.services.proof_builder import (
     update_item,
     update_proof,
     proof_summary,
-    _collect_warnings,
     _resolve_entity,
 )
 

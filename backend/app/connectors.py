@@ -416,7 +416,7 @@ class ArkimeConnector:
     @staticmethod
     def _iso_to_epoch(iso_str: str) -> int:
         """Convert ISO 8601 timestamp to Unix epoch seconds for Arkime API."""
-        from datetime import datetime, timezone
+        from datetime import datetime
         try:
             dt = datetime.fromisoformat(iso_str.replace("Z", "+00:00"))
             return int(dt.timestamp())

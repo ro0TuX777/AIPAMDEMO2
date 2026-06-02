@@ -8,7 +8,6 @@ SourceManifest, and stores it as ``source_manifest.json`` in the job directory.
 from __future__ import annotations
 
 import hashlib
-import json
 import logging
 import shutil
 import tarfile

@@ -11,7 +11,6 @@ Covers:
 import uuid
 from datetime import datetime, timezone
 
-import pytest
 
 AUTH = {"Authorization": "Bearer test-token-v2"}
 
@@ -224,9 +223,9 @@ class TestReviewQueue:
     def test_review_queue_returns_stats(self, app_client):
         client, db = app_client
         job = _seed_job(db)
-        f1 = _seed_finding(db, job.job_id, analyst_status="confirmed")
-        f2 = _seed_finding(db, job.job_id, analyst_status="unreviewed")
-        f3 = _seed_finding(db, job.job_id, analyst_status="needs_review")
+        _seed_finding(db, job.job_id, analyst_status="confirmed")
+        _seed_finding(db, job.job_id, analyst_status="unreviewed")
+        _seed_finding(db, job.job_id, analyst_status="needs_review")
 
         r = client.get(f"/api/v1/jobs/{job.job_id}/review-queue", headers=AUTH)
         assert r.status_code == 200

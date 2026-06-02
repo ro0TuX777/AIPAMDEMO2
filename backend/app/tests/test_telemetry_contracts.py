@@ -20,11 +20,9 @@ from backend.app.schemas.telemetry import (
     Corroboration,
     CorroborationLink,
     NormalizedEventEnvelope,
-    ParserInfo,
     Provenance,
     SourceEntry,
     SourceManifest,
-    SourceManifestResponse,
 )
 from backend.app.parsers.base import BaseParser, ParserResult
 from backend.app.parsers.registry import ParserRegistry

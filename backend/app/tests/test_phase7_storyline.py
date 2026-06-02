@@ -18,7 +18,6 @@ from backend.app.models.finding import Finding
 from backend.app.models.host import Host
 from backend.app.models.job import Job
 from backend.app.models.normalized_event import NormalizedEvent
-from backend.app.models.theory import Theory
 from backend.app.services.evidence_graph import build_evidence_graph
 from backend.app.services.storyline import (
     STAGE_ORDER,
@@ -269,7 +268,7 @@ class TestStorylineReconstruction:
         result = reconstruct_storyline(db, job_id)
         d = result.to_dict()
         # Should be JSON-serializable
-        serialized = json.dumps(d)
+        json.dumps(d)
         assert "stages" in d
         assert "narrative" in d
 

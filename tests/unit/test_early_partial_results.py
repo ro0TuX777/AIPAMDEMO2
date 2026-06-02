@@ -12,11 +12,9 @@ Covers:
 import json
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import pytest
 
 AUTH = {"Authorization": "Bearer test-token-v2"}
 
@@ -337,7 +335,6 @@ class TestPartialResultCleanup:
 
     def test_delete_partial_result(self):
         """Verify delete_partial_result removes the row."""
-        from backend.app.partial_results import save_partial_result, get_partial_result, delete_partial_result
 
         mock_store: dict[str, Any] = {}
 
@@ -364,7 +361,6 @@ class TestPartialResultCleanup:
 
     def test_delete_nonexistent_is_noop(self):
         """Deleting a non-existent partial result should not raise."""
-        from backend.app.partial_results import delete_partial_result
 
         with patch("backend.app.partial_results.delete_partial_result") as mock_del:
             mock_del(f"nonexistent-{_uuid()}")

@@ -12,16 +12,14 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 
-from backend.app.parsers.base import ParserResult
 from backend.app.parsers.dns import DnsParser
 from backend.app.parsers.firewall import FirewallParser
 from backend.app.parsers.linux_auth import LinuxAuthParser
 from backend.app.parsers.proxy import ProxyParser
 from backend.app.parsers.sysmon import SysmonParser
 from backend.app.parsers.windows_evtx import WindowsEvtxParser
-from backend.app.schemas.common import NormalizedEventType, SourceType
+from backend.app.schemas.common import NormalizedEventType
 
 _FIXTURES = Path(__file__).parent / "fixtures" / "telemetry"
 

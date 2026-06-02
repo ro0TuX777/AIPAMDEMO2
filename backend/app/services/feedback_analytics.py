@@ -11,7 +11,6 @@ Computes aggregate metrics from analyst review decisions across all jobs:
 from __future__ import annotations
 
 from collections import defaultdict
-from datetime import datetime, timezone
 
 from sqlalchemy import func as sa_func, select
 from sqlalchemy.orm import Session

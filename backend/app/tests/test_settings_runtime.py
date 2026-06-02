@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
-from sqlmodel import Session, SQLModel, create_engine
+from sqlmodel import SQLModel, create_engine
 
 from backend.app.settings_runtime import EffectiveSettings, get_effective_settings
 from backend.app.db_models import SettingsDB

@@ -11,8 +11,6 @@ Covers:
 import json
 import uuid
 from datetime import datetime, timezone
-from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 from sqlalchemy import create_engine, event
@@ -21,7 +19,6 @@ from sqlalchemy.orm import Session
 from backend.app.database_v2 import Base, _set_sqlite_pragmas
 from backend.app.models.job import Job
 from backend.app.pipeline.preflight import (
-    PreflightResult,
     check_disk_space,
     check_disk_thresholds,
     check_job_quota,
@@ -198,7 +195,7 @@ def test_pipeline_writes_diagnostics_file(tmp_path, db):
         {"filename": "unknown.xyz", "source_type": "log_bundle"},
     ])
 
-    result = run_telemetry_pipeline(job_id, job_dir, db)
+    run_telemetry_pipeline(job_id, job_dir, db)
     diag_path = job_dir / "telemetry_diagnostics.json"
     assert diag_path.exists(), "telemetry_diagnostics.json should be created"
 
@@ -237,7 +234,7 @@ def test_pipeline_missing_file_creates_skipped_diagnostic(tmp_path, db):
         {"filename": "ghost.log", "source_type": "log_bundle"},
     ], create_files=False)
 
-    result = run_telemetry_pipeline(job_id, job_dir, db)
+    run_telemetry_pipeline(job_id, job_dir, db)
     diag_path = job_dir / "telemetry_diagnostics.json"
     data = json.loads(diag_path.read_text())
     assert data["files_skipped"] >= 1

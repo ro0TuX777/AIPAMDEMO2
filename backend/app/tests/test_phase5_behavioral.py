@@ -171,8 +171,7 @@ class TestNetflowBehavior:
             db.add(_conn_event(job_id, "10.0.0.5", "8.8.8.8", 443, ts_offset=off))
         db.commit()
 
-        findings = detect_netflow_anomalies(db, job_id)
-        beacons = [f for f in findings if f.category == "beacon"]
+        detect_netflow_anomalies(db, job_id)
         # Irregular traffic should not be flagged as beaconing
         # (it may or may not fire depending on jitter calculation)
 

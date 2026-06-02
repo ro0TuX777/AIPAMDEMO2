@@ -13,7 +13,6 @@ Covers:
 import uuid
 from datetime import datetime, timezone
 
-import pytest
 
 AUTH = {"Authorization": "Bearer test-token-v2"}
 

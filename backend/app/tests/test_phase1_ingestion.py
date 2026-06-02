@@ -15,10 +15,8 @@ import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
-import pytest
 
 from backend.app.pipeline.bundle_stager import (
-    MAX_BUNDLE_FILES,
     build_manifest,
     extract_bundle,
     stage_bundle,
