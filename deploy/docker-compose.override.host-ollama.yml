@@ -1,0 +1,29 @@
+# Host-Ollama routing override for AIPAM (air-gapped deployments).
+#
+# Installed automatically by aipam-code-update-*/update.sh when the existing
+# $HOME/AIPAM/docker-compose.override.yml is missing or does not disable the
+# in-compose ollama service.
+#
+# What it does:
+#   1. Puts the in-compose `ollama` service behind an opt-in profile so
+#      `docker compose up -d` no longer starts the empty container Ollama.
+#   2. Points backend and worker at the host's Ollama (installed by the
+#      original full installer as a systemd service on the host), reached
+#      from inside the containers via the host-gateway alias.
+#
+# To opt back into the in-compose Ollama (for hosts without a host install):
+#   docker compose --profile container-llm up -d
+services:
+  ollama:
+    profiles:
+      - container-llm
+
+  backend:
+    environment:
+      AIPAM_OLLAMA_URL: ${AIPAM_OLLAMA_URL:-http://host.docker.internal:11434}
+      LLM_ENDPOINT: ${LLM_ENDPOINT:-http://host.docker.internal:11434/v1/chat/completions}
+
+  worker:
+    environment:
+      AIPAM_OLLAMA_URL: ${AIPAM_OLLAMA_URL:-http://host.docker.internal:11434}
+      LLM_ENDPOINT: ${LLM_ENDPOINT:-http://host.docker.internal:11434/v1/chat/completions}

@@ -173,6 +173,7 @@ async def create_job(
     # ── Stage log bundle(s) if attached (hybrid PCAP + logs job) ──
     manifest_json: str | None = None
     has_bundle = False
+    merged_manifest = None
     if body.bundle_uploads:
         from backend.app.pipeline.bundle_stager import stage_bundle
 
@@ -180,7 +181,6 @@ async def create_job(
         if body.bundle_entries:
             bundle_hints = [e.model_dump() for e in body.bundle_entries]
 
-        merged_manifest = None
         for b_item in body.bundle_uploads:
             bundle_upload: Upload | None = db.get(Upload, b_item.upload_id)
             if bundle_upload is None:

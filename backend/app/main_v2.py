@@ -47,6 +47,16 @@ def create_app() -> FastAPI:
     except Exception:
         pass  # Tests override the DB; production DB dir may not exist yet
 
+    # Also ensure the V1 SettingsDB table exists — it lives in the same SQLite
+    # file but is declared via SQLModel, so init_v2_db() does not create it.
+    try:
+        from sqlmodel import SQLModel
+        from backend.app.database import engine
+        from backend.app import db_models  # noqa: F401  ensure metadata registered
+        SQLModel.metadata.create_all(engine, tables=[db_models.SettingsDB.__table__])
+    except Exception:
+        pass
+
     app = FastAPI(
         title="AIPAM API",
         version=_APP_VERSION,

@@ -129,9 +129,16 @@ services:
       context: ./frontend
       dockerfile: Dockerfile
       args:
+        # Legacy build-time token (still honoured as the last-resort fallback
+        # in main.tsx).  The container entrypoint writes runtime-config.js
+        # from $AIPAM_API_TOKEN at start-up, so rotating the token in .env
+        # and restarting the frontend container is enough — no rebuild.
         VITE_API_TOKEN: ${AIPAM_API_TOKEN}
     image: aipam-frontend:latest
     container_name: aipam-frontend
+    env_file: .env
+    environment:
+      AIPAM_API_TOKEN: ${AIPAM_API_TOKEN}
     ports:
       - "80:80"
     depends_on:
@@ -165,6 +172,7 @@ services:
   ollama:
     image: ollama/ollama:latest
     container_name: aipam-ollama
+    runtime: nvidia
     volumes:
       - ollama-models:/root/.ollama
     restart: unless-stopped

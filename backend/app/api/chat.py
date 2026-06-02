@@ -8,6 +8,7 @@ GET  /jobs/{job_id}/conversations/{id} – get conversation history
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -19,6 +20,7 @@ from fastapi.responses import StreamingResponse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from backend.app.database_v2 import get_session_factory
 from backend.app.llm_client import LLMClient, LLMConfig
 from backend.app.schemas.chat import (                       # shared Pydantic models
     ChatCitationOut,
@@ -46,6 +48,10 @@ from backend.app.models.job import Job
 from backend.app.models.job_pcap import JobPcap
 
 logger = logging.getLogger("aipam.chat")
+
+# Strong references to detached background tasks so they aren't garbage
+# collected mid-flight.  Each task removes itself via add_done_callback.
+_background_tasks: set[asyncio.Task] = set()
 
 router = APIRouter(dependencies=[Depends(verify_token)], tags=["chat"])
 
@@ -1035,77 +1041,127 @@ async def chat_about_job_stream(
 
     client = _make_llm_client(settings)
 
-    async def event_generator() -> AsyncGenerator[str, None]:
-        """Stream SSE events: live tokens as the LLM generates, then meta + [DONE].
+    # Queue between the detached producer (LLM call + persistence) and the
+    # SSE consumer (event_generator).  Sentinel ``None`` signals end-of-stream.
+    # Unbounded so the producer can complete (and persist the assistant
+    # message) even when the client has disconnected and stopped draining.
+    event_queue: asyncio.Queue[str | None] = asyncio.Queue()
 
-        Previously this generator buffered the entire response before emitting
-        any tokens, so users saw only "Thinking…" until the full LLM call had
-        returned.  We now forward each token to the browser as soon as the
-        LLM yields it, and only run citation finalization / persistence at
-        the end.  Any delta produced by finalization (typically an appended
-        "Sources used:" block) is emitted as additional token events so the
-        final rendered text matches what is saved to the database.
+    async def producer() -> None:
+        """Run the LLM call, push SSE events to the queue, and persist the
+        assistant message.
+
+        Runs as a detached asyncio task so it survives client disconnect: if
+        the user navigates away mid-stream, this task keeps running, finishes
+        the LLM response, and writes the assistant message using a fresh DB
+        session (the request's ``db`` is closed once the request returns).
         """
-        # Tell the frontend which conversation this stream belongs to as early
-        # as possible — useful so the UI can save/resume even if the user
-        # closes the tab mid-stream.
-        yield f"data: {json.dumps({'type': 'meta', 'conversation_id': conv_id})}\n\n"
-
         streamed_parts: list[str] = []
         error_text: str | None = None
+        response_text: str = ""
+        final_citations: list[ChatCitationOut] = []
         try:
-            async for token in client.chat_completion_stream(messages, temperature=0.3):
-                if token:
-                    streamed_parts.append(token)
-                    yield f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
-        except Exception as exc:
-            logger.exception("LLM streaming failed for job %s", job_id)
-            error_text = f"Error: {str(exc)[:200]}"
-
-        streamed_text = "".join(streamed_parts)
-
-        if error_text is None:
-            response_text, final_citations = _finalize_grounded_response_payload(
-                streamed_text, citations, combined_context, body.message,
+            # Tell the frontend which conversation this stream belongs to as
+            # early as possible — useful so the UI can save/resume even if
+            # the user closes the tab mid-stream.
+            await event_queue.put(
+                f"data: {json.dumps({'type': 'meta', 'conversation_id': conv_id})}\n\n"
             )
-            # If finalize appended content (e.g. the "Sources used:" block),
-            # emit the delta so the on-screen text matches what we persist.
-            if response_text != streamed_text:
-                if response_text.startswith(streamed_text):
-                    extra = response_text[len(streamed_text):]
-                    if extra:
-                        yield f"data: {json.dumps({'type': 'token', 'content': extra})}\n\n"
-                else:
-                    # Rare: finalize rewrote the response entirely.  Tell the
-                    # frontend to replace the streamed content.
-                    yield f"data: {json.dumps({'type': 'replace', 'content': response_text})}\n\n"
-        else:
-            final_citations = _dedupe_citations(citations, limit=8)
-            response_text = _append_sources_and_limits(error_text, final_citations)
-            # No live tokens were streamed (error before first chunk); emit as one block.
-            yield f"data: {json.dumps({'type': 'token', 'content': response_text})}\n\n"
 
-        evidence_refs, suggested_followups = _post_process_response(
-            response_text, body.message, final_citations,
-        )
-        yield f"data: {json.dumps({'type': 'meta', 'conversation_id': conv_id, 'citations': [c.model_dump() for c in final_citations], 'confidence': 0.85, 'evidence_refs': [r.model_dump() for r in evidence_refs], 'suggested_followups': suggested_followups})}\n\n"
+            try:
+                async for token in client.chat_completion_stream(messages, temperature=0.3):
+                    if token:
+                        streamed_parts.append(token)
+                        await event_queue.put(
+                            f"data: {json.dumps({'type': 'token', 'content': token})}\n\n"
+                        )
+            except Exception as exc:
+                logger.exception("LLM streaming failed for job %s", job_id)
+                error_text = f"Error: {str(exc)[:200]}"
 
-        try:
-            asst_msg_id = str(uuid.uuid4())
-            db.add(ChatMessage(
-                id=asst_msg_id, conversation_id=conv_id, role="assistant",
-                content=response_text,
-                citations_json=_serialize_citations(final_citations),
-                created_at=_now_iso(),
-            ))
-            conv_obj = db.get(ChatConversation, conv_id)
-            if conv_obj:
-                conv_obj.updated_at = _now_iso()
-            db.commit()
-        except Exception:
-            logger.exception("Failed to persist assistant message for conv %s", conv_id)
+            streamed_text = "".join(streamed_parts)
 
-        yield "data: [DONE]\n\n"
+            if error_text is None:
+                response_text, final_citations = _finalize_grounded_response_payload(
+                    streamed_text, citations, combined_context, body.message,
+                )
+                # If finalize appended content (e.g. the "Sources used:" block),
+                # emit the delta so the on-screen text matches what we persist.
+                if response_text != streamed_text:
+                    if response_text.startswith(streamed_text):
+                        extra = response_text[len(streamed_text):]
+                        if extra:
+                            await event_queue.put(
+                                f"data: {json.dumps({'type': 'token', 'content': extra})}\n\n"
+                            )
+                    else:
+                        # Rare: finalize rewrote the response entirely.  Tell
+                        # the frontend to replace the streamed content.
+                        await event_queue.put(
+                            f"data: {json.dumps({'type': 'replace', 'content': response_text})}\n\n"
+                        )
+            else:
+                final_citations = _dedupe_citations(citations, limit=8)
+                response_text = _append_sources_and_limits(error_text, final_citations)
+                # No live tokens were streamed (error before first chunk);
+                # emit as one block.
+                await event_queue.put(
+                    f"data: {json.dumps({'type': 'token', 'content': response_text})}\n\n"
+                )
+
+            evidence_refs, suggested_followups = _post_process_response(
+                response_text, body.message, final_citations,
+            )
+            await event_queue.put(
+                f"data: {json.dumps({'type': 'meta', 'conversation_id': conv_id, 'citations': [c.model_dump() for c in final_citations], 'confidence': 0.85, 'evidence_refs': [r.model_dump() for r in evidence_refs], 'suggested_followups': suggested_followups})}\n\n"
+            )
+
+            await event_queue.put("data: [DONE]\n\n")
+        finally:
+            # Always persist the assistant message — even if the client
+            # disconnected, the LLM raised, or this task was cancelled at
+            # shutdown.  Use a fresh DB session because the request-scoped
+            # ``db`` is already closed by the time we get here.
+            if response_text:
+                try:
+                    session_factory = get_session_factory()
+                    with session_factory() as bg_db:
+                        asst_msg_id = str(uuid.uuid4())
+                        bg_db.add(ChatMessage(
+                            id=asst_msg_id, conversation_id=conv_id, role="assistant",
+                            content=response_text,
+                            citations_json=_serialize_citations(final_citations),
+                            created_at=_now_iso(),
+                        ))
+                        conv_obj = bg_db.get(ChatConversation, conv_id)
+                        if conv_obj:
+                            conv_obj.updated_at = _now_iso()
+                        bg_db.commit()
+                except Exception:
+                    logger.exception(
+                        "Failed to persist assistant message for conv %s", conv_id
+                    )
+            # Wake the consumer so it can exit cleanly.
+            await event_queue.put(None)
+
+    # Spawn the producer detached from the request.  We hold a strong
+    # reference in _background_tasks so it isn't garbage collected; the
+    # done-callback discards the reference once the task finishes.
+    task = asyncio.create_task(producer())
+    _background_tasks.add(task)
+    task.add_done_callback(_background_tasks.discard)
+
+    async def event_generator() -> AsyncGenerator[str, None]:
+        """Forward SSE events from the producer queue to the client.
+
+        If the client disconnects, Starlette cancels this generator — the
+        producer keeps running and still persists the assistant message.
+        """
+        while True:
+            event = await event_queue.get()
+            if event is None:
+                break
+            yield event
 
     return StreamingResponse(
         event_generator(),

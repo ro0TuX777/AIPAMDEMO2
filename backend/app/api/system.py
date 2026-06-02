@@ -3,6 +3,9 @@ System endpoints.
 
 GET  /health                    – health check
 GET  /system/config             – static configuration
+GET  /settings                  – read full settings dict (legacy SettingsPage)
+PUT  /settings                  – write full settings dict (legacy SettingsPage)
+GET  /settings/setup_status     – first-boot model-setup probe (App shell)
 POST /integrations/test         – test connectivity to SO / Arkime
 GET  /integrations/settings     – read saved SO / Arkime connection settings
 PUT  /integrations/settings     – save SO / Arkime connection settings
@@ -408,9 +411,28 @@ class IntegrationSettingsPayload(BaseModel):
     arkime_api_password: Optional[str] = None
 
 
+def _ensure_settings_table() -> None:
+    """Create the V1 ``settingsdb`` table if it does not yet exist.
+
+    V2 deployments only run ``init_v2_db()`` which creates SQLAlchemy ``Base``
+    tables — the V1 SQLModel ``SettingsDB`` table is never created automatically,
+    even though both V1 and V2 share the same SQLite file. This helper is
+    idempotent and safe to call on every read/write.
+    """
+    try:
+        from sqlmodel import SQLModel
+        from backend.app.database import engine
+        from backend.app import db_models  # noqa: F401  ensure metadata registered
+        SQLModel.metadata.create_all(engine, tables=[db_models.SettingsDB.__table__])
+    except Exception:
+        # Best-effort: callers handle their own errors if the table is still missing.
+        pass
+
+
 def _get_settings_db_values() -> dict:
     """Read the singleton SettingsDB row (id=1) and return its values dict."""
     try:
+        _ensure_settings_table()
         from backend.app.database import get_session
         from backend.app.db_models import SettingsDB
         with get_session() as session:
@@ -422,6 +444,7 @@ def _get_settings_db_values() -> dict:
 
 def _save_settings_db_values(updates: dict) -> dict:
     """Merge *updates* into the SettingsDB singleton and return the full dict."""
+    _ensure_settings_table()
     from backend.app.database import get_session
     from backend.app.db_models import SettingsDB
     with get_session() as session:
@@ -514,3 +537,38 @@ async def save_integration_settings(body: IntegrationSettingsPayload):
         arkime_api_username=vals.get("arkime_api_username"),
         arkime_api_password=vals.get("arkime_api_password"),
     )
+
+
+# ──────────────────────────────────────────────────────────────────────────
+# Legacy settings endpoints (used by SettingsPage)
+# ──────────────────────────────────────────────────────────────────────────
+
+@router.get("/settings")
+async def get_settings_dict():
+    """Return the full SettingsDB.values dict (legacy SettingsPage)."""
+    return _get_settings_db_values()
+
+
+@router.put("/settings")
+async def update_settings_dict(body: dict):
+    """Merge *body* into the SettingsDB singleton and return the resulting dict."""
+    if not isinstance(body, dict):
+        body = {}
+    updates = {k: v for k, v in body.items() if v is not None}
+    return _save_settings_db_values(updates)
+
+
+@router.get("/settings/setup_status")
+async def get_setup_status():
+    """First-boot setup probe used by the frontend App shell.
+
+    Returns whether an LLM model has been configured. Reads from the same
+    SettingsDB row used by the legacy /settings endpoint, falling back to
+    the LLM_MODEL_NAME environment variable.
+    """
+    vals = _get_settings_db_values()
+    model_name = vals.get("llm_model_name") or os.getenv("LLM_MODEL_NAME")
+    return {
+        "model_configured": bool(model_name),
+        "llm_model_name": model_name,
+    }

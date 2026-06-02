@@ -28,7 +28,7 @@ echo -e "${GREEN}============================================${NC}"
 echo ""
 
 # ── Preflight checks ──
-echo -e "${YELLOW}[1/4]${NC} Checking prerequisites..."
+echo -e "${YELLOW}[1/5]${NC} Checking prerequisites..."
 
 for img in aipam-app aipam-frontend; do
     if ! docker images --format '{{.Repository}}' | grep -q "^${img}$"; then
@@ -38,18 +38,26 @@ for img in aipam-app aipam-frontend; do
 done
 echo -e "  ${GREEN}ok${NC} Docker images found (aipam-app, aipam-frontend)"
 
+for f in _update_template.sh docker-compose.override.host-ollama.yml env.template; do
+    if [ ! -f "$SCRIPT_DIR/$f" ]; then
+        echo -e "  ${RED}x Required builder asset '$f' missing in $SCRIPT_DIR${NC}"
+        exit 1
+    fi
+done
+echo -e "  ${GREEN}ok${NC} Builder assets present (template, override, env.template)"
+
 # ── Create output directory ──
 rm -rf "$OUTPUT_DIR"
 mkdir -p "$OUTPUT_DIR"
 
 # ── 2. Export Docker images ──
-echo -e "${YELLOW}[2/4]${NC} Exporting Docker images (this takes a few minutes)..."
+echo -e "${YELLOW}[2/5]${NC} Exporting Docker images (this takes a few minutes)..."
 docker save aipam-app:latest aipam-frontend:latest \
     | gzip > "$OUTPUT_DIR/docker-images.tar.gz"
 echo -e "  ${GREEN}ok${NC} Images saved ($(du -h "$OUTPUT_DIR/docker-images.tar.gz" | cut -f1))"
 
 # ── 3. Bundle updated source code ──
-echo -e "${YELLOW}[3/4]${NC} Bundling updated source code..."
+echo -e "${YELLOW}[3/5]${NC} Bundling updated source code..."
 tar -czf "$OUTPUT_DIR/repo.tar.gz" \
     --exclude='.git' \
     --exclude='node_modules' \
@@ -79,95 +87,23 @@ tar -czf "$OUTPUT_DIR/repo.tar.gz" \
     -C "$(dirname "$PROJECT_ROOT")" "$(basename "$PROJECT_ROOT")"
 echo -e "  ${GREEN}ok${NC} Source code archived ($(du -h "$OUTPUT_DIR/repo.tar.gz" | cut -f1))"
 
-# ── 4. Generate update.sh for the offline server ──
-echo -e "${YELLOW}[4/4]${NC} Generating update script..."
-cat > "$OUTPUT_DIR/update.sh" << 'UPDATE_EOF'
-#!/bin/bash
-# ============================================================
-# AIPAM Code-Only Update Script  (Air-Gapped)
-#
-# Updates source code and Docker images only.
-# The v10 model is preserved — no model changes.
-#
-#   cd /path/to/aipam-code-update-YYYYMMDD
-#   chmod +x update.sh
-#   ./update.sh
-# ============================================================
+# ── 4. Bundle host-Ollama override + env.template ──
+echo -e "${YELLOW}[4/5]${NC} Bundling override + env.template..."
+cp "$SCRIPT_DIR/docker-compose.override.host-ollama.yml" \
+   "$OUTPUT_DIR/docker-compose.override.yml"
+cp "$SCRIPT_DIR/env.template" "$OUTPUT_DIR/env.template"
+echo -e "  ${GREEN}ok${NC} docker-compose.override.yml + env.template bundled"
 
-set -euo pipefail
-
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-cd "$SCRIPT_DIR"
-
-INSTALL_DIR="$HOME/AIPAM"
-BACKUP=""
-
-GREEN='\033[0;32m'
-YELLOW='\033[1;33m'
-RED='\033[0;31m'
-NC='\033[0m'
-
-echo -e "${GREEN}============================================${NC}"
-echo -e "${GREEN}  AIPAM Code-Only Update  (Offline)${NC}"
-echo -e "${GREEN}============================================${NC}"
-echo ""
-
-# ── 1. Stop current stack ──
-echo -e "${YELLOW}[1/4]${NC} Stopping current AIPAM stack..."
-if [ -d "$INSTALL_DIR" ]; then
-    cd "$INSTALL_DIR"
-    docker compose down 2>/dev/null || true
-    cd "$SCRIPT_DIR"
-    echo -e "  ${GREEN}ok${NC} Stack stopped"
-else
-    echo -e "  ${YELLOW}!!${NC}  $INSTALL_DIR not found -- will create it"
-fi
-
-# ── 2. Update source code ──
-echo -e "${YELLOW}[2/4]${NC} Updating source code..."
-if [ -d "$INSTALL_DIR" ]; then
-    BACKUP="${INSTALL_DIR}.backup.$(date +%s)"
-    mv "$INSTALL_DIR" "$BACKUP"
-    echo -e "  ${GREEN}ok${NC} Backed up old installation to $BACKUP"
-fi
-tar -xzf "$SCRIPT_DIR/repo.tar.gz" -C "$HOME"
-echo -e "  ${GREEN}ok${NC} Source code updated at $INSTALL_DIR"
-
-# Restore server-specific .env from backup (the SQLite DB containing SO/Arkime
-# UI-configured integration settings is in a named Docker volume and is preserved
-# automatically across docker compose down/up cycles).
-if [ -n "$BACKUP" ] && [ -f "$BACKUP/.env" ]; then
-    cp "$BACKUP/.env" "$INSTALL_DIR/.env"
-    echo -e "  ${GREEN}ok${NC} Restored .env from backup"
-fi
-
-# ── 3. Load new Docker images ──
-echo -e "${YELLOW}[3/4]${NC} Loading updated Docker images..."
-docker load < "$SCRIPT_DIR/docker-images.tar.gz"
-echo -e "  ${GREEN}ok${NC} Docker images loaded"
-
-# ── 4. Start updated stack ──
-echo -e "${YELLOW}[4/4]${NC} Starting AIPAM stack..."
-cd "$INSTALL_DIR"
-docker compose up -d 2>&1 | tail -5
-
-sleep 5
-echo ""
-echo -e "${GREEN}============================================${NC}"
-echo -e "${GREEN}  AIPAM Code Update Complete!${NC}"
-echo -e "${GREEN}============================================${NC}"
-echo ""
-echo -e "  Frontend:  ${GREEN}http://$(hostname -I | awk '{print $1}'):80${NC}"
-echo -e "  API:       ${GREEN}http://$(hostname -I | awk '{print $1}'):8000/docs${NC}"
-echo -e "  Model:     aipam-trafficllm-v10 (unchanged)"
-echo ""
-if [ -n "$BACKUP" ]; then
-echo -e "  Old backup: $BACKUP"
-fi
-echo ""
-UPDATE_EOF
+# ── 5. Copy update.sh from the maintained template ──
+echo -e "${YELLOW}[5/5]${NC} Copying update.sh template..."
+cp "$SCRIPT_DIR/_update_template.sh" "$OUTPUT_DIR/update.sh"
 chmod +x "$OUTPUT_DIR/update.sh"
-echo -e "  ${GREEN}ok${NC} update.sh generated"
+# Verify the copied script is syntactically valid
+if ! bash -n "$OUTPUT_DIR/update.sh"; then
+    echo -e "  ${RED}x update.sh has a syntax error after copy${NC}"
+    exit 1
+fi
+echo -e "  ${GREEN}ok${NC} update.sh installed (supports --check-only / --skip-validate)"
 
 # ── Summary ──
 TOTAL_SIZE=$(du -sh "$OUTPUT_DIR" | cut -f1)
@@ -185,6 +121,19 @@ echo ""
 echo -e "  ${YELLOW}Transfer to offline server:${NC}"
 echo "    rsync -avP --progress $OUTPUT_DIR/ user@<server-ip>:~/aipam-code-update/"
 echo ""
-echo -e "  ${YELLOW}Then on the server:${NC}"
-echo "    cd ~/aipam-code-update && chmod +x update.sh && ./update.sh"
+echo -e "  ${YELLOW}Then on the server (recommended sequence):${NC}"
+echo "    cd ~/aipam-code-update && chmod +x update.sh"
+echo "    ./update.sh --check-only     # diagnostics only, no changes"
+echo "    ./update.sh                  # apply the update (validates then installs)"
+echo ""
+echo -e "  ${YELLOW}Emergency / force install (skips validation):${NC}"
+echo "    ./update.sh --skip-validate"
+
+# ── Refresh hot-patch baseline so future hot-patches are valid against this build ──
+if [ -x "$SCRIPT_DIR/create-hotpatch.sh" ]; then
+    echo ""
+    echo -e "${YELLOW}Refreshing hot-patch baseline (so future hot-patches can verify safety)...${NC}"
+    "$SCRIPT_DIR/create-hotpatch.sh" --update-baseline >/dev/null
+    echo -e "  ${GREEN}ok${NC} baseline updated at $SCRIPT_DIR/.hotpatch-baseline"
+fi
 

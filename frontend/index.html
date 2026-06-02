@@ -7,6 +7,10 @@
   </head>
   <body>
     <div id="root"></div>
+    <!-- Runtime configuration written by the frontend container entrypoint
+         from $AIPAM_API_TOKEN; loaded before the React bundle so main.tsx
+         can read window.__AIPAM_CONFIG__ synchronously. -->
+    <script src="/runtime-config.js"></script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>
