@@ -57,7 +57,7 @@ class TestSourceTypeEnum:
         assert SourceType.exercise_bundle == "exercise_bundle"
 
     def test_all_values(self):
-        expected = {"pcap", "log_bundle", "netflow_bundle", "c2_bundle", "exercise_bundle"}
+        expected = {"pcap", "pcap+logs", "log_bundle", "netflow_bundle", "c2_bundle", "exercise_bundle"}
         actual = {e.value for e in SourceType}
         assert actual == expected
 
