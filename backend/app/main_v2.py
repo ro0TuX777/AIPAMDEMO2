@@ -9,8 +9,11 @@ Creates the app with:
 """
 
 import uuid
+from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
+from fastapi.openapi.docs import get_swagger_ui_html
+from fastapi.staticfiles import StaticFiles
 
 from backend.app.api import (
     alerts,
@@ -60,9 +63,30 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title="AIPAM API",
         version=_APP_VERSION,
-        docs_url="/api/v1/docs",
+        # Swagger UI is served by a custom route below using locally-vendored
+        # assets so /api/v1/docs renders on an air-gapped host (no CDN access).
+        docs_url=None,
+        redoc_url=None,
         openapi_url="/api/v1/openapi.json",
     )
+
+    # --- Self-hosted Swagger UI (air-gapped) ---
+    # FastAPI's default docs page pulls swagger-ui-bundle.js / swagger-ui.css from
+    # a public CDN, which is unreachable on the offline VM (the page loads as a
+    # blank shell). We mount the vendored assets and point the docs page at them.
+    _static_dir = Path(__file__).resolve().parent / "static"
+    if _static_dir.is_dir():
+        app.mount("/api/v1/static", StaticFiles(directory=str(_static_dir)), name="static")
+
+    @app.get("/api/v1/docs", include_in_schema=False)
+    async def custom_swagger_ui_html():  # noqa: ANN202
+        return get_swagger_ui_html(
+            openapi_url=app.openapi_url,
+            title=f"{app.title} — Swagger UI",
+            swagger_js_url="/api/v1/static/swagger/swagger-ui-bundle.js",
+            swagger_css_url="/api/v1/static/swagger/swagger-ui.css",
+            swagger_favicon_url="/api/v1/static/swagger/favicon-32x32.png",
+        )
 
     from fastapi.responses import JSONResponse
     from fastapi import HTTPException
