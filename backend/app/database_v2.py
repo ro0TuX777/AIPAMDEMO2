@@ -185,11 +185,19 @@ def init_v2_db() -> None:
                     )
 
     # Temporal Correlation: add enriched log summary columns for side-by-side display
+    # plus enhanced multi-key / label-aware / clock-aligned correlation metadata.
     if inspector.has_table("temporal_correlations"):
         tc_cols = {c["name"] for c in inspector.get_columns("temporal_correlations")}
         _new_tc_cols = [
             ("log_summary", "TEXT"),
             ("log_source_filename", "VARCHAR"),
+            ("community_id", "VARCHAR"),
+            ("match_keys_json", "TEXT"),
+            ("log_label", "VARCHAR"),
+            ("pcap_label", "VARCHAR"),
+            ("clock_offset_seconds", "REAL DEFAULT 0.0"),
+            ("adjusted_time_delta_seconds", "REAL"),
+            ("confidence_band", "VARCHAR"),
         ]
         for col_name, col_type in _new_tc_cols:
             if col_name not in tc_cols:

@@ -197,6 +197,14 @@ export interface TemporalCorrelationItem {
   time_delta_seconds: number;
   match_score: number;
   match_type: string;
+  // Enhanced correlation metadata (optional for backward compatibility)
+  community_id?: string | null;
+  match_keys?: string[];
+  log_label?: string | null;
+  pcap_label?: string | null;
+  clock_offset_seconds?: number | null;
+  adjusted_time_delta_seconds?: number | null;
+  confidence_band?: string | null;
 }
 
 export interface TemporalCorrelationsResponse {

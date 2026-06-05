@@ -190,6 +190,14 @@ class TemporalCorrelationItem(BaseModel):
     time_delta_seconds: float
     match_score: float
     match_type: str
+    # Enhanced correlation metadata (optional for backward compatibility)
+    community_id: str | None = None
+    match_keys: list[str] = []
+    log_label: str | None = None
+    pcap_label: str | None = None
+    clock_offset_seconds: float | None = None
+    adjusted_time_delta_seconds: float | None = None
+    confidence_band: str | None = None
 
 
 class JobDetail(JobListItem):

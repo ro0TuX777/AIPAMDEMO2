@@ -76,8 +76,8 @@ export const TemporalCorrelationsPage: React.FC = () => {
       {error && <p className="text-red-400">Failed to load correlations.</p>}
       {!isLoading && items.length === 0 && (
         <div className="rounded border border-slate-800 bg-slate-900/50 p-6 text-center text-slate-400 text-sm">
-          No temporal correlations found. This happens when logs and PCAP events don't share IPs within the ±30s window,
-          or when the job only has one source of telemetry.
+          No temporal correlations found. This happens when logs and PCAP events share no community_id, 5-tuple, or IP
+          within the matching window, or when the job only has one source of telemetry.
         </div>
       )}
 
@@ -135,20 +135,47 @@ const CorrelationRow: React.FC<RowProps> = ({ jobId, tc }) => {
   const logLink = `/jobs/${jobId}/telemetry/${encodeURIComponent(tc.log_event_id)}`;
   const pcapLink = pcapLinkFor(jobId, tc);
 
+  // Match-type badge: stronger keys are weighted higher and styled distinctly.
+  const matchTypeMeta: Record<string, { label: string; cls: string }> = {
+    community_id: { label: "community_id", cls: "bg-fuchsia-500/20 text-fuchsia-300 border-fuchsia-500/40" },
+    five_tuple: { label: "5-tuple", cls: "bg-sky-500/20 text-sky-300 border-sky-500/40" },
+    ip_temporal: { label: "IP + time", cls: "bg-slate-600/40 text-slate-300 border-slate-500/40" },
+  };
+  const mt = matchTypeMeta[tc.match_type] ?? matchTypeMeta.ip_temporal;
+  // Phase labels disagree → highlight as a weaker correlation.
+  const labelMismatch = !!tc.log_label && !!tc.pcap_label && tc.log_label !== tc.pcap_label;
+  const offset = tc.clock_offset_seconds ?? 0;
+  const adjDelta = tc.adjusted_time_delta_seconds;
+  const deltaTitle =
+    `raw Δ ${tc.time_delta_seconds.toFixed(3)}s` +
+    (offset ? ` · clock offset ${offset.toFixed(1)}s · aligned Δ ${(adjDelta ?? tc.time_delta_seconds).toFixed(3)}s` : "");
+
   return (
     <div className="rounded bg-slate-800/60 border border-slate-700/40 overflow-hidden">
-      {/* Header: shared IP, delta, score */}
-      <div className="flex items-center gap-2 px-3 py-1.5 bg-slate-800/80 border-b border-slate-700/40 text-[11px]">
+      {/* Header: match type, shared IP, delta, score, labels */}
+      <div className="flex flex-wrap items-center gap-2 px-3 py-1.5 bg-slate-800/80 border-b border-slate-700/40 text-[11px]">
+        <span className={`px-1.5 py-0.5 rounded border font-mono ${mt.cls}`}
+              title={tc.match_keys?.length ? `Matched on: ${tc.match_keys.join(", ")}` : "Match key"}>
+          {mt.label}
+        </span>
         <span className="px-1.5 py-0.5 rounded bg-violet-500/15 text-violet-300 font-mono">
-          IP {tc.shared_ip}
+          {tc.match_type === "community_id" && tc.community_id ? "cid " : "IP "}
+          {tc.match_type === "community_id" && tc.community_id ? tc.community_id : tc.shared_ip}
         </span>
-        <span className={`px-1.5 py-0.5 rounded font-mono ${deltaCls}`}
-              title={`${tc.time_delta_seconds.toFixed(3)}s between log and PCAP timestamps`}>
+        <span className={`px-1.5 py-0.5 rounded font-mono ${deltaCls}`} title={deltaTitle}>
           Δ {tc.time_delta_seconds < 1 ? "<1" : tc.time_delta_seconds.toFixed(1)}s
+          {offset ? "*" : ""}
         </span>
-        <span className={`px-1.5 py-0.5 rounded font-mono ${scoreCls}`} title="Temporal proximity score">
+        <span className={`px-1.5 py-0.5 rounded font-mono ${scoreCls}`}
+              title={`Composite match score${tc.confidence_band ? ` · ${tc.confidence_band} confidence` : ""}`}>
           {Math.round(tc.match_score * 100)}% match
         </span>
+        {(tc.log_label || tc.pcap_label) && (
+          <span className={`px-1.5 py-0.5 rounded font-mono ${labelMismatch ? "bg-amber-900/30 text-amber-400" : "bg-slate-700 text-slate-300"}`}
+                title={labelMismatch ? "Phase labels disagree" : "Phase labels"}>
+            {tc.log_label ?? "—"} {labelMismatch ? "≠" : "="} {tc.pcap_label ?? "—"}
+          </span>
+        )}
         <span className="text-slate-500 ml-auto font-mono truncate" title={tc.log_event_id}>
           {tc.log_event_id}
         </span>

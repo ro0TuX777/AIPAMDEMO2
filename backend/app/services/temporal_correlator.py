@@ -1,19 +1,32 @@
-"""Cross-source temporal correlator.
+"""Cross-source temporal correlator — enhanced alignment framework.
 
 Joins NormalizedEvents (from logs) with PCAP-derived entities (Alerts,
-Connections) when they share an IP address within a configurable time window.
+Connections) using a layered evidence model rather than IP + time alone:
 
-This bridges the gap between host-level telemetry (C2 logs, command output)
-and network-level evidence (IDS alerts, flow records), producing
-TemporalCorrelation rows that link the two.
+  1. Source alignment / clock-offset estimation — strong anchors
+     (community_id, then 5-tuple) are used to estimate a per-log-source clock
+     offset relative to the PCAP timeline, so log and PCAP timestamps are
+     compared on a common clock.
+  2. Multi-key correlation — candidates are matched on community_id (strongest),
+     5-tuple (src/dest/proto, direction-agnostic), then shared IP (weakest).
+  3. Explainable scoring — a composite of key strength, post-alignment time
+     proximity, label agreement, and directionality.
+  4. Label-aware matching — phase labels (before/during/after/baseline/exploit)
+     on both sides reduce the score when they disagree.
+
+This bridges host-level telemetry (C2 logs, command output) and network-level
+evidence (IDS alerts, flow records), producing TemporalCorrelation rows.
 
 Called after both PCAP and telemetry pipelines complete for hybrid jobs.
+Backward compatible: the legacy shared-IP + ±30s behaviour remains the
+fallback when no strong keys are present.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import statistics
 from datetime import datetime
 from typing import Any, NamedTuple
 
@@ -29,9 +42,28 @@ logger = logging.getLogger("aipam.temporal_correlator")
 
 # ── Configuration ─────────────────────────────────────────────────────────
 
-DEFAULT_WINDOW_SECONDS = 30.0   # ±30 seconds
-MAX_MATCHES_PER_EVENT = 10      # cap per log event to avoid explosion
-MAX_TOTAL_CORRELATIONS = 5000   # safety cap per job
+DEFAULT_WINDOW_SECONDS = 30.0       # ±30 s gate for IP-only matches
+STRONG_KEY_WINDOW_SECONDS = 300.0   # ±5 min gate for community_id / 5-tuple
+MAX_MATCHES_PER_EVENT = 10          # cap per log event to avoid explosion
+MAX_TOTAL_CORRELATIONS = 5000       # safety cap per job
+
+MIN_ANCHORS_FOR_OFFSET = 3          # min strong anchors to trust a clock offset
+MAX_OFFSET_SECONDS = 3600.0         # ignore absurd (>1 h) estimated offsets
+
+# Match-key identifiers, strongest → weakest.
+KEY_COMMUNITY = "community_id"
+KEY_FIVE_TUPLE = "five_tuple"
+KEY_IP = "ip"
+
+# Relative strength of each key as standalone evidence.
+_KEY_STRENGTH: dict[str, float] = {
+    KEY_COMMUNITY: 1.0,
+    KEY_FIVE_TUPLE: 0.85,
+    KEY_IP: 0.5,
+}
+
+_CONFIDENCE_HIGH = 0.75
+_CONFIDENCE_MEDIUM = 0.45
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────
@@ -46,20 +78,169 @@ def _parse_ts(ts_str: str | None) -> datetime | None:
         return None
 
 
+def _tuple_key(
+    a_ip: str | None, a_port: int | None,
+    b_ip: str | None, b_port: int | None,
+    proto: str | None,
+) -> tuple | None:
+    """Build a direction-agnostic 5-tuple key, or None if endpoints are missing.
+
+    Endpoints are sorted so that (A→B) and (B→A) produce the same key; this
+    lets a log that records a flow from either perspective match the PCAP.
+    """
+    if not a_ip or not b_ip:
+        return None
+    endpoints = tuple(sorted([(a_ip, a_port or 0), (b_ip, b_port or 0)]))
+    return (proto or "").lower(), endpoints
+
+
 class _PcapEvent(NamedTuple):
     """Lightweight representation of a PCAP-derived entity for matching."""
     entity_type: str        # "alert" | "connection"
     entity_id: str
     summary: str
     ts: datetime
-    ips: frozenset[str]     # all IPs associated with this entity
+    ips: frozenset[str]         # all IPs associated with this entity
+    community_id: str | None
+    tuple_key: tuple | None
+    src_ip: str | None
+    dest_ip: str | None
+    label: str | None
 
 
-def _score_match(delta_seconds: float, window: float) -> float:
-    """Compute a 0–1 proximity score. Closer in time = higher score."""
-    if delta_seconds >= window:
+class _LogEvent(NamedTuple):
+    """Lightweight representation of a NormalizedEvent for matching."""
+    event: NormalizedEvent
+    ts: datetime
+    ips: frozenset[str]
+    community_id: str | None
+    tuple_key: tuple | None
+    src_ip: str | None
+    dest_ip: str | None
+    label: str | None
+    source: str | None          # log source_system, used for offset grouping
+
+
+def _label_factor(log_label: str | None, pcap_label: str | None) -> float:
+    """Penalise matches whose phase labels disagree; neutral when unknown."""
+    if log_label and pcap_label:
+        return 1.0 if log_label == pcap_label else 0.7
+    return 1.0
+
+
+def _direction_factor(log_evt: _LogEvent, pe: _PcapEvent) -> float:
+    """Small bonus when src/dest orientation agrees between the two sides."""
+    if log_evt.src_ip and log_evt.dest_ip and pe.src_ip and pe.dest_ip:
+        same = log_evt.src_ip == pe.src_ip and log_evt.dest_ip == pe.dest_ip
+        return 1.0 if same else 0.95
+    return 1.0
+
+
+def _matched_keys(log_evt: _LogEvent, pe: _PcapEvent) -> list[str]:
+    """Return every correlation key shared by a log/PCAP pair, strongest first."""
+    keys: list[str] = []
+    if log_evt.community_id and pe.community_id and log_evt.community_id == pe.community_id:
+        keys.append(KEY_COMMUNITY)
+    if log_evt.tuple_key and pe.tuple_key and log_evt.tuple_key == pe.tuple_key:
+        keys.append(KEY_FIVE_TUPLE)
+    if log_evt.ips & pe.ips:
+        keys.append(KEY_IP)
+    return keys
+
+
+def _shared_ip(log_evt: _LogEvent, pe: _PcapEvent) -> str:
+    """Best representative shared IP, falling back to community_id then '-'."""
+    common = log_evt.ips & pe.ips
+    if common:
+        return sorted(common)[0]
+    if log_evt.community_id and log_evt.community_id == pe.community_id:
+        return log_evt.community_id
+    return log_evt.src_ip or pe.src_ip or pe.dest_ip or "-"
+
+
+def _confidence_band(score: float) -> str:
+    if score >= _CONFIDENCE_HIGH:
+        return "high"
+    if score >= _CONFIDENCE_MEDIUM:
+        return "medium"
+    return "low"
+
+
+def _score_match(
+    strongest_key: str,
+    adjusted_delta: float,
+    window: float,
+    log_evt: _LogEvent,
+    pe: _PcapEvent,
+) -> float:
+    """Composite 0–1 score: key strength × time × label × directionality.
+
+    Strong keys retain a score floor even when timestamps are far apart, since
+    the key itself is authoritative; weak IP-only matches are dominated by time.
+    """
+    if adjusted_delta >= window:
         return 0.0
-    return round(1.0 - (delta_seconds / window), 3)
+    time_factor = 1.0 - (adjusted_delta / window)
+    key_strength = _KEY_STRENGTH[strongest_key]
+    # Strong keys: 0.4 floor + 0.6 time-weighted. IP-only: time is the gate.
+    if strongest_key == KEY_IP:
+        time_component = time_factor
+    else:
+        time_component = 0.4 + 0.6 * time_factor
+    score = (
+        key_strength
+        * time_component
+        * _label_factor(log_evt.label, pe.label)
+        * _direction_factor(log_evt, pe)
+    )
+    return round(max(0.0, min(1.0, score)), 3)
+
+
+def _estimate_clock_offsets(
+    log_events: list[_LogEvent],
+    pcap_events: list[_PcapEvent],
+) -> dict[str, float]:
+    """Estimate a per-log-source clock offset (log_ts - pcap_ts) in seconds.
+
+    Uses strong anchors only: community_id matches first, then 5-tuple. The
+    median signed delta across anchors is the offset. Sources with too few
+    anchors, or an implausibly large offset, are treated as un-aligned (0.0).
+    """
+    pcap_by_community: dict[str, list[_PcapEvent]] = {}
+    pcap_by_tuple: dict[tuple, list[_PcapEvent]] = {}
+    for pe in pcap_events:
+        if pe.community_id:
+            pcap_by_community.setdefault(pe.community_id, []).append(pe)
+        if pe.tuple_key:
+            pcap_by_tuple.setdefault(pe.tuple_key, []).append(pe)
+
+    deltas_by_source: dict[str, list[float]] = {}
+    for le in log_events:
+        source = le.source or "_unknown"
+        anchors: list[_PcapEvent] = []
+        if le.community_id:
+            anchors = pcap_by_community.get(le.community_id, [])
+        if not anchors and le.tuple_key:
+            anchors = pcap_by_tuple.get(le.tuple_key, [])
+        if not anchors:
+            continue
+        # Nearest anchor by raw delta is the most reliable per-event signal.
+        nearest = min(anchors, key=lambda pe: abs((le.ts - pe.ts).total_seconds()))
+        deltas_by_source.setdefault(source, []).append(
+            (le.ts - nearest.ts).total_seconds()
+        )
+
+    offsets: dict[str, float] = {}
+    for source, deltas in deltas_by_source.items():
+        if len(deltas) < MIN_ANCHORS_FOR_OFFSET:
+            continue
+        offset = statistics.median(deltas)
+        if abs(offset) > MAX_OFFSET_SECONDS:
+            continue
+        offsets[source] = round(offset, 3)
+    if offsets:
+        logger.info("Estimated clock offsets (log→PCAP, s): %s", offsets)
+    return offsets
 
 
 # Max length for rendered summaries saved to the DB
@@ -141,6 +322,87 @@ def _build_alert_summary(alert: Alert) -> str:
     return " ".join(parts)[:_MAX_SUMMARY_LEN]
 
 
+# ── Builders ──────────────────────────────────────────────────────────────
+
+def _build_log_events(db: Session, job_id: str) -> list[_LogEvent]:
+    """Load NormalizedEvents that carry at least one correlation handle."""
+    rows = db.execute(
+        select(NormalizedEvent).where(NormalizedEvent.job_id == job_id)
+    ).scalars().all()
+
+    out: list[_LogEvent] = []
+    for evt in rows:
+        ts = _parse_ts(evt.timestamp)
+        if not ts:
+            continue
+        ips = frozenset(ip for ip in (evt.src_ip, evt.dest_ip) if ip)
+        tuple_key = _tuple_key(evt.src_ip, evt.src_port, evt.dest_ip, evt.dest_port, evt.proto)
+        if not ips and not evt.community_id and not tuple_key:
+            continue
+        out.append(_LogEvent(
+            event=evt,
+            ts=ts,
+            ips=ips,
+            community_id=evt.community_id,
+            tuple_key=tuple_key,
+            src_ip=evt.src_ip,
+            dest_ip=evt.dest_ip,
+            label=evt.pcap_label,
+            source=evt.source_system,
+        ))
+    return out
+
+
+def _build_pcap_events(db: Session, job_id: str) -> list[_PcapEvent]:
+    """Load PCAP-derived alerts + connections with correlation handles."""
+    out: list[_PcapEvent] = []
+
+    for a in db.execute(select(Alert).where(Alert.job_id == job_id)).scalars().all():
+        ts = _parse_ts(a.ts)
+        if not ts:
+            continue
+        ips = frozenset(ip for ip in (a.src_ip, a.dest_ip, a.host_ip) if ip)
+        tuple_key = _tuple_key(a.src_ip, a.src_port, a.dest_ip, a.dest_port, a.proto)
+        if not ips and not a.community_id and not tuple_key:
+            continue
+        out.append(_PcapEvent(
+            entity_type="alert",
+            entity_id=a.alert_id,
+            summary=_build_alert_summary(a),
+            ts=ts,
+            ips=ips,
+            community_id=a.community_id,
+            tuple_key=tuple_key,
+            src_ip=a.src_ip,
+            dest_ip=a.dest_ip,
+            label=a.pcap_label,
+        ))
+
+    for c in db.execute(select(Connection).where(Connection.job_id == job_id)).scalars().all():
+        ts = _parse_ts(c.ts)
+        if not ts:
+            continue
+        ips = frozenset(ip for ip in (c.src_ip, c.dest_ip) if ip)
+        tuple_key = _tuple_key(c.src_ip, c.src_port, c.dest_ip, c.dest_port, c.proto)
+        if not ips and not c.community_id and not tuple_key:
+            continue
+        summary = f"{c.src_ip}:{c.src_port} → {c.dest_ip}:{c.dest_port} ({c.proto or '?'})"
+        out.append(_PcapEvent(
+            entity_type="connection",
+            entity_id=c.connection_id,
+            summary=summary,
+            ts=ts,
+            ips=ips,
+            community_id=c.community_id,
+            tuple_key=tuple_key,
+            src_ip=c.src_ip,
+            dest_ip=c.dest_ip,
+            label=c.pcap_label,
+        ))
+
+    return out
+
+
 # ── Main entry point ─────────────────────────────────────────────────────
 
 def correlate_temporal(
@@ -148,156 +410,141 @@ def correlate_temporal(
     job_id: str,
     window_seconds: float = DEFAULT_WINDOW_SECONDS,
 ) -> dict[str, Any]:
-    """Run cross-source temporal correlation for a job.
+    """Run enhanced cross-source temporal correlation for a job.
 
+    Aligns log/PCAP clocks via strong anchors, then correlates on
+    community_id → 5-tuple → shared IP with an explainable composite score.
     Returns a summary dict with counts.
     """
-    # 1. Load all NormalizedEvents with at least one IP
-    log_events = db.execute(
-        select(NormalizedEvent).where(
-            NormalizedEvent.job_id == job_id,
-        )
-    ).scalars().all()
-
-    # Filter to events with IPs and valid timestamps
-    log_with_ip = []
-    for evt in log_events:
-        ts = _parse_ts(evt.timestamp)
-        if not ts:
-            continue
-        ips: set[str] = set()
-        if evt.src_ip:
-            ips.add(evt.src_ip)
-        if evt.dest_ip:
-            ips.add(evt.dest_ip)
-        if not ips:
-            continue
-        log_with_ip.append((evt, ts, ips))
-
-    if not log_with_ip:
-        logger.info("Job %s: no log events with IPs — skipping temporal correlation", job_id)
+    log_events = _build_log_events(db, job_id)
+    if not log_events:
+        logger.info("Job %s: no correlatable log events — skipping temporal correlation", job_id)
         return {"log_events": 0, "pcap_events": 0, "matches": 0}
 
-    # 2. Load PCAP-derived entities (alerts + connections)
-    pcap_events: list[_PcapEvent] = []
-
-    alerts = db.execute(
-        select(Alert).where(Alert.job_id == job_id)
-    ).scalars().all()
-    for a in alerts:
-        ts = _parse_ts(a.ts)
-        if not ts:
-            continue
-        ips = frozenset(ip for ip in (a.src_ip, a.dest_ip, a.host_ip) if ip)
-        if ips:
-            pcap_events.append(_PcapEvent("alert", a.alert_id, _build_alert_summary(a), ts, ips))
-
-    connections = db.execute(
-        select(Connection).where(Connection.job_id == job_id)
-    ).scalars().all()
-    for c in connections:
-        ts = _parse_ts(c.ts)
-        if not ts:
-            continue
-        ips = frozenset(ip for ip in (c.src_ip, c.dest_ip) if ip)
-        if ips:
-            summary = f"{c.src_ip}:{c.src_port} → {c.dest_ip}:{c.dest_port} ({c.proto or '?'})"
-            pcap_events.append(_PcapEvent("connection", c.connection_id, summary, ts, ips))
-
+    pcap_events = _build_pcap_events(db, job_id)
     if not pcap_events:
-        logger.info("Job %s: no PCAP events with IPs — skipping temporal correlation", job_id)
-        return {"log_events": len(log_with_ip), "pcap_events": 0, "matches": 0}
+        logger.info("Job %s: no correlatable PCAP events — skipping temporal correlation", job_id)
+        return {"log_events": len(log_events), "pcap_events": 0, "matches": 0}
 
     logger.info(
-        "Job %s: temporal correlation — %d log events × %d PCAP events (window=±%.0fs)",
-        job_id, len(log_with_ip), len(pcap_events), window_seconds,
+        "Job %s: temporal correlation — %d log events × %d PCAP events "
+        "(ip window=±%.0fs, strong-key window=±%.0fs)",
+        job_id, len(log_events), len(pcap_events), window_seconds, STRONG_KEY_WINDOW_SECONDS,
     )
 
-    # 3. Build IP → PCAP events index for fast lookup
+    # Source alignment: estimate per-log-source clock offsets from strong anchors.
+    offsets = _estimate_clock_offsets(log_events, pcap_events)
+
+    # Candidate indexes for fast lookup.
+    pcap_by_community: dict[str, list[_PcapEvent]] = {}
+    pcap_by_tuple: dict[tuple, list[_PcapEvent]] = {}
     ip_to_pcap: dict[str, list[_PcapEvent]] = {}
     for pe in pcap_events:
+        if pe.community_id:
+            pcap_by_community.setdefault(pe.community_id, []).append(pe)
+        if pe.tuple_key:
+            pcap_by_tuple.setdefault(pe.tuple_key, []).append(pe)
         for ip in pe.ips:
             ip_to_pcap.setdefault(ip, []).append(pe)
 
-
-    # 4. Clear previous temporal correlations for this job
+    # Clear previous correlations for this job (idempotent re-run).
     db.query(TemporalCorrelation).filter(TemporalCorrelation.job_id == job_id).delete()
     db.flush()
 
-    # 5. Match log events against PCAP events by shared IP + time window
     total_matches = 0
-    upgraded_events: set[str] = set()
-    seen_pairs: set[tuple[str, str, str]] = set()  # (log_event_id, pcap_type, pcap_id)
+    upgraded: dict[str, float] = {}   # event_id → best score
+    capped = False
 
-    for evt, log_ts, log_ips in log_with_ip:
-        matches_for_event = 0
+    for le in log_events:
+        offset = offsets.get(le.source or "_unknown", 0.0)
 
-        for ip in log_ips:
-            candidates = ip_to_pcap.get(ip, [])
-            for pe in candidates:
-                # Dedup
-                pair_key = (evt.event_id, pe.entity_type, pe.entity_id)
-                if pair_key in seen_pairs:
-                    continue
+        # Gather unique candidate PCAP events across all key indexes.
+        candidates: dict[tuple[str, str], _PcapEvent] = {}
+        if le.community_id:
+            for pe in pcap_by_community.get(le.community_id, []):
+                candidates[(pe.entity_type, pe.entity_id)] = pe
+        if le.tuple_key:
+            for pe in pcap_by_tuple.get(le.tuple_key, []):
+                candidates[(pe.entity_type, pe.entity_id)] = pe
+        for ip in le.ips:
+            for pe in ip_to_pcap.get(ip, []):
+                candidates[(pe.entity_type, pe.entity_id)] = pe
 
-                delta = abs((log_ts - pe.ts).total_seconds())
-                if delta > window_seconds:
-                    continue
+        scored: list[tuple[float, _PcapEvent, list[str], float]] = []
+        for pe in candidates.values():
+            keys = _matched_keys(le, pe)
+            if not keys:
+                continue
+            strongest = keys[0]
+            window = window_seconds if strongest == KEY_IP else STRONG_KEY_WINDOW_SECONDS
+            adjusted_delta = abs((le.ts - pe.ts).total_seconds() - offset)
+            score = _score_match(strongest, adjusted_delta, window, le, pe)
+            if score <= 0:
+                continue
+            scored.append((score, pe, keys, adjusted_delta))
 
-                score = _score_match(delta, window_seconds)
-                if score <= 0:
-                    continue
+        scored.sort(key=lambda t: t[0], reverse=True)
+        for score, pe, keys, adjusted_delta in scored[:MAX_MATCHES_PER_EVENT]:
+            raw_delta = abs((le.ts - pe.ts).total_seconds())
+            strongest = keys[0]
+            match_type = "ip_temporal" if strongest == KEY_IP else strongest
+            shared_community = (
+                le.community_id if (le.community_id and le.community_id == pe.community_id) else None
+            )
+            db.add(TemporalCorrelation(
+                job_id=job_id,
+                log_event_id=le.event.event_id,
+                log_source=le.event.source_system,
+                log_source_filename=le.event.source_filename,
+                log_event_type=le.event.event_type,
+                log_timestamp=le.event.timestamp,
+                log_summary=_build_log_summary(le.event),
+                pcap_entity_type=pe.entity_type,
+                pcap_entity_id=pe.entity_id,
+                pcap_summary=pe.summary[:_MAX_SUMMARY_LEN] if pe.summary else None,
+                pcap_timestamp=pe.ts.strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+                shared_ip=_shared_ip(le, pe),
+                time_delta_seconds=round(raw_delta, 3),
+                match_score=score,
+                match_type=match_type,
+                community_id=shared_community,
+                match_keys_json=json.dumps(keys),
+                log_label=le.label,
+                pcap_label=pe.label,
+                clock_offset_seconds=round(offset, 3),
+                adjusted_time_delta_seconds=round(adjusted_delta, 3),
+                confidence_band=_confidence_band(score),
+            ))
+            total_matches += 1
+            prev = upgraded.get(le.event.event_id, 0.0)
+            upgraded[le.event.event_id] = max(prev, score)
 
-                seen_pairs.add(pair_key)
-
-                tc = TemporalCorrelation(
-                    job_id=job_id,
-                    log_event_id=evt.event_id,
-                    log_source=evt.source_system,
-                    log_source_filename=evt.source_filename,
-                    log_event_type=evt.event_type,
-                    log_timestamp=evt.timestamp,
-                    log_summary=_build_log_summary(evt),
-                    pcap_entity_type=pe.entity_type,
-                    pcap_entity_id=pe.entity_id,
-                    pcap_summary=pe.summary[:_MAX_SUMMARY_LEN] if pe.summary else None,
-                    pcap_timestamp=pe.ts.strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
-                    shared_ip=ip,
-                    time_delta_seconds=round(delta, 3),
-                    match_score=score,
-                    match_type="ip_temporal",
-                )
-                db.add(tc)
-                total_matches += 1
-                matches_for_event += 1
-                upgraded_events.add(evt.event_id)
-
-                if matches_for_event >= MAX_MATCHES_PER_EVENT:
-                    break
-            if matches_for_event >= MAX_MATCHES_PER_EVENT:
+            if total_matches >= MAX_TOTAL_CORRELATIONS:
+                capped = True
                 break
-
-        if total_matches >= MAX_TOTAL_CORRELATIONS:
+        if capped:
             logger.warning("Job %s: hit temporal correlation cap (%d)", job_id, MAX_TOTAL_CORRELATIONS)
             break
 
-    # 6. Upgrade evidence status for matched NormalizedEvents
-    if upgraded_events:
-        for evt, _, _ in log_with_ip:
-            if evt.event_id in upgraded_events:
-                if evt.evidence_status == "observed":
-                    evt.evidence_status = "corroborated"
-                    evt.corroboration_score = min(
-                        1.0, (evt.corroboration_score or 0.0) + 0.3
-                    )
+    # Upgrade evidence status for matched NormalizedEvents, weighted by score.
+    for le in log_events:
+        best = upgraded.get(le.event.event_id)
+        if best is None:
+            continue
+        if le.event.evidence_status == "observed":
+            le.event.evidence_status = "corroborated"
+            le.event.corroboration_score = min(
+                1.0, (le.event.corroboration_score or 0.0) + round(0.3 * best, 3)
+            )
 
     db.commit()
 
     summary = {
-        "log_events": len(log_with_ip),
+        "log_events": len(log_events),
         "pcap_events": len(pcap_events),
         "matches": total_matches,
-        "upgraded_events": len(upgraded_events),
+        "upgraded_events": len(upgraded),
+        "clock_offsets": offsets,
     }
     logger.info("Job %s: temporal correlation complete — %s", job_id, summary)
     return summary
