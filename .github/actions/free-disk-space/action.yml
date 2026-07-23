@@ -1,0 +1,22 @@
+name: Free disk space
+description: >
+  Reclaim runner disk before installing the heavy backend ML dependencies
+  (torch + CUDA wheels + chromadb + transformers), which otherwise exhaust the
+  default ubuntu-latest disk and fail pip with "No space left on device".
+
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        echo "Disk before cleanup:"; df -h / | tail -1
+        # Preinstalled toolchains this project never uses, ~20 GB combined.
+        # `|| true` so a missing path on a future runner image is not fatal.
+        sudo rm -rf \
+          /usr/local/lib/android \
+          /usr/share/dotnet \
+          /opt/ghc \
+          /usr/local/.ghcup \
+          /opt/hostedtoolcache/CodeQL || true
+        sudo docker image prune --all --force > /dev/null 2>&1 || true
+        echo "Disk after cleanup:"; df -h / | tail -1

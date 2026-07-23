@@ -22,6 +22,8 @@ jobs:
     if: github.event_name == 'pull_request' || github.event_name == 'push'
     steps:
       - uses: actions/checkout@v4
+      # Reclaim disk before the multi-GB ML dependency install.
+      - uses: ./.github/actions/free-disk-space
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
@@ -40,6 +42,8 @@ jobs:
     if: github.event_name == 'pull_request' || github.event_name == 'push'
     steps:
       - uses: actions/checkout@v4
+      # Reclaim disk before the multi-GB ML dependency install.
+      - uses: ./.github/actions/free-disk-space
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
@@ -56,6 +60,8 @@ jobs:
     needs: [unit-tests, lint]
     steps:
       - uses: actions/checkout@v4
+      # Reclaim disk before the multi-GB ML dependency install.
+      - uses: ./.github/actions/free-disk-space
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
@@ -98,6 +104,8 @@ jobs:
     if: github.event_name == 'schedule'
     steps:
       - uses: actions/checkout@v4
+      # Reclaim disk before the multi-GB ML dependency install.
+      - uses: ./.github/actions/free-disk-space
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
