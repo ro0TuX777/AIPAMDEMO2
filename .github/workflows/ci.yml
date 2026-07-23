@@ -49,6 +49,11 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
       - run: pip install -r backend/requirements.txt
+      # requirements.txt lists ruff unpinned (>=0.4), so CI would otherwise pull
+      # whatever is newest and lint against rules the codebase predates — a moving
+      # target that fails the build on ruff upgrades unrelated to any change. Pin
+      # to the version the project is developed against; bump deliberately.
+      - run: pip install ruff==0.15.6
       - run: make lint
       - run: make check
 
