@@ -1,19 +1,16 @@
 import React from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { JobSubPageNav } from "../components/JobSubPageNav";
 import { useQuery } from "@tanstack/react-query";
 import { api, type TimelineItem } from "../api";
-import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
+import { HelpPanel, labelHint, usePageHelp } from "../components/HelpPanel";
+import { severityClass } from "../theme/colors";
+import { JobBreadcrumbs } from "../components/Breadcrumbs";
 
 const TYPE_LABELS: Record<string, string> = {
   connection: "CONN", alert: "ALR", dns: "DNS", tls: "TLS",
   finding: "FND", ioc: "IOC", file: "FILE",
   c2_callback: "C2", c2_task: "C2T", process: "PROC", unknown: "•",
-};
-
-const SEV_COLORS: Record<string, string> = {
-  critical: "border-red-500", high: "border-orange-400",
-  medium: "border-amber-400", low: "border-blue-400", info: "border-slate-600",
 };
 
 const STATUS_BADGES: Record<string, { label: string; cls: string }> = {
@@ -38,13 +35,7 @@ export const TimelinePage: React.FC = () => {
     <>
     <div className="flex gap-6 items-start">
     <div className="space-y-4 flex-1 min-w-0">
-      <nav className="text-sm text-slate-400">
-        <Link to="/jobs" className="hover:text-white">Jobs</Link>
-        <span className="mx-1">/</span>
-        <Link to={`/jobs/${jobId}`} className="hover:text-white">{jobId?.slice(0, 8)}</Link>
-        <span className="mx-1">/</span>
-        <span className="text-slate-200">Timeline</span>
-      </nav>
+      <JobBreadcrumbs jobId={jobId} trail={[{ label: "Timeline" }]} />
 
       <h1 className={`text-xl font-semibold ${labelHint("timeline", activeHelpField)}`} onClick={() => toggleHelp("timeline")}>Timeline ({events.length} events)</h1>
 
@@ -59,7 +50,7 @@ export const TimelinePage: React.FC = () => {
         <div className="space-y-1">
           {events.map((evt: TimelineItem, idx: number) => (
             <div key={idx}
-              className={`flex items-start gap-3 px-3 py-2 border-l-2 ${SEV_COLORS[evt.severity ?? "info"] ?? SEV_COLORS.info} hover:bg-slate-800/30`}>
+              className={`flex items-start gap-3 px-3 py-2 border-l-2 ${severityClass(evt.severity, "border")} hover:bg-slate-800/30`}>
               <span className="text-[10px] font-mono font-bold text-slate-500 shrink-0">{TYPE_LABELS[evt.type] ?? TYPE_LABELS.unknown}</span>
               <div className="flex-1 min-w-0">
                 <div className="flex items-baseline gap-2">
@@ -98,7 +89,7 @@ export const TimelinePage: React.FC = () => {
         </div>
       )}
     </div>
-    <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
+    <HelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
     </div>
     <JobSubPageNav jobId={jobId!} currentPath="timeline" />
     </>

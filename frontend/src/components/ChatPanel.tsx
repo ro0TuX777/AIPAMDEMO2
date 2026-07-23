@@ -343,9 +343,9 @@ export function ChatPanel({ jobId, initialMessage, contextHint, onClose }: ChatP
     };
 
     return (
-        <div className="flex flex-col h-full bg-gray-900 rounded-lg border border-gray-700">
+        <div className="flex flex-col h-full bg-slate-900 rounded-lg border border-slate-700">
             {/* Header */}
-            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-700">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700">
                 <div className="flex-1 flex items-center gap-2">
                     {isEditingTitle ? (
                         <div className="flex items-center gap-2 flex-1">
@@ -353,7 +353,7 @@ export function ChatPanel({ jobId, initialMessage, contextHint, onClose }: ChatP
                                 type="text"
                                 value={newTitle}
                                 onChange={(e) => setNewTitle(e.target.value)}
-                                className="bg-gray-800 text-white text-sm rounded px-2 py-1 outline-none ring-1 ring-blue-500 flex-1"
+                                className="bg-slate-800 text-slate-100 text-sm rounded px-2 py-1 outline-none ring-1 ring-blue-500 flex-1"
                                 autoFocus
                                 onKeyDown={(e) => {
                                     if (e.key === "Enter") handleRenameConv();
@@ -368,11 +368,11 @@ export function ChatPanel({ jobId, initialMessage, contextHint, onClose }: ChatP
                             <select
                                 value={conversationId || ""}
                                 onChange={(e) => e.target.value ? loadConversation(e.target.value) : startNewConversation()}
-                                className="bg-transparent text-gray-100 font-semibold focus:outline-none cursor-pointer max-w-full truncate"
+                                className="bg-transparent text-slate-100 font-semibold focus:outline-none cursor-pointer max-w-full truncate"
                             >
-                                <option value="" className="bg-gray-900 text-gray-400">New Conversation</option>
+                                <option value="" className="bg-slate-900 text-slate-400">New Conversation</option>
                                 {conversations.map(c => (
-                                    <option key={c.id} value={c.id} className="bg-gray-900">
+                                    <option key={c.id} value={c.id} className="bg-slate-900">
                                         {c.title || `Chat ${c.id.slice(0, 4)}...`}
                                     </option>
                                 ))}
@@ -385,14 +385,14 @@ export function ChatPanel({ jobId, initialMessage, contextHint, onClose }: ChatP
                                             setNewTitle(current?.title || "");
                                             setIsEditingTitle(true);
                                         }}
-                                        className="text-gray-500 hover:text-gray-300 transition-colors"
+                                        className="text-slate-500 hover:text-slate-300 transition-colors"
                                         title="Rename conversation"
                                     >
                                         ✎
                                     </button>
                                     <button
                                         onClick={handleDeleteConv}
-                                        className="text-gray-500 hover:text-red-400 transition-colors"
+                                        className="text-slate-500 hover:text-red-400 transition-colors"
                                         title="Delete conversation"
                                     >
                                         Del
@@ -407,14 +407,14 @@ export function ChatPanel({ jobId, initialMessage, contextHint, onClose }: ChatP
                         <>
                             <button
                                 onClick={startNewConversation}
-                                className="text-gray-400 hover:text-white transition-colors text-sm px-2 py-1 rounded hover:bg-gray-700"
+                                className="text-slate-400 hover:text-slate-50 transition-colors text-sm px-2 py-1 rounded hover:bg-slate-700"
                                 title="Start new conversation"
                             >
                                 + New
                             </button>
                             <button
                                 onClick={exportToMarkdown}
-                                className="text-gray-400 hover:text-white transition-colors text-sm px-2 py-1 rounded hover:bg-gray-700"
+                                className="text-slate-400 hover:text-slate-50 transition-colors text-sm px-2 py-1 rounded hover:bg-slate-700"
                                 title="Export chat to Markdown"
                             >
                                 Export
@@ -424,7 +424,7 @@ export function ChatPanel({ jobId, initialMessage, contextHint, onClose }: ChatP
                     {onClose && (
                         <button
                             onClick={onClose}
-                            className="text-gray-400 hover:text-white transition-colors"
+                            className="text-slate-400 hover:text-slate-50 transition-colors"
                         >
                             ✕
                         </button>
@@ -435,11 +435,11 @@ export function ChatPanel({ jobId, initialMessage, contextHint, onClose }: ChatP
             {/* Messages */}
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
                 {isLoadingHistory ? (
-                    <div className="text-gray-500 text-center py-8">
+                    <div className="text-slate-500 text-center py-8">
                         <span className="animate-pulse">Loading conversation history...</span>
                     </div>
                 ) : messages.length === 0 ? (
-                    <div className="text-gray-500 text-center py-8">
+                    <div className="text-slate-500 text-center py-8">
                         <p className="text-base mb-4">Ask questions about this PCAP analysis</p>
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-w-xl mx-auto text-left">
                             {[
@@ -454,7 +454,7 @@ export function ChatPanel({ jobId, initialMessage, contextHint, onClose }: ChatP
                                     key={q.text}
                                     onClick={() => handleSend(q.text)}
                                     disabled={isLoading}
-                                    className="flex items-start gap-2 px-3 py-2 rounded-lg border border-gray-700 bg-gray-800/50 hover:bg-gray-700/60 hover:border-gray-600 text-gray-300 hover:text-white text-xs transition-colors text-left disabled:opacity-50"
+                                    className="flex items-start gap-2 px-3 py-2 rounded-lg border border-slate-700 bg-slate-800/50 hover:bg-slate-700/60 hover:border-slate-600 text-slate-300 hover:text-slate-50 text-xs transition-colors text-left disabled:opacity-50"
                                 >
                                     <span className="shrink-0 mt-0.5">{q.icon}</span>
                                     <span>{q.text}</span>
@@ -471,26 +471,26 @@ export function ChatPanel({ jobId, initialMessage, contextHint, onClose }: ChatP
                         <div
                             className={`max-w-[80%] rounded-lg px-4 py-2 ${msg.role === "user"
                                 ? "bg-blue-600 text-white"
-                                : "bg-gray-800 text-gray-100"
+                                : "bg-slate-800 text-slate-100"
                                 }`}
                         >
                             <p className="whitespace-pre-wrap">{msg.content}</p>
                             {msg.citations && msg.citations.length > 0 && (
-                                <div className="mt-3 pt-2 border-t border-gray-600">
+                                <div className="mt-3 pt-2 border-t border-slate-600">
                                     <details className="group">
-                                        <summary className="flex cursor-pointer list-none items-center gap-2 text-xs text-gray-300 hover:text-white">
+                                        <summary className="flex cursor-pointer list-none items-center gap-2 text-xs text-slate-300 hover:text-slate-50">
                                             <span className="font-medium">Sources</span>
-                                            <span className="text-gray-500">({msg.citations.length})</span>
-                                            <span className="text-gray-500 group-open:hidden">Show</span>
-                                            <span className="hidden text-gray-500 group-open:inline">Hide</span>
+                                            <span className="text-slate-500">({msg.citations.length})</span>
+                                            <span className="text-slate-500 group-open:hidden">Show</span>
+                                            <span className="hidden text-slate-500 group-open:inline">Hide</span>
                                         </summary>
                                         <div className="mt-2 max-h-48 space-y-2 overflow-y-auto pr-1">
                                             {msg.citations.map((c, i) => (
-                                                <div key={`${c.type}-${c.id ?? i}-${i}`} className="rounded-md border border-gray-700 bg-gray-900/60 px-2 py-2">
-                                                    <p className="text-[11px] uppercase tracking-wide text-gray-500">
+                                                <div key={`${c.type}-${c.id ?? i}-${i}`} className="rounded-md border border-slate-700 bg-slate-900/60 px-2 py-2">
+                                                    <p className="text-[11px] uppercase tracking-wide text-slate-500">
                                                         {c.type.replace(/_/g, " ")}
                                                     </p>
-                                                    <p className="mt-1 whitespace-pre-wrap break-words text-xs text-gray-300">
+                                                    <p className="mt-1 whitespace-pre-wrap break-words text-xs text-slate-300">
                                                         {c.snippet}
                                                     </p>
                                                 </div>
@@ -501,15 +501,15 @@ export function ChatPanel({ jobId, initialMessage, contextHint, onClose }: ChatP
                             )}
                             {/* Follow-up suggestions */}
                             {msg.role === "assistant" && msg.suggested_followups && msg.suggested_followups.length > 0 && !isLoading && (
-                                <div className="mt-3 pt-2 border-t border-gray-700">
-                                    <p className="text-[10px] uppercase tracking-wider text-gray-500 mb-1.5">Follow-up questions</p>
+                                <div className="mt-3 pt-2 border-t border-slate-700">
+                                    <p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1.5">Follow-up questions</p>
                                     <div className="flex flex-wrap gap-1.5">
                                         {msg.suggested_followups.map((q, i) => (
                                             <button
                                                 key={i}
                                                 onClick={() => handleSend(q)}
                                                 disabled={isLoading}
-                                                className="text-left text-xs px-2 py-1 rounded border border-gray-700 bg-gray-900/60 text-emerald-400/80 hover:text-emerald-300 hover:border-emerald-500/30 hover:bg-gray-800/80 transition-colors disabled:opacity-50"
+                                                className="text-left text-xs px-2 py-1 rounded border border-slate-700 bg-slate-900/60 text-emerald-400/80 hover:text-emerald-300 hover:border-emerald-500/30 hover:bg-slate-800/80 transition-colors disabled:opacity-50"
                                             >
                                                 {q}
                                             </button>
@@ -522,7 +522,7 @@ export function ChatPanel({ jobId, initialMessage, contextHint, onClose }: ChatP
                 ))}
                 {isLoading && messages.length > 0 && messages[messages.length - 1].content === "" && (
                     <div className="flex justify-start">
-                        <div className="bg-gray-800 rounded-lg px-4 py-2 text-gray-400">
+                        <div className="bg-slate-800 rounded-lg px-4 py-2 text-slate-400">
                             <span className="animate-pulse">Thinking...</span>
                         </div>
                     </div>
@@ -531,7 +531,7 @@ export function ChatPanel({ jobId, initialMessage, contextHint, onClose }: ChatP
             </div>
 
             {/* Input */}
-            <div className="p-4 border-t border-gray-700">
+            <div className="p-4 border-t border-slate-700">
                 <div className="flex gap-2">
                     <input
                         type="text"
@@ -539,7 +539,7 @@ export function ChatPanel({ jobId, initialMessage, contextHint, onClose }: ChatP
                         onChange={(e) => setInput(e.target.value)}
                         onKeyDown={handleKeyDown}
                         placeholder="Ask about the findings..."
-                        className="flex-1 bg-gray-800 text-white rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                        className="flex-1 bg-slate-800 text-slate-100 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500"
                         disabled={isLoading}
                     />
                     <button

@@ -4,8 +4,9 @@ import { JobSubPageNav } from "../components/JobSubPageNav";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import * as d3 from "d3";
 import { api, type GraphNode, type GraphEdge, type ProofItem, type ProofItemEntry, type ProofNarrativeResponse } from "../api";
-import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
+import { HelpPanel, labelHint, usePageHelp } from "../components/HelpPanel";
 import { useToast } from "../components/ToastProvider";
+import { JobBreadcrumbs } from "../components/Breadcrumbs";
 
 interface D3Node extends d3.SimulationNodeDatum, GraphNode { }
 interface D3Link extends d3.SimulationLinkDatum<D3Node> {
@@ -726,13 +727,7 @@ export const AttackGraphPage: React.FC = () => {
 
     return (
         <div className="space-y-4 h-full flex flex-col">
-            <nav className="text-sm text-slate-400">
-                <Link to="/jobs" className="hover:text-white">Jobs</Link>
-                <span className="mx-1">/</span>
-                <Link to={`/jobs/${jobId}`} className="hover:text-white">{jobId?.slice(0, 8)}</Link>
-                <span className="mx-1">/</span>
-                <span className="text-slate-200">Attack Graph</span>
-            </nav>
+            <JobBreadcrumbs jobId={jobId} trail={[{ label: "Graph" }]} />
 
             {/* Header with mode toggle */}
             <div className="flex items-center justify-between">
@@ -745,7 +740,7 @@ export const AttackGraphPage: React.FC = () => {
                             onClick={() => setMode("topology")}
                             className={`px-3 py-1 rounded text-xs font-medium transition-colors ${mode === "topology"
                                 ? "bg-slate-600 text-white"
-                                : "text-slate-400 hover:text-white"
+                                : "text-slate-400 hover:text-slate-50"
                                 }`}
                         >
                             Network Topology
@@ -754,7 +749,7 @@ export const AttackGraphPage: React.FC = () => {
                             onClick={() => setMode("evidence")}
                             className={`px-3 py-1 rounded text-xs font-medium transition-colors ${mode === "evidence"
                                 ? "bg-slate-600 text-white"
-                                : "text-slate-400 hover:text-white"
+                                : "text-slate-400 hover:text-slate-50"
                                 }`}
                         >
                             Evidence Graph
@@ -808,11 +803,11 @@ export const AttackGraphPage: React.FC = () => {
                         {/* Layout toggle */}
                         <div className="flex bg-slate-800 rounded-lg p-0.5">
                             <button onClick={() => setLayoutMode("force")}
-                                className={`px-2 py-0.5 rounded text-[10px] font-medium ${layoutMode === "force" ? "bg-slate-600 text-white" : "text-slate-400 hover:text-white"}`}>
+                                className={`px-2 py-0.5 rounded text-[10px] font-medium ${layoutMode === "force" ? "bg-slate-600 text-slate-50" : "text-slate-400 hover:text-slate-50"}`}>
                                 Force
                             </button>
                             <button onClick={() => setLayoutMode("hierarchical")}
-                                className={`px-2 py-0.5 rounded text-[10px] font-medium ${layoutMode === "hierarchical" ? "bg-slate-600 text-white" : "text-slate-400 hover:text-white"}`}>
+                                className={`px-2 py-0.5 rounded text-[10px] font-medium ${layoutMode === "hierarchical" ? "bg-slate-600 text-slate-50" : "text-slate-400 hover:text-slate-50"}`}>
                                 Hierarchical
                             </button>
                         </div>
@@ -863,7 +858,7 @@ export const AttackGraphPage: React.FC = () => {
                                 </span>
                                 {timeRange && (
                                     <button onClick={() => setTimeRange(null)}
-                                        className="text-[10px] text-slate-500 hover:text-white">Reset</button>
+                                        className="text-[10px] text-slate-500 hover:text-slate-50">Reset</button>
                                 )}
                             </div>
                         )}
@@ -977,7 +972,7 @@ export const AttackGraphPage: React.FC = () => {
                             <h3 className="text-sm font-semibold text-white">Node Details</h3>
                             <button
                                 onClick={() => setSelectedNode(null)}
-                                className="text-slate-500 hover:text-white text-xs"
+                                className="text-slate-500 hover:text-slate-50 text-xs"
                             >
                                 ✕
                             </button>
@@ -1070,7 +1065,7 @@ export const AttackGraphPage: React.FC = () => {
                         <div className="flex items-center justify-between mb-3">
                             <h3 className="text-sm font-semibold text-white">Proof Builder</h3>
                             <button onClick={() => setProofPanelOpen(false)}
-                                className="text-slate-500 hover:text-white text-xs">✕</button>
+                                className="text-slate-500 hover:text-slate-50 text-xs">✕</button>
                         </div>
 
                         {/* Create new proof */}
@@ -1126,7 +1121,7 @@ export const AttackGraphPage: React.FC = () => {
                                     <span className="text-slate-500">{(activeProof.confidence * 100).toFixed(0)}%</span>
                                     <div className="flex-1" />
                                     <button onClick={() => { setEditMeta(true); setMetaSeverity(activeProof.severity); setMetaConfidence(activeProof.confidence); setMetaStatus(activeProof.status); }}
-                                        className="text-slate-500 hover:text-white" title="Edit metadata">⚙</button>
+                                        className="text-slate-500 hover:text-slate-50" title="Edit metadata">⚙</button>
                                     <button onClick={() => { if (confirm("Delete this proof?")) deleteProofMut.mutate(activeProofId); }}
                                         className="text-slate-500 hover:text-red-400" title="Delete proof">Del</button>
                                 </div>
@@ -1173,7 +1168,7 @@ export const AttackGraphPage: React.FC = () => {
                                     <div className="flex items-center justify-between mb-1">
                                         <h4 className="text-[10px] text-slate-500 uppercase tracking-wide">Conclusion</h4>
                                         <button onClick={() => { setEditConclusion(!editConclusion); setConclusionDraft(activeProof.conclusion || ""); }}
-                                            className="text-[10px] text-slate-500 hover:text-white">{editConclusion ? "Cancel" : "✏ Edit"}</button>
+                                            className="text-[10px] text-slate-500 hover:text-slate-50">{editConclusion ? "Cancel" : "✏ Edit"}</button>
                                     </div>
                                     {editConclusion ? (
                                         <div className="space-y-1">
@@ -1242,7 +1237,7 @@ export const AttackGraphPage: React.FC = () => {
                         onClick={() => setProofPanelOpen(!proofPanelOpen)}
                         className={`text-xs px-3 py-1.5 rounded border ${proofPanelOpen
                             ? "border-cyan-500 bg-cyan-900/30 text-cyan-300"
-                            : "border-slate-700 bg-slate-800 text-slate-400 hover:text-white hover:border-slate-600"
+                            : "border-slate-700 bg-slate-800 text-slate-400 hover:text-slate-50 hover:border-slate-600"
                             }`}
                     >
                         {proofPanelOpen ? "Hide" : "Show"} Proof Builder
@@ -1266,7 +1261,7 @@ export const AttackGraphPage: React.FC = () => {
                                     className="text-xs px-2 py-1 rounded bg-slate-800 text-slate-300 hover:bg-slate-700"
                                 >Copy</button>
                                 <button onClick={() => setNarrativeModal(false)}
-                                    className="text-slate-500 hover:text-white text-xs">✕</button>
+                                    className="text-slate-500 hover:text-slate-50 text-xs">✕</button>
                             </div>
                         </div>
                         <div className="flex-1 overflow-y-auto p-4">
@@ -1286,7 +1281,7 @@ export const AttackGraphPage: React.FC = () => {
                 </div>
             )}
             <JobSubPageNav jobId={jobId!} currentPath="graph" />
-            <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
+            <HelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
         </div>
     );
 };

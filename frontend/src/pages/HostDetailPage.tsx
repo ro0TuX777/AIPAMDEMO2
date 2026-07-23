@@ -9,7 +9,9 @@ import {
   type AlertItem,
   type FileItem,
 } from "../api";
-import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
+import { HelpPanel, labelHint, usePageHelp } from "../components/HelpPanel";
+import { severityClass } from "../theme/colors";
+import { JobBreadcrumbs } from "../components/Breadcrumbs";
 
 const TABS = [
   { label: "Connections", path: "connections" },
@@ -37,15 +39,10 @@ export const HostDetailPage: React.FC = () => {
   return (
     <div className="flex gap-6 items-start">
     <div className="space-y-4 flex-1 min-w-0">
-      <nav className="text-sm text-slate-400">
-        <Link to="/jobs" className="hover:text-white">Jobs</Link>
-        <span className="mx-1">/</span>
-        <Link to={`/jobs/${jobId}`} className="hover:text-white">{jobId?.slice(0, 8)}</Link>
-        <span className="mx-1">/</span>
-        <Link to={`/jobs/${jobId}/hosts`} className="hover:text-white">Hosts</Link>
-        <span className="mx-1">/</span>
-        <span className="text-slate-200">{ip}</span>
-      </nav>
+      <JobBreadcrumbs
+        jobId={jobId}
+        trail={[{ label: "Hosts", to: `/jobs/${jobId}/hosts` }, { label: ip ?? "", mono: true }]}
+      />
 
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div className="flex items-center gap-3">
@@ -69,12 +66,12 @@ export const HostDetailPage: React.FC = () => {
               <div className="flex items-center gap-3 mt-1">
                 <div className="flex flex-col">
                   <span className="text-xs text-slate-400">Jobs</span>
-                  <span className="text-sm font-bold text-white leading-none">{h.global_stats.job_count}</span>
+                  <span className="text-sm font-bold text-slate-50 leading-none">{h.global_stats.job_count}</span>
                 </div>
                 <div className="h-6 w-px bg-slate-800" />
                 <div className="flex flex-col">
                   <span className="text-xs text-slate-400">Total Alerts</span>
-                  <span className={`text-sm font-bold leading-none ${h.global_stats.total_alerts > 0 ? "text-red-400" : "text-white"}`}>
+                  <span className={`text-sm font-bold leading-none ${h.global_stats.total_alerts > 0 ? "text-red-400" : "text-slate-50"}`}>
                     {h.global_stats.total_alerts}
                   </span>
                 </div>
@@ -86,7 +83,7 @@ export const HostDetailPage: React.FC = () => {
                 <div className="flex flex-wrap gap-1">
                   {h.global_history.slice(0, 3).map((hist, i) => (
                     <Link key={i} to={`/jobs/${hist.job_id}/hosts/${ip}`}
-                      className="text-[10px] bg-slate-800 hover:bg-slate-700 px-1.5 py-0.5 rounded text-slate-400 hover:text-white transition-colors border border-slate-700">
+                      className="text-[10px] bg-slate-800 hover:bg-slate-700 px-1.5 py-0.5 rounded text-slate-400 hover:text-slate-50 transition-colors border border-slate-700">
                       {hist.job_id.slice(0, 8)}
                     </Link>
                   ))}
@@ -102,7 +99,7 @@ export const HostDetailPage: React.FC = () => {
           const active = location.pathname.endsWith(t.path);
           return (
             <Link key={t.path} to={`${base}/${t.path}`}
-              className={`px-3 py-1 text-sm rounded-t ${active ? "bg-slate-800 text-white" : "text-slate-400 hover:text-white"}`}>
+              className={`px-3 py-1 text-sm rounded-t ${active ? "bg-slate-800 text-slate-50" : "text-slate-400 hover:text-slate-50"}`}>
               {t.label}
             </Link>
           );
@@ -110,14 +107,9 @@ export const HostDetailPage: React.FC = () => {
       </div>
       <Outlet />
     </div>
-    <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
+    <HelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
     </div>
   );
-};
-
-const SEV_COLORS: Record<string, string> = {
-  critical: "text-red-500", high: "text-orange-400", medium: "text-amber-400",
-  low: "text-blue-400", info: "text-slate-400",
 };
 
 /** Data-fetching sub-tab component — dispatches based on label prop. */
@@ -145,7 +137,8 @@ const ConnectionsTab: React.FC<{ jobId: string; ip: string }> = ({ jobId, ip }) 
       <thead className="text-xs uppercase text-slate-500 border-b border-slate-800">
         <tr><th className="px-2 py-1">Time</th><th className="px-2 py-1">Dest IP</th><th className="px-2 py-1">Port</th>
           <th className="px-2 py-1">Proto</th><th className="px-2 py-1">Service</th><th className="px-2 py-1 text-right">Duration</th>
-          <th className="px-2 py-1 text-right">Sent</th><th className="px-2 py-1 text-right">Recv</th></tr>
+          <th className="px-2 py-1 text-right">Sent</th><th className="px-2 py-1 text-right">Recv</th>
+          <th className="px-2 py-1" /></tr>
       </thead>
       <tbody>
         {items.map((c: ConnectionItem) => (
@@ -158,6 +151,20 @@ const ConnectionsTab: React.FC<{ jobId: string; ip: string }> = ({ jobId, ip }) 
             <td className="px-2 py-1 text-right text-xs">{c.duration_seconds != null ? `${c.duration_seconds.toFixed(1)}s` : "—"}</td>
             <td className="px-2 py-1 text-right text-xs font-mono">{c.bytes_sent?.toLocaleString() ?? "—"}</td>
             <td className="px-2 py-1 text-right text-xs font-mono">{c.bytes_recv?.toLocaleString() ?? "—"}</td>
+            {/* Deep-link into Streams with this conversation already selected.
+                Needs a full port pair and a stream-oriented protocol. */}
+            <td className="px-2 py-1 text-right">
+              {c.src_port != null && c.dest_port != null &&
+              ["tcp", "udp"].includes((c.proto ?? "").toLowerCase()) ? (
+                <Link
+                  to={`/jobs/${jobId}/streams?src=${encodeURIComponent(c.src_ip)}&sport=${c.src_port}&dst=${encodeURIComponent(c.dest_ip)}&dport=${c.dest_port}&proto=${c.proto.toLowerCase()}`}
+                  className="px-1.5 py-0.5 rounded border border-slate-700 bg-slate-800 text-[10px] font-bold uppercase tracking-wider text-slate-400 transition-colors hover:border-blue-500/30 hover:text-blue-300"
+                  title="Follow this conversation in the Streams view"
+                >
+                  Follow
+                </Link>
+              ) : null}
+            </td>
           </tr>
         ))}
       </tbody>
@@ -241,7 +248,7 @@ const AlertsTab: React.FC<{ jobId: string; ip: string }> = ({ jobId, ip }) => {
         {items.map((a: AlertItem) => (
           <tr key={a.alert_id} className="border-b border-slate-800/50 hover:bg-slate-800/30">
             <td className="px-2 py-1 text-xs font-mono text-slate-500">{new Date(a.ts).toLocaleString()}</td>
-            <td className={`px-2 py-1 text-xs font-medium ${SEV_COLORS[a.severity] ?? "text-slate-400"}`}>{a.severity.toUpperCase()}</td>
+            <td className={`px-2 py-1 text-xs font-medium ${severityClass(a.severity, "text")}`}>{a.severity.toUpperCase()}</td>
             <td className="px-2 py-1 text-slate-300">{a.signature}</td>
             <td className="px-2 py-1 text-xs text-slate-400">{a.category ?? "—"}</td>
           </tr>

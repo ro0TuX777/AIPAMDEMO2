@@ -3,8 +3,9 @@ import { useParams, Link, useNavigate, useSearchParams } from "react-router-dom"
 import { JobSubPageNav } from "../components/JobSubPageNav";
 import { useQuery } from "@tanstack/react-query";
 import { api, type HostListItem, type HostRole } from "../api";
-import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
+import { HelpPanel, labelHint, usePageHelp } from "../components/HelpPanel";
 import { TableSkeleton } from "../components/SkeletonLoader";
+import { JobBreadcrumbs } from "../components/Breadcrumbs";
 
 const ROLE_COLORS: Record<string, string> = {
   internal: "text-blue-400 bg-blue-400/10",
@@ -32,13 +33,7 @@ export const HostListPage: React.FC = () => {
     <>
     <div className="flex gap-6 items-start">
     <div className="space-y-4 flex-1 min-w-0">
-      <nav className="text-sm text-slate-400">
-        <Link to="/jobs" className="hover:text-white">Jobs</Link>
-        <span className="mx-1">/</span>
-        <Link to={`/jobs/${jobId}`} className="hover:text-white">{jobId?.slice(0, 8)}</Link>
-        <span className="mx-1">/</span>
-        <span className="text-slate-200">Hosts</span>
-      </nav>
+      <JobBreadcrumbs jobId={jobId} trail={[{ label: "Hosts" }]} />
 
       <div className="flex items-center justify-between">
         <h1 className={`text-xl font-semibold ${labelHint("hosts", activeHelpField)}`} onClick={() => toggleHelp("hosts")}>Hosts ({hosts.length})</h1>
@@ -46,7 +41,7 @@ export const HostListPage: React.FC = () => {
           {pcapLabel && (
             <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-xs font-medium">
               Phase: {pcapLabel}
-              <button onClick={() => { searchParams.delete("pcap_label"); setSearchParams(searchParams); }} className="ml-1.5 text-emerald-400 hover:text-white">✕</button>
+              <button onClick={() => { searchParams.delete("pcap_label"); setSearchParams(searchParams); }} className="ml-1.5 text-emerald-400 hover:text-slate-50">✕</button>
             </span>
           )}
           <select value={roleFilter} onChange={e => setRoleFilter(e.target.value as HostRole | "")}
@@ -124,7 +119,7 @@ export const HostListPage: React.FC = () => {
         </div>
       )}
     </div>
-    <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
+    <HelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
     </div>
     <JobSubPageNav jobId={jobId!} currentPath="hosts" />
     </>

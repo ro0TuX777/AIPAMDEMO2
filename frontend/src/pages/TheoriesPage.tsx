@@ -10,10 +10,11 @@ import {
   type SliceItem,
   type HostListItem,
 } from "../api";
-import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
+import { HelpPanel, labelHint, usePageHelp } from "../components/HelpPanel";
 import { InfoTooltip } from "../components/InfoTooltip";
 import { useToast } from "../components/ToastProvider";
 import { CardGridSkeleton } from "../components/SkeletonLoader";
+import { JobBreadcrumbs } from "../components/Breadcrumbs";
 
 // ── Constants ────────────────────────────────────────────────────────────────
 
@@ -390,16 +391,10 @@ export const TheoriesPage: React.FC = () => {
 
   return (
     <>
-    <div className="flex gap-6 items-start p-6">
-      <div className="max-w-4xl mx-auto space-y-4 flex-1 min-w-0">
+    <div className="flex gap-6 items-start">
+      <div className="space-y-4 flex-1 min-w-0">
         {/* Breadcrumb */}
-        <nav className="text-sm text-slate-400">
-          <Link to="/jobs" className="hover:text-white">Jobs</Link>
-          <span className="mx-1">/</span>
-          <Link to={`/jobs/${jobId}`} className="hover:text-white">{jobId?.slice(0, 8)}</Link>
-          <span className="mx-1">/</span>
-          <span className="text-slate-200">Theories</span>
-        </nav>
+        <JobBreadcrumbs jobId={jobId} trail={[{ label: "Theories" }]} />
 
         {/* Title row */}
         <div className="flex items-center justify-between flex-wrap gap-2">
@@ -420,11 +415,11 @@ export const TheoriesPage: React.FC = () => {
           {/* Scope buttons */}
           <div className="flex bg-slate-800 rounded overflow-hidden border border-slate-700">
             <button onClick={() => { setScopeType("job"); setSelectedHost(null); }}
-              className={`px-3 py-1.5 text-xs ${scopeType === "job" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white"}`}>
+              className={`px-3 py-1.5 text-xs ${scopeType === "job" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-slate-50"}`}>
               Job
             </button>
             <button onClick={() => setScopeType("host")}
-              className={`px-3 py-1.5 text-xs ${scopeType === "host" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-white"}`}>
+              className={`px-3 py-1.5 text-xs ${scopeType === "host" ? "bg-indigo-600 text-white" : "text-slate-400 hover:text-slate-50"}`}>
               Host
             </button>
           </div>
@@ -442,12 +437,12 @@ export const TheoriesPage: React.FC = () => {
           {scopeType === "job" && pcapLabels.length > 1 && (
             <div className="flex bg-slate-800 rounded overflow-hidden border border-slate-700 ml-auto">
               <button onClick={() => setActiveLabel(null)}
-                className={`px-3 py-1.5 text-xs ${activeLabel === null ? "bg-cyan-600 text-white" : "text-slate-400 hover:text-white"}`}>
+                className={`px-3 py-1.5 text-xs ${activeLabel === null ? "bg-cyan-600 text-white" : "text-slate-400 hover:text-slate-50"}`}>
                 All
               </button>
               {pcapLabels.map(lbl => (
                 <button key={lbl} onClick={() => setActiveLabel(lbl)}
-                  className={`px-3 py-1.5 text-xs ${activeLabel === lbl ? "bg-cyan-600 text-white" : "text-slate-400 hover:text-white"}`}>
+                  className={`px-3 py-1.5 text-xs ${activeLabel === lbl ? "bg-cyan-600 text-white" : "text-slate-400 hover:text-slate-50"}`}>
                   {lbl}
                 </button>
               ))}
@@ -479,7 +474,7 @@ export const TheoriesPage: React.FC = () => {
           </>
         )}
       </div>
-      <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
+      <HelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
     </div>
     <JobSubPageNav jobId={jobId!} currentPath="theories" />
     </>

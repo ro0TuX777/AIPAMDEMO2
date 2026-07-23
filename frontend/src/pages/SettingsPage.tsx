@@ -9,7 +9,7 @@ import {
   ExplainTelemetryResponse,
   SystemConfigResponse,
 } from "../api";
-import { HelpGuidePanel } from "../components/HelpGuidePanel";
+import { HelpPanel, labelHint } from "../components/HelpPanel";
 
 function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B";
@@ -21,12 +21,6 @@ function formatBytes(bytes: number): string {
 
 function formatDurationMs(durationMs: number): string {
   return `${durationMs.toLocaleString()} ms`;
-}
-
-/** Small helper — returns class names for a clickable label */
-function labelHint(field: string, activeField: string | null): string {
-  const base = "help-label-hint";
-  return activeField === field ? `${base} help-label-hint--active` : base;
 }
 
 export const SettingsPage: React.FC = () => {
@@ -254,7 +248,6 @@ export const SettingsPage: React.FC = () => {
                 onClick={() => toggleHelp("hardware_acceleration")}
               >
                 Hardware Acceleration
-                <span className="ml-1.5 text-[10px] text-slate-500 font-normal align-middle">ⓘ</span>
               </h2>
               <button
                 type="button"
@@ -747,7 +740,7 @@ export const SettingsPage: React.FC = () => {
       </div>
 
       {/* ── Help Guide Panel ────────────────────────────── */}
-      <HelpGuidePanel
+      <HelpPanel
         activeField={activeHelpField}
         onClose={() => setActiveHelpField(null)}
         onNavigate={(field) => setActiveHelpField(field)}

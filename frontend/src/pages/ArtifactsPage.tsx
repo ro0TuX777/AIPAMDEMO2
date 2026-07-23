@@ -1,11 +1,12 @@
 import React, { useCallback } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { JobSubPageNav } from "../components/JobSubPageNav";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { api, type ArtifactItem } from "../api";
-import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
+import { HelpPanel, labelHint, usePageHelp } from "../components/HelpPanel";
 import { useToast } from "../components/ToastProvider";
 import { CardSkeleton } from "../components/SkeletonLoader";
+import { JobBreadcrumbs } from "../components/Breadcrumbs";
 
 const STATUS_COLORS: Record<string, string> = {
   available: "text-emerald-400", generating: "text-blue-400 animate-pulse",
@@ -46,16 +47,10 @@ export const ArtifactsPage: React.FC = () => {
     <>
     <div className="flex gap-6 items-start">
     <div className="space-y-4 flex-1 min-w-0">
-      <nav className="text-sm text-slate-400">
-        <Link to="/jobs" className="hover:text-white">Jobs</Link>
-        <span className="mx-1">/</span>
-        <Link to={`/jobs/${jobId}`} className="hover:text-white">{jobId?.slice(0, 8)}</Link>
-        <span className="mx-1">/</span>
-        <span className="text-slate-200">Artifacts</span>
-      </nav>
+      <JobBreadcrumbs jobId={jobId} trail={[{ label: "Exports" }]} />
 
       <div className="flex items-center justify-between">
-        <h1 className={`text-xl font-semibold ${labelHint("artifacts", activeHelpField)}`} onClick={() => toggleHelp("artifacts")}>Artifacts</h1>
+        <h1 className={`text-xl font-semibold ${labelHint("artifacts", activeHelpField)}`} onClick={() => toggleHelp("artifacts")}>Exports</h1>
         <button onClick={() => genMut.mutate()} disabled={genMut.isPending}
           className="px-3 py-1.5 text-sm rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white">
           {genMut.isPending ? "Generating…" : "Generate Evidence Package"}
@@ -66,7 +61,7 @@ export const ArtifactsPage: React.FC = () => {
       {error && <p className="text-red-400">Failed to load artifacts.</p>}
 
       {!isLoading && artifacts.length === 0 && (
-        <p className="text-slate-500">No artifacts yet. Generate an evidence package to get started.</p>
+        <p className="text-slate-500">No exports yet. Generate an evidence package to get started.</p>
       )}
 
       {artifacts.length > 0 && (
@@ -94,7 +89,7 @@ export const ArtifactsPage: React.FC = () => {
         </div>
       )}
     </div>
-    <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
+    <HelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
     </div>
     <JobSubPageNav jobId={jobId!} currentPath="artifacts" />
     </>

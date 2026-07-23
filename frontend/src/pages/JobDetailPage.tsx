@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { JOB_SUB_TABS, CONDITIONAL_TABS } from "../components/JobSubPageNav";
+import { JobSubPageNav } from "../components/JobSubPageNav";
 import {
   api,
   type JobDetail,
@@ -17,20 +17,13 @@ import {
 } from "../api";
 import { useJobEvents } from "../hooks/useJobEvents";
 import { useToast, type ToastSeverity } from "../components/ToastProvider";
-import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
+import { HelpPanel, labelHint, usePageHelp } from "../components/HelpPanel";
 import { DetailSkeleton } from "../components/SkeletonLoader";
 import { RelatedJobsSidebar } from "../components/RelatedJobsSidebar";
+import { jobStatusClass } from "../theme/colors";
+import { JobBreadcrumbs } from "../components/Breadcrumbs";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
-
-const STATUS_COLORS: Record<string, string> = {
-  completed: "text-emerald-400 bg-emerald-400/10",
-  completed_with_errors: "text-amber-400 bg-amber-400/10",
-  running: "text-blue-400 bg-blue-400/10",
-  queued: "text-slate-300 bg-slate-400/10",
-  failed: "text-red-400 bg-red-400/10",
-  canceled: "text-slate-500 bg-slate-500/10",
-};
 
 const SENSOR_STATUS_COLORS: Record<SensorStatus, string> = {
   pending: "bg-slate-600",
@@ -46,8 +39,6 @@ const TERMINAL_STATUSES = new Set<string>([
   "completed", "completed_with_errors", "failed", "canceled", "deleted",
 ]);
 
-const SUB_TABS = JOB_SUB_TABS;
-const COMPARE_TAB = CONDITIONAL_TABS.find(t => t.path === "compare")!;
 
 export const JobDetailPage: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
@@ -251,7 +242,7 @@ export const JobDetailPage: React.FC = () => {
       <div className="p-4 text-red-400 border border-red-900/50 rounded bg-red-900/10">
         Failed to load job.
         <div className="mt-2">
-          <Link to="/jobs" className="text-sm text-slate-400 hover:text-white underline">Back to Jobs</Link>
+          <Link to="/jobs" className="text-sm text-slate-400 hover:text-slate-50 underline">Back to Jobs</Link>
         </div>
       </div>
     );
@@ -264,18 +255,14 @@ export const JobDetailPage: React.FC = () => {
     <div className="flex gap-6 items-start">
     <div className="space-y-6 flex-1 min-w-0">
       {/* Breadcrumbs */}
-      <nav className="text-sm text-slate-400">
-        <Link to="/jobs" className="hover:text-white">Jobs</Link>
-        <span className="mx-1">/</span>
-        <span className="text-slate-200">{job.job_id.slice(0, 8)}</span>
-      </nav>
+      <JobBreadcrumbs jobId={job.job_id} />
 
       {/* Header */}
       <div className="flex items-center justify-between border-b border-slate-800 pb-4">
         <div>
           <div className="flex items-center gap-3 mb-1">
             <h1 className={`text-2xl font-semibold text-slate-100 ${labelHint("job_detail", activeHelpField)}`} onClick={() => toggleHelp("job_detail")}>Job Detail</h1>
-            <span className={`px-2 py-0.5 rounded-full text-xs font-medium uppercase tracking-wide ${STATUS_COLORS[job.status] ?? "text-slate-400 bg-slate-400/10"}`}>
+            <span className={`px-2 py-0.5 rounded-full text-xs font-medium uppercase tracking-wide ${jobStatusClass(job.status)}`}>
               {job.status.replace(/_/g, " ")}
             </span>
             {job.execution_profile && (
@@ -419,7 +406,7 @@ export const JobDetailPage: React.FC = () => {
               </svg>
               Temporal Analysis — Add "After" PCAP
             </h3>
-            <button onClick={() => setShowAddPcap(false)} className="text-slate-500 hover:text-white text-xs">✕ Close</button>
+            <button onClick={() => setShowAddPcap(false)} className="text-slate-500 hover:text-slate-50 text-xs">✕ Close</button>
           </div>
           <p className="text-xs text-slate-400">
             Upload a new PCAP captured after the original analysis. It will be analyzed within this same job
@@ -815,28 +802,10 @@ export const JobDetailPage: React.FC = () => {
         </div>
       )}
 
-      {/* Tab Navigation — links to sub-resource pages */}
-      <div className="border-b border-slate-800">
-        <nav className="flex gap-1 -mb-px" data-testid="jobdetail-tabs">
-          {SUB_TABS.map(({ label, path }) => (
-            <Link
-              key={path}
-              to={`/jobs/${jobId}/${path}`}
-              className="px-4 py-2 text-sm border-b-2 border-transparent text-slate-400 hover:text-slate-200 hover:border-slate-600 transition-colors"
-            >
-              {label}
-            </Link>
-          ))}
-          {/* Show Compare tab only for temporal (multi-PCAP) jobs */}
-          {job.pcaps && job.pcaps.length > 1 && (
-            <Link
-              to={`/jobs/${jobId}/${COMPARE_TAB.path}`}
-              className="px-4 py-2 text-sm border-b-2 border-transparent text-emerald-400 hover:text-emerald-300 hover:border-emerald-600 transition-colors"
-            >
-              {COMPARE_TAB.label}
-            </Link>
-          )}
-        </nav>
+      {/* Sub-page navigation — same component the sub-pages render, so the two
+          can no longer drift in contents or layout. */}
+      <div data-testid="jobdetail-tabs">
+        <JobSubPageNav jobId={jobId!} currentPath="" flush defaultGroupId="triage" />
       </div>
 
       {/* Stage progress (if available) */}
@@ -874,7 +843,7 @@ export const JobDetailPage: React.FC = () => {
       )}
 
     </div>
-    <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
+    <HelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
     </div>
   );
 };

@@ -11,24 +11,13 @@ import {
   type AlertItem,
   type FindingItem,
 } from "../api";
-import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
+import { HelpPanel, labelHint, usePageHelp } from "../components/HelpPanel";
 import { useToast } from "../components/ToastProvider";
 import { CardGridSkeleton } from "../components/SkeletonLoader";
+import { severityClass } from "../theme/colors";
+import { JobBreadcrumbs } from "../components/Breadcrumbs";
 
 // ── Constants ────────────────────────────────────────────────────────────────
-
-const SEVERITY_COLORS: Record<string, string> = {
-  critical: "bg-red-900/40 text-red-300 border-red-700",
-  high: "bg-orange-900/40 text-orange-300 border-orange-700",
-  medium: "bg-amber-900/40 text-amber-300 border-amber-700",
-  low: "bg-slate-800 text-slate-400 border-slate-600",
-  info: "bg-slate-800 text-slate-500 border-slate-700",
-};
-
-const SEV_BAR_COLORS: Record<string, string> = {
-  critical: "bg-red-500", high: "bg-orange-500", medium: "bg-amber-500",
-  low: "bg-blue-500", info: "bg-slate-500",
-};
 
 const CATEGORY_LABELS: Record<string, string> = {
   traffic: "TRF", behavioral: "BHV", protocol: "PRT", alert: "ALR", dns: "DNS",
@@ -180,14 +169,14 @@ function SeverityChart({ annotations }: { annotations: ContextAnnotationItem[] }
         {["critical", "high", "medium", "low", "info"].map(s => {
           const pct = ((counts[s] || 0) / total) * 100;
           if (!pct) return null;
-          return <div key={s} className={`${SEV_BAR_COLORS[s] || "bg-slate-600"}`} style={{ width: `${pct}%` }}
+          return <div key={s} className={`${severityClass(s, "bar")}`} style={{ width: `${pct}%` }}
             title={`${s}: ${counts[s]}`} />;
         })}
       </div>
       <div className="flex gap-3 mt-1 text-[10px] text-slate-500 flex-wrap">
         {["critical", "high", "medium", "low", "info"].filter(s => counts[s]).map(s => (
           <span key={s} className="flex items-center gap-1">
-            <span className={`w-2 h-2 rounded-full ${SEV_BAR_COLORS[s]}`} />
+            <span className={`w-2 h-2 rounded-full ${severityClass(s, "bar")}`} />
             {s}: {counts[s]}
           </span>
         ))}
@@ -238,7 +227,7 @@ function AnnotationCard({ ann, jobId, theories, slices, defaultExpanded = false,
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const tag = CATEGORY_LABELS[ann.metric_category] || "TRF";
-  const sevClass = SEVERITY_COLORS[ann.severity] || SEVERITY_COLORS.info;
+  const sevClass = severityClass(ann.severity, "outline");
   const deviationColor = (ann.deviation_factor ?? 0) >= 5
     ? "text-red-400" : (ann.deviation_factor ?? 0) >= 3
     ? "text-orange-400" : "text-amber-400";
@@ -442,16 +431,10 @@ export function AnnotationsPage() {
 
   return (
     <>
-    <div className="flex gap-6 items-start p-6">
-      <div className="max-w-4xl mx-auto flex-1 min-w-0 space-y-4">
+    <div className="flex gap-6 items-start">
+      <div className="space-y-4 flex-1 min-w-0">
         {/* Breadcrumb */}
-        <nav className="text-sm text-slate-400">
-          <Link to="/jobs" className="hover:text-white">Jobs</Link>
-          <span className="mx-1">/</span>
-          <Link to={`/jobs/${jobId}`} className="hover:text-white">{jobId?.slice(0, 8)}</Link>
-          <span className="mx-1">/</span>
-          <span className="text-slate-200">Why Unusual?</span>
-        </nav>
+        <JobBreadcrumbs jobId={jobId} trail={[{ label: "Why Unusual?" }]} />
 
         {/* Title row */}
         <div className="flex items-center justify-between flex-wrap gap-2">
@@ -502,7 +485,7 @@ export function AnnotationsPage() {
           <button onClick={() => setGroupByHost(!groupByHost)}
             className={`px-2 py-1.5 text-xs rounded border ${groupByHost
               ? "bg-cyan-900/40 text-cyan-300 border-cyan-700"
-              : "bg-slate-800 text-slate-400 border-slate-700 hover:text-white"}`}>
+              : "bg-slate-800 text-slate-400 border-slate-700 hover:text-slate-50"}`}>
             {groupByHost ? "⊟ Ungroup" : "⊞ Group by Host"}
           </button>
 
@@ -510,12 +493,12 @@ export function AnnotationsPage() {
           {pcapLabels.length > 1 && (
             <div className="flex bg-slate-800 rounded overflow-hidden border border-slate-700 ml-auto">
               <button onClick={() => setActiveLabel(null)}
-                className={`px-3 py-1.5 text-xs ${activeLabel === null ? "bg-cyan-600 text-white" : "text-slate-400 hover:text-white"}`}>
+                className={`px-3 py-1.5 text-xs ${activeLabel === null ? "bg-cyan-600 text-white" : "text-slate-400 hover:text-slate-50"}`}>
                 All
               </button>
               {pcapLabels.map(lbl => (
                 <button key={lbl} onClick={() => setActiveLabel(lbl)}
-                  className={`px-3 py-1.5 text-xs ${activeLabel === lbl ? "bg-cyan-600 text-white" : "text-slate-400 hover:text-white"}`}>
+                  className={`px-3 py-1.5 text-xs ${activeLabel === lbl ? "bg-cyan-600 text-white" : "text-slate-400 hover:text-slate-50"}`}>
                   {lbl}
                 </button>
               ))}
@@ -555,7 +538,7 @@ export function AnnotationsPage() {
           </>
         )}
       </div>
-      <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
+      <HelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
     </div>
     <JobSubPageNav jobId={jobId!} currentPath="annotations" />
     </>

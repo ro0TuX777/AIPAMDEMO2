@@ -5,6 +5,7 @@
 import { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { api, type EvidenceBundleResponse } from "../api";
+import { severityClass } from "../theme/colors";
 
 type TabKey = "findings" | "alerts" | "connections" | "timeline";
 
@@ -128,14 +129,7 @@ export function EvidenceDrawer({ jobId, itemId, isOpen, onClose }: EvidenceDrawe
   );
 }
 
-const SEV_COLORS: Record<string, string> = {
-  critical: "text-rose-400 border-rose-500/40 bg-rose-500/10",
-  high: "text-orange-400 border-orange-500/40 bg-orange-500/10",
-  medium: "text-yellow-400 border-yellow-500/40 bg-yellow-500/10",
-  low: "text-blue-400 border-blue-500/40 bg-blue-500/10",
-  info: "text-slate-400 border-slate-500/40 bg-slate-500/10",
-};
 function sevClass(s: string | null | undefined): string {
-  return SEV_COLORS[(s || "info").toLowerCase()] || SEV_COLORS.info;
+  return severityClass(s, "outline");
 }
 

@@ -1,9 +1,10 @@
 import React from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams } from "react-router-dom";
 import { JobSubPageNav } from "../components/JobSubPageNav";
 import { useQuery } from "@tanstack/react-query";
 import { api, type FileItem } from "../api";
-import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
+import { HelpPanel, labelHint, usePageHelp } from "../components/HelpPanel";
+import { JobBreadcrumbs } from "../components/Breadcrumbs";
 
 export const FilesListPage: React.FC = () => {
     const { jobId } = useParams<{ jobId: string }>();
@@ -21,13 +22,7 @@ export const FilesListPage: React.FC = () => {
         <>
         <div className="flex gap-6 items-start">
         <div className="space-y-4 flex-1 min-w-0">
-            <nav className="text-sm text-slate-400">
-                <Link to="/jobs" className="hover:text-white">Jobs</Link>
-                <span className="mx-1">/</span>
-                <Link to={`/jobs/${jobId}`} className="hover:text-white">{jobId?.slice(0, 8)}</Link>
-                <span className="mx-1">/</span>
-                <span className="text-slate-200">Files</span>
-            </nav>
+            <JobBreadcrumbs jobId={jobId} trail={[{ label: "Extracted Files" }]} />
 
             <div className="flex items-center justify-between">
                 <h1 className={`text-xl font-semibold ${labelHint("extracted_files", activeHelpField)}`} onClick={() => toggleHelp("extracted_files")}>Extracted Files ({files.length})</h1>
@@ -121,7 +116,7 @@ export const FilesListPage: React.FC = () => {
                 </div>
             )}
         </div>
-        <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
+        <HelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
         </div>
         <JobSubPageNav jobId={jobId!} currentPath="files" />
         </>

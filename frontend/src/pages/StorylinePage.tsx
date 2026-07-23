@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import { JobSubPageNav } from "../components/JobSubPageNav";
 import { useQuery } from "@tanstack/react-query";
 import { api, type StorylineStage } from "../api";
+import { JobBreadcrumbs } from "../components/Breadcrumbs";
 
 // ── Stage colour config ──────────────────────────────────────────────────────
 
@@ -105,10 +106,10 @@ export const StorylinePage: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <JobSubPageNav jobId={jobId!} currentPath="storyline" />
+      <JobBreadcrumbs jobId={jobId} trail={[{ label: "Storyline" }]} />
 
       <div className="flex items-center justify-between">
-        <h2 className="text-lg font-bold text-white">Attack Storyline</h2>
+        <h2 className="text-lg font-bold text-slate-100">Attack Storyline</h2>
         {data && (
           <span className="text-xs text-slate-500">
             {data.total_nodes} nodes · {data.total_edges} edges · {data.unclassified_count} unclassified
@@ -198,6 +199,8 @@ export const StorylinePage: React.FC = () => {
           </div>
         </div>
       )}
+
+      <JobSubPageNav jobId={jobId!} currentPath="storyline" />
     </div>
   );
 };

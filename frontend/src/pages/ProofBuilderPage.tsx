@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from "react";
-import { useParams, Link, useSearchParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import { JobSubPageNav } from "../components/JobSubPageNav";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
@@ -10,8 +10,9 @@ import {
   type InvestigationQueueItem,
 } from "../api";
 import { useToast } from "../components/ToastProvider";
-import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
+import { HelpPanel, labelHint, usePageHelp } from "../components/HelpPanel";
 import { InfoTooltip } from "../components/InfoTooltip";
+import { JobBreadcrumbs } from "../components/Breadcrumbs";
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -213,13 +214,13 @@ export const ProofBuilderPage: React.FC = () => {
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <Link to={`/jobs/${jobId}`} className="text-xs text-slate-500 hover:text-slate-300">← Job Detail</Link>
+          <JobBreadcrumbs jobId={jobId} trail={[{ label: "Build Case" }]} />
           <h1 className={`text-xl font-semibold text-slate-100 ${labelHint("proof_builder", activeHelpField)}`}
             onClick={() => toggleHelp("proof_builder")}>
             📋 Build Case
           </h1>
         </div>
-        <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
+        <HelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
       </div>
 
       {/* Proof selector / creator */}

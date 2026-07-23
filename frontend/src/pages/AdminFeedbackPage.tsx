@@ -1,7 +1,7 @@
 import React from "react";
 import { useQuery } from "@tanstack/react-query";
-import { Link } from "react-router-dom";
 import { api, FeedbackMetricsResponse, SensorTrustProfile, NoisySignature, DailyReviewCount } from "../api";
+import { Breadcrumbs } from "../components/Breadcrumbs";
 
 const TRUST_BAR_COLORS: Record<string, string> = {
   high: "bg-emerald-500",
@@ -33,11 +33,12 @@ export const AdminFeedbackPage: React.FC = () => {
   const { sensor_trust, noisy_signatures, overall_stats, time_series } = data;
 
   return (
-    <div className="space-y-6 max-w-7xl mx-auto">
+    <div className="space-y-6">
+      <Breadcrumbs items={[{ label: "Jobs", to: "/jobs" }, { label: "Feedback Analytics" }]} />
+
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <Link to="/jobs" className="text-xs text-slate-500 hover:text-slate-300">← Jobs</Link>
           <h1 className="text-xl font-semibold text-slate-100">📊 Feedback Analytics</h1>
           <p className="text-xs text-slate-500 mt-1">
             Cross-job analyst feedback patterns — used to tune Investigation Queue ranking.

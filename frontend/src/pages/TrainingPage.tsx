@@ -11,7 +11,7 @@ import {
     DistillStats,
     ExportStatus,
 } from "../api";
-import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
+import { HelpPanel, labelHint, usePageHelp } from "../components/HelpPanel";
 import { CardGridSkeleton } from "../components/SkeletonLoader";
 
 // Phase label prefix mapping
@@ -217,7 +217,7 @@ export const TrainingPage: React.FC = () => {
                     )}
                 </div>
             </div>
-            <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
+            <HelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
             </div>
         );
     }
@@ -830,7 +830,7 @@ export const TrainingPage: React.FC = () => {
                 </div>
             )}
         </div>
-        <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
+        <HelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
         </div>
     );
 };

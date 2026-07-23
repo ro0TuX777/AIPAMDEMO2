@@ -3,6 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api";
 import { JobSubPageNav } from "../components/JobSubPageNav";
+import { JobBreadcrumbs } from "../components/Breadcrumbs";
 
 const STATUS_COLORS: Record<string, string> = {
   confirmed: "bg-emerald-900/40 text-emerald-400 border-emerald-700",
@@ -94,8 +95,8 @@ export function TelemetryEventDetailPage() {
   const hasCorrKeys = evt.correlation_keys && Object.keys(evt.correlation_keys).length > 0;
 
   return (
-    <div className="p-4 sm:p-6 space-y-6 max-w-5xl mx-auto">
-      <JobSubPageNav jobId={jobId!} currentPath="theories" />
+    <div className="space-y-6">
+      <JobBreadcrumbs jobId={jobId} trail={[{ label: "Correlations", to: `/jobs/${jobId}/correlations` }, { label: "Event" }]} />
 
       {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -193,9 +194,14 @@ export function TelemetryEventDetailPage() {
         </section>
       )}
 
+      {/* This page is reached from the Correlations table, not Theories. */}
       <div className="pt-2">
-        <Link to={`/jobs/${jobId}/theories`} className="text-xs text-cyan-400 hover:underline">← Back to Theories</Link>
+        <Link to={`/jobs/${jobId}/correlations`} className="text-xs text-cyan-400 hover:underline">
+          ← Back to Correlations
+        </Link>
       </div>
+
+      <JobSubPageNav jobId={jobId!} currentPath="correlations" />
     </div>
   );
 }

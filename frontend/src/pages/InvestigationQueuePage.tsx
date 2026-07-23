@@ -10,10 +10,12 @@ import {
   type Severity,
 } from "../api";
 import { useToast } from "../components/ToastProvider";
-import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
+import { HelpPanel, labelHint, usePageHelp } from "../components/HelpPanel";
 import { EvidenceDrawer } from "../components/EvidenceDrawer";
 import { InfoTooltip } from "../components/InfoTooltip";
 import { SeenBeforePanel } from "../components/SeenBeforePanel";
+import { analystStatusClass, humanizeStatus, severityClass } from "../theme/colors";
+import { JobBreadcrumbs } from "../components/Breadcrumbs";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -32,22 +34,6 @@ const SOURCE_OPTIONS: { value: QueueItemSource | ""; label: string }[] = [
   { value: "alert", label: "Alerts" },
   { value: "theory", label: "Theories" },
 ];
-
-const SEV_COLORS: Record<string, string> = {
-  critical: "bg-red-600 text-white",
-  high: "bg-orange-600 text-white",
-  medium: "bg-yellow-600 text-white",
-  low: "bg-blue-600 text-white",
-  info: "bg-slate-600 text-slate-200",
-};
-
-const STATUS_COLORS: Record<string, string> = {
-  unreviewed: "text-slate-400",
-  confirmed: "text-emerald-400",
-  false_positive: "text-red-400",
-  needs_review: "text-purple-400",
-  deferred: "text-yellow-400",
-};
 
 const SOURCE_ICONS: Record<string, string> = {
   finding: "🔍",
@@ -224,13 +210,22 @@ export const InvestigationQueuePage: React.FC = () => {
   return (
     <div className="space-y-4">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-start justify-between gap-4">
         <div>
-          <Link to={`/jobs/${jobId}`} className="text-xs text-slate-500 hover:text-slate-300">← Job Detail</Link>
+          <JobBreadcrumbs jobId={jobId} trail={[{ label: "Investigate" }]} />
           <h1 className={`text-xl font-semibold text-slate-100 ${labelHint("investigation_queue", activeHelpField)}`}
             onClick={() => toggleHelp("investigation_queue")}>Investigation Queue</h1>
         </div>
-        <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
+        {/* Cross-job analytics explaining the Feedback component of the rank
+            score. Previously this page had no entry point anywhere in the UI. */}
+        <Link
+          to="/admin/feedback"
+          className="shrink-0 px-2.5 py-1.5 rounded border border-slate-700 bg-slate-800 text-xs text-slate-400 hover:text-slate-100 hover:border-slate-600 transition-colors"
+          title="Cross-job sensor trust and noisy-signature analytics"
+        >
+          📊 Feedback Analytics
+        </Link>
+        <HelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
       </div>
 
       {/* Review Mode toggle + Summary bar */}
@@ -397,13 +392,13 @@ export const InvestigationQueuePage: React.FC = () => {
                     </td>
                     <td className="p-2 text-lg" title={item.source_type}>{SOURCE_ICONS[item.source_type] ?? "?"}</td>
                     <td className="p-2">
-                      <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${SEV_COLORS[item.severity] ?? SEV_COLORS.info}`}>
+                      <span className={`px-1.5 py-0.5 rounded text-xs font-medium ${severityClass(item.severity, "solid")}`}>
                         {item.severity}
                       </span>
                     </td>
                     <td className="p-2">
                       <div className="flex items-center flex-wrap">
-                        <Link to={getSourceLink(item)} className="text-slate-200 hover:text-white hover:underline"
+                        <Link to={getSourceLink(item)} className="text-slate-200 hover:text-slate-50 hover:underline"
                           onClick={(e) => e.stopPropagation()}>
                           {item.title}
                         </Link>
@@ -414,8 +409,8 @@ export const InvestigationQueuePage: React.FC = () => {
                     </td>
                     <td className="p-2 text-xs text-slate-400 font-mono">{(item.confidence * 100).toFixed(0)}%</td>
                     <td className="p-2">
-                      <span className={`text-xs font-medium ${STATUS_COLORS[item.analyst_status] ?? "text-slate-400"}`}>
-                        {item.analyst_status.replace("_", " ")}
+                      <span className={`text-xs font-medium ${analystStatusClass(item.analyst_status)}`}>
+                        {humanizeStatus(item.analyst_status)}
                       </span>
                     </td>
                     <td className="p-2" onClick={(e) => e.stopPropagation()}>

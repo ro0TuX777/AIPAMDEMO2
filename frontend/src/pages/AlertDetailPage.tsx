@@ -2,12 +2,9 @@ import React, { useState } from "react";
 import { useParams, Link, useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api, type AlertRelatedHost, type AlertRelatedConnection, type ArkimePivotResponse } from "../api";
-import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
-
-const SEV_COLORS: Record<string, string> = {
-  critical: "text-red-500", high: "text-orange-400", medium: "text-amber-400",
-  low: "text-blue-400", info: "text-slate-400",
-};
+import { HelpPanel, labelHint, usePageHelp } from "../components/HelpPanel";
+import { severityClass } from "../theme/colors";
+import { JobBreadcrumbs } from "../components/Breadcrumbs";
 
 const ArkimePivotButton: React.FC<{ jobId: string; alertId: string }> = ({ jobId, alertId }) => {
   const [pivot, setPivot] = useState<ArkimePivotResponse | null>(null);
@@ -72,15 +69,10 @@ export const AlertDetailPage: React.FC = () => {
     <div className="flex gap-6 items-start">
     <div className="space-y-6 flex-1 min-w-0">
       {/* Breadcrumb */}
-      <nav className="text-sm text-slate-400">
-        <Link to="/jobs" className="hover:text-white">Jobs</Link>
-        <span className="mx-1">/</span>
-        <Link to={`/jobs/${jobId}`} className="hover:text-white">{jobId?.slice(0, 8)}</Link>
-        <span className="mx-1">/</span>
-        <Link to={`/jobs/${jobId}/alerts`} className="hover:text-white">Alerts</Link>
-        <span className="mx-1">/</span>
-        <span className="text-slate-200">{alert.signature.slice(0, 50)}</span>
-      </nav>
+      <JobBreadcrumbs
+        jobId={jobId}
+        trail={[{ label: "Alerts", to: `/jobs/${jobId}/alerts` }, { label: alert.signature.slice(0, 50) }]}
+      />
 
       {/* Header */}
       <div>
@@ -96,7 +88,7 @@ export const AlertDetailPage: React.FC = () => {
           <ArkimePivotButton jobId={jobId!} alertId={alertId!} />
         </div>
         <div className="flex gap-4 mt-2 text-sm">
-          <span className={`font-medium ${SEV_COLORS[alert.severity] ?? "text-slate-400"}`}>
+          <span className={`font-medium ${severityClass(alert.severity, "text")}`}>
             {alert.severity.toUpperCase()}
           </span>
           {alert.category && <span className="text-slate-400">Category: {alert.category}</span>}
@@ -189,7 +181,7 @@ export const AlertDetailPage: React.FC = () => {
         </div>
       )}
     </div>
-    <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
+    <HelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
     </div>
   );
 };

@@ -2,39 +2,329 @@
 @tailwind components;
 @tailwind utilities;
 
-/* ── Theme variables ─────────────────────────────────── */
+/*
+ * ── Theme ────────────────────────────────────────────
+ *
+ * Every Tailwind colour resolves through one of these variables (see
+ * tailwind.config.js), so switching theme re-points the variables and the whole
+ * app follows -- including hover states, opacity variants, SVG fill/stroke and
+ * divide/ring/from/to, none of which the previous `!important` override block
+ * could reach.
+ *
+ * Dark is the base. Light re-points the neutral ramp to its mirror image
+ * (slate-900 renders as slate-100 and so on) and darkens only the light accent
+ * shades used for text and status dots; accent 500+ is left alone so solid
+ * buttons keep their colour and white button text stays readable.
+ *
+ * GENERATED. To change the palette or add a family, edit the generator inputs
+ * rather than these values by hand -- hand-maintenance is what left fourteen
+ * background variants and every hover state untranslated before.
+ */
 :root {
-  --surface-bg: rgb(2 6 23);          /* slate-950 */
-  --surface-text: rgb(241 245 249);   /* slate-100 */
+  --c-slate-50: 248 250 252;
+  --c-slate-100: 241 245 249;
+  --c-slate-200: 226 232 240;
+  --c-slate-300: 203 213 225;
+  --c-slate-400: 148 163 184;
+  --c-slate-500: 100 116 139;
+  --c-slate-600: 71 85 105;
+  --c-slate-700: 51 65 85;
+  --c-slate-800: 30 41 59;
+  --c-slate-900: 15 23 42;
+  --c-slate-950: 2 6 23;
+  --c-blue-50: 239 246 255;
+  --c-blue-100: 219 234 254;
+  --c-blue-200: 191 219 254;
+  --c-blue-300: 147 197 253;
+  --c-blue-400: 96 165 250;
+  --c-blue-500: 59 130 246;
+  --c-blue-600: 37 99 235;
+  --c-blue-700: 29 78 216;
+  --c-blue-800: 30 64 175;
+  --c-blue-900: 30 58 138;
+  --c-blue-950: 23 37 84;
+  --c-cyan-50: 236 254 255;
+  --c-cyan-100: 207 250 254;
+  --c-cyan-200: 165 243 252;
+  --c-cyan-300: 103 232 249;
+  --c-cyan-400: 34 211 238;
+  --c-cyan-500: 6 182 212;
+  --c-cyan-600: 8 145 178;
+  --c-cyan-700: 14 116 144;
+  --c-cyan-800: 21 94 117;
+  --c-cyan-900: 22 78 99;
+  --c-cyan-950: 8 51 68;
+  --c-emerald-50: 236 253 245;
+  --c-emerald-100: 209 250 229;
+  --c-emerald-200: 167 243 208;
+  --c-emerald-300: 110 231 183;
+  --c-emerald-400: 52 211 153;
+  --c-emerald-500: 16 185 129;
+  --c-emerald-600: 5 150 105;
+  --c-emerald-700: 4 120 87;
+  --c-emerald-800: 6 95 70;
+  --c-emerald-900: 6 78 59;
+  --c-emerald-950: 2 44 34;
+  --c-green-50: 240 253 244;
+  --c-green-100: 220 252 231;
+  --c-green-200: 187 247 208;
+  --c-green-300: 134 239 172;
+  --c-green-400: 74 222 128;
+  --c-green-500: 34 197 94;
+  --c-green-600: 22 163 74;
+  --c-green-700: 21 128 61;
+  --c-green-800: 22 101 52;
+  --c-green-900: 20 83 45;
+  --c-green-950: 5 46 22;
+  --c-amber-50: 255 251 235;
+  --c-amber-100: 254 243 199;
+  --c-amber-200: 253 230 138;
+  --c-amber-300: 252 211 77;
+  --c-amber-400: 251 191 36;
+  --c-amber-500: 245 158 11;
+  --c-amber-600: 217 119 6;
+  --c-amber-700: 180 83 9;
+  --c-amber-800: 146 64 14;
+  --c-amber-900: 120 53 15;
+  --c-amber-950: 69 26 3;
+  --c-yellow-50: 254 252 232;
+  --c-yellow-100: 254 249 195;
+  --c-yellow-200: 254 240 138;
+  --c-yellow-300: 253 224 71;
+  --c-yellow-400: 250 204 21;
+  --c-yellow-500: 234 179 8;
+  --c-yellow-600: 202 138 4;
+  --c-yellow-700: 161 98 7;
+  --c-yellow-800: 133 77 14;
+  --c-yellow-900: 113 63 18;
+  --c-yellow-950: 66 32 6;
+  --c-orange-50: 255 247 237;
+  --c-orange-100: 255 237 213;
+  --c-orange-200: 254 215 170;
+  --c-orange-300: 253 186 116;
+  --c-orange-400: 251 146 60;
+  --c-orange-500: 249 115 22;
+  --c-orange-600: 234 88 12;
+  --c-orange-700: 194 65 12;
+  --c-orange-800: 154 52 18;
+  --c-orange-900: 124 45 18;
+  --c-orange-950: 67 20 7;
+  --c-red-50: 254 242 242;
+  --c-red-100: 254 226 226;
+  --c-red-200: 254 202 202;
+  --c-red-300: 252 165 165;
+  --c-red-400: 248 113 113;
+  --c-red-500: 239 68 68;
+  --c-red-600: 220 38 38;
+  --c-red-700: 185 28 28;
+  --c-red-800: 153 27 27;
+  --c-red-900: 127 29 29;
+  --c-red-950: 69 10 10;
+  --c-rose-50: 255 241 242;
+  --c-rose-100: 255 228 230;
+  --c-rose-200: 254 205 211;
+  --c-rose-300: 253 164 175;
+  --c-rose-400: 251 113 133;
+  --c-rose-500: 244 63 94;
+  --c-rose-600: 225 29 72;
+  --c-rose-700: 190 18 60;
+  --c-rose-800: 159 18 57;
+  --c-rose-900: 136 19 55;
+  --c-rose-950: 76 5 25;
+  --c-pink-50: 253 242 248;
+  --c-pink-100: 252 231 243;
+  --c-pink-200: 251 207 232;
+  --c-pink-300: 249 168 212;
+  --c-pink-400: 244 114 182;
+  --c-pink-500: 236 72 153;
+  --c-pink-600: 219 39 119;
+  --c-pink-700: 190 24 93;
+  --c-pink-800: 157 23 77;
+  --c-pink-900: 131 24 67;
+  --c-pink-950: 80 7 36;
+  --c-purple-50: 250 245 255;
+  --c-purple-100: 243 232 255;
+  --c-purple-200: 233 213 255;
+  --c-purple-300: 216 180 254;
+  --c-purple-400: 192 132 252;
+  --c-purple-500: 168 85 247;
+  --c-purple-600: 147 51 234;
+  --c-purple-700: 126 34 206;
+  --c-purple-800: 107 33 168;
+  --c-purple-900: 88 28 135;
+  --c-purple-950: 59 7 100;
+  --c-violet-50: 245 243 255;
+  --c-violet-100: 237 233 254;
+  --c-violet-200: 221 214 254;
+  --c-violet-300: 196 181 253;
+  --c-violet-400: 167 139 250;
+  --c-violet-500: 139 92 246;
+  --c-violet-600: 124 58 237;
+  --c-violet-700: 109 40 217;
+  --c-violet-800: 91 33 182;
+  --c-violet-900: 76 29 149;
+  --c-violet-950: 46 16 101;
+  --c-fuchsia-50: 253 244 255;
+  --c-fuchsia-100: 250 232 255;
+  --c-fuchsia-200: 245 208 254;
+  --c-fuchsia-300: 240 171 252;
+  --c-fuchsia-400: 232 121 249;
+  --c-fuchsia-500: 217 70 239;
+  --c-fuchsia-600: 192 38 211;
+  --c-fuchsia-700: 162 28 175;
+  --c-fuchsia-800: 134 25 143;
+  --c-fuchsia-900: 112 26 117;
+  --c-fuchsia-950: 74 4 78;
+  --c-indigo-50: 238 242 255;
+  --c-indigo-100: 224 231 255;
+  --c-indigo-200: 199 210 254;
+  --c-indigo-300: 165 180 252;
+  --c-indigo-400: 129 140 248;
+  --c-indigo-500: 99 102 241;
+  --c-indigo-600: 79 70 229;
+  --c-indigo-700: 67 56 202;
+  --c-indigo-800: 55 48 163;
+  --c-indigo-900: 49 46 129;
+  --c-indigo-950: 30 27 75;
+  --c-sky-50: 240 249 255;
+  --c-sky-100: 224 242 254;
+  --c-sky-200: 186 230 253;
+  --c-sky-300: 125 211 252;
+  --c-sky-400: 56 189 248;
+  --c-sky-500: 14 165 233;
+  --c-sky-600: 2 132 199;
+  --c-sky-700: 3 105 161;
+  --c-sky-800: 7 89 133;
+  --c-sky-900: 12 74 110;
+  --c-sky-950: 8 47 73;
+  --c-teal-50: 240 253 250;
+  --c-teal-100: 204 251 241;
+  --c-teal-200: 153 246 228;
+  --c-teal-300: 94 234 212;
+  --c-teal-400: 45 212 191;
+  --c-teal-500: 20 184 166;
+  --c-teal-600: 13 148 136;
+  --c-teal-700: 15 118 110;
+  --c-teal-800: 17 94 89;
+  --c-teal-900: 19 78 74;
+  --c-teal-950: 4 47 46;
 }
 
 html.light {
-  --surface-bg: rgb(248 250 252);     /* slate-50 */
-  --surface-text: rgb(15 23 42);      /* slate-900 */
+--c-slate-50: 2 6 23;
+  --c-slate-100: 15 23 42;
+  --c-slate-200: 30 41 59;
+  --c-slate-300: 51 65 85;
+  --c-slate-400: 71 85 105;
+  --c-slate-500: 100 116 139;
+  --c-slate-600: 148 163 184;
+  --c-slate-700: 203 213 225;
+  --c-slate-800: 226 232 240;
+  --c-slate-900: 241 245 249;
+  --c-slate-950: 248 250 252;
+  --c-blue-100: 30 64 175;
+  --c-blue-200: 30 64 175;
+  --c-blue-300: 29 78 216;
+  --c-blue-400: 37 99 235;
+  --c-cyan-100: 21 94 117;
+  --c-cyan-200: 21 94 117;
+  --c-cyan-300: 14 116 144;
+  --c-cyan-400: 8 145 178;
+  --c-emerald-100: 6 95 70;
+  --c-emerald-200: 6 95 70;
+  --c-emerald-300: 4 120 87;
+  --c-emerald-400: 5 150 105;
+  --c-green-100: 22 101 52;
+  --c-green-200: 22 101 52;
+  --c-green-300: 21 128 61;
+  --c-green-400: 22 163 74;
+  --c-amber-100: 146 64 14;
+  --c-amber-200: 146 64 14;
+  --c-amber-300: 180 83 9;
+  --c-amber-400: 217 119 6;
+  --c-yellow-100: 133 77 14;
+  --c-yellow-200: 133 77 14;
+  --c-yellow-300: 161 98 7;
+  --c-yellow-400: 202 138 4;
+  --c-orange-100: 154 52 18;
+  --c-orange-200: 154 52 18;
+  --c-orange-300: 194 65 12;
+  --c-orange-400: 234 88 12;
+  --c-red-100: 153 27 27;
+  --c-red-200: 153 27 27;
+  --c-red-300: 185 28 28;
+  --c-red-400: 220 38 38;
+  --c-rose-100: 159 18 57;
+  --c-rose-200: 159 18 57;
+  --c-rose-300: 190 18 60;
+  --c-rose-400: 225 29 72;
+  --c-pink-100: 157 23 77;
+  --c-pink-200: 157 23 77;
+  --c-pink-300: 190 24 93;
+  --c-pink-400: 219 39 119;
+  --c-purple-100: 107 33 168;
+  --c-purple-200: 107 33 168;
+  --c-purple-300: 126 34 206;
+  --c-purple-400: 147 51 234;
+  --c-violet-100: 91 33 182;
+  --c-violet-200: 91 33 182;
+  --c-violet-300: 109 40 217;
+  --c-violet-400: 124 58 237;
+  --c-fuchsia-100: 134 25 143;
+  --c-fuchsia-200: 134 25 143;
+  --c-fuchsia-300: 162 28 175;
+  --c-fuchsia-400: 192 38 211;
+  --c-indigo-100: 55 48 163;
+  --c-indigo-200: 55 48 163;
+  --c-indigo-300: 67 56 202;
+  --c-indigo-400: 79 70 229;
+  --c-sky-100: 7 89 133;
+  --c-sky-200: 7 89 133;
+  --c-sky-300: 3 105 161;
+  --c-sky-400: 2 132 199;
+  --c-teal-100: 17 94 89;
+  --c-teal-200: 17 94 89;
+  --c-teal-300: 15 118 110;
+  --c-teal-400: 13 148 136;
 }
 
 body {
-  background-color: var(--surface-bg);
-  color: var(--surface-text);
+  background-color: rgb(var(--c-slate-950));
+  color: rgb(var(--c-slate-100));
 }
 
-/* Light mode overrides for hardcoded dark classes */
-html.light .bg-slate-950 { background-color: rgb(248 250 252) !important; }
-html.light .bg-slate-900 { background-color: rgb(241 245 249) !important; }
-html.light .bg-slate-900\/50,
-html.light .bg-slate-900\/60,
-html.light .bg-slate-900\/80 { background-color: rgb(241 245 249 / 0.8) !important; }
-html.light .bg-slate-800 { background-color: rgb(226 232 240) !important; }
-html.light .bg-slate-800\/40,
-html.light .bg-slate-800\/50 { background-color: rgb(226 232 240 / 0.5) !important; }
-html.light .text-slate-100 { color: rgb(15 23 42) !important; }
-html.light .text-slate-200 { color: rgb(30 41 59) !important; }
-html.light .text-slate-300 { color: rgb(51 65 85) !important; }
-html.light .text-slate-400 { color: rgb(71 85 105) !important; }
-html.light .text-slate-500 { color: rgb(100 116 139) !important; }
-html.light .border-slate-700,
-html.light .border-slate-700\/50 { border-color: rgb(203 213 225) !important; }
-html.light .border-slate-800 { border-color: rgb(226 232 240) !important; }
+/*
+ * ── Data-visualisation tokens ───────────────────────
+ *
+ * Charts are written against roles, not raw hex, so the light/dark values swap
+ * in one place. Both modes are *selected* steps of the same hues validated
+ * against this app's actual chart surface (slate-900 dark / slate-100 light),
+ * not an automatic flip:
+ *   scripts/validate_palette.js "#3987e5,#d95926,#199e70" --mode dark  --surface "#0f172a" --pairs all
+ *   scripts/validate_palette.js "#2a78d6,#eb6834,#1baf7a" --mode light --surface "#f1f5f9" --pairs all
+ * Light mode WARNs on contrast for slots 2 and 3, which obligates always-visible
+ * labels — the flow diagram direct-labels every node, so identity is never
+ * carried by colour alone.
+ */
+.viz {
+  --viz-series-1: #3987e5;
+  --viz-series-2: #d95926;
+  --viz-series-3: #199e70;
+  --viz-grid: rgb(var(--c-slate-700) / 0.6);
+  --viz-link: rgb(var(--c-slate-500) / 0.35);
+  /* Halo behind labels that overlap ribbons — matches the card surface. */
+  --viz-halo: rgb(var(--c-slate-900));
+  --viz-label: rgb(var(--c-slate-400));   /* slate-400 */
+  --viz-label-strong: rgb(var(--c-slate-100));
+}
+
+html.light .viz {
+  /* Series hues are selected steps validated against the light surface -- they
+     are not a mirror of the dark ones, so they stay explicit. */
+  --viz-series-1: #2a78d6;
+  --viz-series-2: #eb6834;
+  --viz-series-3: #1baf7a;
+}
 
 /* ── Help Guide Panel ───────────────────────────────── */
 
@@ -53,8 +343,8 @@ html.light .border-slate-800 { border-color: rgb(226 232 240) !important; }
   width: 340px;
   min-height: 100vh;
   z-index: 50;
-  border-left: 1px solid rgb(51 65 85 / 0.6); /* slate-700 */
-  background: rgb(15 23 42 / 0.95); /* slate-900/95 */
+  border-left: 1px solid rgb(var(--c-slate-700) / 0.6); /* slate-700 */
+  background: rgb(var(--c-slate-900) / 0.95); /* slate-900/95 */
   backdrop-filter: blur(16px);
   box-shadow: -8px 0 24px -4px rgb(0 0 0 / 0.4);
   overflow-y: auto;
@@ -73,21 +363,54 @@ html.light .border-slate-800 { border-color: rgb(226 232 240) !important; }
   animation: helpFadeIn 0.3s ease-out 0.15s forwards;
 }
 
-/* Setting labels that are clickable */
+/* Headings/labels that open the contextual help panel when clicked */
 .help-label-hint {
   cursor: pointer;
   border-bottom: 1px dashed transparent;
   transition: border-color 0.2s ease, color 0.2s ease;
 }
 
+/*
+ * Always-visible affordance. Previously the only hint that these headings were
+ * interactive was a dashed underline that appeared on hover, which made the
+ * whole contextual-help system undiscoverable. Applying the marker via ::after
+ * means every existing labelHint() call site gets it with no JSX changes.
+ */
+.help-label-hint::after {
+  content: "ⓘ";
+  display: inline-block;
+  margin-left: 0.35em;
+  font-size: 0.7em;
+  font-weight: 400;
+  line-height: 1;
+  vertical-align: middle;
+  color: rgb(var(--c-slate-500));
+  transition: color 0.2s ease;
+}
+
 .help-label-hint:hover {
-  border-bottom-color: rgb(148 163 184); /* slate-400 */
-  color: rgb(226 232 240); /* slate-200 */
+  border-bottom-color: rgb(var(--c-slate-400));
+  color: rgb(var(--c-slate-200));
+}
+
+.help-label-hint:hover::after {
+  color: rgb(var(--c-slate-400));
 }
 
 .help-label-hint--active {
-  border-bottom-color: rgb(52 211 153); /* emerald-400 */
-  color: rgb(236 253 245); /* emerald-50 */
+  border-bottom-color: rgb(var(--c-emerald-400));
+  color: rgb(var(--c-emerald-50));
+}
+
+.help-label-hint--active::after {
+  color: rgb(var(--c-emerald-400));
+}
+
+/* The marker is an interaction cue — it has no meaning on paper. */
+@media print {
+  .help-label-hint::after {
+    content: none;
+  }
 }
 
 @keyframes helpFadeIn {
@@ -149,33 +472,33 @@ html.light .border-slate-800 { border-color: rgb(226 232 240) !important; }
   width: 14px;
   height: 14px;
   border-radius: 9999px;
-  background: rgb(51 65 85 / 0.6);
-  color: rgb(148 163 184);
+  background: rgb(var(--c-slate-700) / 0.6);
+  color: rgb(var(--c-slate-400));
   font-size: 9px;
   font-weight: 700;
   line-height: 1;
   margin-left: 4px;
   flex-shrink: 0;
-  border: 1px solid rgb(71 85 105 / 0.5);
+  border: 1px solid rgb(var(--c-slate-600) / 0.5);
   transition: background 0.15s, color 0.15s;
 }
 
 .info-tooltip-trigger:hover .info-tooltip-icon,
 .info-tooltip-trigger:focus .info-tooltip-icon {
-  background: rgb(71 85 105 / 0.8);
-  color: rgb(226 232 240);
+  background: rgb(var(--c-slate-600) / 0.8);
+  color: rgb(var(--c-slate-200));
 }
 
 .info-tooltip-popup {
   /* position/transform/z-index set inline via JS (portal to body) */
-  background: rgb(15 23 42 / 0.97);
-  border: 1px solid rgb(71 85 105 / 0.6);
+  background: rgb(var(--c-slate-900) / 0.97);
+  border: 1px solid rgb(var(--c-slate-600) / 0.6);
   border-radius: 6px;
   padding: 6px 10px;
   font-size: 11px;
   font-weight: 400;
   line-height: 1.5;
-  color: rgb(203 213 225);
+  color: rgb(var(--c-slate-300));
   white-space: normal;
   box-shadow: 0 4px 12px rgb(0 0 0 / 0.4);
   pointer-events: none;
@@ -191,9 +514,9 @@ html.light .border-slate-800 { border-color: rgb(226 232 240) !important; }
   transform: translateX(-50%) rotate(45deg);
   width: 8px;
   height: 8px;
-  background: rgb(15 23 42 / 0.97);
-  border-right: 1px solid rgb(71 85 105 / 0.6);
-  border-bottom: 1px solid rgb(71 85 105 / 0.6);
+  background: rgb(var(--c-slate-900) / 0.97);
+  border-right: 1px solid rgb(var(--c-slate-600) / 0.6);
+  border-bottom: 1px solid rgb(var(--c-slate-600) / 0.6);
 }
 
 .info-tooltip-popup--bottom::before {
@@ -201,8 +524,8 @@ html.light .border-slate-800 { border-color: rgb(226 232 240) !important; }
   top: -4px;
   border-right: none;
   border-bottom: none;
-  border-left: 1px solid rgb(71 85 105 / 0.6);
-  border-top: 1px solid rgb(71 85 105 / 0.6);
+  border-left: 1px solid rgb(var(--c-slate-600) / 0.6);
+  border-top: 1px solid rgb(var(--c-slate-600) / 0.6);
 }
 
 @keyframes tooltipFadeIn {
@@ -218,17 +541,17 @@ html.light .border-slate-800 { border-color: rgb(226 232 240) !important; }
 
 /* Light mode */
 html.light .info-tooltip-icon {
-  background: rgb(226 232 240);
-  color: rgb(100 116 139);
-  border-color: rgb(203 213 225);
+  background: rgb(var(--c-slate-200));
+  color: rgb(var(--c-slate-500));
+  border-color: rgb(var(--c-slate-300));
 }
 html.light .info-tooltip-popup {
   background: rgb(255 255 255 / 0.97);
-  border-color: rgb(203 213 225);
-  color: rgb(51 65 85);
+  border-color: rgb(var(--c-slate-300));
+  color: rgb(var(--c-slate-700));
   box-shadow: 0 4px 12px rgb(0 0 0 / 0.12);
 }
 html.light .info-tooltip-popup::before {
   background: rgb(255 255 255 / 0.97);
-  border-color: rgb(203 213 225);
+  border-color: rgb(var(--c-slate-300));
 }

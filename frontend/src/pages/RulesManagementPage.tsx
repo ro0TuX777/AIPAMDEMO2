@@ -7,7 +7,7 @@ import {
   RuleFileStats,
   CategoryStats,
 } from "../api";
-import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
+import { HelpPanel, labelHint, usePageHelp } from "../components/HelpPanel";
 import { useToast } from "../components/ToastProvider";
 import { TableSkeleton, SkeletonBar } from "../components/SkeletonLoader";
 
@@ -184,17 +184,17 @@ export const RulesManagementPage: React.FC = () => {
           <select
             value={selectedFile}
             onChange={(e) => { setSelectedFile(e.target.value); setOffset(0); setCategory(""); setSearch(""); }}
-            className="bg-gray-800 border border-gray-700 rounded px-3 py-2 text-white text-sm"
+            className="bg-slate-800 border border-slate-700 rounded px-3 py-2 text-slate-100 text-sm"
           >
             {files.map((f) => (
               <option key={f.filename} value={f.filename}>{f.filename} ({(f.size_bytes / 1024 / 1024).toFixed(1)} MB)</option>
             ))}
           </select>
-          <div className="flex rounded overflow-hidden border border-gray-700">
-            <button onClick={() => setTab("browse")} className={`px-4 py-2 text-sm ${tab === "browse" ? "bg-blue-600 text-white" : "bg-gray-800 text-gray-400 hover:text-white"}`}>
+          <div className="flex rounded overflow-hidden border border-slate-700">
+            <button onClick={() => setTab("browse")} className={`px-4 py-2 text-sm ${tab === "browse" ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-400 hover:text-slate-50"}`}>
               Browse Rules
             </button>
-            <button onClick={() => { setTab("raw"); loadRaw(); }} className={`px-4 py-2 text-sm ${tab === "raw" ? "bg-blue-600 text-white" : "bg-gray-800 text-gray-400 hover:text-white"}`}>
+            <button onClick={() => { setTab("raw"); loadRaw(); }} className={`px-4 py-2 text-sm ${tab === "raw" ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-400 hover:text-slate-50"}`}>
               Raw Editor
             </button>
           </div>
@@ -204,21 +204,21 @@ export const RulesManagementPage: React.FC = () => {
       {/* Stats bar */}
       {stats && (
         <div className="flex gap-4">
-          <div className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-3 flex-1">
-            <div className="text-2xl font-bold text-white">{stats.total_rules.toLocaleString()}</div>
-            <div className="text-xs text-gray-500 uppercase tracking-wider">Total Rules</div>
+          <div className="bg-slate-900 border border-slate-800 rounded-lg px-4 py-3 flex-1">
+            <div className="text-2xl font-bold text-slate-100">{stats.total_rules.toLocaleString()}</div>
+            <div className="text-xs text-slate-500 uppercase tracking-wider">Total Rules</div>
           </div>
-          <div className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-3 flex-1">
+          <div className="bg-slate-900 border border-slate-800 rounded-lg px-4 py-3 flex-1">
             <div className="text-2xl font-bold text-emerald-400">{stats.enabled.toLocaleString()}</div>
-            <div className="text-xs text-gray-500 uppercase tracking-wider">Enabled</div>
+            <div className="text-xs text-slate-500 uppercase tracking-wider">Enabled</div>
           </div>
-          <div className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-3 flex-1">
-            <div className="text-2xl font-bold text-gray-500">{stats.disabled.toLocaleString()}</div>
-            <div className="text-xs text-gray-500 uppercase tracking-wider">Disabled</div>
+          <div className="bg-slate-900 border border-slate-800 rounded-lg px-4 py-3 flex-1">
+            <div className="text-2xl font-bold text-slate-500">{stats.disabled.toLocaleString()}</div>
+            <div className="text-xs text-slate-500 uppercase tracking-wider">Disabled</div>
           </div>
-          <div className="bg-gray-900 border border-gray-800 rounded-lg px-4 py-3 flex-1">
+          <div className="bg-slate-900 border border-slate-800 rounded-lg px-4 py-3 flex-1">
             <div className="text-2xl font-bold text-purple-400">{stats.categories.length}</div>
-            <div className="text-xs text-gray-500 uppercase tracking-wider">Categories</div>
+            <div className="text-xs text-slate-500 uppercase tracking-wider">Categories</div>
           </div>
         </div>
       )}
@@ -226,31 +226,31 @@ export const RulesManagementPage: React.FC = () => {
       {tab === "browse" ? (
         <div className="flex flex-1 gap-4 overflow-hidden">
           {/* Category sidebar */}
-          <div className="w-72 bg-gray-900 border border-gray-800 rounded-lg overflow-y-auto flex-shrink-0">
-            <div className="p-3 border-b border-gray-800 font-semibold uppercase text-xs text-gray-500 tracking-wider">
+          <div className="w-72 bg-slate-900 border border-slate-800 rounded-lg overflow-y-auto flex-shrink-0">
+            <div className="p-3 border-b border-slate-800 font-semibold uppercase text-xs text-slate-500 tracking-wider">
               Categories
             </div>
             <div
-              className={`px-3 py-2 cursor-pointer text-sm flex justify-between items-center hover:bg-gray-800 ${category === "" ? "bg-gray-800 border-l-2 border-blue-500 text-blue-400" : "text-gray-300"}`}
+              className={`px-3 py-2 cursor-pointer text-sm flex justify-between items-center hover:bg-slate-800 ${category === "" ? "bg-slate-800 border-l-2 border-blue-500 text-blue-400" : "text-slate-300"}`}
               onClick={() => { setCategory(""); setOffset(0); }}
             >
               <span>All Rules</span>
-              <span className="text-xs text-gray-500">{stats?.total_rules.toLocaleString()}</span>
+              <span className="text-xs text-slate-500">{stats?.total_rules.toLocaleString()}</span>
             </div>
             {stats?.categories.map((cat) => (
               <div
                 key={cat.name}
-                className={`px-3 py-2 cursor-pointer text-sm flex justify-between items-center group hover:bg-gray-800 ${category === cat.name ? "bg-gray-800 border-l-2 border-blue-500 text-blue-400" : "text-gray-300"}`}
+                className={`px-3 py-2 cursor-pointer text-sm flex justify-between items-center group hover:bg-slate-800 ${category === cat.name ? "bg-slate-800 border-l-2 border-blue-500 text-blue-400" : "text-slate-300"}`}
                 onClick={() => { setCategory(cat.name); setOffset(0); }}
               >
                 <div className="flex items-center gap-2 min-w-0">
                   <span className="truncate">{cat.name}</span>
                 </div>
                 <div className="flex items-center gap-2 flex-shrink-0">
-                  <span className="text-xs text-gray-500">{cat.total.toLocaleString()}</span>
+                  <span className="text-xs text-slate-500">{cat.total.toLocaleString()}</span>
                   <button
                     onClick={(e) => { e.stopPropagation(); handleCategoryToggle(cat.name, cat.disabled > 0); }}
-                    className="opacity-0 group-hover:opacity-100 text-xs px-1.5 py-0.5 rounded bg-gray-700 hover:bg-gray-600 text-gray-300 transition-opacity"
+                    className="opacity-0 group-hover:opacity-100 text-xs px-1.5 py-0.5 rounded bg-slate-700 hover:bg-slate-600 text-slate-300 transition-opacity"
                     title={cat.disabled > 0 ? "Enable all" : "Disable all"}
                   >
                     {cat.disabled > 0 ? "EN" : "DIS"}
@@ -261,29 +261,29 @@ export const RulesManagementPage: React.FC = () => {
           </div>
 
           {/* Main rules table */}
-          <div className="flex-1 flex flex-col overflow-hidden bg-gray-900 border border-gray-800 rounded-lg">
+          <div className="flex-1 flex flex-col overflow-hidden bg-slate-900 border border-slate-800 rounded-lg">
             {/* Filters */}
-            <div className="p-3 border-b border-gray-800 flex items-center gap-3">
+            <div className="p-3 border-b border-slate-800 flex items-center gap-3">
               <input
                 type="text"
                 placeholder="Search by SID, message..."
                 value={search}
                 onChange={(e) => handleSearchChange(e.target.value)}
-                className="bg-gray-800 border border-gray-700 rounded px-3 py-1.5 text-white text-sm flex-1 max-w-md outline-none focus:border-blue-500"
+                className="bg-slate-800 border border-slate-700 rounded px-3 py-1.5 text-slate-100 text-sm flex-1 max-w-md outline-none focus:border-blue-500"
               />
-              <select value={enabledFilter} onChange={(e) => { setEnabledFilter(e.target.value); setOffset(0); }} className="bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-white text-sm">
+              <select value={enabledFilter} onChange={(e) => { setEnabledFilter(e.target.value); setOffset(0); }} className="bg-slate-800 border border-slate-700 rounded px-2 py-1.5 text-slate-100 text-sm">
                 <option value="">All States</option>
                 <option value="true">Enabled</option>
                 <option value="false">Disabled</option>
               </select>
-              <select value={severityFilter} onChange={(e) => { setSeverityFilter(e.target.value); setOffset(0); }} className="bg-gray-800 border border-gray-700 rounded px-2 py-1.5 text-white text-sm">
+              <select value={severityFilter} onChange={(e) => { setSeverityFilter(e.target.value); setOffset(0); }} className="bg-slate-800 border border-slate-700 rounded px-2 py-1.5 text-slate-100 text-sm">
                 <option value="">All Severities</option>
                 <option value="1">High</option>
                 <option value="2">Medium</option>
                 <option value="3">Low</option>
               </select>
               {rules && (
-                <span className="text-xs text-gray-500 ml-auto">
+                <span className="text-xs text-slate-500 ml-auto">
                   {rules.total.toLocaleString()} rules found
                 </span>
               )}
@@ -295,11 +295,11 @@ export const RulesManagementPage: React.FC = () => {
               {rulesLoading ? (
                 <div className="p-4"><TableSkeleton rows={8} cols={5} /></div>
               ) : rules && rules.items.length === 0 ? (
-                <div className="p-8 text-center text-gray-500">No rules match your filters.</div>
+                <div className="p-8 text-center text-slate-500">No rules match your filters.</div>
               ) : (
                 <table className="w-full text-sm">
-                  <thead className="sticky top-0 bg-gray-900 z-10">
-                    <tr className="text-left text-xs text-gray-500 uppercase tracking-wider border-b border-gray-800">
+                  <thead className="sticky top-0 bg-slate-900 z-10">
+                    <tr className="text-left text-xs text-slate-500 uppercase tracking-wider border-b border-slate-800">
                       <th className="px-3 py-2 w-12">On</th>
                       <th className="px-3 py-2 w-20">SID</th>
                       <th className="px-3 py-2 w-16">Sev</th>
@@ -314,37 +314,37 @@ export const RulesManagementPage: React.FC = () => {
                       return (
                         <React.Fragment key={rule.sid}>
                           <tr
-                            className={`border-b border-gray-800/50 hover:bg-gray-800/50 cursor-pointer transition-colors ${!rule.enabled ? "opacity-50" : ""} ${expandedSid === rule.sid ? "bg-gray-800/30" : ""}`}
+                            className={`border-b border-slate-800/50 hover:bg-slate-800/50 cursor-pointer transition-colors ${!rule.enabled ? "opacity-50" : ""} ${expandedSid === rule.sid ? "bg-slate-800/30" : ""}`}
                             onClick={() => setExpandedSid(expandedSid === rule.sid ? null : rule.sid)}
                           >
                             <td className="px-3 py-2">
                               <button
                                 onClick={(e) => { e.stopPropagation(); handleToggle(rule.sid, rule.enabled); }}
                                 disabled={toggling.has(rule.sid)}
-                                className={`w-8 h-5 rounded-full relative transition-colors ${rule.enabled ? "bg-emerald-600" : "bg-gray-700"} ${toggling.has(rule.sid) ? "opacity-50" : ""}`}
+                                className={`w-8 h-5 rounded-full relative transition-colors ${rule.enabled ? "bg-emerald-600" : "bg-slate-700"} ${toggling.has(rule.sid) ? "opacity-50" : ""}`}
                               >
                                 <span className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-transform ${rule.enabled ? "left-3.5" : "left-0.5"}`} />
                               </button>
                             </td>
-                            <td className="px-3 py-2 font-mono text-xs text-gray-400">{rule.sid}</td>
+                            <td className="px-3 py-2 font-mono text-xs text-slate-400">{rule.sid}</td>
                             <td className="px-3 py-2">
                               <span className={`text-xs px-1.5 py-0.5 rounded ${sev.color}`}>{sev.label}</span>
                             </td>
-                            <td className="px-3 py-2 text-gray-200 truncate max-w-md" title={rule.msg}>{rule.msg}</td>
-                            <td className="px-3 py-2 text-xs text-gray-500 truncate" title={rule.classtype}>{rule.classtype}</td>
-                            <td className="px-3 py-2 text-xs text-gray-500 uppercase">{rule.protocol}</td>
+                            <td className="px-3 py-2 text-slate-200 truncate max-w-md" title={rule.msg}>{rule.msg}</td>
+                            <td className="px-3 py-2 text-xs text-slate-500 truncate" title={rule.classtype}>{rule.classtype}</td>
+                            <td className="px-3 py-2 text-xs text-slate-500 uppercase">{rule.protocol}</td>
                           </tr>
                           {expandedSid === rule.sid && (
-                            <tr className="bg-gray-800/20">
+                            <tr className="bg-slate-800/20">
                               <td colSpan={6} className="px-4 py-3">
                                 <div className="text-xs space-y-1">
-                                  <div><span className="text-gray-500">Action:</span> <span className="text-yellow-400">{rule.action}</span></div>
-                                  <div><span className="text-gray-500">Source:</span> <span className="text-gray-300">{rule.src}</span> → <span className="text-gray-500">Dest:</span> <span className="text-gray-300">{rule.dst}</span></div>
+                                  <div><span className="text-slate-500">Action:</span> <span className="text-yellow-400">{rule.action}</span></div>
+                                  <div><span className="text-slate-500">Source:</span> <span className="text-slate-300">{rule.src}</span> → <span className="text-slate-500">Dest:</span> <span className="text-slate-300">{rule.dst}</span></div>
                                   {rule.references.length > 0 && (
-                                    <div><span className="text-gray-500">References:</span> <span className="text-blue-400">{rule.references.join(", ")}</span></div>
+                                    <div><span className="text-slate-500">References:</span> <span className="text-blue-400">{rule.references.join(", ")}</span></div>
                                   )}
                                   <div className="mt-2">
-                                    <pre className="bg-black/50 rounded p-2 text-gray-400 text-xs overflow-x-auto whitespace-pre-wrap break-all">{rule.raw}</pre>
+                                    <pre className="bg-black/50 rounded p-2 text-slate-400 text-xs overflow-x-auto whitespace-pre-wrap break-all">{rule.raw}</pre>
                                   </div>
                                 </div>
                               </td>
@@ -360,21 +360,21 @@ export const RulesManagementPage: React.FC = () => {
 
             {/* Pagination */}
             {rules && totalPages > 1 && (
-              <div className="p-3 border-t border-gray-800 flex items-center justify-between">
+              <div className="p-3 border-t border-slate-800 flex items-center justify-between">
                 <button
                   onClick={() => setOffset(Math.max(0, offset - PAGE_SIZE))}
                   disabled={offset === 0}
-                  className="px-3 py-1 rounded bg-gray-800 text-gray-300 text-sm disabled:opacity-30 hover:bg-gray-700"
+                  className="px-3 py-1 rounded bg-slate-800 text-slate-300 text-sm disabled:opacity-30 hover:bg-slate-700"
                 >
                   ← Previous
                 </button>
-                <span className="text-xs text-gray-500">
+                <span className="text-xs text-slate-500">
                   Page {currentPage} of {totalPages.toLocaleString()} ({rules.total.toLocaleString()} rules)
                 </span>
                 <button
                   onClick={() => setOffset(offset + PAGE_SIZE)}
                   disabled={offset + PAGE_SIZE >= rules.total}
-                  className="px-3 py-1 rounded bg-gray-800 text-gray-300 text-sm disabled:opacity-30 hover:bg-gray-700"
+                  className="px-3 py-1 rounded bg-slate-800 text-slate-300 text-sm disabled:opacity-30 hover:bg-slate-700"
                 >
                   Next →
                 </button>
@@ -384,8 +384,8 @@ export const RulesManagementPage: React.FC = () => {
         </div>
       ) : (
         /* Raw editor tab */
-        <div className="flex-1 flex flex-col bg-gray-900 border border-gray-800 rounded-lg overflow-hidden">
-          <div className="p-3 border-b border-gray-800 flex items-center justify-between">
+        <div className="flex-1 flex flex-col bg-slate-900 border border-slate-800 rounded-lg overflow-hidden">
+          <div className="p-3 border-b border-slate-800 flex items-center justify-between">
             <span className="font-mono text-emerald-400 text-sm">{selectedFile}</span>
             <button
               onClick={saveRaw}
@@ -401,14 +401,14 @@ export const RulesManagementPage: React.FC = () => {
             <textarea
               value={rawContent}
               onChange={(e) => setRawContent(e.target.value)}
-              className="flex-1 bg-black text-gray-300 p-4 font-mono text-sm outline-none resize-none"
+              className="flex-1 bg-black text-slate-300 p-4 font-mono text-sm outline-none resize-none"
               placeholder="# Enter Suricata rules here..."
             />
           )}
         </div>
       )}
     </div>
-      <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
+      <HelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
     </div>
   );
 };

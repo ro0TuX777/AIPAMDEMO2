@@ -11,6 +11,7 @@ import json
 import logging
 import os
 import re
+from datetime import datetime, timezone
 from ipaddress import ip_address
 from time import perf_counter
 from typing import Any
@@ -1064,6 +1065,18 @@ async def update_finding_explain_feedback(
     )
 
 
+# Sentinel so "no mapping" is distinguishable from a legitimate None mapping.
+_UNMAPPED = object()
+
+#: Maps the findings-page disposition onto the authoritative analyst_status.
+#: Clearing feedback (None) resets the item to unreviewed.
+_FEEDBACK_TO_ANALYST_STATUS: dict[str | None, str] = {
+    "confirmed": "confirmed",
+    "false_positive": "false_positive",
+    None: "unreviewed",
+}
+
+
 @router.patch("/jobs/{job_id}/findings/{finding_id}/feedback", response_model=FindingItem)
 async def update_finding_feedback(
     job_id: str,
@@ -1073,7 +1086,20 @@ async def update_finding_feedback(
     request_id: str = Depends(get_request_id),
     db: Session = Depends(get_db),
 ):
-    """Update the user feedback for a finding (§12.5)."""
+    """Update the user feedback for a finding (§12.5).
+
+    `analyst_status` is the authoritative triage state: it gates forensic-memory
+    indexing (`forensic_memory.store_findings`, which only stores findings whose
+    `analyst_status == "confirmed"`) and drives the sensor trust profiles in
+    `services.feedback_analytics`. `feedback` is kept in sync
+    purely so existing API consumers keep seeing a coherent value — nothing in
+    the codebase reads it.
+
+    Without this, confirming a finding here wrote only the inert `feedback`
+    column while the investigation queue wrote `analyst_status`, so the same
+    finding could read "confirmed" on the findings page and "unreviewed"
+    everywhere that actually matters.
+    """
     _require_job(db, job_id)
     response.headers["X-Request-Id"] = request_id
 
@@ -1084,6 +1110,15 @@ async def update_finding_feedback(
         raise HTTPException(status_code=404, detail="Finding not found")
 
     finding.feedback = body.feedback
+
+    # Only dispositions with a clean analyst_status equivalent propagate.
+    # "false_negative" means "the engine missed something", which says nothing
+    # about *this* finding's disposition, so it leaves analyst_status alone.
+    status = _FEEDBACK_TO_ANALYST_STATUS.get(body.feedback, _UNMAPPED)
+    if status is not _UNMAPPED:
+        finding.analyst_status = status
+        finding.reviewed_at = datetime.now(timezone.utc).isoformat()
+
     db.add(finding)
     db.commit()
     db.refresh(finding)

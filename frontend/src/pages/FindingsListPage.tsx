@@ -31,17 +31,11 @@ import {
   type Severity,
 } from "../api";
 import { ConfidenceBadge, ExplainEvidenceList, ExplainSectionBlock } from "../components/findings/ExplainShared";
-import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
+import { HelpPanel, labelHint, usePageHelp } from "../components/HelpPanel";
 import { useToast } from "../components/ToastProvider";
 import { CardGridSkeleton } from "../components/SkeletonLoader";
-
-const SEV_COLORS: Record<string, string> = {
-  critical: "text-red-500 bg-red-500/10",
-  high: "text-orange-400 bg-orange-400/10",
-  medium: "text-amber-400 bg-amber-400/10",
-  low: "text-blue-400 bg-blue-400/10",
-  info: "text-slate-400 bg-slate-400/10",
-};
+import { severityClass } from "../theme/colors";
+import { JobBreadcrumbs } from "../components/Breadcrumbs";
 
 /** Corroboration badge — show when a finding was produced by cross-source fusion. */
 function CorroborationBadge({ sensor, category }: { sensor?: string | null; category?: string | null }) {
@@ -97,7 +91,10 @@ export const FindingsListPage: React.FC = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["job", jobId, "findings"] });
       queryClient.invalidateQueries({ queryKey: ["job", jobId, "finding"] });
-      addToast({ severity: "info", title: "Feedback saved", duration: 3000 });
+      // Triage here now writes analyst_status, so the queue's counts and
+      // review-progress bar are stale until refetched.
+      queryClient.invalidateQueries({ queryKey: ["investigation-queue", jobId] });
+      addToast({ severity: "info", title: "Review status saved", duration: 3000 });
     },
     onError: () => addToast({ severity: "high", title: "Failed to save feedback" }),
   });
@@ -261,13 +258,7 @@ export const FindingsListPage: React.FC = () => {
     <>
     <div className="flex gap-6 items-start">
     <div className="space-y-4 flex-1 min-w-0">
-      <nav className="text-sm text-slate-400">
-        <Link to="/jobs" className="hover:text-white">Jobs</Link>
-        <span className="mx-1">/</span>
-        <Link to={`/jobs/${jobId}`} className="hover:text-white">{jobId?.slice(0, 8)}</Link>
-        <span className="mx-1">/</span>
-        <span className="text-slate-200">Findings</span>
-      </nav>
+      <JobBreadcrumbs jobId={jobId} trail={[{ label: "Findings" }]} />
 
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <h1 className={`text-xl font-semibold ${labelHint("findings", activeHelpField)}`} onClick={() => toggleHelp("findings")}>Findings ({findings.length})</h1>
@@ -275,7 +266,7 @@ export const FindingsListPage: React.FC = () => {
           {pcapLabel && (
             <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-xs font-medium">
               Phase: {pcapLabel}
-              <button onClick={() => { searchParams.delete("pcap_label"); setSearchParams(searchParams); }} className="ml-1.5 text-emerald-400 hover:text-white">✕</button>
+              <button onClick={() => { searchParams.delete("pcap_label"); setSearchParams(searchParams); }} className="ml-1.5 text-emerald-400 hover:text-slate-50">✕</button>
             </span>
           )}
           <select value={sevFilter} onChange={e => setSevFilter(e.target.value as Severity | "")}
@@ -330,7 +321,7 @@ export const FindingsListPage: React.FC = () => {
               <div className="flex items-start justify-between gap-4">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
-                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${SEV_COLORS[f.severity] ?? SEV_COLORS.info}`}>
+                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${severityClass(f.severity)}`}>
                       {f.severity.toUpperCase()}
                     </span>
                     {f.category && (
@@ -392,23 +383,23 @@ export const FindingsListPage: React.FC = () => {
                       onClick={() => feedbackMut.mutate({ id: f.finding_id, val: "confirmed" })}
                       disabled={feedbackMut.isPending}
                       title="Mark as Confirmed"
-                      className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider transition-colors border ${f.feedback === "confirmed"
+                      className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider transition-colors border ${f.analyst_status === "confirmed"
                         ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-400"
                         : "bg-slate-800 border-slate-700 text-slate-500 hover:text-emerald-400 hover:border-emerald-500/30"
                         }`}
                     >
-                      {f.feedback === "confirmed" ? "✓ Confirmed" : "Confirm"}
+                      {f.analyst_status === "confirmed" ? "✓ Confirmed" : "Confirm"}
                     </button>
                     <button
                       onClick={() => feedbackMut.mutate({ id: f.finding_id, val: "false_positive" })}
                       disabled={feedbackMut.isPending}
                       title="Mark as False Positive"
-                      className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider transition-colors border ${f.feedback === "false_positive"
+                      className={`px-2 py-1 rounded text-[10px] font-bold uppercase tracking-wider transition-colors border ${f.analyst_status === "false_positive"
                         ? "bg-red-500/20 border-red-500/50 text-red-400"
                         : "bg-slate-800 border-slate-700 text-slate-500 hover:text-red-400 hover:border-red-500/30"
                         }`}
                     >
-                      {f.feedback === "false_positive" ? "✗ FP" : "FP"}
+                      {f.analyst_status === "false_positive" ? "✗ FP" : "FP"}
                     </button>
                   </div>
                 </div>
@@ -682,7 +673,7 @@ export const FindingsListPage: React.FC = () => {
         </div>
       )}
     </div>
-    <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
+    <HelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
     </div>
     <JobSubPageNav jobId={jobId!} currentPath="findings" />
     </>

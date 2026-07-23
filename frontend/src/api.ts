@@ -357,6 +357,196 @@ export interface ConnectionListResponse {
   page: PageInfo;
 }
 
+// ─── Binary / YARA analysis ─────────────────────────────────────────────────
+
+export interface YaraMatchItem {
+  rule: string;
+  tags: string[];
+  meta: Record<string, any>;
+  strings: string[];
+}
+
+export interface BinaryAnalysisItem {
+  file_id: string;
+  filename?: string | null;
+  size_bytes: number;
+  sha256: string;
+  md5?: string | null;
+  sha1?: string | null;
+  /** Shannon entropy 0–8; >7.2 suggests packing or encryption. */
+  entropy?: number | null;
+  format?: string | null;
+  artifact_class?: string | null;
+  yara_matches: YaraMatchItem[];
+}
+
+export interface BinaryAnalysisListResponse {
+  schema_version: string;
+  items: BinaryAnalysisItem[];
+  total: number;
+}
+
+/** Shared shape of the analyze and inspect responses. */
+export interface BinaryAnalysisResponse {
+  schema_version: string;
+  /** False when the yara module is not installed on the server. */
+  yara_available: boolean;
+  /** False when no rules could be compiled from the rules directory. */
+  rules_compiled: boolean;
+  /** Only present on the persisting endpoint. */
+  findings_created?: number;
+  analysis: BinaryAnalysisItem;
+}
+
+// ─── Sigma detections ───────────────────────────────────────────────────────
+
+export interface SigmaDetectionItem {
+  finding_id: string;
+  rule_id: string;
+  title: string;
+  severity: Severity;
+  category?: string | null;
+  tags: string[];
+  event_id?: string | null;
+  hostname?: string | null;
+  timestamp?: string | null;
+  evidence?: Record<string, any> | null;
+}
+
+export interface SigmaDetectionListResponse {
+  schema_version: string;
+  items: SigmaDetectionItem[];
+  total: number;
+}
+
+export interface SigmaAnalyzeResponse {
+  schema_version: string;
+  rules_evaluated: number;
+  events_scanned: number;
+  detections_created: number;
+  detections_total: number;
+  items: SigmaDetectionItem[];
+}
+
+// ─── Raw event explorer ─────────────────────────────────────────────────────
+
+/** A normalized event flattened for the explorer. */
+export interface RawEventItem {
+  event_id: string;
+  event_type: string;
+  timestamp: string;
+  source_type: string;
+  source_system?: string | null;
+  hostname?: string | null;
+  username?: string | null;
+  src_ip?: string | null;
+  src_port?: number | null;
+  dest_ip?: string | null;
+  dest_port?: number | null;
+  proto?: string | null;
+  evidence_status?: string | null;
+  tags: string[];
+  data: Record<string, any>;
+}
+
+export interface RawEventListResponse {
+  schema_version: string;
+  items: RawEventItem[];
+  total: number;
+  limit: number;
+  offset: number;
+}
+
+export interface RawEventSearchParams {
+  q?: string;
+  event_type?: string;
+  source_type?: string;
+  src_ip?: string;
+  dest_ip?: string;
+  hostname?: string;
+  limit?: number;
+  offset?: number;
+}
+
+export interface AggregationBucket {
+  value: string | null;
+  count: number;
+}
+
+export interface EventAggregationResponse {
+  schema_version: string;
+  field: string;
+  buckets: AggregationBucket[];
+  total_events: number;
+}
+
+export interface FlowNode {
+  id: string;
+  label: string;
+  /** "src" | "host" | "port" */
+  kind: string;
+}
+
+export interface FlowLink {
+  /** Index into `nodes`. */
+  source: number;
+  target: number;
+  value: number;
+}
+
+export interface EventFlowResponse {
+  schema_version: string;
+  nodes: FlowNode[];
+  links: FlowLink[];
+  flows_considered: number;
+}
+
+// ─── Streams (raw stream forensics) ─────────────────────────────────────────
+
+/** A PCAP within a job that streams can be extracted from. */
+export interface StreamPcapItem {
+  name: string;
+  size_bytes: number;
+  label?: string | null;
+}
+
+export interface StreamPcapListResponse {
+  schema_version: string;
+  items: StreamPcapItem[];
+}
+
+/** The 4-tuple + protocol that uniquely identifies a stream. */
+export interface StreamSelector {
+  src: string;
+  sport: number;
+  dst: string;
+  dport: number;
+  proto: "tcp" | "udp";
+  /** Which PCAP to read; the server defaults to the first when omitted. */
+  pcap?: string;
+}
+
+export interface StreamTranscriptResponse {
+  schema_version: string;
+  protocol: string;
+  transcript: string;
+  truncated: boolean;
+  byte_count: number;
+}
+
+/** One packet's hexdump: a header line plus its hex/ascii rows. */
+export interface StreamHexPacket {
+  header: string;
+  lines: string[];
+}
+
+export interface StreamHexdumpResponse {
+  schema_version: string;
+  protocol: string;
+  packets: StreamHexPacket[];
+  truncated: boolean;
+}
+
 // ─── DNS ────────────────────────────────────────────────────────────────────
 
 export interface DnsQueryItem {
@@ -1606,6 +1796,108 @@ export const api = {
   },
   listConnections(jobId: string, ip: string, p: ConnectionListParams = {}): Promise<ConnectionListResponse> {
     return get<ConnectionListResponse>(`/jobs/${jobId}/hosts/${encodeURIComponent(ip)}/connections${qs(p)}`);
+  },
+
+  // ── Binary / YARA ──────────────────────────────────────────────────────
+  listBinaryAnalyses(jobId: string): Promise<BinaryAnalysisListResponse> {
+    return get<BinaryAnalysisListResponse>(`/jobs/${jobId}/binary`);
+  },
+  /**
+   * Both binary endpoints take the file as a raw request body with the name in
+   * a query param, not multipart — see _filename_from_request in binary.py.
+   * `persist: false` routes to the stateless inspector.
+   */
+  analyzeBinary(
+    file: File,
+    opts: { jobId?: string; onProgress?: (pct: number) => void } = {},
+  ): Promise<BinaryAnalysisResponse> {
+    const path = opts.jobId
+      ? `/jobs/${opts.jobId}/binary?filename=${encodeURIComponent(file.name)}`
+      : `/binary/inspect?filename=${encodeURIComponent(file.name)}`;
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", `${API_BASE}${path}`);
+      const headers = authHeaders();
+      Object.keys(headers).forEach((k) => xhr.setRequestHeader(k, headers[k]));
+      if (opts.onProgress) {
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) opts.onProgress!(Math.round((e.loaded / e.total) * 100));
+        };
+      }
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            resolve(JSON.parse(xhr.responseText));
+          } catch {
+            reject(new Error("Invalid JSON response from server"));
+          }
+        } else {
+          let detail = `Analysis failed with status ${xhr.status}`;
+          try {
+            const body = JSON.parse(xhr.responseText);
+            if (body?.detail) detail = body.detail;
+          } catch { /* non-JSON error body */ }
+          reject(new Error(detail));
+        }
+      };
+      xhr.onerror = () => reject(new Error("Network error during upload"));
+      xhr.send(file);
+    });
+  },
+
+  // ── Sigma ──────────────────────────────────────────────────────────────
+  listSigmaDetections(jobId: string): Promise<SigmaDetectionListResponse> {
+    return get<SigmaDetectionListResponse>(`/jobs/${jobId}/sigma`);
+  },
+  analyzeSigma(jobId: string): Promise<SigmaAnalyzeResponse> {
+    return post<SigmaAnalyzeResponse>(`/jobs/${jobId}/sigma/analyze`, {});
+  },
+
+  // ── Raw events ─────────────────────────────────────────────────────────
+  searchRawEvents(jobId: string, p: RawEventSearchParams = {}): Promise<RawEventListResponse> {
+    return get<RawEventListResponse>(`/jobs/${jobId}/raw-events${qs(p as any)}`);
+  },
+  aggregateRawEvents(jobId: string, field: string, limit = 50): Promise<EventAggregationResponse> {
+    return get<EventAggregationResponse>(`/jobs/${jobId}/raw-events/aggregate${qs({ field, limit })}`);
+  },
+  getRawEventFlow(jobId: string, limit = 50): Promise<EventFlowResponse> {
+    return get<EventFlowResponse>(`/jobs/${jobId}/raw-events/flow${qs({ limit })}`);
+  },
+
+  // ── Streams ────────────────────────────────────────────────────────────
+  listStreamPcaps(jobId: string): Promise<StreamPcapListResponse> {
+    return get<StreamPcapListResponse>(`/jobs/${jobId}/streams`);
+  },
+  getStreamAscii(jobId: string, s: StreamSelector): Promise<StreamTranscriptResponse> {
+    return get<StreamTranscriptResponse>(`/jobs/${jobId}/streams/ascii${qs(s as any)}`);
+  },
+  getStreamHexdump(jobId: string, s: StreamSelector): Promise<StreamHexdumpResponse> {
+    return get<StreamHexdumpResponse>(`/jobs/${jobId}/streams/hexdump${qs(s as any)}`);
+  },
+  /** Carve the stream server-side and save it as a .pcap. */
+  async downloadStreamPcap(jobId: string, s: StreamSelector): Promise<void> {
+    const res = await fetch(`${API_BASE}/jobs/${jobId}/streams/pcap${qs(s as any)}`, {
+      headers: authHeaders(),
+    });
+    if (!res.ok) {
+      // The server returns 404 when the filter matched no packets — surface
+      // that rather than saving an empty file.
+      let detail = `Carve failed: ${res.status}`;
+      try {
+        const body = await res.json();
+        if (body?.detail) detail = body.detail;
+      } catch { /* non-JSON error body */ }
+      throw new Error(detail);
+    }
+    const blob = await res.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `stream-${s.src}_${s.sport}-${s.dst}_${s.dport}.pcap`;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    URL.revokeObjectURL(url);
   },
   listDns(jobId: string, ip: string, p: DnsListParams = {}): Promise<DnsQueryListResponse> {
     return get<DnsQueryListResponse>(`/jobs/${jobId}/hosts/${encodeURIComponent(ip)}/dns${qs(p)}`);

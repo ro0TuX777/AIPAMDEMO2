@@ -2,8 +2,9 @@ import React from "react";
 import { useParams, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api";
-import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
+import { HelpPanel, labelHint, usePageHelp } from "../components/HelpPanel";
 import { DetailSkeleton } from "../components/SkeletonLoader";
+import { Breadcrumbs } from "../components/Breadcrumbs";
 
 const ROLE_COLORS: Record<string, string> = {
   internal: "text-blue-400 bg-blue-400/10",
@@ -27,13 +28,13 @@ export const GlobalHostDetailPage: React.FC = () => {
   return (
     <div className="flex gap-6 items-start">
     <div className="space-y-6 flex-1 min-w-0">
-      <nav className="text-sm text-slate-400">
-        <Link to="/jobs" className="hover:text-white">Jobs</Link>
-        <span className="mx-1">/</span>
-        <Link to="/hosts" className="hover:text-white">Global Hosts</Link>
-        <span className="mx-1">/</span>
-        <span className="text-slate-200 font-mono">{decodedIp}</span>
-      </nav>
+      <Breadcrumbs
+        items={[
+          { label: "Jobs", to: "/jobs" },
+          { label: "Global Hosts", to: "/hosts" },
+          { label: decodedIp, mono: true },
+        ]}
+      />
 
       {isLoading && <DetailSkeleton />}
       {error && <p className="text-red-400">Failed to load host details.</p>}
@@ -142,7 +143,7 @@ export const GlobalHostDetailPage: React.FC = () => {
         </>
       )}
     </div>
-    <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
+    <HelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
     </div>
   );
 };

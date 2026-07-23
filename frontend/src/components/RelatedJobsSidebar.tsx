@@ -59,7 +59,7 @@ export const RelatedJobsSidebar: React.FC<RelatedJobsSidebarProps> = ({ jobId })
             className="block p-2 rounded hover:bg-slate-800/60 transition-colors group"
           >
             <div className="flex items-center justify-between">
-              <span className="text-xs text-slate-200 truncate max-w-[70%] group-hover:text-white">
+              <span className="text-xs text-slate-200 truncate max-w-[70%] group-hover:text-slate-50">
                 {rj.job_name || rj.job_id.slice(0, 8)}
               </span>
               <span className={`text-[10px] px-1.5 py-0.5 rounded font-medium ${(OVERLAP_CONFIG[rj.overlap_type] ?? FALLBACK_OVERLAP).color}`}>

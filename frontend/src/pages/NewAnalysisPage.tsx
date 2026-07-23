@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { api, type ExecutionProfile, type PcapUploadItem, type BundleUploadItem, type SourceType, type IntegrationSettingsPayload } from "../api";
-import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
+import { HelpPanel, labelHint, usePageHelp } from "../components/HelpPanel";
 
 type Step = "select" | "uploading" | "creating" | "error";
 
@@ -856,7 +856,7 @@ export const NewAnalysisPage: React.FC = () => {
 
       </div>
     </div>
-    <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
+    <HelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
     </div>
   );
 };

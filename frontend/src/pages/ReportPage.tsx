@@ -25,8 +25,10 @@ import {
   type TemporalFlowsResponse,
   type TemporalNarrativeResponse,
 } from "../api";
-import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
+import { HelpPanel, labelHint, usePageHelp } from "../components/HelpPanel";
 import { DetailSkeleton } from "../components/SkeletonLoader";
+import { severityHex } from "../theme/colors";
+import { JobBreadcrumbs } from "../components/Breadcrumbs";
 
 /* ────────────────────────────────────────────────────────────────────────── */
 /*  Helpers                                                                  */
@@ -190,10 +192,6 @@ const MarkdownReport: React.FC<{ content: string }> = ({ content }) => (
 /*  Severity Stacked Bar                                                     */
 /* ────────────────────────────────────────────────────────────────────────── */
 
-const SEV_BAR_COLORS: Record<string, string> = {
-  critical: "#ef4444", high: "#f87171", medium: "#fbbf24", low: "#60a5fa", info: "#94a3b8",
-};
-
 const SeverityStackedBar: React.FC<{ counts: Record<string, number> }> = ({ counts }) => {
   const total = Object.values(counts).reduce((s, c) => s + c, 0);
   if (total === 0) return null;
@@ -205,7 +203,7 @@ const SeverityStackedBar: React.FC<{ counts: Record<string, number> }> = ({ coun
           if (c === 0) return null;
           const pct = (c / total) * 100;
           return (
-            <div key={sev} style={{ width: `${pct}%`, backgroundColor: SEV_BAR_COLORS[sev] }}
+            <div key={sev} style={{ width: `${pct}%`, backgroundColor: severityHex(sev) }}
               className="relative group cursor-default transition-all hover:brightness-110"
               title={`${sev}: ${c} (${pct.toFixed(1)}%)`} />
           );
@@ -217,7 +215,7 @@ const SeverityStackedBar: React.FC<{ counts: Record<string, number> }> = ({ coun
           if (c === 0) return null;
           return (
             <span key={sev} className="flex items-center gap-1">
-              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: SEV_BAR_COLORS[sev] }} />
+              <span className="w-2 h-2 rounded-full" style={{ backgroundColor: severityHex(sev) }} />
               {sev} ({c})
             </span>
           );
@@ -263,7 +261,7 @@ const TableOfContents: React.FC<{ entries: TocEntry[] }> = ({ entries }) => (
     <p className="text-[10px] font-semibold text-slate-500 uppercase tracking-wider mb-2">Contents</p>
     {entries.map(e => (
       <a key={e.id} href={`#${e.id}`}
-        className="flex items-center gap-1.5 px-2 py-1 text-xs text-slate-400 hover:text-white hover:bg-slate-800/60 rounded transition-colors">
+        className="flex items-center gap-1.5 px-2 py-1 text-xs text-slate-400 hover:text-slate-50 hover:bg-slate-800/60 rounded transition-colors">
         <span>{e.icon}</span>
         <span>{e.label}</span>
       </a>
@@ -486,13 +484,7 @@ export const ReportPage: React.FC = () => {
       <div ref={reportRef} className="report-container space-y-6 max-w-5xl mx-auto pb-12">
         {/* Screen nav bar */}
         <div className="flex items-center justify-between no-print">
-          <nav className="text-sm text-slate-400">
-            <Link to="/jobs" className="hover:text-white">Jobs</Link>
-            <span className="mx-1">/</span>
-            <Link to={`/jobs/${jobId}`} className="hover:text-white">{jobId?.slice(0, 8)}</Link>
-            <span className="mx-1">/</span>
-            <span className="text-slate-200">Report</span>
-          </nav>
+          <JobBreadcrumbs jobId={jobId} trail={[{ label: "Report" }]} />
           <button
             onClick={handleExportPdf}
             className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
@@ -509,20 +501,20 @@ export const ReportPage: React.FC = () => {
               {/* View mode toggle */}
               <button
                 onClick={() => setViewMode("live")}
-                className={`px-3 py-1 text-xs rounded ${viewMode === "live" ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-400 hover:text-white"}`}
+                className={`px-3 py-1 text-xs rounded ${viewMode === "live" ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-400 hover:text-slate-50"}`}
               >
                 Live View
               </button>
               <button
                 onClick={() => setViewMode("generated")}
-                className={`px-3 py-1 text-xs rounded ${viewMode === "generated" ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-400 hover:text-white"}`}
+                className={`px-3 py-1 text-xs rounded ${viewMode === "generated" ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-400 hover:text-slate-50"}`}
                 disabled={generatedReports.length === 0}
               >
                 Generated ({generatedReports.length})
               </button>
               <button
                 onClick={() => { setViewMode("compare"); if (!compareLeftId && generatedReports[0]) setCompareLeftId(generatedReports[0].report_id); if (!compareRightId && generatedReports[1]) setCompareRightId(generatedReports[1].report_id); }}
-                className={`px-3 py-1 text-xs rounded ${viewMode === "compare" ? "bg-purple-600 text-white" : "bg-slate-800 text-slate-400 hover:text-white"}`}
+                className={`px-3 py-1 text-xs rounded ${viewMode === "compare" ? "bg-purple-600 text-white" : "bg-slate-800 text-slate-400 hover:text-slate-50"}`}
                 disabled={generatedReports.length < 2}
                 title={generatedReports.length < 2 ? "Generate at least 2 reports to compare" : "Compare reports side by side"}
               >
@@ -531,7 +523,7 @@ export const ReportPage: React.FC = () => {
               {hasTemporalPhases && (
                 <button
                   onClick={() => setViewMode("temporal")}
-                  className={`px-3 py-1 text-xs rounded ${viewMode === "temporal" ? "bg-emerald-600 text-white" : "bg-slate-800 text-slate-400 hover:text-white"}`}
+                  className={`px-3 py-1 text-xs rounded ${viewMode === "temporal" ? "bg-emerald-600 text-white" : "bg-slate-800 text-slate-400 hover:text-slate-50"}`}
                   title="Compare Before vs After phases"
                 >
                   🔬 Temporal
@@ -545,7 +537,7 @@ export const ReportPage: React.FC = () => {
               <span className="text-[10px] text-slate-500 uppercase tracking-wider font-semibold mr-1">Phase:</span>
               <button
                 onClick={() => setActivePhase("all")}
-                className={`px-2.5 py-1 text-xs rounded ${activePhase === "all" ? "bg-blue-600 text-white" : "bg-slate-700 text-slate-400 hover:text-white"}`}
+                className={`px-2.5 py-1 text-xs rounded ${activePhase === "all" ? "bg-blue-600 text-white" : "bg-slate-700 text-slate-400 hover:text-slate-50"}`}
               >
                 All
               </button>
@@ -555,7 +547,7 @@ export const ReportPage: React.FC = () => {
                   onClick={() => setActivePhase(ph)}
                   className={`px-2.5 py-1 text-xs rounded capitalize ${activePhase === ph
                     ? (ph === "before" ? "bg-cyan-600 text-white" : ph === "after" ? "bg-orange-600 text-white" : "bg-indigo-600 text-white")
-                    : "bg-slate-700 text-slate-400 hover:text-white"}`}
+                    : "bg-slate-700 text-slate-400 hover:text-slate-50"}`}
                 >
                   {ph === "before" ? "🕐 Before" : ph === "after" ? "🕓 After" : ph}
                 </button>
@@ -597,7 +589,7 @@ export const ReportPage: React.FC = () => {
                   className={`px-3 py-1 text-xs rounded border ${
                     activeReport?.report_id === r.report_id
                       ? "border-blue-500 bg-blue-500/20 text-blue-300"
-                      : "border-slate-700 bg-slate-800 text-slate-400 hover:text-white"
+                      : "border-slate-700 bg-slate-800 text-slate-400 hover:text-slate-50"
                   }`}
                 >
                   {r.pcap_label ? `[${r.pcap_label}] ` : ""}{r.mode} — {r.threat_level.toUpperCase()} ({new Date(r.created_at).toLocaleString()})
@@ -1514,7 +1506,7 @@ export const ReportPage: React.FC = () => {
         )}
         </>)}
       </div>
-      <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
+      <HelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
       <JobSubPageNav jobId={jobId!} currentPath="report" />
     </>
   );

@@ -3,6 +3,7 @@ import { useParams, Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api, type TemporalCorrelationItem } from "../api";
 import { JobSubPageNav } from "../components/JobSubPageNav";
+import { JobBreadcrumbs } from "../components/Breadcrumbs";
 
 const PAGE_SIZE = 200;
 
@@ -36,8 +37,8 @@ export const TemporalCorrelationsPage: React.FC = () => {
   const total = data?.total ?? 0;
 
   return (
-    <div className="p-4 sm:p-6 space-y-4 max-w-7xl mx-auto">
-      <JobSubPageNav jobId={jobId!} currentPath="correlations" />
+    <div className="space-y-4">
+      <JobBreadcrumbs jobId={jobId} trail={[{ label: "Correlations" }]} />
 
       {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
@@ -111,6 +112,8 @@ export const TemporalCorrelationsPage: React.FC = () => {
           </button>
         </div>
       )}
+
+      <JobSubPageNav jobId={jobId!} currentPath="correlations" />
     </div>
   );
 };

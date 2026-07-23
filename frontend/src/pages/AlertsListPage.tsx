@@ -3,16 +3,10 @@ import { useParams, Link, useNavigate, useSearchParams } from "react-router-dom"
 import { JobSubPageNav } from "../components/JobSubPageNav";
 import { useQuery } from "@tanstack/react-query";
 import { api, type AlertItem, type Severity } from "../api";
-import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
+import { HelpPanel, labelHint, usePageHelp } from "../components/HelpPanel";
 import { InfoTooltip } from "../components/InfoTooltip";
-
-const SEV_COLORS: Record<string, string> = {
-  critical: "text-red-500 bg-red-500/10",
-  high: "text-orange-400 bg-orange-400/10",
-  medium: "text-amber-400 bg-amber-400/10",
-  low: "text-blue-400 bg-blue-400/10",
-  info: "text-slate-400 bg-slate-400/10",
-};
+import { severityClass } from "../theme/colors";
+import { JobBreadcrumbs } from "../components/Breadcrumbs";
 
 export const AlertsListPage: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
@@ -34,13 +28,7 @@ export const AlertsListPage: React.FC = () => {
     <>
     <div className="flex gap-6 items-start">
     <div className="space-y-4 flex-1 min-w-0">
-      <nav className="text-sm text-slate-400">
-        <Link to="/jobs" className="hover:text-white">Jobs</Link>
-        <span className="mx-1">/</span>
-        <Link to={`/jobs/${jobId}`} className="hover:text-white">{jobId?.slice(0, 8)}</Link>
-        <span className="mx-1">/</span>
-        <span className="text-slate-200">Alerts</span>
-      </nav>
+      <JobBreadcrumbs jobId={jobId} trail={[{ label: "Alerts" }]} />
 
       <div className="flex items-center justify-between">
         <h1 className={`text-xl font-semibold ${labelHint("alerts", activeHelpField)}`} onClick={() => toggleHelp("alerts")}>Alerts ({alerts.length})</h1>
@@ -48,7 +36,7 @@ export const AlertsListPage: React.FC = () => {
           {pcapLabel && (
             <span className="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 text-xs font-medium">
               Phase: {pcapLabel}
-              <button onClick={() => { searchParams.delete("pcap_label"); setSearchParams(searchParams); }} className="ml-1.5 text-emerald-400 hover:text-white">✕</button>
+              <button onClick={() => { searchParams.delete("pcap_label"); setSearchParams(searchParams); }} className="ml-1.5 text-emerald-400 hover:text-slate-50">✕</button>
             </span>
           )}
           <select value={sevFilter} onChange={e => setSevFilter(e.target.value as Severity | "")}
@@ -92,7 +80,7 @@ export const AlertsListPage: React.FC = () => {
                     {new Date(a.ts).toLocaleString()}
                   </td>
                   <td className="px-3 py-2">
-                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${SEV_COLORS[a.severity] ?? SEV_COLORS.info}`}>
+                    <span className={`px-2 py-0.5 rounded text-xs font-medium ${severityClass(a.severity)}`}>
                       {a.severity.toUpperCase()}
                     </span>
                   </td>
@@ -132,7 +120,7 @@ export const AlertsListPage: React.FC = () => {
         </div>
       )}
     </div>
-    <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
+    <HelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
     </div>
     <JobSubPageNav jobId={jobId!} currentPath="alerts" />
     </>

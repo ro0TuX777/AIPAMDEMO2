@@ -1042,6 +1042,84 @@ class TestFindingsEndpoints:
             assert snippet in captured_prompt["text"]
 
 
+class TestFindingFeedbackTriageSync:
+    """The findings-page disposition must drive the authoritative analyst_status.
+
+    `analyst_status` gates forensic-memory indexing and the sensor-trust
+    analytics; `feedback` is inert. Before these were synced, confirming a
+    finding here left analyst_status at "unreviewed", so the confirmation never
+    reached either system.
+    """
+
+    def _patch_feedback(self, client, job_id, finding_id, value):
+        return client.patch(
+            f"/api/v1/jobs/{job_id}/findings/{finding_id}/feedback",
+            headers=AUTH,
+            json={"feedback": value},
+        )
+
+    def test_confirm_sets_analyst_status(self, app_client):
+        client, db = app_client
+        job = _seed_job(db)
+        f = _seed_finding(db, job.job_id)
+
+        r = self._patch_feedback(client, job.job_id, f.finding_id, "confirmed")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["feedback"] == "confirmed"
+        assert body["analyst_status"] == "confirmed"
+
+    def test_false_positive_sets_analyst_status(self, app_client):
+        client, db = app_client
+        job = _seed_job(db)
+        f = _seed_finding(db, job.job_id)
+
+        r = self._patch_feedback(client, job.job_id, f.finding_id, "false_positive")
+        assert r.status_code == 200
+        assert r.json()["analyst_status"] == "false_positive"
+
+    def test_clearing_feedback_resets_to_unreviewed(self, app_client):
+        client, db = app_client
+        job = _seed_job(db)
+        f = _seed_finding(db, job.job_id)
+
+        self._patch_feedback(client, job.job_id, f.finding_id, "confirmed")
+        r = self._patch_feedback(client, job.job_id, f.finding_id, None)
+        assert r.status_code == 200
+        body = r.json()
+        assert body["feedback"] is None
+        assert body["analyst_status"] == "unreviewed"
+
+    def test_false_negative_leaves_analyst_status_untouched(self, app_client):
+        """"Engine missed something" says nothing about *this* finding."""
+        client, db = app_client
+        job = _seed_job(db)
+        f = _seed_finding(db, job.job_id, analyst_status="needs_review")
+
+        r = self._patch_feedback(client, job.job_id, f.finding_id, "false_negative")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["feedback"] == "false_negative"
+        assert body["analyst_status"] == "needs_review"
+
+    def test_confirmation_passes_the_forensic_memory_gate(self, app_client):
+        """End-to-end guard: forensic_memory.store_findings keys off analyst_status."""
+        client, db = app_client
+        job = _seed_job(db)
+        f = _seed_finding(db, job.job_id)
+
+        self._patch_feedback(client, job.job_id, f.finding_id, "confirmed")
+        db.expire_all()
+
+        listed = client.get(
+            f"/api/v1/jobs/{job.job_id}/findings", headers=AUTH
+        ).json()["items"]
+
+        # Mirrors the HITL filter in forensic_memory.store_findings.
+        gated = [x for x in listed if x.get("analyst_status") == "confirmed"]
+        assert len(gated) == 1, "confirmed finding must pass the forensic-memory gate"
+
+
 class TestSystemTelemetry:
     def test_system_config_includes_explain_configuration(self, app_client, monkeypatch):
         client, db = app_client

@@ -10,7 +10,8 @@ import {
   type TemporalFlowsResponse,
   type TemporalNarrativeResponse,
 } from "../api";
-import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
+import { HelpPanel, labelHint, usePageHelp } from "../components/HelpPanel";
+import { JobBreadcrumbs } from "../components/Breadcrumbs";
 
 const fmt = (n: number) => n >= 1e9 ? (n/1e9).toFixed(1) + "GB" : n >= 1e6 ? (n/1e6).toFixed(1) + "MB" : n >= 1e3 ? (n/1e3).toFixed(1) + "KB" : n + "B";
 const fmtShort = (n: number) => n >= 1e6 ? (n/1e6).toFixed(1) + "M" : n >= 1e3 ? (n/1e3).toFixed(1) + "K" : String(n);
@@ -44,13 +45,7 @@ export const ComparePage: React.FC = () => {
     <>
     <div className="flex gap-6 items-start">
     <div className="space-y-4 flex-1 min-w-0">
-      <nav className="text-sm text-slate-400">
-        <Link to="/jobs" className="hover:text-white">Jobs</Link>
-        <span className="mx-1">/</span>
-        <Link to={`/jobs/${jobId}`} className="hover:text-white">{jobId.slice(0, 8)}…</Link>
-        <span className="mx-1">/</span>
-        <span className="text-slate-200">Compare</span>
-      </nav>
+      <JobBreadcrumbs jobId={jobId} trail={[{ label: "Compare" }]} />
 
       <div className="flex items-center justify-between">
         <h1 className={`text-xl font-semibold text-slate-100 ${labelHint("compare", activeHelpField)}`} onClick={() => toggleHelp("compare")}>
@@ -244,9 +239,9 @@ export const ComparePage: React.FC = () => {
       {delta && <DiffTables delta={delta} flowsQ={flowsQ} narrativeM={narrativeM} jobId={jobId} />}
 
     </div>
-    <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
+    <HelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
     </div>
-    <JobSubPageNav jobId={jobId} currentPath="compare" showTemporal />
+    <JobSubPageNav jobId={jobId} currentPath="compare" />
     </>
   );
 };

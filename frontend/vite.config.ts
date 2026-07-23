@@ -12,5 +12,22 @@ export default defineConfig({
       },
     },
   },
+  build: {
+    rollupOptions: {
+      output: {
+        // Pull the large, rarely-changing libraries into their own long-lived
+        // chunks so they cache across deploys and don't re-download when app
+        // code changes. d3 (~250kB) and react-markdown are further isolated
+        // because only a few routes use them — with route-level lazy loading
+        // they load only when those pages are opened.
+        manualChunks: {
+          "vendor-react": ["react", "react-dom", "react-router-dom"],
+          "vendor-query": ["@tanstack/react-query"],
+          "vendor-d3": ["d3"],
+          "vendor-markdown": ["react-markdown", "remark-gfm"],
+        },
+      },
+    },
+  },
 });
 

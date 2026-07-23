@@ -253,17 +253,128 @@ export const pageHelpData: Record<string, PageHelpEntry> = {
 
     /* ── Artifacts ─────────────────────────────────────── */
     artifacts: {
-        title: "Artifacts",
+        title: "Exports",
         description:
-            "Artifacts are downloadable evidence packages generated from the analysis. An evidence package bundles findings, alerts, IOCs, host data, and other forensic artifacts into a structured format suitable for sharing with other analysts, importing into a SIEM, or archiving for compliance. Click 'Generate Evidence Package' to create a new bundle.",
+            "Exports are downloadable evidence packages generated from the analysis. An evidence package bundles findings, alerts, IOCs, host data, and other forensic artifacts into a structured format suitable for sharing with other analysts, importing into a SIEM, or archiving for compliance. Click 'Generate Evidence Package' to create a new bundle. Note this is distinct from Extracted Files, which holds files carved out of the captured traffic.",
         section: "Reporting",
     },
 
     /* ── Extracted Files ───────────────────────────────── */
+    binary: {
+        title: "Binary Analysis",
+        description:
+            "Hashes, measures and YARA-scans a file. Use it on something carved out of the traffic on the Extracted Files page, or on a sample handed to you separately. Attaching to the job persists the analysis and turns any YARA match into a first-class finding; unchecking that inspects the file and stores nothing, which is the right choice when you are only triaging.",
+        section: "Analysis",
+        fields: [
+            {
+                label: "Entropy",
+                description:
+                    "Shannon entropy from 0 to 8 — how random the bytes are. Ordinary code and text sit well below 7. Above roughly 7.2 the content is close to random, which usually means compressed, packed or encrypted. High entropy is not proof of anything on its own; a ZIP scores the same as a packed implant.",
+            },
+            {
+                label: "YARA matches",
+                description:
+                    "Rules from the server's rule directory that fired on this file, with their tags, metadata and the specific strings that matched. Expand a match to see exactly which bytes triggered it rather than trusting the rule name.",
+            },
+            {
+                label: "Hashes",
+                description:
+                    "SHA256, SHA1 and MD5. Use these to check the sample against threat intel or an internal corpus, and to confirm two artifacts really are the same file.",
+            },
+            {
+                label: "Engine availability",
+                description:
+                    "Hashing, entropy and format detection are always computed. YARA matching needs the yara module installed on the server and at least one compilable rule — if either is missing, a warning appears and no rules were evaluated. Worth checking on an air-gapped install before concluding a file is clean.",
+            },
+        ],
+    },
+    sigma: {
+        title: "Sigma Detections",
+        description:
+            "Sigma is a vendor-neutral rule format for log detection — the log equivalent of what Suricata does for network traffic. Running it evaluates the rule set against this job's normalized log events and persists every hit as a first-class finding, so detections also show up in Findings and the investigation queue rather than living only here. Rules read parsed log events, so a PCAP-only job with no ingested logs will scan zero events.",
+        section: "Analysis",
+        fields: [
+            {
+                label: "Rules evaluated",
+                description: "How many Sigma rules were loaded from the server's rule directory for this run.",
+            },
+            {
+                label: "Events scanned",
+                description:
+                    "How many normalized events the rules ran against. Zero means no logs were parsed for this job — check the Evidence Sources panel on the job detail page for skipped log files.",
+            },
+            {
+                label: "New detections",
+                description:
+                    "Hits created by this run. Re-running is safe and idempotent: a detection already recorded for the same rule and event is not duplicated.",
+            },
+            {
+                label: "Source event",
+                description:
+                    "Links to the specific normalized event that triggered the rule, so you can read the underlying evidence rather than just the rule's conclusion.",
+            },
+        ],
+    },
+    raw_events: {
+        title: "Raw Events",
+        description:
+            "Raw Events is the unfiltered record — every normalized event from every ingested source, before correlation, scoring or theory-building has been applied. Findings and Alerts show you what the engine concluded; this shows you what it actually saw. Use it to confirm an alert against the underlying evidence, to find activity no sensor flagged, or to get a feel for what a capture is mostly made of.",
+        section: "Analysis",
+        fields: [
+            {
+                label: "Events",
+                description:
+                    "Search and filter the event stream. The search box matches substrings across hostnames, usernames, IPs, protocols and the raw payload, so it will find things the structured filters cannot. Click any row to expand the full normalized JSON.",
+            },
+            {
+                label: "Breakdown",
+                description:
+                    "Group every event by a field and see the counts, which is the fastest way to spot the shape of a capture — one host generating most of the traffic, an unexpected protocol, a source system that produced nothing. Clicking a bar filters the event list by that value.",
+            },
+            {
+                label: "Flow",
+                description:
+                    "Traces source IP to destination host to destination port. Node height and ribbon width scale with event count, so heavily used paths dominate. Good for spotting a host talking to somewhere it should not, or one port carrying far more than expected.",
+            },
+            {
+                label: "Evidence status",
+                description:
+                    "Where an event sits in the corroboration lifecycle: observed (seen in one source), inferred, corroborated (independently seen in another source), or confirmed. Corroborated events across independent sources are the strongest evidence available.",
+            },
+        ],
+    },
+    streams: {
+        title: "Streams",
+        description:
+            "Streams reassembles a single conversation out of the capture, the way 'Follow TCP Stream' works in Wireshark. Pick a host, pick one of its conversations, and you can read the exchange as text, inspect the raw bytes packet by packet, or carve just that conversation into its own PCAP for handing to another tool. A stream is identified by its four-tuple — source IP and port, destination IP and port — plus the protocol, and that tuple is kept in the page URL so a followed stream can be bookmarked or shared with another analyst.",
+        section: "Analysis",
+        fields: [
+            {
+                label: "Transcript",
+                description:
+                    "The decoded payload as readable text, with both directions interleaved in time order. Best for plaintext protocols — HTTP, FTP, SMTP, IRC, Telnet. Encrypted traffic will look like noise; use the Hexdump instead.",
+            },
+            {
+                label: "Hexdump",
+                description:
+                    "Every packet in the conversation as offset, hex bytes and ASCII. Use this for binary protocols, to spot file signatures and magic bytes, or when a transcript renders as unreadable output.",
+            },
+            {
+                label: "Save as PCAP",
+                description:
+                    "Carves just this conversation into a standalone capture file. Useful for attaching to a ticket, replaying, or opening in Wireshark. This is also the way to get the full stream when the on-screen view has been truncated.",
+            },
+            {
+                label: "Truncation",
+                description:
+                    "Transcripts are capped at 100,000 characters and hexdumps at 500 packets to keep the page responsive. When you see the truncation warning, the view is partial — save as PCAP for everything.",
+            },
+        ],
+    },
     extracted_files: {
         title: "Extracted Files",
         description:
-            "Extracted Files shows files that were carved out of the PCAP traffic during analysis — executables, documents, scripts, archives, and other file transfers detected in the network capture. Each file shows its name, type, size, and hash. These are critical artifacts for malware analysis and can be submitted to sandboxes or threat intel platforms for further investigation.",
+            "Extracted Files shows files that were carved out of the PCAP traffic during analysis — executables, documents, scripts, archives, and other file transfers detected in the network capture. Each file shows its name, type, size, and hash. These are critical artifacts for malware analysis and can be submitted to sandboxes or threat intel platforms for further investigation. Note this is distinct from Exports, which holds generated evidence packages.",
         section: "Analysis",
     },
 

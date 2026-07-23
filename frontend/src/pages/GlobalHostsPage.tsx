@@ -2,7 +2,8 @@ import React, { useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api, type GlobalHostListItem } from "../api";
-import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
+import { HelpPanel, labelHint, usePageHelp } from "../components/HelpPanel";
+import { Breadcrumbs } from "../components/Breadcrumbs";
 
 const ROLE_COLORS: Record<string, string> = {
   internal: "text-blue-400 bg-blue-400/10",
@@ -28,11 +29,7 @@ export const GlobalHostsPage: React.FC = () => {
   return (
     <div className="flex gap-6 items-start">
     <div className="space-y-4 flex-1 min-w-0">
-      <nav className="text-sm text-slate-400">
-        <Link to="/jobs" className="hover:text-white">Jobs</Link>
-        <span className="mx-1">/</span>
-        <span className="text-slate-200">Global Hosts</span>
-      </nav>
+      <Breadcrumbs items={[{ label: "Jobs", to: "/jobs" }, { label: "Global Hosts" }]} />
 
       <div className="flex items-center justify-between">
         <div>
@@ -133,7 +130,7 @@ export const GlobalHostsPage: React.FC = () => {
         </div>
       )}
     </div>
-    <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
+    <HelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
     </div>
   );
 };

@@ -11,25 +11,14 @@ import {
   type FindingItem,
   type IocItem,
 } from "../api";
-import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
+import { HelpPanel, labelHint, usePageHelp } from "../components/HelpPanel";
 import { InfoTooltip } from "../components/InfoTooltip";
 import { useToast } from "../components/ToastProvider";
 import { CardGridSkeleton } from "../components/SkeletonLoader";
+import { severityClass } from "../theme/colors";
+import { JobBreadcrumbs } from "../components/Breadcrumbs";
 
 // ── Constants ────────────────────────────────────────────────────────────────
-
-const SEVERITY_COLORS: Record<string, string> = {
-  critical: "bg-red-900/40 text-red-300 border-red-700",
-  high: "bg-orange-900/40 text-orange-300 border-orange-700",
-  medium: "bg-amber-900/40 text-amber-300 border-amber-700",
-  low: "bg-slate-800 text-slate-400 border-slate-600",
-  info: "bg-slate-800 text-slate-500 border-slate-700",
-};
-
-const SEV_BAR_COLORS: Record<string, string> = {
-  critical: "bg-red-500", high: "bg-orange-500", medium: "bg-amber-500",
-  low: "bg-blue-500", info: "bg-slate-500",
-};
 
 const TYPE_LABELS: Record<string, string> = {
   attack_thread: "ATK", c2_session: "C2", recon_phase: "RCN",
@@ -186,7 +175,7 @@ function SeverityChart({ slices }: { slices: SliceItem[] }) {
           <div key={sev} className="flex items-center gap-2">
             <span className="w-14 text-right text-[10px] text-slate-500 capitalize">{sev}</span>
             <div className="flex-1 h-3 bg-slate-700/60 rounded-full overflow-hidden">
-              <div className={`h-full rounded-full ${SEV_BAR_COLORS[sev] || "bg-slate-500"} opacity-80`}
+              <div className={`h-full rounded-full ${severityClass(sev, "bar")} opacity-80`}
                 style={{ width: `${(count / max) * 100}%` }} />
             </div>
             <span className="w-6 text-right text-[10px] text-slate-400">{count}</span>
@@ -258,7 +247,7 @@ function SliceCard({ slice, jobId, theories, defaultExpanded, alertNameMap, find
 }) {
   const [expanded, setExpanded] = useState(defaultExpanded);
   const tag = TYPE_LABELS[slice.slice_type] || "ATK";
-  const sevClass = SEVERITY_COLORS[slice.severity] || SEVERITY_COLORS.info;
+  const sevClass = severityClass(slice.severity, "outline");
   const dur = durationStr(slice.time_start, slice.time_end);
 
   return (
@@ -454,16 +443,10 @@ export function SlicesPage() {
 
   return (
     <>
-    <div className="flex gap-6 items-start p-6">
-      <div className="max-w-4xl mx-auto flex-1 min-w-0 space-y-4">
+    <div className="flex gap-6 items-start">
+      <div className="space-y-4 flex-1 min-w-0">
         {/* Breadcrumb */}
-        <nav className="text-sm text-slate-400">
-          <Link to="/jobs" className="hover:text-white">Jobs</Link>
-          <span className="mx-1">/</span>
-          <Link to={`/jobs/${jobId}`} className="hover:text-white">{jobId?.slice(0, 8)}</Link>
-          <span className="mx-1">/</span>
-          <span className="text-slate-200">Slices</span>
-        </nav>
+        <JobBreadcrumbs jobId={jobId} trail={[{ label: "Slices" }]} />
 
         {/* Title row */}
         <div className="flex items-center justify-between flex-wrap gap-2">
@@ -498,12 +481,12 @@ export function SlicesPage() {
           {pcapLabels.length > 1 && (
             <div className="flex bg-slate-800 rounded overflow-hidden border border-slate-700 ml-auto">
               <button onClick={() => setActiveLabel(null)}
-                className={`px-3 py-1.5 text-xs ${activeLabel === null ? "bg-cyan-600 text-white" : "text-slate-400 hover:text-white"}`}>
+                className={`px-3 py-1.5 text-xs ${activeLabel === null ? "bg-cyan-600 text-white" : "text-slate-400 hover:text-slate-50"}`}>
                 All
               </button>
               {pcapLabels.map(lbl => (
                 <button key={lbl} onClick={() => setActiveLabel(lbl)}
-                  className={`px-3 py-1.5 text-xs ${activeLabel === lbl ? "bg-cyan-600 text-white" : "text-slate-400 hover:text-white"}`}>
+                  className={`px-3 py-1.5 text-xs ${activeLabel === lbl ? "bg-cyan-600 text-white" : "text-slate-400 hover:text-slate-50"}`}>
                   {lbl}
                 </button>
               ))}
@@ -533,7 +516,7 @@ export function SlicesPage() {
           </>
         )}
       </div>
-      <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
+      <HelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
     </div>
     <JobSubPageNav jobId={jobId!} currentPath="slices" />
     </>

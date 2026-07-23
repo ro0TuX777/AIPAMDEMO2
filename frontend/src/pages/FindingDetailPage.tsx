@@ -7,7 +7,7 @@ import remarkGfm from "remark-gfm";
 import { api, type AnalystStatus, type FindingExplainFeedback, type RuleType, type GeneratedRuleResponse, type ArkimePivotResponse } from "../api";
 import { ReviewNotesPanel } from "../components/ReviewNotesPanel";
 import { ConfidenceBadge, ExplainEvidenceList, ExplainSectionBlock } from "../components/findings/ExplainShared";
-import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
+import { HelpPanel, labelHint, usePageHelp } from "../components/HelpPanel";
 import { CardGridSkeleton } from "../components/SkeletonLoader";
 import { useToast } from "../components/ToastProvider";
 import {
@@ -32,14 +32,8 @@ import {
   setCachedFindingExplainState,
   scrollToExplainEvidenceTarget,
 } from "../findingsExplain";
-
-const SEV_COLORS: Record<string, string> = {
-  critical: "text-red-500 bg-red-500/10",
-  high: "text-orange-400 bg-orange-400/10",
-  medium: "text-amber-400 bg-amber-400/10",
-  low: "text-blue-400 bg-blue-400/10",
-  info: "text-slate-400 bg-slate-400/10",
-};
+import { severityClass } from "../theme/colors";
+import { JobBreadcrumbs } from "../components/Breadcrumbs";
 
 const formatDateTime = (value?: string | null) => {
   if (!value) return "—";
@@ -225,24 +219,16 @@ export const FindingDetailPage: React.FC = () => {
     });
   };
 
-  const feedbackMut = useMutation({
-    mutationFn: (val: string | null) => api.updateFindingFeedback(jobId!, findingId!, val),
-    onSuccess: (result) => {
-      queryClient.invalidateQueries({ queryKey: ["job", jobId, "findings"] });
-      queryClient.setQueryData(["job", jobId, "finding", findingId], (prev: any) =>
-        prev ? { ...prev, feedback: result.feedback } : prev,
-      );
-      addToast({ severity: "info", title: "Feedback saved", duration: 3000 });
-    },
-    onError: () => addToast({ severity: "high", title: "Failed to save feedback" }),
-  });
-
-  // HITL review status mutation (Sprint 4)
+  // HITL review status mutation (Sprint 4).
+  // Sole triage control on this page — ReviewNotesPanel supersedes the old
+  // Confirm/Mark-FP button pair, which wrote the inert `feedback` column and so
+  // never cleared the "unreviewed" gate banner rendered directly above it.
   const reviewStatusMut = useMutation({
     mutationFn: ({ status, notes }: { status: AnalystStatus; notes?: string }) =>
       api.updateQueueItemStatus(jobId!, `finding:${findingId}`, { analyst_status: status, analyst_notes: notes }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["job", jobId, "finding", findingId] });
+      queryClient.invalidateQueries({ queryKey: ["job", jobId, "findings"] });
       queryClient.invalidateQueries({ queryKey: ["investigation-queue", jobId] });
       addToast({ severity: "info", title: "Review status updated", duration: 2000 });
     },
@@ -353,20 +339,15 @@ export const FindingDetailPage: React.FC = () => {
   return (
     <div className="flex gap-6 items-start">
       <div className="space-y-6 flex-1 min-w-0">
-        <nav className="text-sm text-slate-400">
-          <Link to="/jobs" className="hover:text-white">Jobs</Link>
-          <span className="mx-1">/</span>
-          <Link to={`/jobs/${jobId}`} className="hover:text-white">{jobId?.slice(0, 8)}</Link>
-          <span className="mx-1">/</span>
-          <Link to={`/jobs/${jobId}/findings`} className="hover:text-white">Findings</Link>
-          <span className="mx-1">/</span>
-          <span className="text-slate-200">{finding.title.slice(0, 60)}</span>
-        </nav>
+        <JobBreadcrumbs
+          jobId={jobId}
+          trail={[{ label: "Findings", to: `/jobs/${jobId}/findings` }, { label: finding.title.slice(0, 60) }]}
+        />
 
         <div className="flex items-start justify-between gap-4 flex-wrap">
           <div className="space-y-2">
             <div className="flex flex-wrap items-center gap-2">
-              <span className={`px-2 py-0.5 rounded text-xs font-medium ${SEV_COLORS[finding.severity] ?? SEV_COLORS.info}`}>
+              <span className={`px-2 py-0.5 rounded text-xs font-medium ${severityClass(finding.severity)}`}>
                 {finding.severity.toUpperCase()}
               </span>
               {finding.category && (
@@ -385,7 +366,7 @@ export const FindingDetailPage: React.FC = () => {
           <div className="flex items-center gap-2 flex-wrap">
             <Link
               to={`/jobs/${jobId}/findings`}
-              className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-300 transition-colors hover:border-slate-600 hover:text-white"
+              className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-sm text-slate-300 transition-colors hover:border-slate-600 hover:text-slate-50"
             >
               Back to queue
             </Link>
@@ -418,7 +399,9 @@ export const FindingDetailPage: React.FC = () => {
           </div>
           <div>
             <div className="text-[11px] uppercase tracking-wider text-slate-500">Analyst disposition</div>
-            <div className="mt-1 text-sm text-slate-200">{finding.feedback ?? "unreviewed"}</div>
+            <div className="mt-1 text-sm text-slate-200">
+              {(finding.analyst_status ?? "unreviewed").replace(/_/g, " ")}
+            </div>
           </div>
           <div>
             <div className="text-[11px] uppercase tracking-wider text-slate-500">Related pivots</div>
@@ -448,29 +431,6 @@ export const FindingDetailPage: React.FC = () => {
           onStatusChange={(status, notes) => reviewStatusMut.mutate({ status, notes })}
           isPending={reviewStatusMut.isPending}
         />
-
-        <div className="flex flex-wrap gap-2">
-          <button
-            onClick={() => feedbackMut.mutate("confirmed")}
-            disabled={feedbackMut.isPending}
-            className={`px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors border ${finding.feedback === "confirmed"
-              ? "bg-emerald-500/20 border-emerald-500/50 text-emerald-400"
-              : "bg-slate-800 border-slate-700 text-slate-400 hover:text-emerald-400 hover:border-emerald-500/30"
-              }`}
-          >
-            {finding.feedback === "confirmed" ? "✓ Confirmed" : "Confirm"}
-          </button>
-          <button
-            onClick={() => feedbackMut.mutate("false_positive")}
-            disabled={feedbackMut.isPending}
-            className={`px-3 py-1.5 rounded text-xs font-bold uppercase tracking-wider transition-colors border ${finding.feedback === "false_positive"
-              ? "bg-red-500/20 border-red-500/50 text-red-400"
-              : "bg-slate-800 border-slate-700 text-slate-400 hover:text-red-400 hover:border-red-500/30"
-              }`}
-          >
-            {finding.feedback === "false_positive" ? "✗ False positive" : "Mark FP"}
-          </button>
-        </div>
 
         {/* Detection-as-Code: Rule Generation */}
         <RuleGenerationPanel jobId={jobId!} findingId={findingId!} />
@@ -723,7 +683,7 @@ export const FindingDetailPage: React.FC = () => {
         </section>
       </div>
 
-      <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
+      <HelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
     </div>
   );
 };

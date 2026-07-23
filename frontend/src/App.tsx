@@ -1,40 +1,59 @@
-import React, { useEffect, useState } from "react";
-import { Link, Navigate, Route, Routes } from "react-router-dom";
-import { JobListPage } from "./pages/JobListPage";
-import { NewAnalysisPage } from "./pages/NewAnalysisPage";
-import { JobDetailPage } from "./pages/JobDetailPage";
-import { HostListPage } from "./pages/HostListPage";
-import { HostDetailPage, HostSubTab } from "./pages/HostDetailPage";
-import { AlertsListPage } from "./pages/AlertsListPage";
-import { AlertDetailPage } from "./pages/AlertDetailPage";
-import { FindingsListPage } from "./pages/FindingsListPage";
-import { FindingDetailPage } from "./pages/FindingDetailPage";
-import { TimelinePage } from "./pages/TimelinePage";
-import { IocsListPage } from "./pages/IocsListPage";
-import { FilesListPage } from "./pages/FilesListPage";
-import { AttackGraphPage } from "./pages/AttackGraphPage";
-import { ArtifactsPage } from "./pages/ArtifactsPage";
-import { ReportPage } from "./pages/ReportPage";
-import { ChatPage } from "./pages/ChatPage";
-import { SettingsPage } from "./pages/SettingsPage";
-import { TrainingPage } from "./pages/TrainingPage";
-import { RulesManagementPage } from "./pages/RulesManagementPage";
-import { AdminFeedbackPage } from "./pages/AdminFeedbackPage";
-import { TheoriesPage } from "./pages/TheoriesPage";
-import { StorylinePage } from "./pages/StorylinePage";
-import { SlicesPage } from "./pages/SlicesPage";
-import { AnnotationsPage } from "./pages/AnnotationsPage";
-import { InvestigationQueuePage } from "./pages/InvestigationQueuePage";
-import { ComparePage } from "./pages/ComparePage";
-import { ProofBuilderPage } from "./pages/ProofBuilderPage";
-import { TelemetryEventDetailPage } from "./pages/TelemetryEventDetailPage";
-import { TemporalCorrelationsPage } from "./pages/TemporalCorrelationsPage";
-import { GlobalHostsPage } from "./pages/GlobalHostsPage";
-import { GlobalHostDetailPage } from "./pages/GlobalHostDetailPage";
+import React, { lazy, Suspense, useEffect, useState } from "react";
+import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { ModelSetupModal } from "./components/ModelSetupModal";
 import { ToastProvider } from "./components/ToastProvider";
+import { RouteErrorBoundary } from "./components/RouteErrorBoundary";
 import { ThemeProvider, useTheme } from "./components/ThemeProvider";
 import { api } from "./api";
+
+// Pages are route-level code-split: each becomes its own chunk loaded on
+// demand, so the initial bundle no longer carries every screen (and their
+// heavy deps -- d3 for the graph, react-markdown for chat/report) up front.
+const JobListPage = lazy(() => import("./pages/JobListPage").then((m) => ({ default: m.JobListPage })));
+const NewAnalysisPage = lazy(() => import("./pages/NewAnalysisPage").then((m) => ({ default: m.NewAnalysisPage })));
+const JobDetailPage = lazy(() => import("./pages/JobDetailPage").then((m) => ({ default: m.JobDetailPage })));
+const HostListPage = lazy(() => import("./pages/HostListPage").then((m) => ({ default: m.HostListPage })));
+const HostDetailPage = lazy(() => import("./pages/HostDetailPage").then((m) => ({ default: m.HostDetailPage })));
+const HostSubTab = lazy(() => import("./pages/HostDetailPage").then((m) => ({ default: m.HostSubTab })));
+const AlertsListPage = lazy(() => import("./pages/AlertsListPage").then((m) => ({ default: m.AlertsListPage })));
+const AlertDetailPage = lazy(() => import("./pages/AlertDetailPage").then((m) => ({ default: m.AlertDetailPage })));
+const FindingsListPage = lazy(() => import("./pages/FindingsListPage").then((m) => ({ default: m.FindingsListPage })));
+const FindingDetailPage = lazy(() => import("./pages/FindingDetailPage").then((m) => ({ default: m.FindingDetailPage })));
+const TimelinePage = lazy(() => import("./pages/TimelinePage").then((m) => ({ default: m.TimelinePage })));
+const IocsListPage = lazy(() => import("./pages/IocsListPage").then((m) => ({ default: m.IocsListPage })));
+const FilesListPage = lazy(() => import("./pages/FilesListPage").then((m) => ({ default: m.FilesListPage })));
+const AttackGraphPage = lazy(() => import("./pages/AttackGraphPage").then((m) => ({ default: m.AttackGraphPage })));
+const ArtifactsPage = lazy(() => import("./pages/ArtifactsPage").then((m) => ({ default: m.ArtifactsPage })));
+const ReportPage = lazy(() => import("./pages/ReportPage").then((m) => ({ default: m.ReportPage })));
+const ChatPage = lazy(() => import("./pages/ChatPage").then((m) => ({ default: m.ChatPage })));
+const SettingsPage = lazy(() => import("./pages/SettingsPage").then((m) => ({ default: m.SettingsPage })));
+const TrainingPage = lazy(() => import("./pages/TrainingPage").then((m) => ({ default: m.TrainingPage })));
+const RulesManagementPage = lazy(() => import("./pages/RulesManagementPage").then((m) => ({ default: m.RulesManagementPage })));
+const AdminFeedbackPage = lazy(() => import("./pages/AdminFeedbackPage").then((m) => ({ default: m.AdminFeedbackPage })));
+const TheoriesPage = lazy(() => import("./pages/TheoriesPage").then((m) => ({ default: m.TheoriesPage })));
+const StorylinePage = lazy(() => import("./pages/StorylinePage").then((m) => ({ default: m.StorylinePage })));
+const StreamsPage = lazy(() => import("./pages/StreamsPage").then((m) => ({ default: m.StreamsPage })));
+const EventsExplorerPage = lazy(() => import("./pages/EventsExplorerPage").then((m) => ({ default: m.EventsExplorerPage })));
+const BinaryAnalysisPage = lazy(() => import("./pages/BinaryAnalysisPage").then((m) => ({ default: m.BinaryAnalysisPage })));
+const SigmaPage = lazy(() => import("./pages/SigmaPage").then((m) => ({ default: m.SigmaPage })));
+const SlicesPage = lazy(() => import("./pages/SlicesPage").then((m) => ({ default: m.SlicesPage })));
+const AnnotationsPage = lazy(() => import("./pages/AnnotationsPage").then((m) => ({ default: m.AnnotationsPage })));
+const InvestigationQueuePage = lazy(() => import("./pages/InvestigationQueuePage").then((m) => ({ default: m.InvestigationQueuePage })));
+const ComparePage = lazy(() => import("./pages/ComparePage").then((m) => ({ default: m.ComparePage })));
+const ProofBuilderPage = lazy(() => import("./pages/ProofBuilderPage").then((m) => ({ default: m.ProofBuilderPage })));
+const TelemetryEventDetailPage = lazy(() => import("./pages/TelemetryEventDetailPage").then((m) => ({ default: m.TelemetryEventDetailPage })));
+const TemporalCorrelationsPage = lazy(() => import("./pages/TemporalCorrelationsPage").then((m) => ({ default: m.TemporalCorrelationsPage })));
+const GlobalHostsPage = lazy(() => import("./pages/GlobalHostsPage").then((m) => ({ default: m.GlobalHostsPage })));
+const GlobalHostDetailPage = lazy(() => import("./pages/GlobalHostDetailPage").then((m) => ({ default: m.GlobalHostDetailPage })));
+
+/** Shown while a route's code chunk is fetched. Kept minimal so the swap to
+ *  the real page is not visually jarring on a fast connection. */
+const RouteFallback: React.FC = () => (
+  <div className="flex items-center gap-2 text-sm text-slate-500" data-testid="route-loading">
+    <span className="h-3.5 w-3.5 animate-spin rounded-full border-2 border-slate-700 border-t-slate-400" />
+    Loading…
+  </div>
+);
 
 const ThemeToggleButton: React.FC = () => {
   const { theme, toggleTheme } = useTheme();
@@ -55,7 +74,49 @@ const ThemeToggleButton: React.FC = () => {
   );
 };
 
+/**
+ * Single source of truth for the global navigation.
+ * Rendered twice (desktop bar + mobile dropdown) so the two can never drift.
+ */
+const NAV_ITEMS = [
+  { to: "/jobs", label: "Jobs", testId: "nav-jobs" },
+  { to: "/new", label: "New Analysis", testId: "nav-new-analysis" },
+  { to: "/settings", label: "Settings", testId: "nav-settings" },
+  { to: "/training", label: "Training", testId: "nav-training" },
+  { to: "/rules", label: "Detection Rules", testId: "nav-rules" },
+  { to: "/hosts", label: "Global Hosts", testId: "nav-global-hosts" },
+] as const;
+
+/** Active-aware nav link. `variant` controls the active treatment only. */
+const MainNavLink: React.FC<{
+  to: string;
+  label: string;
+  testId: string;
+  variant: "desktop" | "mobile";
+  onClick?: () => void;
+}> = ({ to, label, testId, variant, onClick }) => (
+  <NavLink
+    to={to}
+    data-testid={testId}
+    onClick={onClick}
+    className={({ isActive }) =>
+      variant === "desktop"
+        ? `pb-0.5 border-b-2 transition-colors ${
+            isActive
+              ? "border-emerald-400 text-emerald-400 font-medium"
+              : "border-transparent hover:text-slate-100"
+          }`
+        : `px-2 py-1 rounded transition-colors ${
+            isActive ? "bg-slate-800 text-emerald-400 font-medium" : "hover:text-slate-100"
+          }`
+    }
+  >
+    {label}
+  </NavLink>
+);
+
 export const App: React.FC = () => {
+  const location = useLocation();
   const [showSetup, setShowSetup] = useState(false);
   const [checkingSetup, setCheckingSetup] = useState(true);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
@@ -94,12 +155,9 @@ export const App: React.FC = () => {
           </span>
           {/* Desktop nav */}
           <nav className="hidden md:flex gap-4 text-sm text-slate-300" data-testid="nav-main">
-            <Link to="/jobs" data-testid="nav-jobs">Jobs</Link>
-            <Link to="/new" data-testid="nav-new-analysis">New Analysis</Link>
-            <Link to="/settings" data-testid="nav-settings">Settings</Link>
-            <Link to="/training" data-testid="nav-training">Training</Link>
-            <Link to="/rules" data-testid="nav-rules">Detection Rules</Link>
-            <Link to="/hosts" data-testid="nav-global-hosts">Global Hosts</Link>
+            {NAV_ITEMS.map((item) => (
+              <MainNavLink key={item.to} {...item} variant="desktop" />
+            ))}
           </nav>
         </div>
         <div className="flex items-center gap-2">
@@ -107,7 +165,7 @@ export const App: React.FC = () => {
           <ThemeToggleButton />
           {/* Hamburger button (mobile only) */}
           <button
-            className="md:hidden text-slate-300 hover:text-white p-1"
+            className="md:hidden text-slate-300 hover:text-slate-50 p-1"
             onClick={() => setMobileNavOpen((v) => !v)}
             aria-label="Toggle navigation"
             data-testid="nav-hamburger"
@@ -123,15 +181,25 @@ export const App: React.FC = () => {
       {/* Mobile nav dropdown */}
       {mobileNavOpen && (
         <nav className="md:hidden border-b border-slate-800 bg-slate-900 px-4 py-3 flex flex-col gap-2 text-sm text-slate-300" data-testid="nav-mobile">
-          <Link to="/jobs" onClick={() => setMobileNavOpen(false)}>Jobs</Link>
-          <Link to="/new" onClick={() => setMobileNavOpen(false)}>New Analysis</Link>
-          <Link to="/settings" onClick={() => setMobileNavOpen(false)}>Settings</Link>
-          <Link to="/training" onClick={() => setMobileNavOpen(false)}>Training</Link>
-          <Link to="/rules" onClick={() => setMobileNavOpen(false)}>Detection Rules</Link>
-          <Link to="/hosts" onClick={() => setMobileNavOpen(false)}>Global Hosts</Link>
+          {NAV_ITEMS.map((item) => (
+            <MainNavLink
+              key={item.to}
+              to={item.to}
+              label={item.label}
+              /* suffixed so desktop + mobile testids stay unique in the DOM */
+              testId={`${item.testId}-mobile`}
+              variant="mobile"
+              onClick={() => setMobileNavOpen(false)}
+            />
+          ))}
         </nav>
       )}
       <main className="p-3 sm:p-6" data-testid="main-content">
+        {/* Boundary is keyed on the path so navigating away from a broken route
+            clears the error; Suspense sits inside so a lazy-chunk rejection is
+            caught here rather than unmounting the whole app. */}
+        <RouteErrorBoundary resetKey={location.pathname}>
+        <Suspense fallback={<RouteFallback />}>
         <Routes>
           {/* / → redirect to /jobs */}
           <Route path="/" element={<Navigate to="/jobs" replace />} />
@@ -163,6 +231,10 @@ export const App: React.FC = () => {
           <Route path="/jobs/:jobId/timeline" element={<TimelinePage />} />
           <Route path="/jobs/:jobId/iocs" element={<IocsListPage />} />
           <Route path="/jobs/:jobId/files" element={<FilesListPage />} />
+          <Route path="/jobs/:jobId/streams" element={<StreamsPage />} />
+          <Route path="/jobs/:jobId/raw-events" element={<EventsExplorerPage />} />
+          <Route path="/jobs/:jobId/binary" element={<BinaryAnalysisPage />} />
+          <Route path="/jobs/:jobId/sigma" element={<SigmaPage />} />
           <Route path="/jobs/:jobId/storyline" element={<StorylinePage />} />
           <Route path="/jobs/:jobId/graph" element={<AttackGraphPage />} />
           <Route path="/jobs/:jobId/artifacts" element={<ArtifactsPage />} />
@@ -187,6 +259,8 @@ export const App: React.FC = () => {
           <Route path="/hosts" element={<GlobalHostsPage />} />
           <Route path="/hosts/:ip" element={<GlobalHostDetailPage />} />
         </Routes>
+        </Suspense>
+        </RouteErrorBoundary>
       </main>
     </div>
     </ToastProvider>

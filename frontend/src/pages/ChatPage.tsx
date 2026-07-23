@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect } from "react";
-import { useParams, Link, useSearchParams } from "react-router-dom";
+import { useParams, useSearchParams } from "react-router-dom";
 import { JobSubPageNav } from "../components/JobSubPageNav";
 import { useQuery } from "@tanstack/react-query";
 import { ChatPanel } from "../components/ChatPanel";
@@ -9,7 +9,8 @@ import {
   type KBDocumentOut,
   type KBDocType,
 } from "../api";
-import { PageHelpPanel, labelHint, usePageHelp } from "../components/PageHelpPanel";
+import { HelpPanel, labelHint, usePageHelp } from "../components/HelpPanel";
+import { JobBreadcrumbs } from "../components/Breadcrumbs";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -184,20 +185,10 @@ export const ChatPage: React.FC = () => {
   return (
     <div className="space-y-4">
       {/* Breadcrumb + heading */}
-      <div className="flex items-center gap-2 text-sm text-slate-400">
-        <Link to={`/jobs/${jobId}`} className="hover:text-slate-200 transition-colors">
-          ← Back to Job
-        </Link>
-        {job?.job_name && (
-          <>
-            <span className="text-slate-600">·</span>
-            <span className="text-slate-500 truncate max-w-xs">{job.job_name}</span>
-          </>
-        )}
-      </div>
+      <JobBreadcrumbs jobId={jobId} trail={[{ label: "AI Chat" }]} />
 
       <h1 className={`text-xl font-semibold ${labelHint("chat", activeHelpField)}`} onClick={() => toggleHelp("chat")}>AI Chat</h1>
-      <PageHelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
+      <HelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
 
       {/* Not ready state */}
       {!isTerminal && (
