@@ -16,7 +16,10 @@ ENV AIPAM_CAPA_RULES_DIR=/opt/aipam/rules/capa \
 WORKDIR /app
 
 # System deps: curl for healthcheck, gnupg/ca-certs for Zeek repo,
-# zeek + suricata for the pipeline stages.
+# zeek + suricata for the pipeline stages, tshark + tcpdump for the Streams
+# forensics endpoints (follow-stream transcript, per-packet hexdump, carving).
+# Preseed wireshark-common so the tshark install stays non-interactive; setuid
+# is unnecessary since we only read PCAP files, never capture live traffic.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
@@ -26,10 +29,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && curl -fsSL https://download.opensuse.org/repositories/security:zeek/Debian_12/Release.key \
        | gpg --dearmor > /etc/apt/trusted.gpg.d/security_zeek.gpg \
     && apt-get update \
-    && apt-get install -y --no-install-recommends \
+    && echo "wireshark-common wireshark-common/install-setuid boolean false" | debconf-set-selections \
+    && DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
        zeek \
        suricata \
        suricata-update \
+       tshark \
+       tcpdump \
     && rm -rf /var/lib/apt/lists/*
 
 # Ensure zeek is on PATH
