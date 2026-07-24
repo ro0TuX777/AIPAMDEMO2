@@ -29,6 +29,7 @@ from backend.app.api import (
     rules,
     annotations,
     reports,
+    sigma,
     slices,
     system,
     temporal,
@@ -146,6 +147,7 @@ def create_app() -> FastAPI:
     app.include_router(proofs.router, prefix="/api/v1")
     app.include_router(investigation.router, prefix="/api/v1")
     app.include_router(binary.router, prefix="/api/v1")
+    app.include_router(sigma.router, prefix="/api/v1")
 
     from backend.app.api import admin, correlation
     app.include_router(admin.router, prefix="/api/v1")
