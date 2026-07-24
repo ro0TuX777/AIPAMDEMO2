@@ -1,0 +1,737 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AIPAM Training — AI-Powered Advanced Packet Analysis for Malware Detection</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{--bg:#0f172a;--card:#1e293b;--accent:#3b82f6;--accent2:#8b5cf6;--green:#10b981;--amber:#f59e0b;--red:#ef4444;--text:#e2e8f0;--muted:#94a3b8;--border:#334155;--slide-w:1200px}
+html{font-family:'Segoe UI',system-ui,-apple-system,sans-serif;background:var(--bg);color:var(--text);scroll-behavior:smooth}
+body{display:flex;flex-direction:column;align-items:center;padding:0}
+/* Navigation */
+nav{position:fixed;top:0;left:0;right:0;background:rgba(15,23,42,.95);backdrop-filter:blur(12px);border-bottom:1px solid var(--border);z-index:100;display:flex;align-items:center;justify-content:space-between;padding:8px 24px;font-size:14px}
+nav .brand{font-weight:700;color:var(--accent);font-size:18px;letter-spacing:1px}
+nav .controls{display:flex;gap:8px;align-items:center}
+nav button{background:var(--card);color:var(--text);border:1px solid var(--border);border-radius:6px;padding:6px 14px;cursor:pointer;font-size:13px;transition:.2s}
+nav button:hover{background:var(--accent);border-color:var(--accent);color:#fff}
+nav .slide-counter{color:var(--muted);min-width:60px;text-align:center}
+/* Slides */
+.slide{width:100%;max-width:var(--slide-w);min-height:100vh;display:flex;flex-direction:column;justify-content:center;padding:100px 48px 60px;border-bottom:1px solid var(--border)}
+.slide h1{font-size:42px;font-weight:800;margin-bottom:12px;background:linear-gradient(135deg,var(--accent),var(--accent2));-webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.slide h2{font-size:32px;font-weight:700;margin-bottom:8px;color:var(--accent)}
+.slide h3{font-size:22px;font-weight:600;margin:18px 0 8px;color:var(--green)}
+.slide .subtitle{font-size:20px;color:var(--muted);margin-bottom:28px}
+.slide p,.slide li{font-size:17px;line-height:1.7;color:var(--text)}
+.slide ul,.slide ol{padding-left:24px;margin:10px 0}
+.slide li{margin:6px 0}
+.slide .badge{display:inline-block;padding:3px 10px;border-radius:12px;font-size:13px;font-weight:600;margin:0 4px}
+.badge-blue{background:#1e3a5f;color:#60a5fa}
+.badge-green{background:#064e3b;color:#34d399}
+.badge-amber{background:#451a03;color:#fbbf24}
+.badge-purple{background:#2e1065;color:#a78bfa}
+.badge-red{background:#450a0a;color:#f87171}
+.card-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:18px;margin:20px 0}
+.card{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:22px;transition:.2s}
+.card:hover{border-color:var(--accent);transform:translateY(-2px)}
+.card h4{font-size:17px;font-weight:700;margin-bottom:6px;color:var(--accent)}
+.card p{font-size:14px;color:var(--muted);line-height:1.5}
+table{width:100%;border-collapse:collapse;margin:16px 0;font-size:15px}
+th{background:var(--card);text-align:left;padding:10px 14px;border:1px solid var(--border);color:var(--accent);font-weight:600}
+td{padding:10px 14px;border:1px solid var(--border);color:var(--text)}
+tr:hover td{background:rgba(59,130,246,.05)}
+.diagram{background:var(--card);border:1px solid var(--border);border-radius:12px;padding:24px;margin:20px 0;font-family:'Courier New',monospace;font-size:14px;line-height:1.6;white-space:pre;overflow-x:auto;color:var(--green)}
+.highlight{background:rgba(59,130,246,.1);border-left:4px solid var(--accent);padding:16px 20px;border-radius:0 8px 8px 0;margin:16px 0}
+.highlight strong{color:var(--accent)}
+.two-col{display:grid;grid-template-columns:1fr 1fr;gap:28px;margin:16px 0}
+@media(max-width:800px){.two-col,.card-grid{grid-template-columns:1fr}.slide{padding:80px 20px 40px}.slide h1{font-size:28px}.slide h2{font-size:24px}}
+.step-list{counter-reset:steps;list-style:none;padding-left:0}
+.step-list li{counter-increment:steps;position:relative;padding-left:44px;margin:14px 0}
+.step-list li::before{content:counter(steps);position:absolute;left:0;top:0;width:32px;height:32px;background:var(--accent);color:#fff;border-radius:50%;display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px}
+.emoji{font-size:28px;margin-right:8px}
+.tag{display:inline-block;padding:2px 8px;border-radius:6px;font-size:12px;font-weight:600;margin:2px}
+.pipeline-flow{display:flex;align-items:center;gap:0;margin:20px 0;flex-wrap:wrap}
+.pipeline-stage{background:var(--card);border:1px solid var(--border);border-radius:10px;padding:14px 18px;text-align:center;min-width:120px}
+.pipeline-stage .stage-name{font-weight:700;color:var(--accent);font-size:15px}
+.pipeline-stage .stage-tool{font-size:12px;color:var(--muted);margin-top:4px}
+.pipeline-arrow{font-size:24px;color:var(--muted);padding:0 4px}
+.title-slide{text-align:center;justify-content:center}
+.title-slide h1{font-size:56px;margin-bottom:16px}
+.title-slide .subtitle{font-size:24px}
+.title-slide .version{margin-top:20px;font-size:16px;color:var(--muted)}
+/* Slide mode: hide all, show active */
+.slide{display:none}
+.slide.active{display:flex}
+/* Scroll mode: show all */
+body.scroll-mode .slide{display:flex}
+kbd{background:var(--card);border:1px solid var(--border);border-radius:4px;padding:2px 8px;font-size:13px;font-family:inherit}
+</style>
+</head>
+<body>
+
+<!-- Navigation -->
+<nav>
+  <span class="brand">AIPAM Training</span>
+  <div class="controls">
+    <button id="prevBtn">◀ Prev</button>
+    <span class="slide-counter"><span id="current">1</span> / <span id="total">12</span></span>
+    <button id="nextBtn">Next ▶</button>
+    <button id="viewBtn">📄 Scroll View</button>
+  </div>
+</nav>
+
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- SLIDE 1: Title -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<div class="slide title-slide" id="slide-1">
+  <h1>AIPAM</h1>
+  <div class="subtitle">AI-Powered Advanced Packet Analysis for Malware Detection</div>
+  <p style="font-size:18px;color:var(--muted);margin-top:12px">User Training &amp; Feature Walkthrough</p>
+  <div class="version">
+    Version 2.1 &nbsp;|&nbsp; Air-Gapped Ready &nbsp;|&nbsp; Llama 3.1 8B AI Model<br>
+    <span style="font-size:14px;color:var(--border)">Use arrow keys or buttons to navigate</span>
+  </div>
+</div>
+
+<!-- SLIDE 2: What is AIPAM? -->
+<div class="slide" id="slide-2">
+  <h2>What is AIPAM?</h2>
+  <p class="subtitle">An AI-driven network forensics platform that automates threat detection</p>
+  <div class="card-grid">
+    <div class="card">
+      <h4>🔍 Automatic Malware Detection</h4>
+      <p>Upload any PCAP file and AIPAM automatically analyzes network traffic to identify malware, C2 communication, data exfiltration, and more.</p>
+    </div>
+    <div class="card">
+      <h4>💬 AI Chat Assistant</h4>
+      <p>Ask follow-up questions in plain English — get cited, evidence-backed answers grounded in the actual analysis data.</p>
+    </div>
+    <div class="card">
+      <h4>📊 Automated Reports</h4>
+      <p>Generate analyst or executive reports with MITRE ATT&CK mappings, IOC lists, attack timelines, and remediation steps.</p>
+    </div>
+    <div class="card">
+      <h4>🔒 100% Air-Gapped</h4>
+      <p>Runs completely offline. No data ever leaves your network. The AI model runs locally via Ollama.</p>
+    </div>
+  </div>
+  <h3>Who Is This For?</h3>
+  <ul>
+    <li><strong>Security Analysts</strong> — faster threat analysis and investigation</li>
+    <li><strong>SOC Teams</strong> — reduce investigation time with automated triage</li>
+    <li><strong>Incident Responders</strong> — quick malware identification and containment guidance</li>
+    <li><strong>Security Researchers</strong> — study network-based threats with AI assistance</li>
+  </ul>
+</div>
+
+<!-- SLIDE 3: Architecture -->
+<div class="slide" id="slide-3">
+  <h2>System Architecture</h2>
+  <p class="subtitle">Containerized microservices running via Docker Compose</p>
+  <table>
+    <tr><th>Component</th><th>What It Does</th><th>Technology</th></tr>
+    <tr><td><span class="badge badge-blue">Frontend</span></td><td>Web interface — the analyst cockpit</td><td>React + TypeScript + Tailwind CSS</td></tr>
+    <tr><td><span class="badge badge-green">Backend (API)</span></td><td>REST API — manages jobs, data, and integrations</td><td>Python FastAPI</td></tr>
+    <tr><td><span class="badge badge-purple">Worker</span></td><td>Background pipeline — Zeek, Suricata, sensors, AI</td><td>Celery + Zeek + Suricata</td></tr>
+    <tr><td><span class="badge badge-amber">Redis</span></td><td>Job queue &amp; real-time event bus</td><td>Redis 7</td></tr>
+    <tr><td><span class="badge badge-red">Ollama</span></td><td>Local AI model inference</td><td>Ollama + Llama 3.1 8B</td></tr>
+  </table>
+  <h3>Optional Add-ons</h3>
+  <div class="two-col">
+    <div class="card">
+      <h4>Arkime (Packet Investigation)</h4>
+      <p>Full-packet capture viewer for deep-dive session analysis. Enable with: <code>docker compose --profile arkime up -d</code></p>
+    </div>
+    <div class="card">
+      <h4>Security Onion Integration</h4>
+      <p>Pull PCAPs from or push analysis results to your Security Onion deployment.</p>
+    </div>
+  </div>
+  <div class="diagram">┌──────────┐    ┌──────────┐    ┌──────────┐    ┌──────────┐
+│ Browser  │───▶│ Frontend │───▶│ Backend  │───▶│  Ollama  │
+│(Analyst) │    │ (nginx)  │    │ (API)    │    │  (LLM)   │
+└──────────┘    └──────────┘    └────┬─────┘    └──────────┘
+                                     │
+                          ┌──────────┼──────────┐
+                          ▼          ▼          ▼
+                    ┌──────────┐ ┌───────┐ ┌────────┐
+                    │  Worker  │ │ Redis │ │ SQLite │
+                    │(Pipeline)│ │(Queue)│ │  (DB)  │
+                    └────┬─────┘ └───────┘ └────────┘
+                         │
+                ┌────────┼────────┐
+                ▼        ▼        ▼
+             ┌──────┐ ┌───────┐ ┌────────┐
+             │ Zeek │ │Suric. │ │Sensors │
+             └──────┘ └───────┘ └────────┘</div>
+</div>
+
+<!-- SLIDE 4: UI Navigation -->
+<div class="slide" id="slide-4">
+  <h2>Getting Started — UI Navigation</h2>
+  <p class="subtitle">The AIPAM web interface at http://&lt;server&gt;:80</p>
+  <h3>Main Navigation Bar</h3>
+  <table>
+    <tr><th>Page</th><th>Purpose</th></tr>
+    <tr><td><strong>Jobs</strong></td><td>View all analysis jobs — filter by status, sort by date, click to drill in</td></tr>
+    <tr><td><strong>New Analysis</strong></td><td>Upload PCAPs and create new analysis jobs</td></tr>
+    <tr><td><strong>Settings</strong></td><td>Configure LLM, integrations (Security Onion, Arkime), and system parameters</td></tr>
+    <tr><td><strong>Training</strong></td><td>Manage AI model fine-tuning and training data</td></tr>
+    <tr><td><strong>Detection Rules</strong></td><td>Manage Suricata and YARA rule sets</td></tr>
+    <tr><td><strong>Global Hosts</strong></td><td>Cross-job host forensics — see a host's history across all analyses</td></tr>
+  </table>
+  <h3>Within a Job — Bottom Tab Bar (17 Tabs)</h3>
+  <p>Once a job completes, you'll see a <strong>tab bar at the bottom of the job detail page</strong>. Each tab represents a different lens on the analysis. The next slides explain each tab in detail.</p>
+  <table>
+    <tr><th>#</th><th>Tab</th><th>Purpose (Quick Summary)</th></tr>
+    <tr><td>1</td><td><strong>🔎 Investigate</strong></td><td>Unified priority-ranked triage queue — the starting point for analyst review</td></tr>
+    <tr><td>2</td><td><strong>Theories</strong></td><td>Ranked attack hypotheses (C2, exfil, recon, etc.) with evidence scores</td></tr>
+    <tr><td>3</td><td><strong>Slices</strong></td><td>Grouped attack threads — related alerts/findings/connections bundled together</td></tr>
+    <tr><td>4</td><td><strong>Why Unusual?</strong></td><td>Statistical anomaly annotations — why specific hosts deviate from baseline</td></tr>
+    <tr><td>5</td><td><strong>Hosts</strong></td><td>All hosts seen in traffic with connection counts, roles, and alert flags</td></tr>
+    <tr><td>6</td><td><strong>Alerts</strong></td><td>Suricata IDS alerts with severity, signatures, and source/dest details</td></tr>
+    <tr><td>7</td><td><strong>Findings</strong></td><td>AI-generated findings with MITRE ATT&CK mappings and confidence scores</td></tr>
+    <tr><td>8</td><td><strong>Files</strong></td><td>Extracted files — entropy, hashes, YARA matches, MIME types</td></tr>
+    <tr><td>9</td><td><strong>Timeline</strong></td><td>Chronological view of all events across the analysis</td></tr>
+    <tr><td>10</td><td><strong>IOCs</strong></td><td>Indicators of Compromise — malicious IPs, domains, hashes, JA3s</td></tr>
+    <tr><td>11</td><td><strong>🕒 Correlations</strong></td><td>Log ↔ PCAP temporal matching — links host telemetry to network evidence</td></tr>
+    <tr><td>12</td><td><strong>Storyline</strong></td><td>Kill-chain narrative reconstruction of the attack sequence</td></tr>
+    <tr><td>13</td><td><strong>Graph</strong></td><td>Interactive D3 force-directed graph connecting all evidence types</td></tr>
+    <tr><td>14</td><td><strong>Artifacts</strong></td><td>Downloadable evidence packages (ZIP bundles) for archival or handoff</td></tr>
+    <tr><td>15</td><td><strong>AI Chat</strong></td><td>RAG-powered conversational investigation assistant</td></tr>
+    <tr><td>16</td><td><strong>Report</strong></td><td>Generate analyst-grade or executive reports with full MITRE mappings</td></tr>
+    <tr><td>17</td><td><strong>📋 Build Case</strong></td><td>Proof Builder — curate evidence, assign roles, generate formal narratives</td></tr>
+  </table>
+</div>
+
+<!-- SLIDE 4b: Deep Dive — Investigate, Theories, Slices, Why Unusual -->
+<div class="slide" id="slide-4b">
+  <h2>Tab Deep Dive — Analysis &amp; Triage</h2>
+  <p class="subtitle">The tabs that help you understand <em>what happened</em> and prioritize investigation</p>
+
+  <div class="card-grid">
+    <div class="card">
+      <h4>🔎 Investigate (Investigation Queue)</h4>
+      <p>Your <strong>starting point</strong> for analyst review. This unified queue merges findings, alerts, and theories into a single priority-ranked list.</p>
+      <ul style="font-size:13px;margin-top:8px;color:var(--text)">
+        <li><strong>Composite score</strong> — weighted blend of severity (25%), confidence (20%), corroboration (20%), blast radius (15%), recency (10%), and feedback history (10%)</li>
+        <li><strong>Status workflow</strong>: Unreviewed → Confirmed / False Positive / Needs Review / Deferred</li>
+        <li><strong>Evidence Drawer</strong> — click any row to expand and see host context, related IOCs, connections, and timeline</li>
+        <li><strong>Bulk actions</strong> — select multiple items and confirm/dismiss/escalate at once</li>
+        <li><strong>Filters</strong> — by type (finding/alert/theory), severity, MITRE tactic, host, corroboration status</li>
+      </ul>
+      <div class="highlight" style="margin-top:10px;font-size:13px">
+        <strong>Why it matters:</strong> Instead of jumping between alerts, findings, and theories separately, the Investigation Queue gives you one ranked list sorted by urgency — so you always work on the most critical item first.
+      </div>
+    </div>
+
+    <div class="card">
+      <h4>💡 Theories (Theory of the Case)</h4>
+      <p>Automatically generates and ranks <strong>attack hypotheses</strong> from evidence — 100% deterministic, no LLM hallucination.</p>
+      <ul style="font-size:13px;margin-top:8px;color:var(--text)">
+        <li><strong>Hypothesis types</strong>: C2 Beaconing, Data Exfiltration, Malware Delivery, Reconnaissance, Lateral Movement, Admin Tools, Ransomware, Credential Theft, Benign/Normal</li>
+        <li>Each theory shows a <strong>score (0–100%)</strong> and <strong>confidence level</strong> (High/Medium/Low)</li>
+        <li><strong>Supporting vs Contradicting evidence</strong> displayed as clickable chips linking to specific alerts, findings, and IOCs</li>
+        <li><strong>Score breakdown</strong> — see exactly how the score was computed (% from findings, alerts, IOCs)</li>
+        <li><strong>"Explain" button</strong> — get an LLM-powered plain-language explanation of the theory</li>
+        <li><strong>Host-scoped</strong> — switch to per-host view to see what theories apply to a specific IP</li>
+      </ul>
+      <div class="highlight" style="margin-top:10px;font-size:13px">
+        <strong>Why it matters:</strong> Theories answer the "big picture" question: <em>"What type of attack is this?"</em> The ranked list helps analysts quickly identify the most likely scenario and focus investigation.
+      </div>
+    </div>
+
+    <div class="card">
+      <h4>🧩 Slices (Incident Slices)</h4>
+      <p>Groups related alerts, findings, and connections into <strong>logical attack threads</strong> — showing which events belong together.</p>
+      <ul style="font-size:13px;margin-top:8px;color:var(--text)">
+        <li><strong>Grouping logic</strong>: seeded from community_id (network conversation), merged by shared host IPs + time proximity</li>
+        <li><strong>Types</strong>: Attack Thread, Recon Phase, C2 Session, Lateral Movement, Exfiltration, Misc</li>
+        <li><strong>Each slice shows</strong>: severity, confidence bar, time range, member alerts/findings/IOCs as clickable chips</li>
+        <li><strong>Cross-linked to Theories</strong> — see which theories this slice supports</li>
+        <li><strong>Severity distribution chart</strong> at the top for quick overview</li>
+      </ul>
+      <div class="highlight" style="margin-top:10px;font-size:13px">
+        <strong>Why it matters:</strong> Raw alerts are noisy. Slices group related events into coherent "attack threads" so you can see <em>"these 5 alerts + 2 findings are all part of the same C2 session"</em> instead of reviewing them individually.
+      </div>
+    </div>
+
+    <div class="card">
+      <h4>⚡ Why Unusual? (Annotations)</h4>
+      <p>Shows <strong>statistical outliers</strong> — hosts whose network behavior deviates significantly from the job-wide baseline.</p>
+      <ul style="font-size:13px;margin-top:8px;color:var(--text)">
+        <li><strong>Metrics analyzed</strong>: connection count, bytes sent/received, unique destinations, unique services, alert rate, DNS query count, finding count</li>
+        <li><strong>Deviation gauge</strong> — visual comparison of observed value vs baseline (e.g., "12× more connections than median")</li>
+        <li><strong>Baseline comparison bar</strong> — side-by-side chart showing this host vs the population</li>
+        <li><strong>Group by host</strong> toggle — see all anomalies for each host together</li>
+        <li><strong>Related evidence</strong> — linked alerts and findings that explain why this host stands out</li>
+      </ul>
+      <div class="highlight" style="margin-top:10px;font-size:13px">
+        <strong>Why it matters:</strong> Even without IDS alerts, a host sending 50× more data than average is suspicious. Annotations surface these statistical anomalies that rule-based detection might miss.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 4c: Deep Dive — Context & Narrative Tabs -->
+<div class="slide" id="slide-4c">
+  <h2>Tab Deep Dive — Context &amp; Narrative</h2>
+  <p class="subtitle">Tabs that help you <em>visualize, reconstruct,</em> and <em>document</em> the attack</p>
+
+  <div class="card-grid">
+    <div class="card">
+      <h4>📖 Storyline (Kill-Chain Reconstruction)</h4>
+      <p>Reconstructs the attack as a <strong>kill-chain narrative</strong> — mapping evidence to stages like Reconnaissance → Delivery → Exploitation → C2 → Exfiltration.</p>
+      <ul style="font-size:13px;margin-top:8px;color:var(--text)">
+        <li><strong>Stages</strong>: Each kill-chain phase shows node/edge counts, confidence score, summary, and involved host IPs</li>
+        <li><strong>Host timelines</strong> — see which stages each host participated in and when</li>
+        <li><strong>Auto-generated narrative</strong> — a plain-English reconstruction: <em>"At 14:32, host 10.0.0.5 initiated reconnaissance…"</em></li>
+        <li><strong>Time-bounded</strong> — each stage includes start/end timestamps for temporal analysis</li>
+      </ul>
+      <div class="highlight" style="margin-top:10px;font-size:13px">
+        <strong>Why it matters:</strong> Storyline transforms scattered evidence into a coherent chronological narrative — essential for incident reports and briefing leadership on "what happened."
+      </div>
+    </div>
+
+    <div class="card">
+      <h4>🕸️ Graph (Attack Graph)</h4>
+      <p>An interactive <strong>D3 force-directed graph</strong> that visually connects hosts, IOCs, alerts, findings, and files.</p>
+      <ul style="font-size:13px;margin-top:8px;color:var(--text)">
+        <li><strong>Two modes</strong>: <em>Evidence Graph</em> (relationships between all evidence types) and <em>Topology</em> (network communication map)</li>
+        <li><strong>Interactive</strong> — drag, zoom, click nodes to see details, filter by node type</li>
+        <li><strong>Color-coded</strong> — node colors indicate type (host=blue, IOC=red, alert=amber, finding=purple)</li>
+        <li><strong>Narrative button</strong> — generates an LLM-powered description of the graph relationships</li>
+        <li><strong>Export</strong> — save the graph as a PNG image for reports</li>
+      </ul>
+      <div class="highlight" style="margin-top:10px;font-size:13px">
+        <strong>Why it matters:</strong> The graph answers "how is everything connected?" at a glance — revealing lateral movement paths, shared IOCs, and multi-host attack patterns that tables cannot show.
+      </div>
+    </div>
+
+    <div class="card">
+      <h4>🔗 Correlations (Log ↔ PCAP Matching)</h4>
+      <p>Links <strong>host telemetry logs to network-level PCAP evidence</strong> using temporal proximity matching.</p>
+      <ul style="font-size:13px;margin-top:8px;color:var(--text)">
+        <li><strong>Temporal matching</strong> — correlates log events with network connections that occurred within configurable time windows</li>
+        <li><strong>Cross-source</strong> — bridges the gap between endpoint logs (syslog, event logs) and network captures</li>
+        <li><strong>Confidence scoring</strong> — each correlation includes a match confidence based on time proximity and shared hosts</li>
+      </ul>
+      <div class="highlight" style="margin-top:10px;font-size:13px">
+        <strong>Why it matters:</strong> Attackers leave traces in both logs and packets. Correlations automatically link these disparate data sources so you don't miss connections.
+      </div>
+    </div>
+
+    <div class="card">
+      <h4>📋 Build Case (Proof Builder)</h4>
+      <p>The analyst's <strong>evidence curation workspace</strong> for building formal incident narratives.</p>
+      <ul style="font-size:13px;margin-top:8px;color:var(--text)">
+        <li><strong>Pin evidence</strong> — drag alerts, findings, IOCs, and theories into your proof with roles: <span class="badge badge-green">Supports</span> <span class="badge badge-red">Contradicts</span> <span class="badge badge-blue">Context</span></li>
+        <li><strong>Three narrative modes</strong>:
+          <ul style="margin-top:4px">
+            <li><em>SOC Handoff</em> — Key Findings, Affected Systems, Recommended Actions</li>
+            <li><em>IR Technical</em> — Attack Path, Indicator Analysis, MITRE Mapping, Containment</li>
+            <li><em>Executive Summary</em> — Business Impact, Risk Assessment, Remediation Status</li>
+          </ul>
+        </li>
+        <li><strong>Generate narrative</strong> — LLM renders a polished markdown report from your curated evidence</li>
+        <li><strong>Export</strong> — download as Markdown or HTML for archival or handoff</li>
+      </ul>
+      <div class="highlight" style="margin-top:10px;font-size:13px">
+        <strong>Why it matters:</strong> Build Case bridges the gap between analysis and documentation. Instead of manually writing incident reports, you curate evidence and let the AI generate a structured narrative.
+      </div>
+    </div>
+
+    <div class="card">
+      <h4>📦 Artifacts (Evidence Packages)</h4>
+      <p>Downloadable <strong>self-contained ZIP bundles</strong> containing all evidence for a job — for archival, legal hold, or handoff to other teams.</p>
+      <ul style="font-size:13px;margin-top:8px;color:var(--text)">
+        <li><strong>Contents</strong>: alerts JSON, findings JSON, IOCs, host summaries, extracted files, PCAP metadata, reports</li>
+        <li><strong>Offline-ready</strong> — everything needed to review the case without access to AIPAM</li>
+        <li><strong>Chain of custody</strong> — includes SHA-256 hashes and timestamps for integrity verification</li>
+      </ul>
+      <div class="highlight" style="margin-top:10px;font-size:13px">
+        <strong>Why it matters:</strong> When you need to share findings with external teams, legal, or management, Artifacts give you a complete, portable evidence package.
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 5: Creating a Job -->
+<div class="slide" id="slide-5">
+  <h2>Creating an Analysis Job</h2>
+  <p class="subtitle">Three ways to get PCAPs into AIPAM for analysis</p>
+
+  <h3>Method 1: Direct Upload (Most Common)</h3>
+  <ol class="step-list">
+    <li>Navigate to <strong>New Analysis</strong> in the top nav</li>
+    <li>Drag &amp; drop your PCAP/PCAPNG files (or click to browse). Supports multiple files.</li>
+    <li>Choose an <strong>Execution Profile</strong> (see table below)</li>
+    <li>Optionally add a <strong>Job Name</strong> and <strong>Notes</strong> for context</li>
+    <li>Click <strong>Start Analysis</strong> — the job is queued and processing begins</li>
+  </ol>
+
+  <h3>Method 2: Pull from Security Onion</h3>
+  <p>If Security Onion integration is configured, specify a <strong>time range</strong> and <strong>sensor filter</strong> — AIPAM exports matching packets directly from SO and creates a job automatically.</p>
+
+  <h3>Method 3: Pull from Arkime</h3>
+  <p>If Arkime is enabled, specify an <strong>Arkime filter expression</strong> and <strong>time range</strong> — AIPAM exports matching sessions as PCAP and starts analysis.</p>
+
+  <h3>Execution Profiles</h3>
+  <table>
+    <tr><th>Profile</th><th>Sensors Run</th><th>Use Case</th><th>Estimated Time</th></tr>
+    <tr>
+      <td><span class="badge badge-green">Triage</span></td>
+      <td>Zeek, Suricata, TLS Enrich, TI Matcher</td>
+      <td>Quick alert check — is this traffic interesting?</td>
+      <td>~1–3 minutes</td>
+    </tr>
+    <tr>
+      <td><span class="badge badge-blue">Standard</span></td>
+      <td>All Triage + Beaconing Detection + File Triage</td>
+      <td>Normal analysis — recommended for most jobs</td>
+      <td>~5–8 minutes</td>
+    </tr>
+    <tr>
+      <td><span class="badge badge-purple">Deep</span></td>
+      <td>All Standard + extended timeouts + CAPA analysis</td>
+      <td>Full forensic sweep — large PCAPs, thorough analysis</td>
+      <td>~15–90 minutes</td>
+    </tr>
+  </table>
+
+  <div class="highlight">
+    <strong>💡 Tip:</strong> Start with <strong>Triage</strong> for a quick look. If interesting, you can re-analyze the same job with <strong>Standard</strong> or <strong>Deep</strong> without re-uploading the PCAP.
+  </div>
+</div>
+
+<!-- SLIDE 6: Pipeline -->
+<div class="slide" id="slide-6">
+  <h2>The Analysis Pipeline</h2>
+  <p class="subtitle">What happens after you submit a job</p>
+
+  <div class="pipeline-flow">
+    <div class="pipeline-stage"><div class="stage-name">① Validate</div><div class="stage-tool">Input check + PCAP hash</div></div>
+    <span class="pipeline-arrow">→</span>
+    <div class="pipeline-stage"><div class="stage-name">② Zeek</div><div class="stage-tool">Connection logs, DNS, TLS, HTTP, file carving</div></div>
+    <span class="pipeline-arrow">→</span>
+    <div class="pipeline-stage"><div class="stage-name">③ Suricata</div><div class="stage-tool">IDS alerts (eve.json)</div></div>
+    <span class="pipeline-arrow">→</span>
+    <div class="pipeline-stage"><div class="stage-name">④ Sensors</div><div class="stage-tool">TLS, Beaconing, File Triage, TI Match</div></div>
+    <span class="pipeline-arrow">→</span>
+    <div class="pipeline-stage"><div class="stage-name">⑤ Correlate</div><div class="stage-tool">Merge &amp; normalize findings</div></div>
+    <span class="pipeline-arrow">→</span>
+    <div class="pipeline-stage"><div class="stage-name">⑥ AI Analysis</div><div class="stage-tool">LLM triage + deep reasoning</div></div>
+    <span class="pipeline-arrow">→</span>
+    <div class="pipeline-stage"><div class="stage-name">⑦ Report</div><div class="stage-tool">Theories, storyline, IOCs</div></div>
+  </div>
+
+  <h3>Sensor Details</h3>
+  <table>
+    <tr><th>Sensor</th><th>What It Does</th><th>Profiles</th></tr>
+    <tr><td><strong>Zeek</strong></td><td>Extracts connection logs, DNS queries, HTTP requests, TLS metadata, file carving, community_id</td><td>All</td></tr>
+    <tr><td><strong>Suricata</strong></td><td>Runs IDS rules against traffic — produces alerts with signatures and severity</td><td>All</td></tr>
+    <tr><td><strong>TLS Enrich</strong></td><td>JA3/JA3S fingerprint computation, certificate analysis, SNI extraction</td><td>All</td></tr>
+    <tr><td><strong>TI Matcher</strong></td><td>Matches domains, IPs, hashes, JA3 against offline threat intelligence feeds</td><td>All</td></tr>
+    <tr><td><strong>Beaconing</strong></td><td>Detects periodic C2 beaconing, low-data exfiltration, DGA domain entropy</td><td>Standard, Deep</td></tr>
+    <tr><td><strong>File Triage</strong></td><td>YARA rules, entropy analysis, PE metadata, hash extraction for carved files</td><td>Standard, Deep</td></tr>
+    <tr><td><strong>CAPA</strong></td><td>Capability analysis of extracted executables (Mandiant CAPA)</td><td>Deep</td></tr>
+  </table>
+
+  <h3>Real-Time Progress</h3>
+  <p>While a job is running, the Job Detail page shows <strong>live pipeline progress</strong> via Server-Sent Events (SSE). You'll see each stage transition from pending → running → completed, and get <strong>early alert toasts</strong> for critical findings as they're discovered.</p>
+</div>
+
+<!-- SLIDE 7: Investigation Workflow -->
+<div class="slide" id="slide-7">
+  <h2>Investigation Workflow</h2>
+  <p class="subtitle">How to work through an analysis job once it completes</p>
+
+  <ol class="step-list">
+    <li><strong>Start with the Summary</strong> — Read the headline, threat level, and top signals. This tells you whether the traffic is interesting.</li>
+    <li><strong>Check Alerts</strong> — Review Suricata IDS alerts sorted by severity. Critical and high alerts need immediate attention.</li>
+    <li><strong>Examine Findings</strong> — AI-generated findings explain <em>what</em> was found and <em>why</em> it matters. Each finding includes MITRE ATT&CK technique mappings and a confidence score. Click "Explain" for an AI-powered plain-language explanation.</li>
+    <li><strong>Investigate Hosts</strong> — Drill into specific hosts. Each host page shows connections, DNS queries, TLS sessions, alerts, and extracted files for that host.</li>
+    <li><strong>Review IOCs</strong> — Check Indicators of Compromise: malicious IPs, domains, file hashes, JA3 fingerprints. These can be exported to your blocklists.</li>
+    <li><strong>Explore the Timeline</strong> — See events in chronological order to understand the attack sequence.</li>
+    <li><strong>Read Theories</strong> — AI-generated attack theories provide narrative explanations of what likely happened and which MITRE techniques were used.</li>
+    <li><strong>Use the Attack Graph</strong> — The visual graph connects hosts, alerts, findings, and IOCs to show relationships at a glance.</li>
+  </ol>
+
+  <h3>Investigation Queue — HITL Review</h3>
+  <p>The <strong>Investigation Queue</strong> is a human-in-the-loop (HITL) workflow where analysts triage findings and alerts:</p>
+  <div class="two-col">
+    <div class="card">
+      <h4>Status Labels</h4>
+      <p><span class="badge badge-amber">New</span> Needs review<br>
+         <span class="badge badge-blue">In Progress</span> Under investigation<br>
+         <span class="badge badge-green">Confirmed</span> Verified true positive<br>
+         <span class="badge badge-red">False Positive</span> Ruled out<br>
+         <span class="badge badge-purple">Escalated</span> Sent to senior analyst</p>
+    </div>
+    <div class="card">
+      <h4>Why HITL Matters</h4>
+      <p>AI findings are suggestions, not verdicts. The investigation queue ensures every significant finding gets human review before it's included in reports or used to generate detection rules. Analyst decisions feed back into model training.</p>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 8: AI Chat -->
+<div class="slide" id="slide-8">
+  <h2>AI Chat Assistant</h2>
+  <p class="subtitle">Interactive investigation powered by RAG (Retrieval-Augmented Generation)</p>
+
+  <div class="two-col">
+    <div>
+      <h3>How It Works</h3>
+      <p>The chat assistant is scoped to the current job's data. It uses a <strong>3-source retrieval</strong> strategy:</p>
+      <ol>
+        <li><strong>Structured DB Lookup</strong> — Extracts IPs, finding IDs, MITRE techniques from your question and queries the database directly</li>
+        <li><strong>Semantic Vector Search</strong> — Uses embeddings to find relevant evidence chunks from the analysis</li>
+        <li><strong>Knowledge Base</strong> — Searches any analyst-uploaded documents (asset inventories, network diagrams, policies)</li>
+      </ol>
+      <p style="margin-top:12px">Every response includes <strong>citations</strong> linking back to specific alerts, findings, hosts, or KB documents so you can verify the AI's claims.</p>
+    </div>
+    <div>
+      <h3>Example Questions</h3>
+      <div class="card" style="margin-bottom:10px">
+        <p>💬 "What hosts are communicating with known malicious IPs?"</p>
+      </div>
+      <div class="card" style="margin-bottom:10px">
+        <p>💬 "Identify any command-and-control (C2) communication patterns"</p>
+      </div>
+      <div class="card" style="margin-bottom:10px">
+        <p>💬 "Is there evidence of data exfiltration?"</p>
+      </div>
+      <div class="card" style="margin-bottom:10px">
+        <p>💬 "Which hosts have the most suspicious activity?"</p>
+      </div>
+      <div class="card" style="margin-bottom:10px">
+        <p>💬 "Explain finding FND-abc123 in simple terms"</p>
+      </div>
+      <div class="card">
+        <p>💬 "What MITRE ATT&CK techniques were observed?"</p>
+      </div>
+    </div>
+  </div>
+
+  <div class="highlight">
+    <strong>💡 Features:</strong> Streaming responses (tokens appear in real-time) • Conversation persistence (pick up where you left off) • Suggested follow-up questions • Evidence references with clickable links • Context-scoped to specific findings, hosts, or the full job
+  </div>
+</div>
+
+<!-- SLIDE 9: Reports & Evidence -->
+<div class="slide" id="slide-9">
+  <h2>Reports &amp; Evidence</h2>
+  <p class="subtitle">Generate professional reports and build evidence packages</p>
+
+  <h3>Report Types</h3>
+  <table>
+    <tr><th>Mode</th><th>Audience</th><th>Contents</th></tr>
+    <tr><td><span class="badge badge-blue">Analyst</span></td><td>SOC / IR team</td><td>Full technical detail: attack path, MITRE mapping, timeline, IOC list, host analysis, containment steps</td></tr>
+    <tr><td><span class="badge badge-purple">Executive</span></td><td>Leadership / management</td><td>Business impact summary, risk level, remediation status, key recommendations</td></tr>
+  </table>
+
+  <h3>Proof Builder</h3>
+  <p>The <strong>Proof Builder</strong> lets analysts curate evidence into a structured argument:</p>
+  <ol>
+    <li>Create a new proof with a title and conclusion</li>
+    <li>Pin evidence items (findings, alerts, theories, hosts, IOCs) with roles: <span class="badge badge-green">Supports</span> <span class="badge badge-red">Contradicts</span> <span class="badge badge-blue">Context</span></li>
+    <li>Choose a narrative mode: <strong>SOC Handoff</strong>, <strong>IR Technical</strong>, or <strong>Executive Summary</strong></li>
+    <li>Click <strong>Generate Narrative</strong> — the LLM produces a structured Markdown report grounded in your pinned evidence</li>
+    <li>Export as <strong>Markdown</strong> or <strong>HTML</strong> for tickets, emails, or incident management systems</li>
+  </ol>
+
+  <h3>Evidence Packages &amp; Artifacts</h3>
+  <div class="two-col">
+    <div class="card">
+      <h4>Evidence Package</h4>
+      <p>Export a zip containing all analysis artifacts: PCAPs, Zeek logs, Suricata alerts, sensor outputs, findings JSON, and the generated report. Ready for handoff or archival.</p>
+    </div>
+    <div class="card">
+      <h4>Temporal (Before/After) Analysis</h4>
+      <p>Upload multiple PCAPs with labels (e.g., "before" and "after" an incident) to compare traffic changes side-by-side on the Compare page.</p>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 10: Integrations -->
+<div class="slide" id="slide-10">
+  <h2>Integrations</h2>
+  <p class="subtitle">Connect AIPAM to your existing security stack</p>
+
+  <div class="card-grid">
+    <div class="card">
+      <h4>🧅 Security Onion</h4>
+      <p><strong>Pull PCAPs:</strong> Specify a time range and sensor filter — AIPAM authenticates to SO, creates a PCAP job, downloads the result, and starts analysis automatically.</p>
+      <p style="margin-top:8px"><strong>Push Results:</strong> Click "Push to Security Onion" on any completed job to upload PCAPs for re-analysis by SO's Suricata + Zeek stack.</p>
+      <p style="margin-top:8px"><em>Configure in Settings → Integrations: URL, username, password</em></p>
+    </div>
+    <div class="card">
+      <h4>🦌 Arkime</h4>
+      <p><strong>Import to Arkime:</strong> Click "Import to Arkime" on any completed job. AIPAM queues the PCAP for the Arkime importer, which indexes sessions into OpenSearch.</p>
+      <p style="margin-top:8px"><strong>Pivot Links:</strong> On any alert or finding, click the Arkime pivot button to open the relevant session directly in the Arkime viewer.</p>
+      <p style="margin-top:8px"><em>Enable with: docker compose --profile arkime up -d</em></p>
+    </div>
+    <div class="card">
+      <h4>📝 Detection Rules</h4>
+      <p><strong>Suricata Rules:</strong> AI-generated Suricata IDS rules from confirmed findings — ready to deploy to your sensors.</p>
+      <p style="margin-top:8px"><strong>Sigma Rules:</strong> Vendor-agnostic detection rules in Sigma YAML format for cross-platform deployment.</p>
+      <p style="margin-top:8px"><strong>YARA Rules:</strong> Manage YARA rule sets used by the File Triage sensor for file-based detection.</p>
+    </div>
+    <div class="card">
+      <h4>🔌 REST API</h4>
+      <p>Full REST API with 80+ endpoints. Automate job creation, retrieve findings programmatically, integrate with SOAR platforms, or build custom dashboards.</p>
+      <p style="margin-top:8px"><em>API docs: http://&lt;server&gt;:8000/api/v1/docs</em></p>
+    </div>
+  </div>
+</div>
+
+<!-- SLIDE 11: Settings & Configuration -->
+<div class="slide" id="slide-11">
+  <h2>Settings &amp; Configuration</h2>
+  <p class="subtitle">Tune AIPAM to your environment</p>
+
+  <h3>Settings Page Overview</h3>
+  <table>
+    <tr><th>Section</th><th>What You Can Configure</th></tr>
+    <tr><td><strong>LLM Settings</strong></td><td>Ollama endpoint URL, model name, temperature, max tokens, timeout</td></tr>
+    <tr><td><strong>Integrations</strong></td><td>Security Onion URL/credentials, Arkime enable/disable</td></tr>
+    <tr><td><strong>Pipeline</strong></td><td>Default execution profile, sensor timeouts, parallel worker count</td></tr>
+    <tr><td><strong>Threat Intel</strong></td><td>Manage offline TI feeds (STIX/TAXII bundles, CSV blocklists)</td></tr>
+    <tr><td><strong>Detection Rules</strong></td><td>Upload/manage Suricata (.rules) and YARA (.yar) rule files</td></tr>
+  </table>
+
+  <h3>Training &amp; Fine-Tuning</h3>
+  <div class="two-col">
+    <div class="card">
+      <h4>Training Data</h4>
+      <p>Analyst verdicts (confirmed findings, false positives, escalations) are automatically collected as training examples. Over time, this builds a dataset reflecting your environment's traffic patterns.</p>
+    </div>
+    <div class="card">
+      <h4>Knowledge Base</h4>
+      <p>Upload documents (PDFs, Markdown, text) that describe your network — asset inventories, network diagrams, security policies. The AI Chat retrieves from these during investigation.</p>
+    </div>
+  </div>
+
+  <h3>Environment Variables (.env)</h3>
+  <table>
+    <tr><th>Variable</th><th>Purpose</th></tr>
+    <tr><td><code>SECURITY_ONION_ENABLED=true</code></td><td>Enable Security Onion integration features</td></tr>
+    <tr><td><code>ARKIME_ENABLED=true</code></td><td>Enable Arkime import/pivot features</td></tr>
+    <tr><td><code>OLLAMA_BASE_URL</code></td><td>URL to Ollama API (default: http://ollama:11434)</td></tr>
+    <tr><td><code>CELERY_WORKER_CONCURRENCY</code></td><td>Number of parallel pipeline workers</td></tr>
+  </table>
+  <div class="highlight">
+    <strong>⚠️ Important:</strong> After changing <code>.env</code>, you must restart containers: <code>docker compose down &amp;&amp; docker compose up -d</code>. A simple <code>docker compose up -d</code> does NOT reload env vars for already-running containers.
+  </div>
+</div>
+
+<!-- SLIDE 12: Tips & Best Practices -->
+<div class="slide" id="slide-12">
+  <h2>Tips &amp; Best Practices</h2>
+  <p class="subtitle">Get the most out of AIPAM</p>
+
+  <div class="card-grid">
+    <div class="card">
+      <h4>🎯 Start with Triage</h4>
+      <p>Use the <strong>Triage</strong> execution profile first. It runs in 1–3 minutes and tells you if the traffic is worth deeper analysis. Re-analyze with Standard or Deep only if needed.</p>
+    </div>
+    <div class="card">
+      <h4>📝 Add Context</h4>
+      <p>Upload network diagrams, asset lists, and security policies to the <strong>Knowledge Base</strong>. The AI Chat uses these to provide environment-specific answers.</p>
+    </div>
+    <div class="card">
+      <h4>✅ Triage Findings</h4>
+      <p>Use the <strong>Investigation Queue</strong> to mark findings as Confirmed, False Positive, or Escalated. This builds training data that improves the AI over time.</p>
+    </div>
+    <div class="card">
+      <h4>🔗 Use Pivot Links</h4>
+      <p>When Arkime is enabled, use pivot links on alerts and findings to jump directly to the raw packet view for deep-dive analysis.</p>
+    </div>
+    <div class="card">
+      <h4>💬 Ask the AI</h4>
+      <p>Don't just read the findings — use the AI Chat to ask "what happened?", "is this a real threat?", or "what should I do next?" The more specific your question, the better the answer.</p>
+    </div>
+    <div class="card">
+      <h4>📦 Export Evidence</h4>
+      <p>Use the <strong>Proof Builder</strong> for formal incident reports. Use <strong>Evidence Packages</strong> for archival or handoff to other teams. Both are self-contained and offline-ready.</p>
+    </div>
+    <div class="card">
+      <h4>🔄 Keep Rules Updated</h4>
+      <p>Periodically update Suricata and YARA rules via the Detection Rules page. On air-gapped systems, transfer rule files via USB/removable media.</p>
+    </div>
+    <div class="card">
+      <h4>🖥️ Keyboard Shortcuts</h4>
+      <p><kbd>←</kbd> <kbd>→</kbd> Navigate slides &nbsp;|&nbsp; <kbd>F</kbd> Full screen &nbsp;|&nbsp; <kbd>Esc</kbd> Exit full screen &nbsp;|&nbsp; <kbd>V</kbd> Toggle scroll/slide view</p>
+    </div>
+  </div>
+
+  <div style="text-align:center;margin-top:30px;padding:20px;border-radius:8px;background:var(--accent)20">
+    <h3 style="color:var(--accent);margin-bottom:8px">Questions?</h3>
+    <p style="color:var(--muted)">Open the AI Chat on any job and ask: <em>"How do I use [feature]?"</em></p>
+    <p style="font-size:14px;color:var(--border);margin-top:12px">AIPAM — AI-Powered Advanced Packet Analysis for Malware Detection</p>
+  </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<!-- JAVASCRIPT: Navigation & Controls                                      -->
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<script>
+(function() {
+  const slides = document.querySelectorAll('.slide');
+  const totalEl = document.getElementById('total');
+  const currentEl = document.getElementById('current');
+  const prevBtn = document.getElementById('prevBtn');
+  const nextBtn = document.getElementById('nextBtn');
+  const viewBtn = document.getElementById('viewBtn');
+  let current = 0;
+  let slideMode = true; // true = slide view, false = scroll view
+
+  totalEl.textContent = slides.length;
+
+  function showSlide(n) {
+    if (!slideMode) return;
+    current = Math.max(0, Math.min(n, slides.length - 1));
+    slides.forEach((s, i) => {
+      s.classList.toggle('active', i === current);
+    });
+    currentEl.textContent = current + 1;
+    prevBtn.disabled = current === 0;
+    nextBtn.disabled = current === slides.length - 1;
+  }
+
+  function toggleView() {
+    slideMode = !slideMode;
+    document.body.classList.toggle('scroll-mode', !slideMode);
+    viewBtn.textContent = slideMode ? '📄 Scroll View' : '🖥️ Slide View';
+    if (slideMode) {
+      showSlide(current);
+    } else {
+      slides.forEach(s => s.classList.add('active'));
+      currentEl.textContent = '-';
+    }
+  }
+
+  // Button handlers
+  prevBtn.addEventListener('click', () => showSlide(current - 1));
+  nextBtn.addEventListener('click', () => showSlide(current + 1));
+  viewBtn.addEventListener('click', toggleView);
+
+  // Keyboard navigation
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'ArrowRight' || e.key === 'ArrowDown') { e.preventDefault(); showSlide(current + 1); }
+    else if (e.key === 'ArrowLeft' || e.key === 'ArrowUp') { e.preventDefault(); showSlide(current - 1); }
+    else if (e.key === 'f' || e.key === 'F') {
+      if (!document.fullscreenElement) document.documentElement.requestFullscreen();
+      else document.exitFullscreen();
+    }
+    else if (e.key === 'v' || e.key === 'V') toggleView();
+  });
+
+  // Init
+  showSlide(0);
+})();
+</script>
+</body>
+</html>

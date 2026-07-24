@@ -26,6 +26,7 @@
 - [Admin CLI (aipam-admin)](#admin-cli-aipam-admin)
 - [Environment Variables](#environment-variables)
 - [User Guide](#user-guide)
+- [Forensic Workbench API](#forensic-workbench-api)
 - [Roadmap](#roadmap)
 - [FAQ](#faq)
 
@@ -783,6 +784,337 @@ From any finding, generate **Suricata** or **Sigma** rules:
 
 ---
 
+## Forensic Workbench API
+
+Five SO-CRATES-inspired forensic capabilities are available as first-class REST endpoints under `/api/v1`. All endpoints require the `Authorization: Bearer <AIPAM_API_TOKEN>` header.
+
+---
+
+### 1. Stream Transcript, Hexdump, and Carving
+
+Drill from a job's PCAPs into decoded stream content or carve a stream as a standalone PCAP.
+
+#### List PCAP files for a job
+
+```bash
+curl -s http://localhost:8000/api/v1/jobs/{job_id}/streams \
+  -H "Authorization: Bearer $TOKEN" | jq .
+```
+
+```json
+{
+  "pcaps": [
+    {"name": "capture.pcap", "size_bytes": 1048576, "path": "input/capture.pcap"}
+  ]
+}
+```
+
+#### ASCII transcript of a single stream
+
+```bash
+curl -s "http://localhost:8000/api/v1/jobs/{job_id}/streams/ascii?src=10.0.0.1&sport=54321&dst=93.184.216.34&dport=80&proto=tcp" \
+  -H "Authorization: Bearer $TOKEN" | jq .
+```
+
+```json
+{
+  "protocol": "tcp",
+  "transcript": "GET / HTTP/1.1\r\nHost: example.com\r\n...",
+  "truncated": false
+}
+```
+
+#### Per-packet hexdump
+
+```bash
+curl -s "http://localhost:8000/api/v1/jobs/{job_id}/streams/hexdump?src=10.0.0.1&sport=54321&dst=93.184.216.34&dport=80" \
+  -H "Authorization: Bearer $TOKEN" | jq .
+```
+
+```json
+{
+  "protocol": "tcp",
+  "packets": [
+    {
+      "header": "0x0000  47 45 54  ...",
+      "lines": ["0x0000  47 45 54 20 2f ..."]
+    }
+  ],
+  "truncated": false
+}
+```
+
+#### Carve stream to PCAP (download)
+
+```bash
+curl -o stream.pcap \
+  "http://localhost:8000/api/v1/jobs/{job_id}/streams/pcap?src=10.0.0.1&sport=54321&dst=93.184.216.34&dport=80" \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+**Query parameters (all stream endpoints):**
+
+| Parameter | Required | Default | Description |
+|-----------|----------|---------|-------------|
+| `src` | ✓ | — | Source IP address |
+| `sport` | ✓ | — | Source port |
+| `dst` | ✓ | — | Destination IP address |
+| `dport` | ✓ | — | Destination port |
+| `proto` | — | `tcp` | Protocol (`tcp` or `udp`) |
+| `pcap` | — | auto | PCAP filename within the job input directory |
+
+---
+
+### 2. Generic Artifact Upload and Classification
+
+Upload any file (PCAP, binary, archive, or log) and get instant classification before creating a job.
+
+#### Upload an artifact
+
+```bash
+curl -s -X POST "http://localhost:8000/api/v1/uploads/artifact?filename=malware.exe" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/octet-stream" \
+  --data-binary @malware.exe | jq .
+```
+
+```json
+{
+  "upload_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "filename": "malware.exe",
+  "size_bytes": 204800,
+  "sha256": "e3b0c44298fc1c149afb...",
+  "artifact_class": "binary",
+  "format": "pe"
+}
+```
+
+**Artifact classes:** `pcap`, `binary`, `archive`, `log`, `unknown`
+
+When `artifact_class == "binary"`, creating a job from this upload automatically triggers the YARA/binary analysis pipeline (no separate step needed).
+
+#### Re-classify with a hint
+
+```bash
+curl -s -X POST "http://localhost:8000/api/v1/uploads/{upload_id}/classify" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"artifact_class": "binary", "format": "elf"}' | jq .
+```
+
+```json
+{
+  "upload_id": "f47ac10b-58cc-4372-a567-0e02b2c3d479",
+  "artifact_class": "binary",
+  "format": "elf"
+}
+```
+
+---
+
+### 3. First-Class Sigma Log Analysis
+
+Run Sigma rules against all normalized events for a job and store detections as findings.
+
+#### Run Sigma analysis
+
+```bash
+curl -s -X POST "http://localhost:8000/api/v1/jobs/{job_id}/sigma/analyze" \
+  -H "Authorization: Bearer $TOKEN" | jq .
+```
+
+```json
+{
+  "rules_loaded": 12,
+  "events_scanned": 4837,
+  "detections": 3,
+  "findings_created": 3
+}
+```
+
+#### Retrieve Sigma detections
+
+```bash
+curl -s "http://localhost:8000/api/v1/jobs/{job_id}/sigma" \
+  -H "Authorization: Bearer $TOKEN" | jq .
+```
+
+```json
+{
+  "items": [
+    {
+      "finding_id": 42,
+      "rule_id": "process_creation_susp_powershell",
+      "rule_title": "Suspicious PowerShell Execution",
+      "severity": "high",
+      "timestamp": "2024-01-15T14:23:11Z",
+      "evidence": {"event_type": "process_creation", "hostname": "ws01"}
+    }
+  ],
+  "total": 3
+}
+```
+
+Custom Sigma rules can be placed under `backend/app/sigma/rules/`. Rules are loaded automatically on each analysis run.
+
+---
+
+### 4. First-Class Binary / YARA Analysis
+
+Upload a binary into a job, scan with YARA rules, and persist findings.
+
+#### Upload and analyze a binary (attach to existing job)
+
+```bash
+curl -s -X POST "http://localhost:8000/api/v1/jobs/{job_id}/binary?filename=dropper.dll" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/octet-stream" \
+  --data-binary @dropper.dll | jq .
+```
+
+```json
+{
+  "file_id": "c9bf9e57-1685-4c89-bafb-ff5af830be8a",
+  "filename": "dropper.dll",
+  "findings_created": 2,
+  "analysis": {
+    "file_id": "c9bf9e57-1685-4c89-bafb-ff5af830be8a",
+    "filename": "dropper.dll",
+    "artifact_class": "binary",
+    "format": "pe",
+    "sha256": "b94f6f125c79e3a5ffaa826f584c10d5...",
+    "size_bytes": 114688,
+    "yara_available": true,
+    "yara_matches": [
+      {"rule": "MZ_Header", "tags": ["pe"], "meta": {"description": "PE executable header"}}
+    ]
+  }
+}
+```
+
+#### List all binary analyses for a job
+
+```bash
+curl -s "http://localhost:8000/api/v1/jobs/{job_id}/binary" \
+  -H "Authorization: Bearer $TOKEN" | jq .
+```
+
+```json
+{
+  "items": [{"file_id": "c9bf9e57...", "filename": "dropper.dll", "format": "pe", ...}],
+  "total": 1
+}
+```
+
+#### Stateless binary triage (no persistence)
+
+```bash
+curl -s -X POST "http://localhost:8000/api/v1/binary/inspect?filename=unknown.bin" \
+  -H "Authorization: Bearer $TOKEN" \
+  -H "Content-Type: application/octet-stream" \
+  --data-binary @unknown.bin | jq .
+```
+
+```json
+{
+  "filename": "unknown.bin",
+  "artifact_class": "binary",
+  "format": "elf",
+  "sha256": "...",
+  "size_bytes": 8192,
+  "yara_available": true,
+  "yara_matches": []
+}
+```
+
+**Auto-trigger**: When a job is created from an upload with `artifact_class == "binary"`, the orchestrator automatically copies the binary into the job's input directory and runs YARA analysis — no manual `POST /binary` step required.
+
+**YARA rules location**: `backend/app/binalysis/rules/default.yar`
+Add custom `.yar` files to that directory; they are loaded automatically.
+
+---
+
+### 5. Raw Event Explorer
+
+Full-text search, structured filtering, aggregation, and network flow visualization over normalized events.
+
+#### Search events
+
+```bash
+curl -s "http://localhost:8000/api/v1/jobs/{job_id}/raw-events?q=powershell&limit=50" \
+  -H "Authorization: Bearer $TOKEN" | jq .
+```
+
+```json
+{
+  "items": [
+    {
+      "event_id": 1023,
+      "job_id": "abc123",
+      "event_type": "process_creation",
+      "hostname": "ws01",
+      "src_ip": "10.0.0.5",
+      "dest_ip": "192.168.1.1",
+      "dest_port": 443,
+      "proto": "tcp",
+      "evidence_status": "confirmed",
+      "tags": ["lateral_movement"],
+      "data": {"cmdline": "powershell -enc ..."}
+    }
+  ],
+  "total": 7,
+  "limit": 50,
+  "offset": 0
+}
+```
+
+**Supported filter parameters:** `q` (substring), `event_type`, `source_type`, `src_ip`, `dest_ip`, `hostname`, `limit` (1–1000), `offset`
+
+#### Aggregate events by field
+
+```bash
+curl -s "http://localhost:8000/api/v1/jobs/{job_id}/raw-events/aggregate?field=dest_ip&limit=10" \
+  -H "Authorization: Bearer $TOKEN" | jq .
+```
+
+```json
+{
+  "field": "dest_ip",
+  "buckets": [
+    {"value": "93.184.216.34", "count": 142},
+    {"value": "10.0.0.1", "count": 37}
+  ],
+  "total_events": 4837
+}
+```
+
+**Aggregatable fields:** `event_type`, `source_type`, `source_system`, `hostname`, `username`, `src_ip`, `src_port`, `dest_ip`, `dest_port`, `proto`, `evidence_status`
+
+#### Network flow (Sankey data)
+
+```bash
+curl -s "http://localhost:8000/api/v1/jobs/{job_id}/raw-events/flow?limit=20" \
+  -H "Authorization: Bearer $TOKEN" | jq .
+```
+
+```json
+{
+  "nodes": [
+    {"id": "src:10.0.0.5", "label": "10.0.0.5", "kind": "src"},
+    {"id": "dst:93.184.216.34", "label": "93.184.216.34", "kind": "dst"},
+    {"id": "port:443", "label": "443", "kind": "port"}
+  ],
+  "links": [
+    {"source": "src:10.0.0.5", "target": "dst:93.184.216.34", "value": 142},
+    {"source": "dst:93.184.216.34", "target": "port:443", "value": 142}
+  ]
+}
+```
+
+The flow response is structured as a Sankey diagram: `src_ip → dest_ip → dest_port`. Pass the `nodes` and `links` arrays directly to any D3-sankey or Recharts Sankey component.
+
+---
+
 ## Roadmap
 
 ### Phase 1 — MVP Delivery (Complete)
@@ -861,6 +1193,15 @@ From any finding, generate **Suricata** or **Sigma** rules:
 - [x] **Air-Gapped Migration** — Offline update packages with automated `update.sh`
 - [x] **UI Professionalization** — Clean text-based interface suitable for enterprise SOC environments
 - [x] **Model v9** — Current production model with ORPO alignment
+
+### Forensic Workbench (Complete)
+
+- [x] **Stream transcript/hexdump/carving** — ASCII transcript, per-packet hexdump, and carved-stream PCAP download via `tshark`/`tcpdump`
+- [x] **Generic artifact upload & classification** — Upload any file type; auto-classifies as `pcap`, `binary`, `archive`, `log`, or `unknown`
+- [x] **First-class Sigma log analysis** — Run Sigma rules against normalized events; detections persisted as findings
+- [x] **First-class binary / YARA analysis** — Upload binaries directly; YARA scan results and metadata persisted; stateless `/binary/inspect` endpoint for quick triage
+- [x] **Binary auto-trigger** — `artifact_class == "binary"` uploads automatically run YARA analysis when the job starts
+- [x] **Raw event explorer** — Full-text search, structured filters, per-field aggregation, and Sankey flow data over normalized events
 
 ### Phase 4 — Enterprise Features (Future)
 
