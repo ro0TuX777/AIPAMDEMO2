@@ -1,7 +1,8 @@
 import React, { useRef, useCallback, useState, useMemo } from "react";
-import { useParams, Link } from "react-router-dom";
+import { useParams, Link, useNavigate } from "react-router-dom";
 import { JobSubPageNav } from "../components/JobSubPageNav";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useToast } from "../components/ToastProvider";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import {
@@ -271,9 +272,27 @@ const TableOfContents: React.FC<{ entries: TocEntry[] }> = ({ entries }) => (
 
 export const ReportPage: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
+  const navigate = useNavigate();
+  const { addToast } = useToast();
   const reportRef = useRef<HTMLDivElement>(null);
   const queryClient = useQueryClient();
   const [genMode, setGenMode] = useState<"executive" | "analyst">("analyst");
+
+  // The Report is the "output" surface, so it can kick off the downloadable
+  // evidence package directly (the Exports tab remains the download manager).
+  const evidencePkgMut = useMutation({
+    mutationFn: () => api.generateEvidencePackage(jobId!),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["job", jobId, "artifacts"] });
+      addToast({
+        severity: "info",
+        title: "Evidence package generated",
+        body: "Download it from the Exports tab.",
+        href: `/jobs/${jobId}/artifacts`,
+      });
+    },
+    onError: () => addToast({ severity: "high", title: "Failed to generate evidence package" }),
+  });
   const [viewMode, setViewMode] = useState<"live" | "generated" | "compare" | "temporal">("live");
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
   const [compareLeftId, setCompareLeftId] = useState<string | null>(null);
@@ -485,12 +504,23 @@ export const ReportPage: React.FC = () => {
         {/* Screen nav bar */}
         <div className="flex items-center justify-between no-print">
           <JobBreadcrumbs jobId={jobId} trail={[{ label: "Report" }]} />
-          <button
-            onClick={handleExportPdf}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
-          >
-            Export PDF
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => evidencePkgMut.mutate()}
+              disabled={evidencePkgMut.isPending}
+              data-testid="report-evidence-package"
+              className="flex items-center gap-2 rounded-lg border border-slate-700 bg-slate-800 px-3 py-2 text-sm text-slate-300 hover:text-slate-100 hover:border-slate-600 transition-colors disabled:opacity-50"
+              title="Generate a downloadable evidence package (available on the Exports tab)"
+            >
+              {evidencePkgMut.isPending ? "Generating…" : "⬇ Evidence Package"}
+            </button>
+            <button
+              onClick={handleExportPdf}
+              className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-lg transition-colors"
+            >
+              Export PDF
+            </button>
+          </div>
         </div>
 
         {/* ── Report Generator Panel ── */}

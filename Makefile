@@ -78,9 +78,17 @@ lint:
 fmt:
 	$(PYTHON) -m ruff format backend/ tests/
 
-## Type-check
+## Type-check (advisory).
+## The previous recipe piped mypy to /dev/null and OR-ed to an echo, so it
+## always "passed" — type errors were never seen and mypy was not even
+## installed. This runs mypy for real and shows every error. It stays advisory
+## (leading `-` ignores the exit code) because the codebase carries ~880
+## pre-existing type errors; gating on them would block every PR. Drive the
+## count down, then drop the `-` to make it enforcing.
 check:
-	$(PYTHON) -m mypy backend/app/ --ignore-missing-imports 2>/dev/null || echo "mypy not installed"
+	$(PYTHON) -m mypy --version
+	@echo "── mypy (advisory; not yet gating — see errors below) ──"
+	-$(PYTHON) -m mypy backend/app/ --ignore-missing-imports
 
 # ---------------------------------------------------------------------------
 # Database (Alembic V2)

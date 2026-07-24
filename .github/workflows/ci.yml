@@ -54,6 +54,9 @@ jobs:
       # target that fails the build on ruff upgrades unrelated to any change. Pin
       # to the version the project is developed against; bump deliberately.
       - run: pip install ruff==0.15.6
+      # mypy is not in requirements; install it (pinned) so `make check` actually
+      # type-checks instead of silently reporting "mypy not installed".
+      - run: pip install mypy==2.3.0
       - run: make lint
       - run: make check
 

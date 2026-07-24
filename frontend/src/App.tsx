@@ -2,6 +2,8 @@ import React, { lazy, Suspense, useEffect, useState } from "react";
 import { NavLink, Navigate, Route, Routes, useLocation } from "react-router-dom";
 import { ModelSetupModal } from "./components/ModelSetupModal";
 import { ToastProvider } from "./components/ToastProvider";
+import { CommandPalette } from "./components/CommandPalette";
+import { KeyboardShortcuts } from "./components/KeyboardShortcuts";
 import { RouteErrorBoundary } from "./components/RouteErrorBoundary";
 import { ThemeProvider, useTheme } from "./components/ThemeProvider";
 import { api } from "./api";
@@ -161,6 +163,20 @@ export const App: React.FC = () => {
           </nav>
         </div>
         <div className="flex items-center gap-2">
+          {/* Global search / command palette (Ctrl/Cmd+K) */}
+          <button
+            onClick={() => window.dispatchEvent(new Event("aipam:open-command-palette"))}
+            data-testid="open-command-palette"
+            aria-label="Search (Control or Command K)"
+            title="Search — Ctrl/⌘ K"
+            className="flex items-center gap-2 rounded-md border border-slate-700 bg-slate-900 px-2.5 py-1.5 text-xs text-slate-400 hover:text-slate-100 hover:border-slate-600 transition-colors"
+          >
+            <svg className="h-3.5 w-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+            </svg>
+            <span className="hidden sm:inline">Search</span>
+            <kbd className="hidden sm:inline rounded border border-slate-700 px-1 text-[10px] text-slate-500">⌘K</kbd>
+          </button>
           {/* Theme toggle */}
           <ThemeToggleButton />
           {/* Hamburger button (mobile only) */}
@@ -262,6 +278,8 @@ export const App: React.FC = () => {
         </Suspense>
         </RouteErrorBoundary>
       </main>
+      <CommandPalette />
+      <KeyboardShortcuts />
     </div>
     </ToastProvider>
     </ThemeProvider>
