@@ -50,3 +50,8 @@ sqlmodel
 lancedb>=0.6.0
 pyarrow>=14.0
 sentence-transformers>=2.2.0
+
+# --- Binary / YARA analysis (backend.app.binalysis) ---
+# Provides the `yara` module; without it binary analysis still hashes and
+# measures entropy but reports yara_available=false and matches nothing.
+yara-python>=4.3.0

@@ -19,10 +19,17 @@ RUN apt-get update && \
     curl -fsSL https://download.opensuse.org/repositories/security:zeek/Debian_12/Release.key | \
     gpg --dearmor > /etc/apt/trusted.gpg.d/security_zeek.gpg && \
     apt-get update && \
-    apt-get install -y --no-install-recommends \
+    # tshark + tcpdump back the Streams endpoints (follow-stream transcript,
+    # per-packet hexdump, stream carving). Preseed wireshark-common so the
+    # tshark install stays non-interactive; setuid is not needed since we only
+    # read PCAP files, never capture live.
+    echo "wireshark-common wireshark-common/install-setuid boolean false" | debconf-set-selections && \
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
     zeek \
     suricata \
-    suricata-update && \
+    suricata-update \
+    tshark \
+    tcpdump && \
     rm -rf /var/lib/apt/lists/*
 
 # Ensure Zeek binary is discoverable via PATH for shutil.which("zeek")

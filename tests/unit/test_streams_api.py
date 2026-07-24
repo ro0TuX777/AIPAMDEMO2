@@ -3,8 +3,6 @@
 import subprocess
 from datetime import datetime, timezone
 
-import pytest
-
 from backend.app.models.job import Job
 
 AUTH_HEADER = {"Authorization": "Bearer test-token-v2"}
