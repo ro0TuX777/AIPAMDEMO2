@@ -1,5 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 
 /**
  * Global keyboard shortcuts.
@@ -46,6 +47,7 @@ export const KeyboardShortcuts: React.FC = () => {
   const [helpOpen, setHelpOpen] = useState(false);
   const navigate = useNavigate();
   const gPending = useRef<number | null>(null); // timestamp of a pending `g`
+  const dialogRef = useFocusTrap<HTMLDivElement>(helpOpen);
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -93,8 +95,10 @@ export const KeyboardShortcuts: React.FC = () => {
       onClick={() => setHelpOpen(false)}
     >
       <div
+        ref={dialogRef}
         className="w-full max-w-md rounded-lg border border-slate-700 bg-slate-900 p-5 shadow-2xl"
         role="dialog"
+        aria-modal="true"
         aria-label="Keyboard shortcuts"
         onClick={(e) => e.stopPropagation()}
       >

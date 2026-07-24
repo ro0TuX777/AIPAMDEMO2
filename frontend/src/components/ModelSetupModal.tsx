@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from "react";
 import { api, OllamaModelInfo } from "../api";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 
 function formatBytes(bytes: number): string {
     if (bytes === 0) return "0 B";
@@ -18,6 +19,8 @@ export const ModelSetupModal: React.FC<ModelSetupModalProps> = ({ onComplete }) 
     const [loading, setLoading] = useState(true);
     const [selectedModel, setSelectedModel] = useState<string>("");
     const [remember, setRemember] = useState(true);
+    // Always mounted-open (it only renders when shown), so the trap is active.
+    const dialogRef = useFocusTrap<HTMLDivElement>(true);
     const [saving, setSaving] = useState(false);
     const [error, setError] = useState<string | null>(null);
 
@@ -70,7 +73,13 @@ export const ModelSetupModal: React.FC<ModelSetupModalProps> = ({ onComplete }) 
             <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm" />
 
             {/* Modal card */}
-            <div className="relative w-full max-w-lg mx-4 rounded-2xl border border-slate-700/60 bg-gradient-to-b from-slate-900 to-slate-950 shadow-2xl shadow-blue-900/20 overflow-hidden">
+            <div
+                ref={dialogRef}
+                role="dialog"
+                aria-modal="true"
+                aria-label="First-time model setup"
+                className="relative w-full max-w-lg mx-4 rounded-2xl border border-slate-700/60 bg-gradient-to-b from-slate-900 to-slate-950 shadow-2xl shadow-blue-900/20 overflow-hidden"
+            >
                 {/* Glow accent */}
                 <div className="absolute -top-24 left-1/2 -translate-x-1/2 w-64 h-64 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
 

@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api";
 import { jobStatusClass } from "../theme/colors";
+import { useFocusTrap } from "../hooks/useFocusTrap";
 
 /**
  * Global command palette (Ctrl/Cmd+K).
@@ -47,6 +48,7 @@ export const CommandPalette: React.FC = () => {
   const [active, setActive] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
+  const dialogRef = useFocusTrap<HTMLDivElement>(open);
   const navigate = useNavigate();
 
   const debouncedQuery = useDebounced(query.trim(), 180);
@@ -71,13 +73,12 @@ export const CommandPalette: React.FC = () => {
     };
   }, []);
 
-  // Reset and focus when opened.
+  // Reset when opened; initial focus is handled by the focus trap (the input is
+  // the first focusable in the dialog).
   useEffect(() => {
     if (open) {
       setQuery("");
       setActive(0);
-      // Focus after the overlay paints.
-      requestAnimationFrame(() => inputRef.current?.focus());
     }
   }, [open]);
 
@@ -184,8 +185,10 @@ export const CommandPalette: React.FC = () => {
       onClick={() => setOpen(false)}
     >
       <div
+        ref={dialogRef}
         className="w-full max-w-xl overflow-hidden rounded-lg border border-slate-700 bg-slate-900 shadow-2xl"
         role="dialog"
+        aria-modal="true"
         aria-label="Command palette"
         onClick={(e) => e.stopPropagation()}
       >
