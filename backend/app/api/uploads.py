@@ -17,7 +17,13 @@ from sqlalchemy.orm import Session
 from backend.app.api.deps import get_db, get_request_id, verify_token
 from backend.app.config_v2 import Settings, get_settings
 from backend.app.models.upload import Upload
-from backend.app.schemas.upload import UploadCreateResponse, UploadValidateResponse
+from backend.app.pipeline.artifact_classifier import classify_artifact
+from backend.app.schemas.upload import (
+    ArtifactClassifyResponse,
+    ArtifactUploadResponse,
+    UploadCreateResponse,
+    UploadValidateResponse,
+)
 
 router = APIRouter(tags=["Uploads"], dependencies=[Depends(verify_token)])
 
@@ -260,3 +266,124 @@ async def create_bundle_upload(
     db.refresh(upload)
 
     return UploadCreateResponse.model_validate(upload)
+
+
+
+@router.post(
+    "/uploads/artifact",
+    status_code=status.HTTP_201_CREATED,
+    response_model=ArtifactUploadResponse,
+)
+async def create_artifact_upload(
+    request: Request,
+    response: Response,
+    request_id: str = Depends(get_request_id),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+):
+    """Stream-save any artifact (pcap/log/binary/archive) and auto-classify it.
+
+    Unlike /uploads (PCAP) and /uploads/bundle (logs/archives), this accepts
+    any file type and records a detected ``artifact_class`` so the caller can
+    route the job to the correct analysis pipeline.
+    """
+    response.headers["X-Request-Id"] = request_id
+
+    filename = request.query_params.get("filename")
+    if not filename:
+        cd = request.headers.get("content-disposition", "")
+        if 'filename="' in cd:
+            filename = cd.split('filename="', 1)[1].rstrip('"')
+        elif "filename=" in cd:
+            filename = cd.split("filename=", 1)[1].strip().strip('"')
+    if not filename:
+        filename = str(uuid.uuid4())
+
+    upload_id = str(uuid.uuid4())
+    upload_dir: Path = settings.aipam_upload_root / upload_id
+    upload_dir.mkdir(parents=True, exist_ok=True)
+    dest = upload_dir / filename
+
+    sha = hashlib.sha256()
+    size = 0
+    with open(dest, "wb") as f:
+        async for chunk in request.stream():
+            size += len(chunk)
+            if size > MAX_BUNDLE_UPLOAD_BYTES:
+                f.close()
+                dest.unlink(missing_ok=True)
+                upload_dir.rmdir()
+                raise HTTPException(
+                    status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                    detail=f"Artifact exceeds {MAX_BUNDLE_UPLOAD_BYTES:,} byte limit",
+                )
+            f.write(chunk)
+            sha.update(chunk)
+
+    if size == 0:
+        dest.unlink(missing_ok=True)
+        upload_dir.rmdir()
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Empty upload body",
+        )
+
+    classification = classify_artifact(dest, filename)
+
+    upload = Upload(
+        upload_id=upload_id,
+        filename=filename,
+        size_bytes=size,
+        sha256=sha.hexdigest(),
+        format=classification.format,
+        artifact_class=classification.artifact_class,
+        created_at=datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
+    )
+    db.add(upload)
+    db.commit()
+    db.refresh(upload)
+
+    return ArtifactUploadResponse(
+        upload_id=upload.upload_id,
+        filename=upload.filename,
+        size_bytes=upload.size_bytes,
+        sha256=upload.sha256,
+        artifact_class=classification.artifact_class,
+        format=classification.format,
+    )
+
+
+@router.post(
+    "/uploads/{upload_id}/classify",
+    response_model=ArtifactClassifyResponse,
+)
+async def classify_upload(
+    upload_id: str,
+    response: Response,
+    request_id: str = Depends(get_request_id),
+    db: Session = Depends(get_db),
+    settings: Settings = Depends(get_settings),
+):
+    """Classify an already-uploaded artifact and persist its artifact_class."""
+    response.headers["X-Request-Id"] = request_id
+
+    upload: Upload | None = db.get(Upload, upload_id)
+    if upload is None:
+        raise HTTPException(status_code=404, detail="Upload not found")
+
+    file_path = settings.aipam_upload_root / upload_id / upload.filename
+    if not file_path.exists():
+        raise HTTPException(status_code=404, detail="Upload file missing from disk")
+
+    classification = classify_artifact(file_path, upload.filename)
+    upload.artifact_class = classification.artifact_class
+    if upload.format is None:
+        upload.format = classification.format
+    db.commit()
+
+    return ArtifactClassifyResponse(
+        upload_id=upload_id,
+        artifact_class=classification.artifact_class,
+        format=classification.format,
+        detail=classification.detail,
+    )

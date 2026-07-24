@@ -16,6 +16,7 @@ class Upload(Base):
     format = Column(String, nullable=True)
     packet_count = Column(Integer, nullable=True)
     capture_duration_seconds = Column(Float, nullable=True)
+    artifact_class = Column(String, nullable=True)  # pcap/log/binary/archive/unknown
     created_at = Column(String, nullable=False)
 
     def __repr__(self) -> str:
