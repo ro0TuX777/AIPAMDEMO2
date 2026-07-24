@@ -20,6 +20,7 @@ from backend.app.api import (
     artifacts,
     binary,
     chat,
+    events,
     findings,
     hosts,
     investigation,
@@ -150,6 +151,7 @@ def create_app() -> FastAPI:
     app.include_router(binary.router, prefix="/api/v1")
     app.include_router(sigma.router, prefix="/api/v1")
     app.include_router(streams.router, prefix="/api/v1")
+    app.include_router(events.router, prefix="/api/v1")
 
     from backend.app.api import admin, correlation
     app.include_router(admin.router, prefix="/api/v1")
