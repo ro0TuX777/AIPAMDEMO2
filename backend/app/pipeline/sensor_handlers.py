@@ -1223,26 +1223,37 @@ def handle_ti_matcher(
     ti_ja3s: set[str] = set()
 
     ti_base = Path(os.getenv("AIPAM_TI_BUNDLE_DIR", "/opt/aipam/ti/bundles"))
-    if ti_base.exists():
-        for bundle_dir in ti_base.iterdir():
-            if not bundle_dir.is_dir():
-                continue
-            for fname, target_set, normalizer in [
-                ("ips.txt", ti_ips, _normalize_text_indicator),
-                ("domains.txt", ti_domains, _normalize_host_indicator),
-                ("hashes_sha256.txt", ti_hashes, _normalize_text_indicator),
-                ("ja3.txt", ti_ja3, _normalize_text_indicator),
-                ("ja3s.txt", ti_ja3s, _normalize_text_indicator),
-            ]:
-                fp = bundle_dir / fname
-                if fp.exists():
-                    for line in fp.read_text().splitlines():
-                        val = line.strip()
-                        if val and not val.startswith("#"):
-                            target_set.add(normalizer(val))
-        logger.info(
-            "ti_matcher: loaded %d IPs, %d domains, %d hashes, %d JA3, %d JA3S from TI bundles",
-            len(ti_ips), len(ti_domains), len(ti_hashes), len(ti_ja3), len(ti_ja3s),
+    # The TI bundle dir is often a mounted volume. Reading it (exists/iterdir/
+    # read_text) can raise OSError if that mount is unavailable — a stale NFS
+    # handle or "No such device". Degrade to "no TI feeds" rather than letting
+    # the whole handler crash, which would also drop the Suricata alert
+    # correlation below (it needs no TI bundle).
+    try:
+        if ti_base.exists():
+            for bundle_dir in ti_base.iterdir():
+                if not bundle_dir.is_dir():
+                    continue
+                for fname, target_set, normalizer in [
+                    ("ips.txt", ti_ips, _normalize_text_indicator),
+                    ("domains.txt", ti_domains, _normalize_host_indicator),
+                    ("hashes_sha256.txt", ti_hashes, _normalize_text_indicator),
+                    ("ja3.txt", ti_ja3, _normalize_text_indicator),
+                    ("ja3s.txt", ti_ja3s, _normalize_text_indicator),
+                ]:
+                    fp = bundle_dir / fname
+                    if fp.exists():
+                        for line in fp.read_text().splitlines():
+                            val = line.strip()
+                            if val and not val.startswith("#"):
+                                target_set.add(normalizer(val))
+            logger.info(
+                "ti_matcher: loaded %d IPs, %d domains, %d hashes, %d JA3, %d JA3S from TI bundles",
+                len(ti_ips), len(ti_domains), len(ti_hashes), len(ti_ja3), len(ti_ja3s),
+            )
+    except OSError as exc:
+        logger.warning(
+            "ti_matcher: TI bundle dir %s unavailable (%s) — continuing with alert "
+            "correlation only", ti_base, exc,
         )
 
     has_ti_feeds = bool(ti_ips or ti_domains or ti_hashes or ti_ja3 or ti_ja3s)

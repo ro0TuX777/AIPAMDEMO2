@@ -9,6 +9,7 @@ detection heuristics.
 from __future__ import annotations
 
 import hashlib
+import ipaddress
 import logging
 from collections import defaultdict
 from typing import Literal
@@ -61,9 +62,28 @@ def _job_lookup(db: Session) -> JobMap:
     return {r[0]: (r[1], r[2]) for r in rows}
 
 
+def _is_correlatable_host(ip: str) -> bool:
+    """Return whether an IP identifies a useful cross-job pivot.
+
+    Unspecified (``0.0.0.0``), multicast (e.g. mDNS ``224.0.0.251``) and the
+    limited broadcast address are seen in nearly every capture, so treating them
+    as "shared hosts" would link unrelated jobs spuriously. Exclude them.
+    """
+    try:
+        addr = ipaddress.ip_address(ip)
+    except ValueError:
+        return False
+    return not (addr.is_unspecified or addr.is_multicast or ip == "255.255.255.255")
+
+
 def _resolve_job(job_map: JobMap, job_id: str) -> tuple[str, str | None]:
-    """Resolve a job_id to (name, created_at), falling back to the id itself."""
-    return job_map.get(job_id, (job_id, None))
+    """Resolve a job_id to (name, created_at), falling back to the id itself.
+
+    Falls back to the job_id both when the job is unknown and when it is known
+    but unnamed, so a NULL job_name never surfaces as ``None`` in related-jobs.
+    """
+    name, created_at = job_map.get(job_id, (job_id, None))
+    return (name or job_id, created_at)
 
 
 def find_host_matches(
@@ -428,7 +448,10 @@ def get_related_jobs(db: Session, job_id: str) -> RelatedJobsResponse:
     """
     job_map = _job_lookup(db)
 
-    own_host_ips = [r[0] for r in db.execute(select(Host.ip).where(Host.job_id == job_id)).all()]
+    own_host_ips = [
+        r[0] for r in db.execute(select(Host.ip).where(Host.job_id == job_id)).all()
+        if _is_correlatable_host(r[0])
+    ]
     own_ioc_vals = [r[0] for r in db.execute(select(Ioc.value).where(Ioc.job_id == job_id)).all()]
     own_cats = [
         r[0] for r in db.execute(

@@ -464,6 +464,26 @@ def run_pipeline(
     sensor_results: list[SensorResult] = []
     has_errors = False
 
+    def _restore_hidden_pcaps() -> None:
+        """Un-hide PCAPs hidden for single-phase re-analysis isolation.
+
+        Idempotent (pops as it restores) so it is safe to call from the
+        ``finally`` below whether the pipeline finished normally, returned
+        early on a stage failure, or raised. Without this a mid-pipeline
+        failure would leave evidence PCAPs renamed to ``*.hidden`` on disk
+        permanently.
+        """
+        while _hidden_pcaps:
+            hidden, original = _hidden_pcaps.pop()
+            if hidden.exists():
+                try:
+                    hidden.rename(original)
+                    logger.info("Restored hidden PCAP %s", original.name)
+                except OSError as exc:
+                    logger.warning(
+                        "Failed to restore hidden PCAP %s: %s", original.name, exc
+                    )
+
     if has_pcaps:
         # When re-analysing a single phase:
         #   1. Hide non-target PCAPs so sensors only process the target file
@@ -491,176 +511,174 @@ def run_pipeline(
                         _shutil.rmtree(sd)
                         logger.info("Cleaned old sensor output: %s", sd.name)
 
-    # --- Step 2-3: Run stages (Zeek, Suricata) — PCAP only ---
-    stages = get_stages_for_profile(profile) if has_pcaps else []
-    sensors = get_sensors_for_profile(profile) if has_pcaps else []
-    # +6 for telemetry + correlate + index + theories + slices + annotations
-    total_steps = len(stages) + len(sensors) + 6
-    step_num = 0
-    for stage_def in stages:
-        step_num += 1
-        logger.info("Running stage %s for job %s", stage_def.name, job_id)
-        _emit(job_id, "stage.status", stage=stage_def.name, status="running",
-              step=step_num, total_steps=total_steps)
-        create_sensor_output_dir(job_dir, stage_def.name)
-
-        # Stages are run as Docker containers just like sensors
-        result = run_sensor(
-            sensor_def=stage_def,
-            job_dir=job_dir,
-            job_id=job_id,
-            execution_profile=profile,
-            docker_client=docker_client,
-            sensor_config_dir=sensor_config_dir,
-        )
-        _record_sensor_result(db, job_id, result)
-        _emit(job_id, "stage.status", stage=stage_def.name, status=result.status,
-              step=step_num, total_steps=total_steps,
-              duration_ms=result.duration_ms)
-
-        if result.status == "failed":
-            logger.error("Stage %s failed for job %s: %s", stage_def.name, job_id, result.error)
-            _update_job_status(db, job, "failed", f"Stage {stage_def.name} failed: {result.error}")
-            return "failed"
-
-    # --- Publish partial result: ingest/parse stage data ---
-    _completed_stages: list[str] = [s.name for s in stages]
-    _pcap_stats: dict[str, Any] = {}
     try:
-        # Gather PCAP stats from input files
-        input_dir = job_dir / "input"
-        pcap_files_on_disk = list(input_dir.glob("*.pcap")) + list(input_dir.glob("*.pcapng"))
-        _pcap_stats = {
-            "file_count": len(pcap_files_on_disk),
-            "total_bytes": sum(f.stat().st_size for f in pcap_files_on_disk if f.exists()),
-        }
-        # Try to read Zeek conn.log for top hosts
-        _top_hosts: list[dict[str, Any]] = []
-        _protocol_dist: dict[str, int] = {}
-        conn_log = job_dir / "sensors" / "zeek" / "conn.log"
-        if conn_log.exists():
-            host_bytes: dict[str, int] = {}
-            for line in conn_log.read_text().splitlines():
-                if line.startswith("#"):
-                    continue
-                parts = line.split("\t")
-                if len(parts) >= 10:
-                    src, dst = parts[2], parts[4]
-                    proto = parts[6] if len(parts) > 6 else "unknown"
-                    bsrc = int(parts[9]) if parts[9].isdigit() else 0
-                    host_bytes[src] = host_bytes.get(src, 0) + bsrc
-                    host_bytes[dst] = host_bytes.get(dst, 0) + bsrc
-                    _protocol_dist[proto] = _protocol_dist.get(proto, 0) + 1
-            _top_hosts = [
-                {"ip": ip, "total_bytes": b}
-                for ip, b in sorted(host_bytes.items(), key=lambda x: -x[1])[:10]
-            ]
+        # --- Step 2-3: Run stages (Zeek, Suricata) — PCAP only ---
+        stages = get_stages_for_profile(profile) if has_pcaps else []
+        sensors = get_sensors_for_profile(profile) if has_pcaps else []
+        # +6 for telemetry + correlate + index + theories + slices + annotations
+        total_steps = len(stages) + len(sensors) + 6
+        step_num = 0
+        for stage_def in stages:
+            step_num += 1
+            logger.info("Running stage %s for job %s", stage_def.name, job_id)
+            _emit(job_id, "stage.status", stage=stage_def.name, status="running",
+                  step=step_num, total_steps=total_steps)
+            create_sensor_output_dir(job_dir, stage_def.name)
 
-        # Try to read Suricata alert summary
-        _alert_summary: dict[str, Any] = {"total": 0, "by_severity": {}}
-        eve_json = job_dir / "sensors" / "suricata" / "eve.json"
-        if eve_json.exists():
-            sev_counts: dict[str, int] = {}
-            alert_total = 0
-            for line in eve_json.read_text().splitlines():
-                if not line.strip():
-                    continue
-                try:
-                    rec = json.loads(line)
-                    if rec.get("event_type") == "alert":
-                        alert_total += 1
-                        sev = str(rec.get("alert", {}).get("severity", "unknown"))
-                        sev_counts[sev] = sev_counts.get(sev, 0) + 1
-                        # Emit early_alert for high severity (1 = highest in Suricata)
-                        if sev in ("1", "2"):
-                            sig_name = rec.get("alert", {}).get("signature", "Unknown alert")
-                            _emit(job_id, "early_alert",
-                                  title=sig_name,
-                                  severity="critical" if sev == "1" else "high",
-                                  src_ip=rec.get("src_ip"),
-                                  dst_ip=rec.get("dest_ip"))
-                except json.JSONDecodeError:
-                    pass
-            _alert_summary = {"total": alert_total, "by_severity": sev_counts}
-
-        _publish_partial_result(
-            job_id, "parse",
-            {
-                "pcap_stats": _pcap_stats,
-                "top_hosts": _top_hosts,
-                "protocol_distribution": _protocol_dist,
-                "alert_summary": _alert_summary,
-            },
-            completed_stages=_completed_stages,
-            current_stage="sensors",
-        )
-    except Exception as exc:
-        logger.debug("Failed to publish parse partial result: %s", exc)
-
-    # --- Step 4: File extraction manifest ---
-    # The actual extraction happens in file_triage sensor (Step 5).
-    # We write the manifest after sensors complete (see below).
-
-    # --- Step 5: Run sensors in deterministic order (PCAP only) ---
-    for sensor_def in sensors:
-        # Check skip conditions — resolve required inputs to sensor output dirs
-        if sensor_def.skip_if_missing_inputs:
-            missing = False
-            for req in sensor_def.inputs_required:
-                # Requirements refer to a previously-run sensor whose output lives
-                # under  job_dir / "sensors" / <req>  (e.g. "zeek", "suricata").
-                req_dir = job_dir / "sensors" / req
-                if not req_dir.exists():
-                    missing = True
-                    break
-            if missing:
-                skip_result = SensorResult(
-                    sensor=sensor_def.name, status="skipped",
-                    error="Required inputs missing",
-                    started_at=_now_iso(),
-                )
-                _record_sensor_result(db, job_id, skip_result)
-                sensor_results.append(skip_result)
-                continue
-
-        step_num += 1
-        logger.info("Running sensor %s for job %s", sensor_def.name, job_id)
-        _emit(job_id, "sensor.status", sensor=sensor_def.name, status="running",
-              step=step_num, total_steps=total_steps)
-        create_sensor_output_dir(job_dir, sensor_def.name)
-
-        result = run_sensor(
-            sensor_def=sensor_def,
-            job_dir=job_dir,
-            job_id=job_id,
-            execution_profile=profile,
-            docker_client=docker_client,
-            sensor_config_dir=sensor_config_dir,
-        )
-        _record_sensor_result(db, job_id, result)
-        sensor_results.append(result)
-        _emit(job_id, "sensor.status", sensor=sensor_def.name, status=result.status,
-              step=step_num, total_steps=total_steps,
-              duration_ms=result.duration_ms)
-
-        if result.status in ("failed", "timeout"):
-            has_errors = True
-            logger.warning(
-                "Sensor %s %s for job %s: %s",
-                sensor_def.name, result.status, job_id, result.error,
+            # Stages are run as Docker containers just like sensors
+            result = run_sensor(
+                sensor_def=stage_def,
+                job_dir=job_dir,
+                job_id=job_id,
+                execution_profile=profile,
+                docker_client=docker_client,
+                sensor_config_dir=sensor_config_dir,
             )
+            _record_sensor_result(db, job_id, result)
+            _emit(job_id, "stage.status", stage=stage_def.name, status=result.status,
+                  step=step_num, total_steps=total_steps,
+                  duration_ms=result.duration_ms)
 
-        # Check job disk quota
-        if check_job_quota(job_dir, max_job_disk_bytes):
-            logger.warning("Job %s exceeded disk quota", job_id)
-            has_errors = True
-            break
+            if result.status == "failed":
+                logger.error("Stage %s failed for job %s: %s", stage_def.name, job_id, result.error)
+                _update_job_status(db, job, "failed", f"Stage {stage_def.name} failed: {result.error}")
+                return "failed"
 
-    # --- Restore hidden PCAPs after sensors complete ---
-    for hidden, original in _hidden_pcaps:
-        if hidden.exists():
-            hidden.rename(original)
-            logger.info("Restored hidden PCAP %s", original.name)
+        # --- Publish partial result: ingest/parse stage data ---
+        _completed_stages: list[str] = [s.name for s in stages]
+        _pcap_stats: dict[str, Any] = {}
+        try:
+            # Gather PCAP stats from input files
+            input_dir = job_dir / "input"
+            pcap_files_on_disk = list(input_dir.glob("*.pcap")) + list(input_dir.glob("*.pcapng"))
+            _pcap_stats = {
+                "file_count": len(pcap_files_on_disk),
+                "total_bytes": sum(f.stat().st_size for f in pcap_files_on_disk if f.exists()),
+            }
+            # Try to read Zeek conn.log for top hosts
+            _top_hosts: list[dict[str, Any]] = []
+            _protocol_dist: dict[str, int] = {}
+            conn_log = job_dir / "sensors" / "zeek" / "conn.log"
+            if conn_log.exists():
+                host_bytes: dict[str, int] = {}
+                for line in conn_log.read_text().splitlines():
+                    if line.startswith("#"):
+                        continue
+                    parts = line.split("\t")
+                    if len(parts) >= 10:
+                        src, dst = parts[2], parts[4]
+                        proto = parts[6] if len(parts) > 6 else "unknown"
+                        bsrc = int(parts[9]) if parts[9].isdigit() else 0
+                        host_bytes[src] = host_bytes.get(src, 0) + bsrc
+                        host_bytes[dst] = host_bytes.get(dst, 0) + bsrc
+                        _protocol_dist[proto] = _protocol_dist.get(proto, 0) + 1
+                _top_hosts = [
+                    {"ip": ip, "total_bytes": b}
+                    for ip, b in sorted(host_bytes.items(), key=lambda x: -x[1])[:10]
+                ]
+
+            # Try to read Suricata alert summary
+            _alert_summary: dict[str, Any] = {"total": 0, "by_severity": {}}
+            eve_json = job_dir / "sensors" / "suricata" / "eve.json"
+            if eve_json.exists():
+                sev_counts: dict[str, int] = {}
+                alert_total = 0
+                for line in eve_json.read_text().splitlines():
+                    if not line.strip():
+                        continue
+                    try:
+                        rec = json.loads(line)
+                        if rec.get("event_type") == "alert":
+                            alert_total += 1
+                            sev = str(rec.get("alert", {}).get("severity", "unknown"))
+                            sev_counts[sev] = sev_counts.get(sev, 0) + 1
+                            # Emit early_alert for high severity (1 = highest in Suricata)
+                            if sev in ("1", "2"):
+                                sig_name = rec.get("alert", {}).get("signature", "Unknown alert")
+                                _emit(job_id, "early_alert",
+                                      title=sig_name,
+                                      severity="critical" if sev == "1" else "high",
+                                      src_ip=rec.get("src_ip"),
+                                      dst_ip=rec.get("dest_ip"))
+                    except json.JSONDecodeError:
+                        pass
+                _alert_summary = {"total": alert_total, "by_severity": sev_counts}
+
+            _publish_partial_result(
+                job_id, "parse",
+                {
+                    "pcap_stats": _pcap_stats,
+                    "top_hosts": _top_hosts,
+                    "protocol_distribution": _protocol_dist,
+                    "alert_summary": _alert_summary,
+                },
+                completed_stages=_completed_stages,
+                current_stage="sensors",
+            )
+        except Exception as exc:
+            logger.debug("Failed to publish parse partial result: %s", exc)
+
+        # --- Step 4: File extraction manifest ---
+        # The actual extraction happens in file_triage sensor (Step 5).
+        # We write the manifest after sensors complete (see below).
+
+        # --- Step 5: Run sensors in deterministic order (PCAP only) ---
+        for sensor_def in sensors:
+            # Check skip conditions — resolve required inputs to sensor output dirs
+            if sensor_def.skip_if_missing_inputs:
+                missing = False
+                for req in sensor_def.inputs_required:
+                    # Requirements refer to a previously-run sensor whose output lives
+                    # under  job_dir / "sensors" / <req>  (e.g. "zeek", "suricata").
+                    req_dir = job_dir / "sensors" / req
+                    if not req_dir.exists():
+                        missing = True
+                        break
+                if missing:
+                    skip_result = SensorResult(
+                        sensor=sensor_def.name, status="skipped",
+                        error="Required inputs missing",
+                        started_at=_now_iso(),
+                    )
+                    _record_sensor_result(db, job_id, skip_result)
+                    sensor_results.append(skip_result)
+                    continue
+
+            step_num += 1
+            logger.info("Running sensor %s for job %s", sensor_def.name, job_id)
+            _emit(job_id, "sensor.status", sensor=sensor_def.name, status="running",
+                  step=step_num, total_steps=total_steps)
+            create_sensor_output_dir(job_dir, sensor_def.name)
+
+            result = run_sensor(
+                sensor_def=sensor_def,
+                job_dir=job_dir,
+                job_id=job_id,
+                execution_profile=profile,
+                docker_client=docker_client,
+                sensor_config_dir=sensor_config_dir,
+            )
+            _record_sensor_result(db, job_id, result)
+            sensor_results.append(result)
+            _emit(job_id, "sensor.status", sensor=sensor_def.name, status=result.status,
+                  step=step_num, total_steps=total_steps,
+                  duration_ms=result.duration_ms)
+
+            if result.status in ("failed", "timeout"):
+                has_errors = True
+                logger.warning(
+                    "Sensor %s %s for job %s: %s",
+                    sensor_def.name, result.status, job_id, result.error,
+                )
+
+            # Check job disk quota
+            if check_job_quota(job_dir, max_job_disk_bytes):
+                logger.warning("Job %s exceeded disk quota", job_id)
+                has_errors = True
+                break
+
+    finally:
+        _restore_hidden_pcaps()
 
     # --- Write extraction manifest (§3.3) ---
     _write_extraction_manifest(job_dir)
