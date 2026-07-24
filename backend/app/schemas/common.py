@@ -78,6 +78,7 @@ class SourceType(str, Enum):
     netflow_bundle = "netflow_bundle"
     c2_bundle = "c2_bundle"
     exercise_bundle = "exercise_bundle"
+    binary = "binary"
 
 
 class EvidenceStatus(str, Enum):

@@ -18,6 +18,7 @@ from fastapi.staticfiles import StaticFiles
 from backend.app.api import (
     alerts,
     artifacts,
+    binary,
     chat,
     findings,
     hosts,
@@ -144,6 +145,7 @@ def create_app() -> FastAPI:
     app.include_router(temporal.router, prefix="/api/v1")
     app.include_router(proofs.router, prefix="/api/v1")
     app.include_router(investigation.router, prefix="/api/v1")
+    app.include_router(binary.router, prefix="/api/v1")
 
     from backend.app.api import admin, correlation
     app.include_router(admin.router, prefix="/api/v1")

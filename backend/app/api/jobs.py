@@ -148,6 +148,13 @@ async def create_job(
     # ── PCAP path (optionally with attached log bundle) ──
     upload_items = _resolve_upload_list(body)
 
+    # ── Binary artifact path: a single upload classified as "binary" is
+    # routed to a binary/YARA analysis job instead of the PCAP pipeline. ──
+    if len(upload_items) == 1:
+        single = db.get(Upload, upload_items[0].upload_id)
+        if single is not None and single.artifact_class == "binary":
+            return _create_binary_job(body, single, db, settings)
+
     if len(upload_items) > MAX_PCAPS_PER_JOB:
         raise HTTPException(status_code=400, detail=f"Max {MAX_PCAPS_PER_JOB} PCAPs per job")
 
@@ -273,6 +280,52 @@ async def create_job(
             )
             db.add(log_rec)
 
+    db.commit()
+
+    # Dispatch the pipeline to the Celery worker
+    _dispatch_job(job_id)
+
+    return JobCreateResponse(schema_version="1.0", job_id=job_id)
+
+
+def _create_binary_job(
+    body: JobCreateRequest,
+    upload: Upload,
+    db: Session,
+    settings: Settings,
+) -> JobCreateResponse:
+    """Create a binary/YARA analysis job from a single ``binary`` upload.
+
+    The artifact must have been uploaded via ``POST /uploads/artifact`` and
+    classified as ``binary``. It is copied into the job input directory and
+    the pipeline runs YARA/binary analysis on job start.
+    """
+    import shutil
+
+    src = settings.aipam_upload_root / upload.upload_id / upload.filename
+    if not src.exists():
+        raise HTTPException(status_code=400, detail="Binary upload file missing from disk")
+
+    job_id = str(uuid.uuid4())
+    input_dir: Path = settings.aipam_job_root / job_id / "input"
+    input_dir.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(src, input_dir / upload.filename)
+
+    job = Job(
+        job_id=job_id,
+        job_name=body.job_name or f"Binary analysis: {upload.filename}",
+        notes=body.notes,
+        status="queued",
+        execution_profile=body.execution_profile.value,
+        priority=body.priority.value,
+        upload_id=upload.upload_id,
+        pcap_filename=None,
+        pcap_size_bytes=upload.size_bytes,
+        source_type=SourceType.binary.value,
+        exercise_id=body.exercise_id,
+        created_at=_now_iso(),
+    )
+    db.add(job)
     db.commit()
 
     # Dispatch the pipeline to the Celery worker

@@ -113,6 +113,67 @@ def _update_job_status(db: Session, job: Job, status: str, error: str | None = N
     db.commit()
 
 
+def _run_binary_pipeline(
+    job_id: str,
+    job: Job,
+    db: Session,
+    *,
+    job_root: Path,
+    upload_root: Path,
+) -> str:
+    """Run YARA/binary analysis for a ``binary`` source-type job and finalize.
+
+    The artifact is normally copied into ``<job_dir>/input`` at job creation;
+    the upload directory is used as a fallback. Persistence is idempotent so
+    re-runs update the File row in place without duplicating findings.
+    """
+    from backend.app.binalysis.service import analyze_and_persist
+
+    try:
+        job_dir = create_job_directory(job_root, job_id)
+        input_dir = job_dir / "input"
+
+        def _first_file(d: Path) -> Path | None:
+            if not d.exists():
+                return None
+            files = [p for p in sorted(d.iterdir()) if p.is_file()]
+            return files[0] if files else None
+
+        target = _first_file(input_dir)
+        if target is None and job.upload_id:
+            target = _first_file(upload_root / job.upload_id)
+
+        if target is None:
+            _update_job_status(db, job, "failed", "No binary artifact found for job")
+            _emit(job_id, "job.complete", status="failed")
+            return "failed"
+
+        _emit(job_id, "stage.status", stage="binary", status="running",
+              step=1, total_steps=1)
+        analysis, _file_row, created = analyze_and_persist(db, job_id, target, target.name)
+        _emit(job_id, "stage.status", stage="binary", status="completed",
+              step=1, total_steps=1,
+              message=f"yara_matches={len(analysis.yara_matches)} findings={created}")
+
+        job.metrics_json = json.dumps({
+            "artifact_class": analysis.artifact_class,
+            "format": analysis.format,
+            "yara_available": analysis.yara_available,
+            "yara_matches": len(analysis.yara_matches),
+            "findings_created": created,
+        })
+        _update_job_status(db, job, "completed")
+        _emit(job_id, "job.complete", status="completed")
+        logger.info("Binary pipeline completed for job %s: %d YARA matches, %d findings",
+                    job_id, len(analysis.yara_matches), created)
+        return "completed"
+    except Exception as exc:
+        logger.error("Binary pipeline failed for job %s: %s", job_id, exc, exc_info=True)
+        _update_job_status(db, job, "failed", str(exc))
+        _emit(job_id, "job.complete", status="failed")
+        return "failed"
+
+
 def _record_sensor_result(db: Session, job_id: str, result: SensorResult) -> None:
     """Persist a SensorResult into the job_sensors table (upsert on re-analysis)."""
     from sqlalchemy import select as sa_select
@@ -306,6 +367,10 @@ def run_pipeline(
     _update_job_status(db, job, "running")
     job.started_at = _now_iso()
     db.commit()
+
+    # --- Binary artifact job: run YARA/binary analysis and finalize ---
+    if (job.source_type or "") == "binary":
+        return _run_binary_pipeline(job_id, job, db, job_root=job_root, upload_root=upload_root)
 
     profile: Profile = job.execution_profile  # type: ignore[assignment]
 
