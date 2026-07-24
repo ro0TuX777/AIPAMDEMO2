@@ -31,6 +31,7 @@ from backend.app.api import (
     reports,
     sigma,
     slices,
+    streams,
     system,
     temporal,
     theories,
@@ -148,6 +149,7 @@ def create_app() -> FastAPI:
     app.include_router(investigation.router, prefix="/api/v1")
     app.include_router(binary.router, prefix="/api/v1")
     app.include_router(sigma.router, prefix="/api/v1")
+    app.include_router(streams.router, prefix="/api/v1")
 
     from backend.app.api import admin, correlation
     app.include_router(admin.router, prefix="/api/v1")
