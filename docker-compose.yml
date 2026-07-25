@@ -35,7 +35,12 @@ services:
       dockerfile: deploy/Dockerfile.app
     image: aipam-app:latest
     container_name: aipam-api
-    user: aipam
+    # Runs as root (image default) to match the Celery worker, which must be root
+    # for Docker-socket access. Both share the /data volume — including the
+    # ChromaDB vector store that the API and worker both write — so a single UID
+    # avoids permission conflicts (a non-root API couldn't open a root-owned
+    # store, breaking KB indexing and chat RAG). Acceptable for this single-VM,
+    # air-gapped deployment where the two already share root-writable volumes.
     command: ["uvicorn", "backend.app.main_v2:create_app", "--factory", "--host", "0.0.0.0", "--port", "8000"]
     ports:
       - "8000:8000"
