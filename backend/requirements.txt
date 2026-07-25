@@ -32,7 +32,12 @@ numpy>=1.26
 docker>=7.0
 
 # --- RAG / Vector Store ---
-chromadb>=0.4
+# Pinned: chromadb 1.5.x ("RustBindingsAPI has no attribute 'bindings'" /
+# "Could not connect to tenant default_tenant") cannot open stores that 1.4.x
+# created, which silently breaks ALL vector ops (KB indexing, pipeline
+# auto-indexing, chat RAG). 1.4.0 reads the existing store and is what the test
+# suite runs against. Do not loosen without re-testing against a real store.
+chromadb==1.4.0
 
 # --- Document parsing (KB binary uploads) ---
 pdfplumber>=0.10
