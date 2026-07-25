@@ -578,7 +578,7 @@ async def _build_rag_context(
                         all_chunks.append(c)
 
         if not all_chunks:
-            return ""
+            return "", []
 
         # Sort by relevance score (highest first), with a boost for
         # user-uploaded KB docs so they aren't eclipsed by host profiles
@@ -601,7 +601,9 @@ async def _build_rag_context(
         for chunk in all_chunks:
             if chunk["score"] < 0.25:  # skip low-relevance chunks
                 continue
-            entry = f"[{chunk['doc_type']}] {chunk['text']}"
+            section = chunk.get("section", "")
+            label = f"{chunk['doc_type']} — {section}" if section else chunk["doc_type"]
+            entry = f"[{label}] {chunk['text']}"
             if total_len + len(entry) > _MAX_RAG_CHARS:
                 break
             rag_parts.append(entry)
@@ -620,11 +622,13 @@ async def _build_rag_context(
         for chunk in all_chunks:
             if chunk.get("doc_type", "") in _KB_CITED_TYPES and chunk.get("score", 0) >= 0.25:
                 doc_name = chunk.get("doc_name", "Knowledge Base")
+                section = chunk.get("section", "")
+                source = f"{doc_name} §{section}" if section else doc_name
                 snippet = chunk.get("text", "")[:180]
                 kb_citations.append(ChatCitationOut(
                     type="knowledge_base",
                     id=chunk.get("doc_id", ""),
-                    snippet=f"[KB: {doc_name}] {snippet}",
+                    snippet=f"[KB: {source}] {snippet}",
                 ))
                 if len(kb_citations) >= 3:  # cap at 3 KB citations
                     break

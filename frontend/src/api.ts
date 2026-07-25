@@ -2178,8 +2178,50 @@ export const api = {
   },
   getKBDocument(jobId: string, docId: string): Promise<KBDocumentDetail> { return get<KBDocumentDetail>(`/jobs/${jobId}/kb/documents/${docId}`); },
   deleteKBDocument(jobId: string, docId: string): Promise<void> { return del<void>(`/jobs/${jobId}/kb/documents/${docId}`); },
+  reindexKBDocument(jobId: string, docId: string): Promise<KBDocumentOut> { return post<KBDocumentOut>(`/jobs/${jobId}/kb/documents/${docId}/reindex`, {}); },
   searchKB(jobId: string, query: string, nResults?: number, docType?: string): Promise<KBSearchResponse> {
     return post<KBSearchResponse>(`/jobs/${jobId}/kb/search`, { query, n_results: nResults ?? 5, doc_type: docType });
+  },
+
+  // ── Global Reference Library (job-less; available to every analysis) ──
+  // Mutations accept an optional adminToken, sent as X-KB-Admin-Token when the
+  // server has aipam_kb_admin_token configured (see getLibraryConfig).
+  getLibraryConfig(): Promise<{ admin_required: boolean }> { return get(`/kb/library/config`); },
+  listLibraryDocuments(docType?: string): Promise<KBDocumentListOut> {
+    const qs = docType ? `?doc_type=${encodeURIComponent(docType)}` : "";
+    return get<KBDocumentListOut>(`/kb/library/documents${qs}`);
+  },
+  uploadLibraryDocument(body: KBDocumentCreate, adminToken?: string): Promise<KBDocumentOut> {
+    return request<KBDocumentOut>(`${API_BASE}/kb/library/documents`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(adminToken ? { "X-KB-Admin-Token": adminToken } : {}) },
+      body: JSON.stringify(body),
+    });
+  },
+  uploadLibraryBinaryFile(file: File, name: string, docType: string, description?: string, adminToken?: string): Promise<KBDocumentOut> {
+    const form = new FormData();
+    form.append("file", file);
+    form.append("name", name);
+    form.append("doc_type", docType);
+    if (description) form.append("description", description);
+    return request<KBDocumentOut>(`${API_BASE}/kb/library/upload-binary`, {
+      method: "POST",
+      headers: adminToken ? { "X-KB-Admin-Token": adminToken } : {},
+      body: form,
+    });
+  },
+  deleteLibraryDocument(docId: string, adminToken?: string): Promise<void> {
+    return request<void>(`${API_BASE}/kb/library/documents/${docId}`, {
+      method: "DELETE",
+      headers: adminToken ? { "X-KB-Admin-Token": adminToken } : {},
+    });
+  },
+  reindexLibraryDocument(docId: string, adminToken?: string): Promise<KBDocumentOut> {
+    return request<KBDocumentOut>(`${API_BASE}/kb/library/documents/${docId}/reindex`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", ...(adminToken ? { "X-KB-Admin-Token": adminToken } : {}) },
+      body: JSON.stringify({}),
+    });
   },
 
   // ── Chat ──
@@ -2490,7 +2532,7 @@ export interface GeneratedRuleResponse {
 // ─── Knowledge Base types ───────────────────────────────────────────────────
 export type KBDocType = "asset_inventory" | "network_map" | "baseline_profile" | "threat_intel" | "soc_playbook" | "policy" | "reference" | "user_guide" | "exploit_capability" | "other";
 export interface KBDocumentCreate { name: string; doc_type: KBDocType; description?: string; content: string }
-export interface KBDocumentOut { id: string; job_id: string; name: string; doc_type: string; description?: string; filename?: string; chunk_count: number; status: string; error_message?: string; created_at: string; updated_at: string }
+export interface KBDocumentOut { id: string; job_id: string | null; is_global?: boolean; name: string; doc_type: string; description?: string; filename?: string; chunk_count: number; status: string; error_message?: string; created_at: string; updated_at: string }
 export interface KBDocumentDetail extends KBDocumentOut { content: string }
 export interface KBDocumentListOut { items: KBDocumentOut[]; total: number }
 export interface KBSearchResult { text: string; doc_name: string; doc_type: string; doc_id: string; score: number }

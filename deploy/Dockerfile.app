@@ -17,7 +17,8 @@ WORKDIR /app
 
 # System deps: curl for healthcheck, gnupg/ca-certs for Zeek repo,
 # zeek + suricata for the pipeline stages, tshark + tcpdump for the Streams
-# forensics endpoints (follow-stream transcript, per-packet hexdump, carving).
+# forensics endpoints (follow-stream transcript, per-packet hexdump, carving),
+# tesseract-ocr + poppler-utils for OCR of image-only PDFs in the knowledge base.
 # Preseed wireshark-common so the tshark install stays non-interactive; setuid
 # is unnecessary since we only read PCAP files, never capture live traffic.
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -36,6 +37,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
        suricata-update \
        tshark \
        tcpdump \
+       tesseract-ocr \
+       poppler-utils \
     && rm -rf /var/lib/apt/lists/*
 
 # Ensure zeek is on PATH

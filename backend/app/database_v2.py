@@ -142,6 +142,15 @@ def init_v2_db() -> None:
                     text("ALTER TABLE theories ADD COLUMN score_breakdown_json TEXT")
                 )
 
+    # Knowledge Base: add content_sha256 (dedup) to older kb_documents tables
+    if inspector.has_table("kb_documents"):
+        kb_cols = {c["name"] for c in inspector.get_columns("kb_documents")}
+        if "content_sha256" not in kb_cols:
+            with engine.begin() as connection:
+                connection.execute(
+                    text("ALTER TABLE kb_documents ADD COLUMN content_sha256 VARCHAR")
+                )
+
     # Investigation Queue: add analyst_status, analyst_notes, reviewed_at columns
     _investigation_tables = ["findings", "alerts", "theories"]
     _investigation_cols = [

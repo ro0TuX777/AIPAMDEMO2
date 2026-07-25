@@ -9,6 +9,7 @@ from __future__ import annotations
 import logging
 import re
 import uuid
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -19,9 +20,21 @@ import httpx
 
 logger = logging.getLogger("aipam.kb")
 
+
+@dataclass
+class IndexResult:
+    """Outcome of indexing one document."""
+    chunk_count: int
+    degraded: bool = False  # True when any chunk fell back to hash embeddings
+
 # ── Chunking parameters ─────────────────────────────────────────────────
 _CHUNK_SIZE = 1024     # chars per chunk
 _CHUNK_OVERLAP = 128   # overlap between consecutive chunks
+
+# Vector-store metadata value used for job-less "global library" documents.
+# The DB stores job_id=NULL for these; ChromaDB metadata needs a scalar, so we
+# tag their chunks with this sentinel and union it into per-job retrieval.
+GLOBAL_JOB_SENTINEL = "__global__"
 
 
 def _looks_like_csv(text: str) -> bool:
@@ -182,39 +195,166 @@ def chunk_text(text: str, chunk_size: int = _CHUNK_SIZE, overlap: int = _CHUNK_O
     return chunks
 
 
+# ── Structure-aware chunking ─────────────────────────────────────────────
+
+_HEADING_RE = re.compile(r"^(#{1,6})\s+(.+?)\s*#*$")
+# Page / Sheet / Slide markers emitted by the binary extractors.
+_MARKER_RE = re.compile(r"^---\s*(Page|Sheet|Slide)\b.*?---\s*$", re.IGNORECASE)
+
+
+def _split_into_sections(text: str) -> list[tuple[str, str]]:
+    """Split text into (breadcrumb_label, section_text) by structure.
+
+    Recognises Markdown headings — nested headings build a breadcrumb like
+    ``Setup › Payload options`` — and the ``--- Page/Sheet/Slide … ---`` markers
+    the extractors emit. Text with no such structure returns one ('', text).
+    """
+    sections: list[tuple[str, str]] = []
+    heading_stack: list[tuple[int, str]] = []
+    label = ""
+    buf: list[str] = []
+
+    def flush() -> None:
+        if any(ln.strip() for ln in buf):
+            sections.append((label, "\n".join(buf).strip()))
+
+    for line in text.split("\n"):
+        stripped = line.strip()
+        heading = _HEADING_RE.match(stripped)
+        marker = _MARKER_RE.match(stripped)
+        if heading:
+            flush()
+            buf = []
+            level = len(heading.group(1))
+            title = heading.group(2).strip()
+            heading_stack[:] = [(lv, t) for lv, t in heading_stack if lv < level]
+            heading_stack.append((level, title))
+            label = " › ".join(t for _, t in heading_stack)
+            buf.append(line)
+        elif marker:
+            flush()
+            buf = []
+            heading_stack.clear()
+            label = stripped.strip("- ").strip()
+            buf.append(line)
+        else:
+            buf.append(line)
+    flush()
+    return sections or [("", text.strip())]
+
+
+def _pack_paragraphs(body: str, chunk_size: int, overlap: int) -> list[str]:
+    """Pack a section's paragraphs into <= chunk_size pieces, keeping boundaries."""
+    paras = [p for p in re.split(r"\n\s*\n", body) if p.strip()]
+    pieces: list[str] = []
+    cur = ""
+    for para in paras:
+        if len(para) > chunk_size:
+            # Oversized single paragraph → fall back to char windows.
+            if cur.strip():
+                pieces.append(cur.strip())
+            cur = ""
+            pieces.extend(chunk_text(para, chunk_size, overlap))
+            continue
+        if cur and len(cur) + len(para) + 2 > chunk_size:
+            pieces.append(cur.strip())
+            cur = ""
+        cur = f"{cur}\n\n{para}" if cur else para
+    if cur.strip():
+        pieces.append(cur.strip())
+    return pieces
+
+
+def chunk_structured(
+    text: str, chunk_size: int = _CHUNK_SIZE, overlap: int = _CHUNK_OVERLAP,
+) -> list[tuple[str, str]]:
+    """Chunk a document along its structure → (chunk, section_label) pairs.
+
+    Sections come from headings/markers; long sections are packed by paragraph so
+    chunks don't split mid-sentence, mid-table, or mid-heading (which blind
+    fixed-size windows do). The label is a heading breadcrumb or page/slide
+    marker, kept for retrieval context and citations.
+    """
+    text = text.strip()
+    if not text:
+        return []
+    out: list[tuple[str, str]] = []
+    for label, body in _split_into_sections(text):
+        if not body.strip():
+            continue
+        if len(body) <= chunk_size:
+            out.append((body, label))
+        else:
+            out.extend((piece, label) for piece in _pack_paragraphs(body, chunk_size, overlap))
+    return out
+
+
 # ── Ollama Embedding Client ─────────────────────────────────────────────
+
+# Chunks per /api/embed request. Ollama accepts an array of inputs and returns
+# one embedding per input, so batching cuts a many-hundred-chunk manual from
+# hundreds of sequential round-trips down to a handful.
+_EMBED_BATCH = 64
+
+
+async def _embed_one(client: httpx.AsyncClient, ollama_url: str, model: str, text: str) -> list[float] | None:
+    """Embed a single text; return None on failure (caller falls back)."""
+    try:
+        resp = await client.post(f"{ollama_url}/api/embed", json={"model": model, "input": text})
+        resp.raise_for_status()
+        emb_list = resp.json().get("embeddings", [])
+        if emb_list and emb_list[0]:
+            return emb_list[0]
+    except Exception as exc:
+        logger.warning("Ollama embedding failed for one chunk: %s", exc)
+    return None
+
 
 async def get_embeddings(
     texts: list[str],
     ollama_url: str = "http://ollama:11434",
     model: str = "mxbai-embed-large",
+    _stats: dict | None = None,
 ) -> list[list[float]]:
-    """Get embeddings from Ollama's embedding API.
+    """Get embeddings from Ollama's /api/embed endpoint (Ollama >= 0.4).
 
-    Uses the /api/embed endpoint (Ollama >= 0.4).
-    Falls back to a simple hash-based embedding if Ollama is unavailable,
-    so the system degrades gracefully.
+    Sends texts in batches for speed, retrying a failed batch item-by-item.
+    Any chunk that still can't be embedded falls back to a deterministic
+    hash-based vector so the system degrades gracefully instead of failing —
+    but that vector is semantically meaningless. When a ``_stats`` dict is
+    passed, the number of such fallbacks is recorded under ``_stats['fallback']``
+    so callers can flag the document as degraded (embedding model unavailable).
     """
     embeddings: list[list[float]] = []
+    fallback = 0
     async with httpx.AsyncClient(timeout=120.0) as client:
-        for text in texts:
+        for i in range(0, len(texts), _EMBED_BATCH):
+            batch = texts[i:i + _EMBED_BATCH]
+            got: list[list[float]] | None = None
             try:
-                resp = await client.post(
-                    f"{ollama_url}/api/embed",
-                    json={"model": model, "input": text},
-                )
+                resp = await client.post(f"{ollama_url}/api/embed", json={"model": model, "input": batch})
                 resp.raise_for_status()
-                data = resp.json()
-                # /api/embed returns {"embeddings": [[...], ...]}
-                emb_list = data.get("embeddings", [])
-                if emb_list and len(emb_list[0]) > 0:
-                    embeddings.append(emb_list[0])
-                else:
-                    logger.warning("Empty embedding returned for chunk")
-                    embeddings.append(_fallback_embedding(text))
+                embs = resp.json().get("embeddings", [])
+                if len(embs) == len(batch) and all(embs):
+                    got = embs
             except Exception as exc:
-                logger.warning("Ollama embedding failed, using fallback: %s", exc)
-                embeddings.append(_fallback_embedding(text))
+                logger.warning("Ollama batch embed failed (%s) — retrying per-item", exc)
+
+            if got is not None:
+                embeddings.extend(got)
+                continue
+
+            # Batch failed or came back incomplete — try each item, then hash.
+            for text in batch:
+                one = await _embed_one(client, ollama_url, model, text)
+                if one is None:
+                    embeddings.append(_fallback_embedding(text))
+                    fallback += 1
+                else:
+                    embeddings.append(one)
+
+    if _stats is not None:
+        _stats["fallback"] = _stats.get("fallback", 0) + fallback
     return embeddings
 
 
@@ -275,24 +415,35 @@ async def index_document(
     ollama_url: str = "http://ollama:11434",
     embedding_model: str = "mxbai-embed-large",
     persist_dir: str | Path | None = None,
-) -> int:
+) -> IndexResult:
     """Chunk a document, embed it, and store in ChromaDB.
 
-    Returns the number of chunks indexed.
+    Returns an IndexResult (chunk count + degraded flag). ``degraded`` is True
+    when the embedding model was unavailable and hash fallbacks were used, so
+    the caller can mark the document for re-indexing.
     If the content looks like CSV/TSV data, it is first enriched into
     natural-language sentences so that semantic search works well.
     """
-    # Enrich CSV/TSV content into natural language for better embedding
-    indexable_content = content
+    # CSV/TSV is enriched into per-row natural-language sentences and chunked
+    # by size; everything else is chunked along its structure (headings, pages,
+    # slides) so chunks keep a section label and don't split mid-section.
     if _looks_like_csv(content):
         logger.info("Detected CSV/TSV content in '%s' — enriching for embedding", doc_name)
-        indexable_content = _enrich_csv_to_natural_language(content, doc_name=doc_name)
+        enriched = _enrich_csv_to_natural_language(content, doc_name=doc_name)
+        chunk_pairs = [(c, "") for c in chunk_text(enriched)]
+    else:
+        chunk_pairs = chunk_structured(content)
+    if not chunk_pairs:
+        return IndexResult(chunk_count=0)
 
-    chunks = chunk_text(indexable_content)
-    if not chunks:
-        return 0
+    chunks = [c for c, _ in chunk_pairs]
+    sections = [s for _, s in chunk_pairs]
+    # Embed each chunk together with its section breadcrumb so the section
+    # context contributes to the vector (helps retrieval on long manuals).
+    embed_inputs = [f"{s}\n{c}" if s else c for c, s in chunk_pairs]
 
-    embeddings = await get_embeddings(chunks, ollama_url=ollama_url, model=embedding_model)
+    stats: dict = {"fallback": 0}
+    embeddings = await get_embeddings(embed_inputs, ollama_url=ollama_url, model=embedding_model, _stats=stats)
 
     collection = _get_collection(persist_dir)
 
@@ -304,6 +455,7 @@ async def index_document(
             "doc_type": doc_type,
             "job_id": job_id,
             "chunk_index": i,
+            "section": sections[i],
         }
         for i in range(len(chunks))
     ]
@@ -333,8 +485,13 @@ async def index_document(
         else:
             raise
 
-    logger.info("Indexed %d chunks for document %s (%s) job=%s", len(chunks), doc_name, doc_id, job_id)
-    return len(chunks)
+    degraded = stats["fallback"] > 0
+    logger.info(
+        "Indexed %d chunks for document %s (%s) job=%s%s",
+        len(chunks), doc_name, doc_id, job_id,
+        f" [DEGRADED: {stats['fallback']} hash fallbacks]" if degraded else "",
+    )
+    return IndexResult(chunk_count=len(chunks), degraded=degraded)
 
 
 async def retrieve(
@@ -342,13 +499,19 @@ async def retrieve(
     n_results: int = 5,
     doc_type_filter: str | None = None,
     job_id: str | None = None,
+    include_global: bool = True,
     ollama_url: str = "http://ollama:11434",
     embedding_model: str = "mxbai-embed-large",
     persist_dir: str | Path | None = None,
 ) -> list[dict[str, Any]]:
     """Retrieve the most relevant KB chunks for a query.
 
-    If job_id is provided, only chunks belonging to that job are returned.
+    Job scoping (via the ``job_id`` metadata on each chunk):
+      - job_id set,  include_global=True   → that job's chunks ∪ global library
+      - job_id set,  include_global=False  → that job's chunks only
+      - job_id None, include_global=True   → global library only
+      - job_id None, include_global=False  → no job filter (every chunk; legacy)
+
     Returns a list of dicts with keys: text, doc_name, doc_type, score, doc_id.
     """
     collection = _get_collection(persist_dir)
@@ -359,10 +522,17 @@ async def retrieve(
     if not query_embedding:
         return []
 
-    # Build where filter combining job_id and optional doc_type
+    # Build where filter combining job scope and optional doc_type
     where_clauses: list[dict] = []
+    scopes: list[str] = []
     if job_id:
-        where_clauses.append({"job_id": job_id})
+        scopes.append(job_id)
+    if include_global:
+        scopes.append(GLOBAL_JOB_SENTINEL)
+    if len(scopes) == 1:
+        where_clauses.append({"job_id": scopes[0]})
+    elif len(scopes) > 1:
+        where_clauses.append({"job_id": {"$in": scopes}})
     if doc_type_filter:
         where_clauses.append({"doc_type": doc_type_filter})
 
@@ -392,6 +562,7 @@ async def retrieve(
                 "doc_name": meta.get("doc_name", ""),
                 "doc_type": meta.get("doc_type", ""),
                 "doc_id": meta.get("doc_id", ""),
+                "section": meta.get("section", ""),
                 "score": round(score, 4),
             })
 
@@ -535,7 +706,7 @@ async def auto_index_job(
     for host in hosts:
         content = _format_host_summary(host)
         doc_id = f"job_{job_id}_host_{host.ip}"
-        n = await index_document(
+        res = await index_document(
             doc_id=doc_id,
             content=content,
             doc_name=f"Host {host.ip}",
@@ -546,7 +717,7 @@ async def auto_index_job(
             persist_dir=persist_dir,
         )
         counts["hosts"] += 1
-        counts["total_chunks"] += n
+        counts["total_chunks"] += res.chunk_count
 
     # ── Index alerts (high/medium severity prioritized) ──────────────
     alerts = db_session.execute(
@@ -568,7 +739,7 @@ async def auto_index_job(
             parts.append(_format_alert_summary(a))
         content = "\n---\n".join(parts)
         doc_id = f"job_{job_id}_alert_{uuid.uuid4().hex[:12]}"
-        n = await index_document(
+        res = await index_document(
             doc_id=doc_id,
             content=content,
             doc_name=f"Alert: {sig[:80]}",
@@ -579,7 +750,7 @@ async def auto_index_job(
             persist_dir=persist_dir,
         )
         counts["alerts"] += len(group)
-        counts["total_chunks"] += n
+        counts["total_chunks"] += res.chunk_count
 
     # ── Index findings ───────────────────────────────────────────────
     findings = db_session.execute(
@@ -589,7 +760,7 @@ async def auto_index_job(
     for finding in findings:
         content = _format_finding_summary(finding)
         doc_id = f"job_{job_id}_finding_{finding.finding_id}"
-        n = await index_document(
+        res = await index_document(
             doc_id=doc_id,
             content=content,
             doc_name=f"Finding: {finding.title[:80]}",
@@ -600,7 +771,7 @@ async def auto_index_job(
             persist_dir=persist_dir,
         )
         counts["findings"] += 1
-        counts["total_chunks"] += n
+        counts["total_chunks"] += res.chunk_count
 
     logger.info(
         "Auto-indexed job %s: %d hosts, %d alerts, %d findings → %d chunks",

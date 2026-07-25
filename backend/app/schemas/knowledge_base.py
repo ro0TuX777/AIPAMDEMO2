@@ -31,7 +31,8 @@ class KBDocumentCreate(BaseModel):
 class KBDocumentOut(BaseModel):
     """Response schema for a KB document (without full content)."""
     id: str
-    job_id: str
+    job_id: str | None = None      # None = global reference-library document
+    is_global: bool = False
     name: str
     doc_type: str
     description: str | None = None

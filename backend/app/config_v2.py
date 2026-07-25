@@ -17,6 +17,11 @@ class Settings(BaseSettings):
 
     # --- Auth ---
     aipam_api_token: str  # Required — no default
+    # Optional: when set, curating the global KB library (create/delete/re-index)
+    # requires this token via the X-KB-Admin-Token header, so sensitive shared
+    # material (e.g. exploit guides) can't be added or removed by every operator.
+    # Unset (default) = library management is open to any valid API token.
+    aipam_kb_admin_token: str | None = None
 
     # --- Concurrency ---
     aipam_max_concurrent_jobs: int = 1

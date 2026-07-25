@@ -61,6 +61,9 @@ export const ChatPage: React.FC = () => {
   const [kbContent, setKbContent] = useState("");
   const [kbShowUpload, setKbShowUpload] = useState(false);
   const [kbBinaryFile, setKbBinaryFile] = useState<File | null>(null);
+  const [kbGlobal, setKbGlobal] = useState(false);
+  const [kbAdminRequired, setKbAdminRequired] = useState(false);
+  const [kbAdminToken, setKbAdminToken] = useState("");
 
   const jobQ = useQuery({
     queryKey: ["job", jobId],
@@ -76,8 +79,14 @@ export const ChatPage: React.FC = () => {
     setKbLoading(true);
     setKbError(null);
     try {
-      const res = await api.listKBDocuments(jobId);
-      setKbDocs(res.items);
+      // This job's own documents plus the shared global library — both are used
+      // to ground the AI's answers, so both are shown here.
+      const [jobRes, libRes] = await Promise.all([
+        api.listKBDocuments(jobId),
+        api.listLibraryDocuments(),
+      ]);
+      const lib = libRes.items.map((d) => ({ ...d, is_global: true }));
+      setKbDocs([...jobRes.items, ...lib]);
     } catch {
       setKbError("Failed to load knowledge base documents");
     } finally {
@@ -88,6 +97,43 @@ export const ChatPage: React.FC = () => {
   useEffect(() => {
     fetchKBDocs();
   }, [fetchKBDocs]);
+
+  // Does curating the shared library require an admin token on this server?
+  useEffect(() => {
+    api.getLibraryConfig()
+      .then((c) => setKbAdminRequired(!!c.admin_required))
+      .catch(() => setKbAdminRequired(false));
+  }, []);
+
+  // While any document is still indexing (background task), poll until it
+  // settles — capped so a stuck doc doesn't poll forever.
+  const kbHasPending = kbDocs.some((d) => d.status === "pending");
+  useEffect(() => {
+    if (!kbHasPending) return;
+    let attempts = 0;
+    const timer = setInterval(() => {
+      attempts += 1;
+      if (attempts > 20) {
+        clearInterval(timer);
+        return;
+      }
+      fetchKBDocs();
+    }, 2500);
+    return () => clearInterval(timer);
+  }, [kbHasPending, fetchKBDocs]);
+
+  const handleKBReindex = async (docId: string, isGlobal: boolean) => {
+    if (!jobId) return;
+    setKbError(null);
+    try {
+      if (isGlobal) await api.reindexLibraryDocument(docId, kbAdminRequired ? kbAdminToken.trim() || undefined : undefined);
+      else await api.reindexKBDocument(jobId, docId);
+      setKbSuccess("Re-indexing started…");
+      fetchKBDocs();
+    } catch (err: any) {
+      setKbError(err.message || "Failed to re-index document");
+    }
+  };
 
   const handleKBUpload = async () => {
     if (!jobId || !kbName.trim()) {
@@ -103,25 +149,29 @@ export const ChatPage: React.FC = () => {
     setKbError(null);
     setKbSuccess(null);
     try {
+      const adminTok = kbAdminRequired ? kbAdminToken.trim() || undefined : undefined;
       if (kbBinaryFile) {
-        // Binary upload (PDF, DOCX, XLSX)
-        await api.uploadKBBinaryFile(
-          jobId,
-          kbBinaryFile,
-          kbName.trim(),
-          kbDocType,
-          kbDescription.trim() || undefined,
-        );
+        // Binary upload (PDF, DOCX, XLSX, PPTX)
+        if (kbGlobal) {
+          await api.uploadLibraryBinaryFile(kbBinaryFile, kbName.trim(), kbDocType, kbDescription.trim() || undefined, adminTok);
+        } else {
+          await api.uploadKBBinaryFile(jobId, kbBinaryFile, kbName.trim(), kbDocType, kbDescription.trim() || undefined);
+        }
       } else {
         // Text upload
-        await api.uploadKBDocument(jobId, {
+        const body = {
           name: kbName.trim(),
           doc_type: kbDocType,
           description: kbDescription.trim() || undefined,
           content: kbContent,
-        });
+        };
+        if (kbGlobal) {
+          await api.uploadLibraryDocument(body, adminTok);
+        } else {
+          await api.uploadKBDocument(jobId, body);
+        }
       }
-      setKbSuccess(`"${kbName}" uploaded and indexed`);
+      setKbSuccess(`"${kbName}" uploaded${kbGlobal ? " to the library" : ""} — indexing…`);
       setKbName("");
       setKbDescription("");
       setKbContent("");
@@ -135,10 +185,16 @@ export const ChatPage: React.FC = () => {
     }
   };
 
-  const handleKBDelete = async (docId: string, docName: string) => {
-    if (!jobId || !window.confirm(`Delete "${docName}" from the knowledge base?`)) return;
+  const handleKBDelete = async (docId: string, docName: string, isGlobal: boolean) => {
+    if (!jobId) return;
+    const scopeMsg = isGlobal ? " from the shared library (affects all analyses)" : "";
+    if (!window.confirm(`Delete "${docName}"${scopeMsg}?`)) return;
     try {
-      await api.deleteKBDocument(jobId, docId);
+      if (isGlobal) {
+        await api.deleteLibraryDocument(docId, kbAdminRequired ? kbAdminToken.trim() || undefined : undefined);
+      } else {
+        await api.deleteKBDocument(jobId, docId);
+      }
       setKbDocs((prev) => prev.filter((d) => d.id !== docId));
       setKbSuccess(`"${docName}" deleted`);
     } catch (err: any) {
@@ -146,7 +202,7 @@ export const ChatPage: React.FC = () => {
     }
   };
 
-  const BINARY_EXTENSIONS = [".pdf", ".docx", ".xlsx", ".xls"];
+  const BINARY_EXTENSIONS = [".pdf", ".docx", ".xlsx", ".xls", ".pptx"];
 
   const handleKBFileRead = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -283,6 +339,25 @@ export const ChatPage: React.FC = () => {
                           <option value="other">Other</option>
                         </select>
                       </div>
+                      <label className="flex items-start gap-2 bg-slate-950/40 border border-slate-700/50 rounded px-2 py-1.5 cursor-pointer">
+                        <input type="checkbox" className="mt-0.5 accent-emerald-500"
+                          checked={kbGlobal} onChange={(e) => setKbGlobal(e.target.checked)} />
+                        <span className="text-[10px] text-slate-300 leading-tight">
+                          Add to <span className="font-semibold text-emerald-400">shared library</span>
+                          <span className="block text-slate-500">Available to every analysis — ideal for exploit user guides, capability manuals, and playbooks (not just this capture).</span>
+                        </span>
+                      </label>
+                      {kbGlobal && kbAdminRequired && (
+                        <div>
+                          <label className="block mb-0.5 text-slate-400 text-[10px]">
+                            Library admin token <span className="text-slate-600">(required to curate the shared library)</span>
+                          </label>
+                          <input type="password" autoComplete="off"
+                            className="bg-slate-900 border border-slate-700 rounded px-2 py-1 w-full text-slate-200 text-xs"
+                            value={kbAdminToken} onChange={(e) => setKbAdminToken(e.target.value)}
+                            placeholder="X-KB-Admin-Token" />
+                        </div>
+                      )}
                       <div>
                         <label className="block mb-0.5 text-slate-400 text-[10px]">Description (optional)</label>
                         <input type="text" className="bg-slate-900 border border-slate-700 rounded px-2 py-1 w-full text-slate-200 text-xs"
@@ -293,9 +368,9 @@ export const ChatPage: React.FC = () => {
                         <div className="flex items-center gap-2 mb-1">
                           <label className="text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-300 px-2 py-0.5 rounded border border-slate-600 cursor-pointer">
                             Load file
-                            <input type="file" accept=".csv,.txt,.json,.md,.log,.xml,.yaml,.yml,.html,.tsv,.conf,.ini,.rules,.ioc,.stix,.yar,.pdf,.docx,.xlsx,.xls" className="hidden" onChange={handleKBFileRead} />
+                            <input type="file" accept=".csv,.txt,.json,.md,.log,.xml,.yaml,.yml,.html,.tsv,.conf,.ini,.rules,.ioc,.stix,.yar,.pdf,.docx,.xlsx,.xls,.pptx" className="hidden" onChange={handleKBFileRead} />
                           </label>
-                          <span className="text-[10px] text-slate-500">PDF, DOCX, Excel, CSV, TXT, JSON, YAML, and more (max 10MB)</span>
+                          <span className="text-[10px] text-slate-500">PDF, Word, PowerPoint, Excel, Markdown, CSV, TXT, and more (max 10MB)</span>
                         </div>
                         {kbBinaryFile ? (
                           <div className="bg-slate-900 border border-slate-700 rounded px-2 py-2 text-xs text-slate-300 flex items-center justify-between">
@@ -325,7 +400,8 @@ export const ChatPage: React.FC = () => {
                   {kbDocs.length === 0 && !kbLoading && !kbShowUpload ? (
                     <div className="text-xs text-slate-500 text-center py-8 border border-dashed border-slate-700 rounded-lg">
                       <p>No documents yet.</p>
-                      <p className="mt-1">Add asset inventories, network maps, or threat intel to enrich AI analysis.</p>
+                      <p className="mt-1">Add exploit user guides, capability manuals, playbooks, asset inventories, or threat intel to ground the AI's analysis.</p>
+                      <p className="mt-1 text-slate-600">Tip: tick <span className="text-emerald-500/80">shared library</span> when adding so a manual is available to every analysis, not just this capture.</p>
                     </div>
                   ) : (
                     <div className="space-y-2">
@@ -334,12 +410,25 @@ export const ChatPage: React.FC = () => {
                           <div className="flex items-start gap-2 min-w-0">
                             <span className="text-[10px] font-mono font-bold text-slate-500 mt-0.5">{DOC_LABELS[doc.doc_type] ?? "DOC"}</span>
                             <div className="min-w-0">
-                              <div className="text-xs font-medium text-slate-200 truncate">{doc.name}</div>
+                              <div className="text-xs font-medium text-slate-200 truncate flex items-center gap-1.5">
+                                {doc.name}
+                                {doc.is_global && (
+                                  <span className="text-[9px] font-semibold bg-emerald-900/40 text-emerald-400 px-1 py-0.5 rounded flex-shrink-0" title="Shared library — available to every analysis">LIBRARY</span>
+                                )}
+                              </div>
                               <div className="text-[10px] text-slate-500 flex items-center gap-1.5 mt-0.5">
                                 <span className="bg-slate-800 px-1 py-0.5 rounded">{doc.doc_type.replace("_", " ")}</span>
                                 <span>{doc.chunk_count} chunks</span>
-                                <span className={doc.status === "indexed" ? "text-emerald-400" : doc.status === "error" ? "text-red-400" : "text-amber-400"}>
-                                  {doc.status}
+                                <span
+                                  title={doc.error_message || undefined}
+                                  className={
+                                    doc.status === "indexed" ? "text-emerald-400"
+                                    : doc.status === "error" ? "text-red-400"
+                                    : doc.status === "degraded" ? "text-orange-400"
+                                    : "text-amber-400 animate-pulse"
+                                  }
+                                >
+                                  {doc.status === "pending" ? "indexing…" : doc.status}
                                 </span>
                               </div>
                               {doc.description && (
@@ -347,9 +436,18 @@ export const ChatPage: React.FC = () => {
                               )}
                             </div>
                           </div>
-                          <button onClick={() => handleKBDelete(doc.id, doc.name)}
-                            className="text-red-400/50 hover:text-red-400 text-xs px-1 py-0.5 rounded hover:bg-red-900/20 opacity-0 group-hover:opacity-100 transition-opacity flex-shrink-0"
-                            title="Delete">Del</button>
+                          <div className="flex items-center gap-0.5 flex-shrink-0">
+                            <button onClick={() => handleKBReindex(doc.id, !!doc.is_global)}
+                              className={`text-xs px-1 py-0.5 rounded hover:bg-slate-700 transition-opacity ${
+                                doc.status === "degraded" || doc.status === "error"
+                                  ? "text-orange-400 hover:text-orange-300"
+                                  : "text-slate-500 hover:text-slate-300 opacity-0 group-hover:opacity-100"
+                              }`}
+                              title={doc.status === "degraded" ? "Embeddings degraded — re-index to fix" : "Re-index"}>↻</button>
+                            <button onClick={() => handleKBDelete(doc.id, doc.name, !!doc.is_global)}
+                              className="text-red-400/50 hover:text-red-400 text-xs px-1 py-0.5 rounded hover:bg-red-900/20 opacity-0 group-hover:opacity-100 transition-opacity"
+                              title="Delete">Del</button>
+                          </div>
                         </div>
                       ))}
                     </div>
