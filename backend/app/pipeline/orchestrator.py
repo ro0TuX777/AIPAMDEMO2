@@ -758,6 +758,18 @@ def run_pipeline(
         logger.error("Correlation failed for job %s: %s", job_id, exc, exc_info=True)
         has_errors = True
 
+    # Populate the Raw Events explorer for PCAP jobs by normalizing zeek flows/
+    # events and suricata alerts into normalized_events. The telemetry pipeline
+    # above only runs for log sources, so without this a plain PCAP capture has
+    # an empty Raw Events view despite the rich per-connection sensor data.
+    if has_pcaps:
+        try:
+            from backend.app.normalize.network_events import normalize_network_events
+            n_events = normalize_network_events(job_id, job_dir, db)
+            logger.info("Raw network events for job %s: %d", job_id, n_events)
+        except Exception:
+            logger.warning("PCAP network-event normalization failed for job %s", job_id, exc_info=True)
+
     # --- Publish partial result: correlation / aggregate data ---
     _completed_stages.append("correlate")
     try:
