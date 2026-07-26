@@ -47,6 +47,10 @@ services:
     env_file: .env
     environment:
       AIPAM_DB_PATH: /data/aipam.db
+      # V1 SQLModel data (settings, partial job results, chat) shares this
+      # persistent DB with V2 — without it, DATABASE_URL defaults to an ephemeral
+      # per-container ./aipam.db, so partial results never reach the API.
+      DATABASE_URL: sqlite:////data/aipam.db
       AIPAM_JOB_ROOT: /jobs
       AIPAM_UPLOAD_ROOT: /uploads
       AIPAM_REDIS_URL: redis://redis:6379/0
@@ -91,6 +95,10 @@ services:
     env_file: .env
     environment:
       AIPAM_DB_PATH: /data/aipam.db
+      # V1 SQLModel data (settings, partial job results, chat) shares this
+      # persistent DB with V2 — without it, DATABASE_URL defaults to an ephemeral
+      # per-container ./aipam.db, so partial results never reach the API.
+      DATABASE_URL: sqlite:////data/aipam.db
       AIPAM_JOB_ROOT: /jobs
       AIPAM_UPLOAD_ROOT: /uploads
       AIPAM_REDIS_URL: redis://redis:6379/0

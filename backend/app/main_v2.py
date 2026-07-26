@@ -54,13 +54,19 @@ def create_app() -> FastAPI:
     except Exception:
         pass  # Tests override the DB; production DB dir may not exist yet
 
-    # Also ensure the V1 SettingsDB table exists — it lives in the same SQLite
-    # file but is declared via SQLModel, so init_v2_db() does not create it.
+    # Ensure the V1 SQLModel tables (settings, partial job results, chat, …)
+    # exist. They live in the same SQLite file but are declared via SQLModel, so
+    # init_v2_db()'s Base.metadata.create_all does not create them. Their table
+    # names are *db-suffixed and never collide with the V2 tables, so creating
+    # them here is safe. With DATABASE_URL pointed at the persistent /data DB
+    # (see docker-compose), this makes them persistent and shared between the
+    # API and the worker — partial job results in particular are written by the
+    # worker and polled by the API, so both must use the same database file.
     try:
         from sqlmodel import SQLModel
         from backend.app.database import engine
         from backend.app import db_models  # noqa: F401  ensure metadata registered
-        SQLModel.metadata.create_all(engine, tables=[db_models.SettingsDB.__table__])
+        SQLModel.metadata.create_all(engine)
     except Exception:
         pass
 

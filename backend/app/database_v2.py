@@ -151,6 +151,15 @@ def init_v2_db() -> None:
                     text("ALTER TABLE kb_documents ADD COLUMN content_sha256 VARCHAR")
                 )
 
+    # Generic artifact upload: add artifact_class to older uploads tables
+    if inspector.has_table("uploads"):
+        upl_cols = {c["name"] for c in inspector.get_columns("uploads")}
+        if "artifact_class" not in upl_cols:
+            with engine.begin() as connection:
+                connection.execute(
+                    text("ALTER TABLE uploads ADD COLUMN artifact_class VARCHAR")
+                )
+
     # Investigation Queue: add analyst_status, analyst_notes, reviewed_at columns
     _investigation_tables = ["findings", "alerts", "theories"]
     _investigation_cols = [
