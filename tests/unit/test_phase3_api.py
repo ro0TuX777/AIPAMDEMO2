@@ -403,6 +403,22 @@ class TestHostEndpoints:
         assert r.status_code == 200
         assert len(r.json()["items"]) == 1
 
+    def test_host_connections_include_destination_side(self, app_client):
+        # A destination-only host (e.g. a DNS server) must still list the
+        # conversations it participates in, so its streams are followable.
+        client, db = app_client
+        job = _seed_job(db)
+        _seed_host(db, job.job_id, ip="10.0.0.1")
+        _seed_host(db, job.job_id, ip="10.0.0.53")
+        _seed_connection(db, job.job_id, host_ip="10.0.0.1",
+                         src_ip="10.0.0.1", dest_ip="10.0.0.53", dest_port=53, proto="udp")
+
+        r = client.get(f"/api/v1/jobs/{job.job_id}/hosts/10.0.0.53/connections", headers=AUTH)
+        assert r.status_code == 200
+        items = r.json()["items"]
+        assert len(items) == 1
+        assert items[0]["dest_ip"] == "10.0.0.53" and items[0]["dest_port"] == 53
+
     def test_host_alerts(self, app_client):
         client, db = app_client
         job = _seed_job(db)

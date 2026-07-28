@@ -13,7 +13,7 @@ GET /jobs/{jobId}/hosts/{ip}/files       – host files
 import json
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from backend.app.api.deps import get_db, get_request_id, verify_token
@@ -203,7 +203,14 @@ async def host_connections(
     _require_host(db, job_id, ip)
     response.headers["X-Request-Id"] = request_id
 
-    q = select(Connection).where(Connection.job_id == job_id, Connection.host_ip == ip)
+    # host_ip is the connection's initiator, so filtering on it alone hides every
+    # conversation where this host is the *destination* (servers, gateways, DNS).
+    # Match either side so a host's full conversation set — and thus every
+    # followable stream — is reachable from the Streams picker.
+    q = select(Connection).where(
+        Connection.job_id == job_id,
+        or_(Connection.host_ip == ip, Connection.dest_ip == ip),
+    )
     items, page = paginate(db, q, Connection.ts, Connection.id, cursor, limit)
     return ConnectionListResponse(
         items=[ConnectionItem.model_validate(c) for c in items],
