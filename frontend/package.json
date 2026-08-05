@@ -4,8 +4,12 @@
   "version": "0.1.0",
   "scripts": {
     "dev": "vite",
+    "dev:demo": "VITE_AIPAM_DEMO_MODE=true vite",
     "build": "vite build",
+    "build:demo": "VITE_AIPAM_DEMO_MODE=true vite build --base=/AIPAMDEMO2/",
+    "build:demo:pages": "npm run build:demo && cp dist/index.html dist/404.html",
     "preview": "vite preview",
+    "preview:demo": "vite preview --host",
     "test:e2e": "playwright test"
   },
   "dependencies": {

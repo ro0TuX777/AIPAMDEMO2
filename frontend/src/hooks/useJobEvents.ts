@@ -1,5 +1,6 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import { useQueryClient } from "@tanstack/react-query";
+import { isDemoMode } from "../api";
 import type {
   SseEventType,
   SseEnvelope,
@@ -94,7 +95,7 @@ export function useJobEvents(
   }, []);
 
   useEffect(() => {
-    if (!jobId || !enabled) { close(); return; }
+    if (!jobId || !enabled || isDemoMode()) { close(); return; }
 
     const tokenQs = SSE_TOKEN ? `?token=${encodeURIComponent(SSE_TOKEN)}` : "";
     const url = `${API_BASE}/jobs/${jobId}/events${tokenQs}`;

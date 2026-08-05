@@ -24,6 +24,9 @@ if (token) {
   setApiToken(token);
 }
 
+const demoMode = String((import.meta as any).env?.VITE_AIPAM_DEMO_MODE || "").toLowerCase() === "true";
+const routerBasename = demoMode ? "/AIPAMDEMO2" : "/";
+
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -37,7 +40,7 @@ const queryClient = new QueryClient({
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
+      <BrowserRouter basename={routerBasename}>
         <App />
       </BrowserRouter>
     </QueryClientProvider>
