@@ -1,0 +1,127 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aipam.local/schemas/bluescrub/tool-manifest/1",
+  "title": "BlueScrub offline tool manifest",
+  "description": "deploy/bluescrub/tool-manifest.json. Validated at startup; a registry entry with no manifest entry is a startup error. See docs/BLUESCRUB_SUPPLY_CHAIN.md.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema", "bundle_version", "built_at", "tools"],
+  "properties": {
+    "schema": { "const": "bluescrub.toolmanifest/1" },
+    "bundle_version": { "type": "string", "maxLength": 64 },
+    "built_at": { "type": "string", "format": "date-time" },
+    "sbom_ref": { "type": ["string", "null"], "maxLength": 512 },
+    "signature_ref": { "type": ["string", "null"], "maxLength": 512 },
+
+    "tools": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name", "version", "runner", "risk_class", "licence", "redistribution", "architectures"
+        ],
+        "properties": {
+          "name": { "type": "string", "minLength": 1, "maxLength": 64 },
+          "version": { "type": "string", "maxLength": 64 },
+
+          "runner": {
+            "description": "Which isolation runner executes it. See docs/BLUESCRUB_ISOLATION_CONTRACT.md.",
+            "enum": ["container", "subprocess"]
+          },
+          "risk_class": {
+            "enum": ["parse_only", "emulation", "repo_history", "build_capable"]
+          },
+          "optional": {
+            "description": "Optional tools corroborate only. Their absence must not change any score or coverage value.",
+            "type": "boolean",
+            "default": false
+          },
+          "pillars": {
+            "type": "array",
+            "items": {
+              "enum": ["Detectability", "Attribution", "Co-Optability", "Vulnerability",
+                       "RE-Feasibility"]
+            }
+          },
+
+          "image": { "type": ["string", "null"], "maxLength": 256 },
+          "image_digest": {
+            "description": "Required when runner is 'container'. Tags are mutable and unacceptable in an offline bundle.",
+            "type": ["string", "null"],
+            "pattern": "^sha256:[a-f0-9]{64}$"
+          },
+          "binary_checksum": {
+            "type": ["string", "null"],
+            "pattern": "^sha256:[a-f0-9]{64}$"
+          },
+
+          "ruleset_version": { "type": ["string", "null"], "maxLength": 128 },
+          "ruleset_checksum": {
+            "type": ["string", "null"],
+            "pattern": "^sha256:[a-f0-9]{64}$"
+          },
+          "db_snapshot_date": {
+            "description": "Vulnerability database snapshot date. Staleness is computed from this, since an air-gapped host cannot query upstream.",
+            "type": ["string", "null"],
+            "format": "date"
+          },
+          "db_checksum": {
+            "type": ["string", "null"],
+            "pattern": "^sha256:[a-f0-9]{64}$"
+          },
+
+          "licence": {
+            "description": "Build fails on 'unknown'.",
+            "type": "string",
+            "maxLength": 128
+          },
+          "licence_notice_ref": { "type": ["string", "null"], "maxLength": 512 },
+          "redistribution": {
+            "enum": ["permitted", "permitted_with_notice", "restricted", "prohibited", "unknown"]
+          },
+          "licence_notes": {
+            "description": "Use for components whose engine, rules, and databases differ in terms (e.g. Semgrep).",
+            "type": ["string", "null"],
+            "maxLength": 1024
+          },
+
+          "architectures": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "enum": ["amd64", "arm64"] }
+          },
+
+          "network_verification_flag": {
+            "description": "The tool's own flag for disabling online credential verification, passed explicitly by the adapter as defence in depth alongside network_mode=none.",
+            "type": ["string", "null"],
+            "maxLength": 64
+          },
+
+          "limits": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "timeout_seconds": { "type": "integer", "minimum": 1 },
+              "mem_limit": { "type": "string", "maxLength": 16 },
+              "pids_limit": { "type": "integer", "minimum": 1 },
+              "cpu_limit": { "type": ["number", "null"], "minimum": 0 }
+            }
+          }
+        },
+
+        "allOf": [
+          {
+            "if": { "properties": { "runner": { "const": "container" } } },
+            "then": { "required": ["image", "image_digest"] }
+          },
+          {
+            "if": { "properties": { "redistribution": { "const": "unknown" } } },
+            "then": { "required": ["licence_notes"] }
+          }
+        ]
+      }
+    }
+  }
+}
