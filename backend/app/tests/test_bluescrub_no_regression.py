@@ -114,20 +114,46 @@ def test_bluescrub_tables_are_additive_only():
     assert migration.count("op.create_table") == 6
 
 
-def test_finding_model_gained_no_columns():
-    """BlueScrub stores its metadata in evidence_json, not new columns."""
+#: Columns ``findings`` carried before BlueScrub existed. BlueScrub must not
+#: remove or rename any of them. It deliberately does not pin the *full* set:
+#: ``findings`` is shared and actively developed, so an equality assertion here
+#: fails whenever unrelated work legitimately adds a column — which is a test
+#: asserting "nobody else may work on this table", not "BlueScrub is additive".
+FINDINGS_PRE_BLUESCRUB_COLUMNS = frozenset({
+    "id", "job_id", "finding_id", "sensor", "severity", "category", "title",
+    "summary", "community_id", "evidence_json", "pcap_label", "feedback",
+    "explanation_feedback", "confidence", "analyst_status", "analyst_notes",
+    "reviewed_at", "reviewer_id",
+})
+
+
+def test_finding_model_keeps_its_pre_bluescrub_columns():
+    """BlueScrub may not remove or rename anything on the shared findings table."""
     from backend.app.models.finding import Finding
 
-    expected = {
-        "id", "job_id", "finding_id", "sensor", "severity", "category", "title",
-        "summary", "community_id", "evidence_json", "pcap_label", "feedback",
-        "explanation_feedback", "confidence", "ts", "src_ip", "dest_ip",
-        "evidence_status", "corroboration_score", "corroborating_sources_json",
-        "analyst_status", "analyst_notes", "reviewed_at", "reviewer_id",
-    }
     actual = {c.name for c in Finding.__table__.columns}
-    assert expected.issubset(actual), f"missing: {expected - actual}"
-    assert not (actual - expected), f"BlueScrub added columns to findings: {actual - expected}"
+    missing = FINDINGS_PRE_BLUESCRUB_COLUMNS - actual
+    assert not missing, f"BlueScrub removed columns from findings: {sorted(missing)}"
+
+
+def test_bluescrub_defines_no_columns_on_shared_tables():
+    """The additive claim, asserted against BlueScrub's own source.
+
+    Its metadata belongs in ``evidence_json`` and its own tables. Any Column()
+    declared against Finding, Job, or another existing model would break that.
+    """
+    root = REPO / "backend" / "app" / "bluescrub"
+    shared = ("Finding.__table__", "Job.__table__", "extend_existing")
+
+    offenders = []
+    for path in root.rglob("*.py"):
+        if "vendored" in path.parts:
+            continue
+        text = path.read_text()
+        for token in shared:
+            if token in text:
+                offenders.append(f"{path.relative_to(root)}: {token}")
+    assert not offenders, offenders
 
 
 # ── Behavioural gate ──────────────────────────────────────────────────────

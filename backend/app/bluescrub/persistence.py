@@ -103,6 +103,7 @@ def build_evidence(group: CanonicalGroup) -> dict:
         "observables": [o.to_dict() for o in primary.observables],
         "typed_evidence": primary.typed_evidence,
         "capped_by": group.capped_by,
+        "evidence_status": "observed" if group.scored else "inferred",
         "truncated": code_clipped or rationale_clipped or primary.truncated,
     }
     if primary.source_facet:
@@ -183,11 +184,12 @@ def persist_groups(
             existing.summary = evidence.get("severity_rationale") or _title(group)
             existing.confidence = group.scoring_confidence
             existing.evidence_json = json.dumps(evidence)
-            existing.evidence_status = "observed" if group.scored else "inferred"
+            if _HAS_EVIDENCE_STATUS:
+                existing.evidence_status = _evidence_status(group)
             updated += 1
             continue
 
-        db.add(Finding(
+        columns = dict(
             job_id=job_id,
             finding_id=group.canonical_id,
             sensor=group.primary_sensor,
@@ -197,14 +199,29 @@ def persist_groups(
             summary=evidence.get("severity_rationale") or _title(group),
             confidence=group.scoring_confidence,
             evidence_json=json.dumps(evidence),
-            evidence_status="observed" if group.scored else "inferred",
             analyst_status=status,
             reviewed_at=now if status != "unreviewed" else None,
-        ))
+        )
+        if _HAS_EVIDENCE_STATUS:
+            columns["evidence_status"] = _evidence_status(group)
+        db.add(Finding(**columns))
         created += 1
 
     db.commit()
     return created, updated
+
+
+def _evidence_status(group: CanonicalGroup) -> str:
+    """Observed for direct tool hits; inferred for derived or unscored ones."""
+    return "observed" if group.scored else "inferred"
+
+
+#: ``Finding.evidence_status`` is part of the platform's evidence lifecycle and
+#: its enum is committed, but the column itself is not yet on the model in every
+#: checkout. BlueScrub is additive and must not require another change to land
+#: first, so the value always goes into ``evidence_json`` — the source of truth
+#: for BlueScrub metadata — and reaches the column only where it exists.
+_HAS_EVIDENCE_STATUS = hasattr(Finding, "evidence_status")
 
 
 def _title(group: CanonicalGroup) -> str:
