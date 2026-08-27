@@ -1090,7 +1090,7 @@ by default, behind a filter chip** · golden PCAP regression test.
 > job pass unchanged.
 
 **Sprint 2 — Engine port.** Sync script + `VENDOR.md` + pinned commit · vendor the allowlist, rewrite
-imports, strip Flask coupling · 10 `BaseAnalyzer` analyzers + FP helpers · 9 specialised scanners ·
+imports (**no Flask coupling to strip — measured, the corpus is already decoupled**) · **7** `BaseAnalyzer` analyzers + FP helpers · 9 specialised scanners with a separate interface (**upstream's README says ten BaseAnalyzer subclasses; it is seven**) ·
 `binary_analyzer` with its calibrated API tier model, injection-combo upgrade, low-value downgrade ·
 `dependency_scanner`, `mitre`, `auto_fix` · rule-level pillar mapping · profile gating · partial-failure
 handling · adapt BlueScrub's suite. **`vendored/` stays effectively read-only** — AIPAM behaviour lives

@@ -6,7 +6,13 @@ catastrophic regex cannot be interrupted. This module is what
 ``run_analyzer`` execs, so every vendored analyzer inherits the rlimits,
 privilege drop, and process-group kill that the boundary provides.
 
-Usage:  python -m backend.app.bluescrub.isolation.analyzer_main <Analyzer> <dir>
+Usage:
+    python -m ...analyzer_main <Analyzer> <dir> [pattern]
+    python -m ...analyzer_main <directory_fn> <dir> specialised
+
+The two modes exist because the vendored corpus has two interfaces: seven
+BaseAnalyzer subclasses with ``run(dir)``, and nine specialised scanners
+reachable only through module-level ``analyze_directory_for_*`` functions.
 
 Writes a JSON envelope to stdout. Never raises: a failure is reported in the
 envelope so the caller can classify it rather than parse a traceback.
@@ -19,21 +25,23 @@ import sys
 
 
 def main(argv: list[str]) -> int:
-    if len(argv) != 3:
-        json.dump({"ok": False, "error": "usage: analyzer_main <Analyzer> <directory>"},
+    if len(argv) not in (3, 4):
+        json.dump({"ok": False,
+                   "error": "usage: analyzer_main <entry> <directory> [pattern|specialised]"},
                   sys.stdout)
         return 2
 
     name, directory = argv[1], argv[2]
+    mode = argv[3] if len(argv) == 4 else "pattern"
     try:
         from backend.app.bluescrub.vendored.scanners import analyzers
 
-        cls = getattr(analyzers, name, None)
-        if cls is None:
+        entry = getattr(analyzers, name, None)
+        if entry is None:
             json.dump({"ok": False, "error": f"unknown analyzer {name!r}"}, sys.stdout)
             return 2
 
-        findings = cls().run(directory)
+        findings = entry(directory) if mode == "specialised" else entry().run(directory)
         json.dump({"ok": True, "analyzer": name, "findings": findings}, sys.stdout,
                   default=str)
         return 0

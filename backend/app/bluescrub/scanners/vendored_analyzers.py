@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 
 SENSOR = "bluescrub_analyzers"
 
-#: Analyzer classes exported by the vendored package, in deterministic order.
+#: Pattern analyzers: BaseAnalyzer subclasses returning a flat finding list.
 ANALYZERS: tuple[str, ...] = (
     "OpsecAnalyzer",
     "ExploitationToolAnalyzer",
@@ -40,8 +40,28 @@ ANALYZERS: tuple[str, ...] = (
     "SupplyChainAnalyzer",
 )
 
+#: Specialised scanners: module-level directory functions returning one record
+#: per file, keyed by category, rather than a flat list. They are *not*
+#: BaseAnalyzer subclasses despite upstream's README describing all ten as such
+#: — only the seven above are. Hence two normalisation paths.
+SPECIALISED: tuple[tuple[str, str], ...] = (
+    ("ExploitReliabilityAnalyzer", "analyze_directory_for_exploits"),
+    ("MetadataLeakageScanner", "analyze_directory_for_metadata"),
+    ("NetworkTrafficAnalyzer", "analyze_directory_for_network"),
+    ("ForensicArtifactDetector", "analyze_directory_for_artifacts"),
+    ("PayloadObfuscationAnalyzer", "analyze_directory_for_payloads"),
+    ("PrivilegeEscalationAnalyzer", "analyze_directory_for_privesc"),
+    ("ShellcodeSecurityScanner", "scan_directory_for_shellcode"),
+    ("CodeSimilarityDetector", "analyze_directory_for_attribution"),
+    ("AntiAnalysisValidator", "analyze_directory_for_anti_analysis"),
+)
+
 _SEVERITY = {"CRITICAL": "CRITICAL", "HIGH": "HIGH", "MEDIUM": "MEDIUM",
              "LOW": "LOW", "INFO": "INFO"}
+
+#: Item fields that carry the matched text, in preference order.
+_MATCH_KEYS = ("technique", "pattern", "path", "contact", "indicator",
+               "reference", "signature", "match", "value", "issue")
 
 
 def _label(item: dict) -> str:
@@ -94,6 +114,81 @@ def to_raw_findings(analyzer: str, items: list[dict], source_root: Path) -> list
     return findings
 
 
+def _relative(raw_path: str, source_root: Path) -> str:
+    try:
+        return str(Path(raw_path).resolve().relative_to(source_root.resolve()))
+    except (ValueError, OSError):
+        return raw_path
+
+
+def specialised_to_raw_findings(
+    analyzer: str, records: list[dict], source_root: Path
+) -> list[RawFinding]:
+    """Normalise a specialised scanner's per-file records.
+
+    Each record is ``{file, <category>: {found, <items>, count, risk, ...}}``
+    where the item-list key varies by category. Scalar summary fields
+    (``entropy``, ``detection_risk``, ``obfuscation_score``) are not findings
+    and are skipped by construction: they are not dicts.
+    """
+    findings: list[RawFinding] = []
+
+    for record in records:
+        if not isinstance(record, dict):
+            continue
+        rel = _relative(str(record.get("file") or ""), source_root)
+
+        for category, payload in record.items():
+            if not isinstance(payload, dict) or not payload.get("found"):
+                continue
+
+            items = next(
+                (v for k, v in payload.items()
+                 if isinstance(v, list) and k not in ("count", "risk")),
+                [],
+            )
+            category_risk = str(payload.get("risk") or "MEDIUM").upper()
+            explanation = str(payload.get("explanation") or category)
+
+            for item in items:
+                if not isinstance(item, dict):
+                    continue
+                family = resolve_family(SENSOR, normalize_label(category))
+                subtype = normalize_label(str(item.get("type") or ""))
+                rule_id = f"{analyzer}.{category}" + (f".{subtype}" if subtype else "")
+
+                matched = next(
+                    (str(item[k]) for k in _MATCH_KEYS if item.get(k)), ""
+                )
+                severity = str(
+                    item.get("risk") or item.get("effectiveness") or category_risk
+                ).upper()
+                line = item.get("line")
+
+                findings.append(RawFinding(
+                    sensor=SENSOR,
+                    sensor_version="vendored",
+                    rule_namespace=analyzer,
+                    rule_id=rule_id,
+                    issue_family=family,
+                    pillar_hint=FAMILY_PILLAR.get(family),
+                    detector_class=DetectorClass.regex_pattern,
+                    raw_severity=_SEVERITY.get(severity, "MEDIUM"),
+                    confidence=0.6,
+                    source_facet="source",
+                    title=str(item.get("type") or category.replace("_", " ")),
+                    description=str(item.get("explanation") or explanation)[:4096],
+                    matched_tokens=matched[:4096],
+                    location=Location(
+                        kind="source", file=rel,
+                        start_line=int(line) if isinstance(line, int) else None,
+                        start_column=0,
+                    ),
+                ))
+
+    return findings
+
+
 def run(source_root: Path, output_dir: Path, *,
         limits: ResourceLimits | None = None) -> ScannerOutcome:
     """Run every vendored analyzer, each behind its own process boundary."""
@@ -106,10 +201,14 @@ def run(source_root: Path, output_dir: Path, *,
     failures: list[str] = []
     duration = 0
 
-    for analyzer in ANALYZERS:
+    targets = [("pattern", a, a) for a in ANALYZERS] + [
+        ("specialised", cls, fn) for cls, fn in SPECIALISED
+    ]
+
+    for mode, analyzer, entry in targets:
         result = run_analyzer(
             [sys.executable, "-m", "backend.app.bluescrub.isolation.analyzer_main",
-             analyzer, str(source_root)],
+             entry, str(source_root), mode],
             cwd=Path.cwd(),
             limits=limits,
             require_privilege_drop=require_drop,
@@ -134,7 +233,11 @@ def run(source_root: Path, output_dir: Path, *,
             failures.append(f"{analyzer}:{payload.get('error', 'error')}")
             continue
 
-        findings.extend(to_raw_findings(analyzer, payload.get("findings") or [], source_root))
+        produced = payload.get("findings") or []
+        findings.extend(
+            to_raw_findings(analyzer, produced, source_root) if mode == "pattern"
+            else specialised_to_raw_findings(analyzer, produced, source_root)
+        )
 
     output_dir.mkdir(parents=True, exist_ok=True)
     (output_dir / "sensor.results.jsonl").write_text(

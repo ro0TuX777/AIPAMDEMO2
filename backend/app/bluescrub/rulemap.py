@@ -107,6 +107,59 @@ def normalize_label(label: str) -> str:
     """
     return re.sub(r"[^a-z0-9]+", "_", label.lower()).strip("_")
 
+#: Category labels emitted by the nine specialised analyzers.
+#:
+#: These report one record per file, keyed by category, rather than a flat
+#: finding list. The labels are a fixed vocabulary, so an explicit reviewed
+#: table beats stretching the keyword regexes — several ("contact_info",
+#: "embedded_paths") carry meaning no keyword would infer.
+VENDORED_CATEGORY_FAMILY: dict[str, IssueFamily] = {
+    # metadata leakage
+    "embedded_paths": IssueFamily.build_path_leak,
+    "compiler_references": IssueFamily.metadata_leak,
+    "debug_code": IssueFamily.metadata_leak,
+    "timestamps": IssueFamily.metadata_leak,
+    "git_metadata": IssueFamily.attribution_identity,
+    "contact_info": IssueFamily.attribution_identity,
+    # anti-analysis
+    "debugger_detection": IssueFamily.anti_analysis,
+    "vm_detection": IssueFamily.anti_analysis,
+    "sandbox_evasion": IssueFamily.anti_analysis,
+    "anti_disassembly": IssueFamily.anti_analysis,
+    "environment_checks": IssueFamily.anti_analysis,
+    # network behaviour that creates a defender-visible signature
+    "beacon_patterns": IssueFamily.signature_known,
+    "dns_patterns": IssueFamily.signature_known,
+    "http_headers": IssueFamily.signature_known,
+    "tls_issues": IssueFamily.signature_known,
+    "unencrypted_traffic": IssueFamily.signature_known,
+    "api_sequences": IssueFamily.signature_known,
+    "c2_references": IssueFamily.hardcoded_c2,
+    "network_indicators": IssueFamily.attribution_infrastructure,
+    # forensic residue
+    "filesystem_artifacts": IssueFamily.forensic_artifact,
+    "log_artifacts": IssueFamily.forensic_artifact,
+    "memory_artifacts": IssueFamily.forensic_artifact,
+    "registry_artifacts": IssueFamily.forensic_artifact,
+    "cleanup_attempts": IssueFamily.forensic_artifact,
+    # payload quality
+    "obfuscation_techniques": IssueFamily.obfuscation_weak,
+    "encoding_layers": IssueFamily.obfuscation_weak,
+    "shellcode_patterns": IssueFamily.shellcode_pattern,
+    # exploit robustness
+    "reliability_issues": IssueFamily.memory_safety,
+    "crash_risks": IssueFamily.memory_safety,
+    "privilege_patterns": IssueFamily.signature_known,
+    "code_reuse": IssueFamily.attribution_identity,
+    "framework_signatures": IssueFamily.signature_known,
+    # Surfaced by the unmapped counter on the first full-corpus run, which is
+    # what that counter exists for: review, then map — never guess.
+    "email_address": IssueFamily.attribution_identity,
+    "path_disclosure": IssueFamily.build_path_leak,
+    "python_unsafe": IssueFamily.command_injection,
+    "protocol_fingerprints": IssueFamily.signature_known,
+}
+
 #: Explicit per-rule overrides, highest priority. Populated as rules are
 #: reviewed; an entry here is a reviewed decision, not a guess.
 EXPLICIT: dict[tuple[str, str], IssueFamily] = {}
@@ -152,6 +205,10 @@ def resolve_family(sensor: str, rule_id: str, cwes: list[str] | None = None) -> 
     explicit = EXPLICIT.get((sensor, rule_id))
     if explicit:
         return explicit
+
+    category = VENDORED_CATEGORY_FAMILY.get(rule_id)
+    if category:
+        return category
 
     for cwe in normalize_cwes(cwes):
         family = CWE_FAMILY.get(cwe)
