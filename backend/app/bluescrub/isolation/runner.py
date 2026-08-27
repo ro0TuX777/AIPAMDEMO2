@@ -1,0 +1,210 @@
+"""Hardened subprocess runner for vendored Python analyzers.
+
+A ``ThreadPoolExecutor`` timeout is a scheduling hint, not a security control:
+a thread spinning in a catastrophic regex cannot be interrupted, and it holds
+the worker while it burns. Every analyzer therefore runs as a detached child
+process with resource limits, dropped privileges, and a scrubbed environment,
+and is killed by process group so its children die with it.
+
+Reference: docs/BLUESCRUB_ISOLATION_CONTRACT.md
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import signal
+import subprocess
+import time
+from dataclasses import dataclass
+from enum import Enum
+from pathlib import Path
+
+from backend.app.bluescrub.isolation.limits import ResourceLimits, build_env, build_preexec
+
+logger = logging.getLogger(__name__)
+
+
+class AnalyzerStatus(str, Enum):
+    """Terminal outcomes. A scanner failure degrades a pillar; it never fails the job."""
+
+    completed = "completed"
+    completed_truncated = "completed_truncated"
+    timeout = "timeout"
+    oom = "oom"
+    crashed = "crashed"
+    unparseable = "unparseable"
+    unavailable = "unavailable"
+    skipped = "skipped"
+
+
+@dataclass
+class AnalyzerResult:
+    status: AnalyzerStatus
+    stdout: bytes = b""
+    stderr: bytes = b""
+    exit_code: int | None = None
+    signal_number: int | None = None
+    duration_ms: int = 0
+    reason: str | None = None
+
+    @property
+    def ok(self) -> bool:
+        return self.status in (AnalyzerStatus.completed, AnalyzerStatus.completed_truncated)
+
+
+class PrivilegeDropUnavailable(RuntimeError):
+    """Raised when privilege drop is required but cannot be performed."""
+
+
+def resolve_drop_target(user: str | None) -> tuple[int | None, int | None]:
+    """Resolve the unprivileged uid/gid to drop to, or (None, None)."""
+    if not user:
+        return None, None
+    import pwd
+
+    try:
+        entry = pwd.getpwnam(user)
+    except KeyError:
+        return None, None
+    return entry.pw_uid, entry.pw_gid
+
+
+def run_analyzer(
+    argv: list[str],
+    *,
+    cwd: Path | None = None,
+    limits: ResourceLimits | None = None,
+    env_extra: dict[str, str] | None = None,
+    drop_user: str | None = "bluescrub",
+    require_privilege_drop: bool = True,
+    stdin_data: bytes | None = None,
+) -> AnalyzerResult:
+    """Run one analyzer to completion inside a process boundary.
+
+    Args:
+        argv: Command and arguments. Never passed through a shell.
+        cwd: Working directory; the analyzer receives no write access to it.
+        limits: Resource ceilings. Defaults to the parse-only profile.
+        env_extra: Additional environment on top of the allowlist.
+        drop_user: Unprivileged account to drop to.
+        require_privilege_drop: When True and the drop cannot be performed,
+            refuse to run rather than executing with worker privileges. Tests
+            and local development pass False explicitly.
+
+    Raises:
+        PrivilegeDropUnavailable: drop required but not possible.
+    """
+    limits = limits or ResourceLimits()
+    uid, gid = resolve_drop_target(drop_user)
+
+    if uid is None and require_privilege_drop:
+        raise PrivilegeDropUnavailable(
+            f"user {drop_user!r} not found; refusing to run an analyzer with worker privileges"
+        )
+    if uid is not None and os.geteuid() != 0:
+        if require_privilege_drop:
+            raise PrivilegeDropUnavailable(
+                "worker is not root; cannot drop privileges, refusing to run"
+            )
+        uid, gid = None, None
+
+    if uid is None:
+        logger.warning(
+            "Analyzer %s running without privilege drop — development mode only", argv[0]
+        )
+
+    started = time.monotonic()
+    killed_by_us = False
+
+    try:
+        proc = subprocess.Popen(  # noqa: S603 - argv is constructed, never shell
+            argv,
+            cwd=str(cwd) if cwd else None,
+            stdin=subprocess.PIPE if stdin_data is not None else subprocess.DEVNULL,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            env=build_env(env_extra),
+            preexec_fn=build_preexec(limits, uid, gid),
+            close_fds=True,
+        )
+    except FileNotFoundError:
+        return AnalyzerResult(
+            status=AnalyzerStatus.unavailable,
+            reason=f"executable not found: {argv[0]}",
+        )
+    except OSError as exc:
+        return AnalyzerResult(status=AnalyzerStatus.crashed, reason=str(exc))
+
+    try:
+        stdout, stderr = proc.communicate(input=stdin_data, timeout=limits.wall_clock_seconds)
+    except subprocess.TimeoutExpired:
+        killed_by_us = True
+        _kill_group(proc, limits.grace_seconds)
+        stdout, stderr = proc.communicate()
+    finally:
+        duration_ms = int((time.monotonic() - started) * 1000)
+
+    truncated = False
+    if len(stdout) > limits.max_stdout_bytes:
+        stdout = stdout[: limits.max_stdout_bytes]
+        truncated = True
+
+    if killed_by_us:
+        return AnalyzerResult(
+            status=AnalyzerStatus.timeout, stdout=stdout, stderr=stderr[-4096:],
+            duration_ms=duration_ms,
+            reason=f"wall clock exceeded {limits.wall_clock_seconds}s",
+        )
+
+    rc = proc.returncode
+    if rc is not None and rc < 0:
+        sig = -rc
+        # SIGXCPU is RLIMIT_CPU; SIGKILL we did not send is almost always the
+        # OOM killer or RLIMIT_AS turning an allocation into a fatal failure.
+        if sig == signal.SIGXCPU:
+            status, reason = AnalyzerStatus.timeout, "cpu limit exceeded"
+        elif sig == signal.SIGKILL:
+            status, reason = AnalyzerStatus.oom, "killed (memory limit or OOM)"
+        else:
+            status, reason = AnalyzerStatus.crashed, f"died on signal {sig}"
+        return AnalyzerResult(
+            status=status, stdout=stdout, stderr=stderr[-4096:], signal_number=sig,
+            duration_ms=duration_ms, reason=reason,
+        )
+
+    if rc != 0:
+        return AnalyzerResult(
+            status=AnalyzerStatus.crashed, stdout=stdout, stderr=stderr[-4096:],
+            exit_code=rc, duration_ms=duration_ms, reason=f"exit {rc}",
+        )
+
+    return AnalyzerResult(
+        status=AnalyzerStatus.completed_truncated if truncated else AnalyzerStatus.completed,
+        stdout=stdout, stderr=stderr[-4096:], exit_code=0, duration_ms=duration_ms,
+        reason="stdout truncated at cap" if truncated else None,
+    )
+
+
+def _kill_group(proc: subprocess.Popen, grace_seconds: int) -> None:
+    """SIGTERM the process group, then SIGKILL it.
+
+    ``proc.kill()`` signals only the direct child, leaving grandchildren alive
+    and holding the pipe open. The child called ``setsid``, so its pid is the
+    group id.
+    """
+    try:
+        pgid = os.getpgid(proc.pid)
+    except ProcessLookupError:
+        return
+
+    for sig in (signal.SIGTERM, signal.SIGKILL):
+        try:
+            os.killpg(pgid, sig)
+        except ProcessLookupError:
+            return
+        deadline = time.monotonic() + (grace_seconds if sig == signal.SIGTERM else 2)
+        while time.monotonic() < deadline:
+            if proc.poll() is not None:
+                return
+            time.sleep(0.05)

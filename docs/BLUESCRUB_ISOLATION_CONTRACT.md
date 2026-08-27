@@ -45,8 +45,8 @@ run as non-root, the runner must fail closed rather than silently run privileged
 | Private writable output | One temp dir per invocation, mode 0700, owned by the analyzer uid | deleted after result capture |
 | No network | `unshare(CLONE_NEWNET)` where permitted; otherwise the analyzer allowlist forbids any socket-using analyzer | fail closed |
 | Address space | `RLIMIT_AS` | 2 GiB default, per-scanner override |
-| CPU time | `RLIMIT_CPU` | `AIPAM_BLUESCRUB_ANALYZER_TIMEOUT` (120 s default) |
-| Process count | `RLIMIT_NPROC` | 64 |
+| CPU time | `RLIMIT_CPU` | soft `AIPAM_BLUESCRUB_ANALYZER_TIMEOUT` (120 s), hard soft+5 (§2.4) |
+| Process count | `RLIMIT_NPROC` | 64 — **per-UID, not per-tree**; applied only when a dedicated uid was acquired (§2.4) |
 | Output file size | `RLIMIT_FSIZE` | 256 MiB |
 | Core dumps | `RLIMIT_CORE` | 0 — a core dump of an analyzer contains attacker data |
 | Environment | Explicit allowlist, not inheritance | `PATH`, `LANG`, `HOME`, scanner-specific vars only |
@@ -75,6 +75,30 @@ reaches `metrics_json.scanners[]`:
 
 **A scanner failure never fails the job.** It degrades the affected pillar and is reported. The only
 job-level failures are ingest failures and persistence failures.
+
+### 2.4 Two rlimit properties that are easy to get wrong
+
+Both were found by the Sprint 1 tests rather than by review, and both silently
+degrade the boundary rather than breaking it visibly.
+
+**`RLIMIT_CPU` soft must be strictly below hard.** At the soft limit the kernel
+sends `SIGXCPU`, which the runner classifies as `timeout`. At the hard limit it
+sends `SIGKILL`, which is indistinguishable from an OOM kill. Setting both to the
+same value skips `SIGXCPU` entirely, so every CPU exhaustion is reported as `oom`
+and the operator chases a memory problem that does not exist. The runner sets
+hard = soft + 5.
+
+**`RLIMIT_NPROC` counts every process owned by the UID, not the process tree.**
+It is only meaningful once privileges have been dropped to a dedicated account.
+Applied against a shared UID it does the opposite of its intent: on a busy host
+the limit is already exceeded, so the analyzer's first `fork()` fails with
+`EAGAIN` and a legitimate scanner crashes. The runner applies it only when a uid
+drop actually occurred.
+
+A corollary for deployment: because the limit is per-UID, concurrent analyzers
+running as the same `bluescrub` account share one process budget. With worker
+concurrency of 1 this is not a live concern; raising concurrency means raising
+`max_processes` proportionally, or giving each concurrent slot its own uid.
 
 ## 3. Scanner risk classes
 
