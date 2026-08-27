@@ -7,7 +7,9 @@
     "dev:demo": "VITE_AIPAM_DEMO_MODE=true vite",
     "build": "vite build",
     "build:demo": "VITE_AIPAM_DEMO_MODE=true vite build --base=/AIPAMDEMO2/",
+    "build:demo:nhan": "VITE_AIPAM_DEMO_MODE=true vite build --base=/AIPAM_DEMO/",
     "build:demo:pages": "npm run build:demo && cp dist/index.html dist/404.html",
+    "build:demo:pages:nhan": "npm run build:demo:nhan && cp dist/index.html dist/404.html",
     "preview": "vite preview",
     "preview:demo": "vite preview --host",
     "test:e2e": "playwright test"

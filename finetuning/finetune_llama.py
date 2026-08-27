@@ -43,13 +43,13 @@ def check_dependencies():
 
     try:
         from unsloth import FastLanguageModel
-    except ImportError:
-        missing.append("unsloth")
+    except Exception as exc:  # pragma: no cover - environment-dependent
+        missing.append(f"unsloth ({exc})")
 
     try:
         from trl import SFTTrainer
-    except ImportError:
-        missing.append("trl")
+    except Exception as exc:  # pragma: no cover - environment-dependent
+        missing.append(f"trl ({exc})")
 
     if missing:
         print("Missing dependencies:", ", ".join(missing))
@@ -81,26 +81,81 @@ def load_training_data(data_path: str):
     return samples
 
 
+def validate_training_samples(samples):
+    """Validate that each training sample has a supported format."""
+    if not samples:
+        raise ValueError("No training samples were loaded")
+
+    for item in samples[:3]:
+        if "messages" in item:
+            assert isinstance(item["messages"], list) and len(item["messages"]) >= 2
+        elif "text" in item:
+            assert isinstance(item["text"], str) and item["text"]
+        else:
+            raise ValueError("Each training sample must contain either 'messages' or 'text'")
+
+    return samples
+
+
 def format_for_training(samples, tokenizer):
     """Format samples for Unsloth training."""
     formatted = []
     for sample in samples:
         # Handle both formats: {"messages": [...]} and {"text": "..."}
         if "text" in sample:
-            # Already formatted as text
             formatted.append({"text": sample["text"]})
         elif "messages" in sample:
-            # Use ChatML format to convert messages to text
-            text = tokenizer.apply_chat_template(
-                sample["messages"],
-                tokenize=False,
-                add_generation_prompt=False,
-            )
+            try:
+                text = tokenizer.apply_chat_template(
+                    sample["messages"],
+                    tokenize=False,
+                    add_generation_prompt=False,
+                )
+            except ValueError:
+                # Fall back to a simple plain-text rendering when the tokenizer lacks a chat template.
+                rendered_parts = []
+                for message in sample["messages"]:
+                    role = message.get("role", "user")
+                    content = message.get("content", "")
+                    rendered_parts.append(f"[{role}] {content}")
+                text = "\n".join(rendered_parts)
             formatted.append({"text": text})
         else:
-            # Skip invalid samples
             continue
     return formatted
+
+
+def build_training_args(args):
+    """Build an SFT-compatible training config for the installed TRL/Unsloth stack."""
+    from trl import SFTConfig
+
+    max_steps = args.iters if args.iters else -1
+    num_train_epochs = args.epochs if not args.iters else 3.0
+    save_strategy = "no"
+    save_steps = None
+
+    return SFTConfig(
+        per_device_train_batch_size=args.batch_size,
+        gradient_accumulation_steps=4,
+        warmup_steps=10,
+        max_steps=max_steps,
+        num_train_epochs=num_train_epochs if max_steps == -1 else 1.0,
+        learning_rate=args.learning_rate,
+        fp16=False,
+        bf16=True,
+        logging_steps=10,
+        optim="adamw_8bit",
+        weight_decay=0.01,
+        lr_scheduler_type="linear",
+        seed=42,
+        output_dir=args.output,
+        save_strategy=save_strategy,
+        save_steps=save_steps,
+        report_to="none",
+        packing=False,
+        padding_free=False,
+        max_length=None,
+    )
 
 
 def main():
@@ -120,6 +175,7 @@ def main():
     parser.add_argument("--num-layers", type=int, default=None, help="Ignored (for compatibility)")
     parser.add_argument("--export-gguf", action="store_true", help="Export to GGUF for Ollama")
     parser.add_argument("--validate-data", action="store_true", help="Validate data loading without training")
+    parser.add_argument("--small-lora-test", action="store_true", help="Use a small subset and short training run for an initial smoke test")
     parser.add_argument("--resume-from", type=str, default=None, help="Path to existing adapter/model to continue training")
     args = parser.parse_args()
 
@@ -137,9 +193,13 @@ def main():
         sys.exit(1)
 
     if args.validate_data:
-        # ... (validation logic unchanged) ...
         print("Running in data validation mode...")
-        # ...
+        train_samples = load_training_data(args.data)
+        validate_training_samples(train_samples)
+        sample = train_samples[0]
+        print("Sample row preview:")
+        print(json.dumps(sample, indent=2)[:4000])
+        print("Validation passed")
         return
 
     if not check_dependencies():
@@ -147,7 +207,6 @@ def main():
 
     from unsloth import FastLanguageModel
     from trl import SFTTrainer
-    from transformers import TrainingArguments
     from datasets import Dataset
 
     print("=" * 60)
@@ -199,35 +258,20 @@ def main():
     # Load and format training data
     print(f"\nLoading training data from: {args.data}")
     train_samples = load_training_data(args.data)
+    if args.small_lora_test:
+        train_samples = train_samples[:50]
+        args.epochs = 1
+        args.iters = 50
+        args.batch_size = 1
+        args.lora_r = 8
+        args.lora_alpha = 8
+        args.max_seq_length = 1024
+        print("Running small LoRA smoke test with 50 examples and 50 steps")
     train_formatted = format_for_training(train_samples, tokenizer)
     train_dataset = Dataset.from_list(train_formatted)
     print(f"Training samples: {len(train_dataset)}")
 
-    # Training arguments
-    # Training arguments
-    # If iters is set, use max_steps and ignore num_train_epochs
-    max_steps = args.iters if args.iters else -1
-    num_train_epochs = args.epochs if not args.iters else 3.0 # Default fallback if steps used
-
-    training_args = TrainingArguments(
-        per_device_train_batch_size=args.batch_size,
-        gradient_accumulation_steps=4,
-        warmup_steps=10,
-        max_steps=max_steps,
-        num_train_epochs=num_train_epochs if max_steps == -1 else 1.0, 
-        learning_rate=args.learning_rate,
-        fp16=False,
-        bf16=True,
-        logging_steps=10,
-        optim="adamw_8bit",
-        weight_decay=0.01,
-        lr_scheduler_type="linear",
-        seed=42,
-        output_dir=args.output,
-        save_strategy="steps" if max_steps > 0 else "epoch",
-        save_steps=100 if max_steps > 0 else None,
-        report_to="none",
-    )
+    training_args = build_training_args(args)
 
     # Initialize trainer
     trainer = SFTTrainer(

@@ -6,7 +6,8 @@ import { CommandPalette } from "./components/CommandPalette";
 import { KeyboardShortcuts } from "./components/KeyboardShortcuts";
 import { RouteErrorBoundary } from "./components/RouteErrorBoundary";
 import { ThemeProvider, useTheme } from "./components/ThemeProvider";
-import { api } from "./api";
+import { DemoWalkthrough } from "./components/DemoWalkthrough";
+import { api, isDemoMode } from "./api";
 
 // Pages are route-level code-split: each becomes its own chunk loaded on
 // demand, so the initial bundle no longer carries every screen (and their
@@ -211,6 +212,8 @@ export const App: React.FC = () => {
         </nav>
       )}
       <main className="p-3 sm:p-6" data-testid="main-content">
+        {isDemoMode() && <DemoWalkthrough />}
+
         {/* Boundary is keyed on the path so navigating away from a broken route
             clears the error; Suspense sits inside so a lazy-chunk rejection is
             caught here rather than unmounting the whole app. */}

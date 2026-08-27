@@ -21,10 +21,11 @@ from backend.app.schemas.telemetry import SourceEntry, SourceManifest
 
 _logger = logging.getLogger("aipam.bundle_stager")
 
-# Maximum allowed total extracted size (2 GB)
-MAX_EXTRACT_BYTES = 2 * 1024 * 1024 * 1024
-# Maximum number of files in a single bundle
-MAX_BUNDLE_FILES = 5_000
+# Maximum allowed total extracted size (10 GB), matching MAX_LOG_BYTES_PER_JOB.
+# Bundles are bounded by bytes only — a syslog directory or an EVTX export can
+# legitimately hold tens of thousands of files, and refusing them on count alone
+# is what stops those perspectives reaching correlation.
+MAX_EXTRACT_BYTES = 10 * 1024 * 1024 * 1024
 
 
 def _sha256_file(path: Path) -> str:
@@ -86,8 +87,6 @@ def extract_bundle(
             total_size = sum(i.file_size for i in zf.infolist() if not i.is_dir())
             if total_size > MAX_EXTRACT_BYTES:
                 raise ValueError(f"Archive uncompressed size ({total_size}) exceeds limit")
-            if len([i for i in zf.infolist() if not i.is_dir()]) > MAX_BUNDLE_FILES:
-                raise ValueError(f"Archive contains more than {MAX_BUNDLE_FILES} files")
             for info in zf.infolist():
                 if info.is_dir():
                     continue
@@ -107,8 +106,6 @@ def extract_bundle(
             total_size = sum(m.size for m in members)
             if total_size > MAX_EXTRACT_BYTES:
                 raise ValueError(f"Archive uncompressed size ({total_size}) exceeds limit")
-            if len(members) > MAX_BUNDLE_FILES:
-                raise ValueError(f"Archive contains more than {MAX_BUNDLE_FILES} files")
             for member in members:
                 safe = _safe_name(member.name)
                 target = dest_dir / safe

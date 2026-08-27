@@ -396,11 +396,23 @@ def _try_llm_narrative(proof: Any, items: list[Any], mode: str) -> str | None:
             )},
         ]
 
-        # Run async in sync context
+        # Run async in sync context.
+        #
+        # The coroutine is created before run_until_complete can await it, so
+        # anything that raises in between orphans it — which surfaces later as
+        # a "coroutine was never awaited" RuntimeWarning during GC and leaves
+        # the client's resources unreleased. Close it explicitly on that path.
         loop = asyncio.new_event_loop()
+        coro = None
         try:
-            narrative = loop.run_until_complete(client.chat_completion(messages, temperature=0.3))
+            asyncio.set_event_loop(loop)
+            coro = client.chat_completion(messages, temperature=0.3)
+            narrative = loop.run_until_complete(coro)
+            coro = None
         finally:
+            if coro is not None:
+                coro.close()
+            asyncio.set_event_loop(None)
             loop.close()
 
         return narrative

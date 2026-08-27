@@ -161,8 +161,15 @@ _BUNDLE_ARCHIVE_EXTENSIONS = {".zip", ".tar.gz", ".tgz", ".tar.bz2", ".tar"}
 _BUNDLE_RAW_LOG_EXTENSIONS = {".json", ".jsonl", ".evtx", ".log", ".csv", ".xml", ".txt", ".ndjson"}
 _BUNDLE_EXTENSIONS = _BUNDLE_ARCHIVE_EXTENSIONS | _BUNDLE_RAW_LOG_EXTENSIONS
 
-# Bundle size limit (compressed archive on disk) — 2 GB
+# Generic artifact size limit (binaries, PCAPs, anything unclassified) — 2 GB
 MAX_BUNDLE_UPLOAD_BYTES = 2 * 1024 * 1024 * 1024
+
+# Log uploads are bounded by size, never by count: analysts routinely bring
+# dozens of perspectives (C2 operator logs, EVTX, router/firewall syslog) and
+# capping the file count is what stops them correlating. 512 MB is already an
+# enormous single text log, and the per-job aggregate in api/jobs.py is what
+# actually protects the disk.
+MAX_LOG_FILE_BYTES = 512 * 1024 * 1024
 
 
 @router.post(
@@ -206,17 +213,17 @@ async def create_bundle_upload(
 
     # Check Content-Length header early (advisory — can be absent or wrong)
     content_length = request.headers.get("content-length")
-    if content_length and int(content_length) > MAX_BUNDLE_UPLOAD_BYTES:
+    if content_length and int(content_length) > MAX_LOG_FILE_BYTES:
         upload_dir.rmdir()
         raise HTTPException(
             status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"Bundle too large ({int(content_length):,} bytes). Max: {MAX_BUNDLE_UPLOAD_BYTES:,} bytes",
+            detail=f"Log file too large ({int(content_length):,} bytes). Max: {MAX_LOG_FILE_BYTES:,} bytes per file",
         )
 
     # Preflight disk-space check
     from backend.app.pipeline.preflight import check_disk_space
     preflight = check_disk_space(
-        pcap_size_bytes=int(content_length) if content_length else MAX_BUNDLE_UPLOAD_BYTES,
+        pcap_size_bytes=int(content_length) if content_length else MAX_LOG_FILE_BYTES,
         job_root=settings.aipam_upload_root,
         preflight_multiplier=settings.aipam_preflight_multiplier,
     )
@@ -234,13 +241,13 @@ async def create_bundle_upload(
     with open(dest, "wb") as f:
         async for chunk in request.stream():
             size += len(chunk)
-            if size > MAX_BUNDLE_UPLOAD_BYTES:
+            if size > MAX_LOG_FILE_BYTES:
                 f.close()
                 dest.unlink(missing_ok=True)
                 upload_dir.rmdir()
                 raise HTTPException(
                     status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-                    detail=f"Bundle exceeds {MAX_BUNDLE_UPLOAD_BYTES:,} byte limit",
+                    detail=f"Log file exceeds the {MAX_LOG_FILE_BYTES:,} byte per-file limit",
                 )
             f.write(chunk)
             sha.update(chunk)

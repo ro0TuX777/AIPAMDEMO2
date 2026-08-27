@@ -1,5 +1,5 @@
 import { useState, useRef, useEffect, useCallback } from "react";
-import { api, ChatResponse, ChatCitation, ChatEvidenceRef, ConversationSummary, setApiToken } from "../api";
+import { api, ChatResponse, ChatCitation, ChatEvidenceRef, ConversationSummary, isDemoMode } from "../api";
 
 interface ChatMessage {
     role: "user" | "assistant";
@@ -133,6 +133,47 @@ export function ChatPanel({ jobId, initialMessage, contextHint, onClose }: ChatP
             timestamp: new Date(),
         };
         setMessages((prev) => [...prev, placeholderMsg]);
+
+        if (isDemoMode()) {
+            try {
+                const response: ChatResponse = await api.chatWithJob(jobId, {
+                    message: text,
+                    conversation_id: conversationId,
+                    context_hint: contextHint,
+                });
+                setConversationId(response.conversation_id);
+                setMessages((prev) => {
+                    const updated = [...prev];
+                    const last = updated[updated.length - 1];
+                    if (last && last.role === "assistant") {
+                        updated[updated.length - 1] = {
+                            ...last,
+                            content: response.response,
+                            citations: response.citations,
+                            evidence_refs: response.evidence_refs,
+                            suggested_followups: response.suggested_followups,
+                        };
+                    }
+                    return updated;
+                });
+                await refreshConversations();
+            } catch (err) {
+                setMessages((prev) => {
+                    const updated = [...prev];
+                    const last = updated[updated.length - 1];
+                    if (last && last.role === "assistant") {
+                        updated[updated.length - 1] = {
+                            ...last,
+                            content: `Error: ${err instanceof Error ? err.message : "Failed to get response"}`,
+                        };
+                    }
+                    return updated;
+                });
+            } finally {
+                setIsLoading(false);
+            }
+            return;
+        }
 
         try {
             const API_BASE =

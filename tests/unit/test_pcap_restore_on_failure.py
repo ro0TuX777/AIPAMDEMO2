@@ -107,7 +107,12 @@ def _run(db_session, tmp_path):
 
 
 def test_hidden_pcap_restored_when_stage_fails(db_session, tmp_path, monkeypatch, one_stage):
-    """A stage returning 'failed' (early return) must still restore hidden PCAPs."""
+    """A failed stage must still restore hidden PCAPs.
+
+    A stage failure is no longer fatal — Suricata and the uploaded-log pipeline
+    do not depend on Zeek — so the job runs to completion and reports
+    ``completed_with_errors`` rather than aborting on the spot.
+    """
     monkeypatch.setattr(
         orchestrator, "run_sensor",
         lambda **_kw: SensorResult(sensor="zeek", status="failed", error="boom", started_at=_iso()),
@@ -115,7 +120,7 @@ def test_hidden_pcap_restored_when_stage_fails(db_session, tmp_path, monkeypatch
 
     status, input_dir = _run(db_session, tmp_path)
 
-    assert status == "failed"
+    assert status == "completed_with_errors"
     assert (input_dir / "before.pcap").exists(), "non-target PCAP was not restored after stage failure"
     assert not (input_dir / "before.pcap.hidden").exists(), "PCAP left hidden on disk"
 
@@ -135,3 +140,79 @@ def test_hidden_pcap_restored_when_sensor_raises(db_session, tmp_path, monkeypat
     input_dir = job_dir / "input"
     assert (input_dir / "before.pcap").exists(), "non-target PCAP was not restored after crash"
     assert not (input_dir / "before.pcap.hidden").exists(), "PCAP left hidden on disk"
+
+
+# ── Stage failure isolation ─────────────────────────────────────────────────
+
+def test_failed_stage_does_not_abort_the_remaining_stages(db_session, tmp_path, monkeypatch):
+    """Zeek dying must not take Suricata down with it.
+
+    The two stages are independent, and the uploaded-log telemetry pipeline
+    needs neither. Aborting on the first failure threw away every other piece
+    of evidence in the job — including logs the analyst uploaded specifically
+    to corroborate the detections.
+    """
+    class _Stage:
+        def __init__(self, name):
+            self.name = name
+
+    monkeypatch.setattr(
+        orchestrator, "get_stages_for_profile",
+        lambda _p: [_Stage("zeek"), _Stage("suricata")],
+    )
+    monkeypatch.setattr(orchestrator, "get_sensors_for_profile", lambda _p: [])
+
+    ran = []
+
+    def _run_sensor(*, sensor_def, **_kw):
+        ran.append(sensor_def.name)
+        status = "failed" if sensor_def.name == "zeek" else "completed"
+        return SensorResult(
+            sensor=sensor_def.name, status=status,
+            error="boom" if status == "failed" else None,
+            started_at=_iso(),
+        )
+
+    monkeypatch.setattr(orchestrator, "run_sensor", _run_sensor)
+
+    status, _ = _run(db_session, tmp_path)
+
+    assert ran == ["zeek", "suricata"], "suricata was skipped after zeek failed"
+    assert status == "completed_with_errors"
+
+
+def test_sensors_needing_a_failed_stage_are_skipped(db_session, tmp_path, monkeypatch):
+    """Dependents must not run against a failed stage's empty output directory."""
+    class _Stage:
+        name = "zeek"
+
+    class _Sensor:
+        name = "beaconing"
+        skip_if_missing_inputs = True
+        inputs_required = ("zeek",)
+
+    class _Independent:
+        name = "yara"
+        skip_if_missing_inputs = True
+        inputs_required = ()
+
+    monkeypatch.setattr(orchestrator, "get_stages_for_profile", lambda _p: [_Stage()])
+    monkeypatch.setattr(orchestrator, "get_sensors_for_profile", lambda _p: [_Sensor(), _Independent()])
+
+    ran = []
+
+    def _run_sensor(*, sensor_def, **_kw):
+        ran.append(sensor_def.name)
+        status = "failed" if sensor_def.name == "zeek" else "completed"
+        return SensorResult(
+            sensor=sensor_def.name, status=status,
+            error="boom" if status == "failed" else None,
+            started_at=_iso(),
+        )
+
+    monkeypatch.setattr(orchestrator, "run_sensor", _run_sensor)
+
+    _run(db_session, tmp_path)
+
+    assert "beaconing" not in ran, "sensor ran against a failed upstream stage"
+    assert "yara" in ran, "independent sensor was wrongly skipped"

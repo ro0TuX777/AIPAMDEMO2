@@ -202,6 +202,34 @@ def init_v2_db() -> None:
                         text(f"ALTER TABLE jobs ADD COLUMN {col_name} {col_type}")
                     )
 
+    # Ground-truth corroboration: findings gain correlation handles (ts/IPs) so
+    # uploaded logs can match them, plus the evidence lifecycle those matches drive.
+    if inspector.has_table("findings"):
+        finding_cols = {c["name"] for c in inspector.get_columns("findings")}
+        _new_finding_cols = [
+            ("ts", "VARCHAR"),
+            ("src_ip", "VARCHAR"),
+            ("dest_ip", "VARCHAR"),
+            ("evidence_status", "VARCHAR DEFAULT 'observed'"),
+            ("corroboration_score", "REAL DEFAULT 0.0"),
+            ("corroborating_sources_json", "TEXT"),
+        ]
+        for col_name, col_type in _new_finding_cols:
+            if col_name not in finding_cols:
+                with engine.begin() as connection:
+                    connection.execute(
+                        text(f"ALTER TABLE findings ADD COLUMN {col_name} {col_type}")
+                    )
+        # Rows predating the column are NULL; the model declares it NOT NULL.
+        if "evidence_status" not in finding_cols:
+            with engine.begin() as connection:
+                connection.execute(
+                    text("UPDATE findings SET evidence_status = 'observed' WHERE evidence_status IS NULL")
+                )
+                connection.execute(
+                    text("UPDATE findings SET corroboration_score = 0.0 WHERE corroboration_score IS NULL")
+                )
+
     # Temporal Correlation: add enriched log summary columns for side-by-side display
     # plus enhanced multi-key / label-aware / clock-aligned correlation metadata.
     if inspector.has_table("temporal_correlations"):

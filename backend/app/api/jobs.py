@@ -54,6 +54,7 @@ from backend.app.schemas.common import (
 from backend.app.schemas.file import FileItem, FileListResponse
 from backend.app.schemas.ioc import IocItem, IocListResponse
 from backend.app.schemas.job import (
+    BundleUploadItem,
     EvidenceGraphResponse,
     GraphEdge,
     GraphNode,
@@ -113,6 +114,24 @@ def _now_iso() -> str:
 MAX_PCAPS_PER_JOB = 10
 MAX_PCAP_SIZE_BYTES = 2 * 1024 * 1024 * 1024  # 2 GB per file
 MAX_TOTAL_SIZE_BYTES = 5 * 1024 * 1024 * 1024  # 5 GB total per job
+
+# Log bundles are capped by total bytes, not by file count — attach as many
+# perspectives as the investigation needs. Per-file limit lives in api/uploads.py.
+MAX_LOG_BYTES_PER_JOB = 10 * 1024 * 1024 * 1024  # 10 GB of logs per job
+
+
+def _enforce_log_budget(uploads: list[Upload]) -> None:
+    """Reject a job whose attached log bundles exceed the per-job byte budget."""
+    total = sum(u.size_bytes or 0 for u in uploads)
+    if total > MAX_LOG_BYTES_PER_JOB:
+        raise HTTPException(
+            status_code=400,
+            detail=(
+                f"Attached logs total {total / 1024**3:.1f} GB, over the "
+                f"{MAX_LOG_BYTES_PER_JOB // 1024**3} GB per-job limit. "
+                "There is no limit on how many log files you attach — only on their combined size."
+            ),
+        )
 
 
 def _resolve_upload_list(body: JobCreateRequest) -> list[PcapUploadItem]:
@@ -188,6 +207,9 @@ async def create_job(
         if body.bundle_entries:
             bundle_hints = [e.model_dump() for e in body.bundle_entries]
 
+        # Resolve every bundle up front so the byte budget is checked before any
+        # extraction happens — no partial staging left behind on rejection.
+        resolved_bundles: list[tuple[BundleUploadItem, Upload]] = []
         for b_item in body.bundle_uploads:
             bundle_upload: Upload | None = db.get(Upload, b_item.upload_id)
             if bundle_upload is None:
@@ -195,7 +217,11 @@ async def create_job(
                     status_code=400,
                     detail=f"Bundle upload {b_item.upload_id} not found",
                 )
+            resolved_bundles.append((b_item, bundle_upload))
 
+        _enforce_log_budget([u for _, u in resolved_bundles])
+
+        for b_item, bundle_upload in resolved_bundles:
             archive_path = settings.aipam_upload_root / b_item.upload_id / bundle_upload.filename
             if not archive_path.exists():
                 raise HTTPException(status_code=400, detail="Bundle archive file missing from disk")
@@ -356,6 +382,8 @@ def _create_bundle_job(
     archive_path = settings.aipam_upload_root / body.upload_id / upload.filename
     if not archive_path.exists():
         raise HTTPException(status_code=400, detail="Upload file missing from disk")
+
+    _enforce_log_budget([upload])
 
     job_id = str(uuid.uuid4())
 

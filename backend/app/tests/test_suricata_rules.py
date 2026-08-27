@@ -138,11 +138,11 @@ def test_handle_suricata_uses_explicit_managed_bundle(monkeypatch, tmp_path):
 
     calls = []
 
-    def fake_run(cmd, timeout, capture_output):
-        calls.append((cmd, timeout, capture_output))
+    def fake_run(cmd, cwd, *, label, ceiling_seconds):
+        calls.append((cmd, cwd, ceiling_seconds))
         return subprocess.CompletedProcess(cmd, 0, stdout=b"", stderr=b"")
 
-    monkeypatch.setattr(sensor_handlers.subprocess, "run", fake_run)
+    monkeypatch.setattr(sensor_handlers, "run_capture_tool", fake_run)
 
     sensor_handlers.handle_suricata(job_dir, sensor_output_dir, "job-1", "standard")
 
@@ -162,8 +162,9 @@ def test_handle_suricata_uses_explicit_managed_bundle(monkeypatch, tmp_path):
                 "-S",
                 str(bundle_path),
             ],
-            1200,
-            True,
+            raw_dir,
+            # Ceiling comes from the sensor registry, not a hardcoded literal.
+            sensor_handlers._sensor_timeout("suricata", 1800),
         )
     ]
     assert (rules_dir / "suricata.rules").exists()
