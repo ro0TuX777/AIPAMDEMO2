@@ -29,6 +29,7 @@ from backend.app.bluescrub.registry import (
     scanners_for,
 )
 from backend.app.bluescrub.scoring import ScannerRun, compatibility_signature, score_job
+from backend.app.bluescrub.severity_table import build_impact_modifiers, build_rule_mapping
 from backend.app.models.bluescrub import BlueScrubJobLineage, BlueScrubScoreHistory
 
 logger = logging.getLogger(__name__)
@@ -123,8 +124,16 @@ def analyze_and_persist(
             progress(spec.name, "completed",
                      f"{len(outcome.findings)} findings ({outcome.status})")
 
+    # Tier 1 and 2 of the severity chain. Without these every finding falls
+    # through to the scanner's own severity string, which is calibrated for
+    # services rather than offensive tooling — it rates a hardcoded C2 address
+    # "low".
     result = canonicalize(
-        raw, project_id=project_id or job_id, optional_sensors=optional_sensors()
+        raw,
+        project_id=project_id or job_id,
+        optional_sensors=optional_sensors(),
+        rule_mapping=build_rule_mapping(raw),
+        impact_modifiers=build_impact_modifiers(raw, analysis_kind=analysis_kind),
     )
 
     signature = compatibility_signature(
