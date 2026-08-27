@@ -213,8 +213,25 @@ class TestProofItems:
 # ---------------------------------------------------------------------------
 
 
+
+@pytest.fixture()
+def template_narrative(monkeypatch):
+    """Force the deterministic template path.
+
+    ``render_narrative`` tries the LLM first and falls back to a template.
+    Tests that assert template output therefore passed only on hosts without a
+    reachable Ollama and failed on hosts with one — they were testing the
+    environment, not the renderer. Disabling the LLM branch makes them test
+    what they claim to.
+    """
+    from backend.app.services import proof_builder
+
+    monkeypatch.setattr(proof_builder, "_try_llm_narrative", lambda *a, **kw: None)
+    return proof_builder
+
+
 class TestNarrative:
-    def test_render_narrative(self, db_session, rich_job):
+    def test_render_narrative(self, db_session, rich_job, template_narrative):
         p = create_proof(db_session, rich_job.job_id, title="C2 Proof",
                          conclusion="Host was compromised")
         add_item(db_session, p.proof_id, entity_type="alert", entity_id="A-001",
@@ -237,7 +254,7 @@ class TestNarrative:
         p2 = get_proof(db_session, p.proof_id)
         assert p2.narrative_markdown == narrative
 
-    def test_render_empty_proof(self, db_session, rich_job):
+    def test_render_empty_proof(self, db_session, rich_job, template_narrative):
         p = create_proof(db_session, rich_job.job_id, title="Empty")
         result = render_narrative(db_session, p.proof_id)
         narrative = result["narrative"]
@@ -286,7 +303,7 @@ class TestNarrative:
 
 
 class TestExport:
-    def test_export_markdown(self, db_session, rich_job):
+    def test_export_markdown(self, db_session, rich_job, template_narrative):
         p = create_proof(db_session, rich_job.job_id, title="Export Test",
                          conclusion="Confirmed C2")
         add_item(db_session, p.proof_id, entity_type="alert", entity_id="A-001")
@@ -591,3 +608,29 @@ class TestProofBundle:
         bundle = build_scoped_bundle(db_session, rich_job.job_id, "proof")
         text = bundle.to_context()
         assert "No analyst proofs" in text
+
+
+class TestNarrativeSourceSelection:
+    """The LLM branch must remain reachable; the template tests disable it."""
+
+    def test_llm_output_is_used_when_available(self, db_session, rich_job, monkeypatch):
+        from backend.app.services import proof_builder
+
+        monkeypatch.setattr(
+            proof_builder, "_try_llm_narrative",
+            lambda *a, **kw: "## Generated narrative\nModel wrote this.",
+        )
+        p = create_proof(db_session, rich_job.job_id, title="LLM Path")
+        result = render_narrative(db_session, p.proof_id)
+
+        assert "Model wrote this." in result["narrative"]
+        assert "# LLM Path" not in result["narrative"], "template must not be used"
+
+    def test_template_is_used_when_the_llm_declines(self, db_session, rich_job, monkeypatch):
+        from backend.app.services import proof_builder
+
+        monkeypatch.setattr(proof_builder, "_try_llm_narrative", lambda *a, **kw: None)
+        p = create_proof(db_session, rich_job.job_id, title="Fallback Path")
+        result = render_narrative(db_session, p.proof_id)
+
+        assert "# Fallback Path" in result["narrative"]
