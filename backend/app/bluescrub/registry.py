@@ -11,7 +11,12 @@ from __future__ import annotations
 
 from backend.app.bluescrub.isolation import ResourceLimits
 from backend.app.bluescrub.pillars import Pillar, RiskClass
-from backend.app.bluescrub.scanners import semgrep, vendored_analyzers
+from backend.app.bluescrub.scanners import (
+    binary_analysis,
+    dependencies,
+    semgrep,
+    vendored_analyzers,
+)
 from backend.app.bluescrub.scanners.base import ScannerSpec
 
 #: Which pillars each profile attempts. A pillar outside this set is
@@ -35,6 +40,24 @@ SCANNERS: dict[str, ScannerSpec] = {
         ),
         risk_class=RiskClass.parse_only,
         profiles=("triage", "standard", "deep"),
+        optional=False,
+        limits=ResourceLimits(),
+    ),
+    "binary_analyzer": ScannerSpec(
+        name="binary_analyzer",
+        run=binary_analysis.run,
+        pillars=(Pillar.detectability, Pillar.re_feasibility),
+        risk_class=RiskClass.emulation,
+        profiles=("deep",),
+        optional=False,
+        limits=ResourceLimits.for_emulation(),
+    ),
+    "dependency_inventory": ScannerSpec(
+        name="dependency_inventory",
+        run=dependencies.run,
+        pillars=(Pillar.co_optability,),
+        risk_class=RiskClass.parse_only,
+        profiles=("standard", "deep"),
         optional=False,
         limits=ResourceLimits(),
     ),

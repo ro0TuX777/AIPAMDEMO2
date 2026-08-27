@@ -18,6 +18,7 @@ import os
 import shutil
 from pathlib import Path
 
+from backend.app.bluescrub.enrich import mitre_for
 from backend.app.bluescrub.isolation import AnalyzerStatus, ResourceLimits, run_analyzer
 from backend.app.bluescrub.models import Location, RawFinding
 from backend.app.bluescrub.rulemap import detector_for, normalize_cwes, resolve_family
@@ -77,6 +78,7 @@ def parse_output(payload: dict, source_root: Path) -> list[RawFinding]:
             title=rule_id.rsplit(".", 1)[-1].replace("-", " "),
             description=str(extra.get("message") or "")[:4096],
             cwe=cwes,
+            mitre=mitre_for(str(extra.get("lines") or ""), rule_id),
             matched_tokens=str(extra.get("lines") or "")[:4096],
             location=Location(
                 kind="source",

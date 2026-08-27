@@ -61,6 +61,24 @@ That capability is precisely what the RE-Feasibility decompilation signal
 needs, which confirms the pillar is genuinely net-new work rather than a port.
 Sprint 9 builds it against the isolation contract instead of inheriting it.
 
+## Known limitation — file-extension coverage
+
+`BaseAnalyzer.EXTENSIONS` restricts every pattern analyzer to a fixed source
+list (`.py .js .ts .rb .go .c .cpp .h .hpp .sh .bash`). Attribution material in
+a README, `.txt`, `.md`, `.json`, or `.yaml` file is therefore never seen —
+which matters, because build notes and deployment docs are exactly where
+operator names, internal hostnames, and project codenames tend to survive.
+
+Not fixed by widening the list here: that would change vendored behaviour and
+break raw parity with upstream, and the differential test would be measuring
+our edit rather than upstream fidelity. The right home is the dirty-word
+scanner in Sprint 5, which is specified to scan arbitrary files and recovered
+binary strings rather than a source allowlist.
+
+Until then, the Attribution pillar under-reports on non-source files. The
+sample fixture places its planted attribution material in a `.py` comment so
+the differential test measures the engine rather than this gap.
+
 ## Local modifications
 
 **None.** The only transformation applied is the mechanical import rewrite in

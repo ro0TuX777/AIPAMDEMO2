@@ -19,6 +19,7 @@ import os
 import sys
 from pathlib import Path
 
+from backend.app.bluescrub.enrich import autofix_for, mitre_for
 from backend.app.bluescrub.isolation import AnalyzerStatus, ResourceLimits, run_analyzer
 from backend.app.bluescrub.models import Location, RawFinding
 from backend.app.bluescrub.pillars import FAMILY_PILLAR, DetectorClass, IssueFamily
@@ -103,6 +104,7 @@ def to_raw_findings(analyzer: str, items: list[dict], source_root: Path) -> list
             title=label,
             description=str(item.get("issue") or item.get("description") or label)[:4096],
             recommendation=str(item.get("recommended_fix") or "")[:2048] or None,
+            mitre=mitre_for(str(item.get("match") or ""), label),
             matched_tokens=str(item.get("match") or item.get("pattern") or "")[:4096],
             location=Location(
                 kind="source", file=rel,
@@ -178,6 +180,7 @@ def specialised_to_raw_findings(
                     source_facet="source",
                     title=str(item.get("type") or category.replace("_", " ")),
                     description=str(item.get("explanation") or explanation)[:4096],
+                    mitre=mitre_for(matched, str(item.get("type") or ""), category),
                     matched_tokens=matched[:4096],
                     location=Location(
                         kind="source", file=rel,

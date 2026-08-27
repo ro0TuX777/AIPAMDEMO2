@@ -36,12 +36,22 @@ def main(argv: list[str]) -> int:
     try:
         from backend.app.bluescrub.vendored.scanners import analyzers
 
-        entry = getattr(analyzers, name, None)
-        if entry is None:
-            json.dump({"ok": False, "error": f"unknown analyzer {name!r}"}, sys.stdout)
-            return 2
+        if mode == "binary":
+            from backend.app.bluescrub.vendored.scanners.binary import BinaryAnalyzer
 
-        findings = entry(directory) if mode == "specialised" else entry().run(directory)
+            findings = BinaryAnalyzer().analyze_directory(directory)
+        elif mode == "dependencies":
+            from backend.app.bluescrub.vendored.dependency_scanner import (
+                build_dependency_inventory,
+            )
+
+            findings = build_dependency_inventory(directory)
+        else:
+            entry = getattr(analyzers, name, None)
+            if entry is None:
+                json.dump({"ok": False, "error": f"unknown analyzer {name!r}"}, sys.stdout)
+                return 2
+            findings = entry(directory) if mode == "specialised" else entry().run(directory)
         json.dump({"ok": True, "analyzer": name, "findings": findings}, sys.stdout,
                   default=str)
         return 0

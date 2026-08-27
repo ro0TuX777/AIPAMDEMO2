@@ -158,6 +158,8 @@ VENDORED_CATEGORY_FAMILY: dict[str, IssueFamily] = {
     "path_disclosure": IssueFamily.build_path_leak,
     "python_unsafe": IssueFamily.command_injection,
     "protocol_fingerprints": IssueFamily.signature_known,
+    "hardcoded_delays_timing_signature": IssueFamily.signature_known,
+    "unpinned_versions": IssueFamily.dependency_confusion,
 }
 
 #: Explicit per-rule overrides, highest priority. Populated as rules are

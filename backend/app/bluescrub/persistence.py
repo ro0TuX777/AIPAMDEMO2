@@ -27,6 +27,7 @@ from backend.app.bluescrub import (
     SCHEMA_VERSION,
     SCORING_MODEL,
 )
+from backend.app.bluescrub.enrich import autofix_for
 from backend.app.bluescrub.models import CanonicalGroup
 from backend.app.models.bluescrub import BlueScrubTriageLedger
 from backend.app.models.finding import Finding
@@ -94,6 +95,7 @@ def build_evidence(group: CanonicalGroup) -> dict:
         "occurrence_index": group.occurrence_index,
         "cwe": primary.cwe,
         "mitre": primary.mitre,
+        "auto_fix": autofix_for(primary.matched_tokens, primary.title, group.primary_rule_id),
         "severity_source": group.severity_source,
         "severity_rationale": rationale,
         "recommendation": primary.recommendation,

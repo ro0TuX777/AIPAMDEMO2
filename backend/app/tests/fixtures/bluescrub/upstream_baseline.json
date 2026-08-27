@@ -1,0 +1,80 @@
+{
+ "_comment": "Captured from NhanBC/BlueScrub @ 9452a51 running its own scanners/ package against sample_repo_spec.json. Regenerate only when the pin moves, and review the diff: a change here is a behavioural change in the vendored engine.",
+ "analyzers": {
+  "CryptoVulnerabilityAnalyzer": [
+   [
+    "hardcoded_keys",
+    "3"
+   ],
+   [
+    "weak_algorithms",
+    "8"
+   ],
+   [
+    "weak_algorithms",
+    "8"
+   ]
+  ],
+  "ExploitationToolAnalyzer": [
+   [
+    "Hardcoded delays (timing signature)",
+    "4"
+   ]
+  ],
+  "InformationDisclosureAnalyzer": [
+   [
+    "path_disclosure",
+    "1"
+   ]
+  ],
+  "MemorySafetyAnalyzer": [
+   [
+    "buffer_overflow",
+    "3"
+   ],
+   [
+    "buffer_overflow",
+    "4"
+   ],
+   [
+    "python_unsafe",
+    "10"
+   ]
+  ],
+  "OpsecAnalyzer": [
+   [
+    "Email address",
+    "1"
+   ],
+   [
+    "Hardcoded API key",
+    "3"
+   ],
+   [
+    "Internal IP address",
+    "4"
+   ]
+  ],
+  "SecretsAnalyzer": [
+   [
+    "api_keys",
+    "3"
+   ]
+  ],
+  "SupplyChainAnalyzer": [
+   [
+    "typosquatting",
+    "2"
+   ],
+   [
+    "unpinned_versions",
+    "1"
+   ],
+   [
+    "unpinned_versions",
+    "2"
+   ]
+  ]
+ },
+ "upstream_commit": "9452a51673f5fb946b72faf1f51b1818b145fae7"
+}
