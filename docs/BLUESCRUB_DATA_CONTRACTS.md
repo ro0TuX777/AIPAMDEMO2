@@ -129,7 +129,7 @@ recorded in `severity_source`:
 
 | Tier | Source | Note |
 |---|---|---|
-| 1 | `rule_mapping` | Explicit BlueScrub/AIPAM canonical severity for that rule |
+| 1 | `rule_mapping` | Canonical severity from `severity_table.py` — see §2.3.1 |
 | 2 | `impact_modifier` | Reachability, secret validity, exposure, execution path — may raise **or lower** tier 1 by at most one level |
 | 3 | `precedence` | Detector-class table below, applied to the members' calibrated severities |
 | 4 | `fallback` | Highest calibrated member severity |
@@ -143,6 +143,40 @@ semantic_dataflow  >  taint  >  ast_pattern  >  regex_pattern  >  heuristic
 A `regex_pattern` detector claiming `critical` does not outrank a `semantic_dataflow` detector claiming
 `medium`. Class is declared per rule in the mapping table, not per tool — one tool can own rules in
 several classes.
+
+### 2.3.1 Why tier 1 exists — measured, not assumed
+
+Sprint 3 ran the shipped corpus against the sample fixture with no rule mapping
+in place, so every finding resolved at tier 3 or 4 — the scanner's own severity
+string. Two results made the case on their own:
+
+- **`hardcoded-c2` came out `low`.** It is the single finding the Co-Optability
+  pillar exists to catch: whoever seizes that address inherits every implant
+  pointing at it. A generic scanner rates it low because, to a *service*, a
+  hardcoded address is a configuration smell.
+- **An operator's real email address came out `high`**, not disqualifying.
+
+A generic SAST tool grades by harm to a service; these artifacts are offensive
+tooling and the question is harm to the operator who deploys them. The two
+answers diverge, and not uniformly — memory safety outranks the web-shaped
+families here, because an on-target crash is an OPSEC event whereas SSRF in an
+implant rarely reaches anything.
+
+`severity_table.py` carries the canonical severity per issue family with
+per-entry rationale, plus rule-level overrides where one rule inside a family
+warrants a different answer than its siblings. After wiring, all 21 canonical
+groups on the fixture resolve at tier 1, and a test fails if any shipped rule
+falls back to the scanner's judgement.
+
+Only Attribution and Co-Optability families reach `critical`, because critical
+drives the disqualification rule and that set has to stay deliberate.
+
+**Tier 2 is deliberately thin.** One modifier is implemented: an artifact
+recovered from network traffic has already shipped, so an attribution leak
+inside it is not a risk but an exposure that already occurred, and it escalates
+one level. Reachability, secret validity, and execution-path modifiers are
+absent rather than guessed — none is establishable without analysis this
+pipeline performs.
 
 ### 2.4 Scoring confidence
 
