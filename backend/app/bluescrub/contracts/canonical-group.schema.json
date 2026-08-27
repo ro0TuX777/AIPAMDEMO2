@@ -73,7 +73,7 @@
       "type": "integer", "minimum": 0
     },
 
-    "location": { "$ref": "raw-finding.schema.json#/properties/location" },
+    "location": { "$ref": "https://aipam.local/schemas/bluescrub/raw-finding/1#/properties/location" },
 
     "members": {
       "description": "Raw findings collapsed into this group. At least one.",

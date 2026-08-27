@@ -55,7 +55,7 @@
       }
     },
 
-    "location": { "$ref": "raw-finding.schema.json#/properties/location" },
+    "location": { "$ref": "https://aipam.local/schemas/bluescrub/raw-finding/1#/properties/location" },
 
     "code": {
       "description": "Capped at 4 KiB. Rendered inert — never as HTML, SVG, or script.",
@@ -65,7 +65,7 @@
     "occurrence_index": { "type": "integer", "minimum": 0, "default": 0 },
 
     "cwe": { "type": "array", "default": [], "items": { "type": "string", "pattern": "^CWE-[0-9]+$" } },
-    "mitre": { "$ref": "raw-finding.schema.json#/properties/mitre" },
+    "mitre": { "$ref": "https://aipam.local/schemas/bluescrub/raw-finding/1#/properties/mitre" },
 
     "severity_source": {
       "enum": ["rule_mapping", "impact_modifier", "precedence", "fallback"]
@@ -94,9 +94,9 @@
     },
 
     "fp_filters_applied": { "type": "array", "default": [], "items": { "type": "string", "maxLength": 64 } },
-    "observables": { "$ref": "raw-finding.schema.json#/properties/observables" },
-    "typed_evidence": { "$ref": "raw-finding.schema.json#/properties/typed_evidence" },
-    "secret": { "$ref": "raw-finding.schema.json#/properties/secret" },
+    "observables": { "$ref": "https://aipam.local/schemas/bluescrub/raw-finding/1#/properties/observables" },
+    "typed_evidence": { "$ref": "https://aipam.local/schemas/bluescrub/raw-finding/1#/properties/typed_evidence" },
+    "secret": { "$ref": "https://aipam.local/schemas/bluescrub/raw-finding/1#/properties/secret" },
 
     "re_signal": {
       "description": "RE-Feasibility findings only.",

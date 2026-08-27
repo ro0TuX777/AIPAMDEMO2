@@ -177,6 +177,21 @@ precedence-table detector selection rather than highest-confidence-wins, and fix
 Only **required** detectors move the numbers, and their absence moves coverage rather than score.
 Asserted by acceptance test 16 in the plan.
 
+**The mechanism, made explicit.** Sprint 1 testing showed the invariant does not
+follow from precedence selection alone. If an optional detector can win the
+precedence contest inside a canonical group, installing it promotes it to
+primary and its confidence becomes the group's `scoring_confidence` — moving the
+score of an unchanged artifact. `select_primary` therefore excludes optional
+detectors from the choice entirely: they corroborate, they never decide. Only
+when *every* member of a group is optional does the best optional detector
+decide, and that case is not a violation — a finding no required scanner
+detected is new information, not corroboration.
+
+The invariant is precisely: **an optional scanner must not change the scoring of
+a finding that a required scanner also detects.** It says nothing about findings
+only the optional scanner can produce, and cannot: those exist only when the
+tool is installed.
+
 ---
 
 ## 6. Comparability signature
