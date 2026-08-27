@@ -1,0 +1,27 @@
+# BlueScrub Attribution rules — does the source point back to its author?
+rules:
+  - id: bluescrub.attribution.build-path-leak
+    languages: [generic]
+    severity: WARNING
+    message: >-
+      Absolute build path embedded in source or config. PDB and build paths
+      routinely carry an operator username, an internal hostname, or a project
+      codename.
+    metadata:
+      cwe: ["CWE-200: Exposure of Sensitive Information"]
+      confidence: MEDIUM
+      bluescrub_family: build-path-leak
+    pattern-regex: >-
+      (?:[A-Z]:\\Users\\[^\\\s"']+|/home/[^/\s"']+|/Users/[^/\s"']+)[\\/][^\s"']*
+
+  - id: bluescrub.attribution.operator-todo
+    languages: [generic]
+    severity: INFO
+    message: >-
+      Developer note left in shipped code. Handles, initials, and internal
+      ticket ids in comments are attribution material.
+    metadata:
+      confidence: LOW
+      bluescrub_family: attribution-identity
+    pattern-regex: >-
+      (?i)(?://|#|/\*)\s*(?:TODO|FIXME|HACK|XXX|NOTE)\s*[\(\[:@]\s*[A-Za-z][\w.\-]{1,30}

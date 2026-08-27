@@ -1,0 +1,57 @@
+# BlueScrub Co-Optability rules.
+#
+# Authored here rather than drawn from the Semgrep registry: registry rules
+# carry a licence limited to internal non-competing use, and these encode a
+# question no general SAST pack asks — could an adversary who obtains this
+# tooling turn it against the operator who deployed it?
+rules:
+  - id: bluescrub.cooptability.hardcoded-c2-address
+    languages: [python, go, javascript, typescript, java, c, cpp, csharp]
+    severity: ERROR
+    message: >-
+      Hardcoded C2 address. Anyone who obtains the binary learns the
+      infrastructure, and anyone who seizes that address inherits the implants.
+    metadata:
+      cwe: ["CWE-798: Use of Hard-coded Credentials"]
+      confidence: MEDIUM
+      bluescrub_family: hardcoded-c2
+    patterns:
+      - pattern-regex: >-
+          ["'](?:(?:\d{1,3}\.){3}\d{1,3}|[a-z0-9-]+\.(?:duckdns|no-ip|ngrok)\.[a-z]{2,})(?::\d{2,5})?["']
+      - pattern-not-regex: '["''](?:127\.0\.0\.1|0\.0\.0\.0|localhost)'
+
+  - id: bluescrub.cooptability.unauthenticated-control-channel
+    languages: [python]
+    severity: ERROR
+    message: >-
+      Control channel accepts input without authenticating the caller. A third
+      party who finds the listener can task the implant.
+    metadata:
+      cwe: ["CWE-306: Missing Authentication for Critical Function"]
+      confidence: LOW
+      bluescrub_family: unauth-control-channel
+    patterns:
+      - pattern-either:
+          - pattern: |
+              $S = socket.socket(...)
+              ...
+              $S.bind(...)
+              ...
+              $S.listen(...)
+      - pattern-not-inside: |
+          ...
+          $AUTH(...)
+          ...
+
+  - id: bluescrub.cooptability.static-payload-key
+    languages: [python, go, c, cpp, csharp, java]
+    severity: WARNING
+    message: >-
+      Static key used to protect payload or config. A single recovered key
+      decrypts every build, so one captured sample compromises the fleet.
+    metadata:
+      cwe: ["CWE-321: Use of Hard-coded Cryptographic Key"]
+      confidence: MEDIUM
+      bluescrub_family: hardcoded-secret
+    pattern-regex: >-
+      (?i)\b(xor_key|enc_key|crypt_key|aes_key|payload_key|config_key)\s*[=:]\s*["'0-9a-fx{]

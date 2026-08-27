@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { api, type ExecutionProfile, type PcapUploadItem, type BundleUploadItem, type SourceType, type IntegrationSettingsPayload } from "../api";
 import { HelpPanel, labelHint, usePageHelp } from "../components/HelpPanel";
 
@@ -7,8 +7,14 @@ type Step = "select" | "uploading" | "creating" | "error";
 
 const LABEL_PRESETS = ["", "before", "during", "after", "baseline", "exploit"];
 const MAX_PCAPS = 10;
-const MAX_BUNDLES = 5;
-const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024; // 2 GB
+const MAX_FILE_SIZE = 2 * 1024 * 1024 * 1024; // 2 GB per PCAP
+
+// Log attachments are bounded by bytes, never by file count — the value of log
+// correlation comes from stacking independent perspectives (C2 operator logs,
+// EVTX, router/firewall syslog), so attach as many as the investigation needs.
+// Mirrors MAX_LOG_FILE_BYTES / MAX_LOG_BYTES_PER_JOB on the backend.
+const MAX_LOG_FILE_SIZE = 512 * 1024 * 1024;          // 512 MB per log file
+const MAX_LOG_TOTAL_SIZE = 10 * 1024 * 1024 * 1024;   // 10 GB of logs per job
 
 const fmtSize = (bytes: number) => bytes >= 1e9 ? `${(bytes / 1e9).toFixed(1)} GB` : `${(bytes / 1e6).toFixed(1)} MB`;
 
@@ -25,6 +31,7 @@ interface RejectedFile {
 
 export const NewAnalysisPage: React.FC = () => {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const inputRef = useRef<HTMLInputElement>(null);
   const { activeHelpField, setActiveHelpField, toggleHelp } = usePageHelp();
 
@@ -41,7 +48,21 @@ export const NewAnalysisPage: React.FC = () => {
   const [currentFilePct, setCurrentFilePct] = useState(0);
 
   // Source tab
-  const [mode, setMode] = useState<"upload" | "security_onion" | "arkime">("upload");
+  const [mode, setMode] = useState<"upload" | "security_onion" | "arkime" | "code_artifact">("upload");
+  // BlueScrub code-artifact state
+  const [codeFile, setCodeFile] = useState<File | null>(null);
+  const [codeProfile, setCodeProfile] = useState<"triage" | "standard" | "deep">("standard");
+  const [codeProject, setCodeProject] = useState("");
+  const [codeBusy, setCodeBusy] = useState(false);
+  const [codeError, setCodeError] = useState<string | null>(null);
+  const codeInputRef = useRef<HTMLInputElement>(null);
+
+  useEffect(() => {
+    const requested = searchParams.get("demo_tab");
+    if (requested === "upload" || requested === "security_onion" || requested === "arkime") {
+      setMode(requested);
+    }
+  }, [searchParams]);
 
   // Optional bundle attachments for hybrid PCAP+logs jobs (multiple, with labels)
   interface BundleEntry { file: File; label: string; }
@@ -163,6 +184,35 @@ export const NewAnalysisPage: React.FC = () => {
       setRejectedFiles(prev => [...prev, ...newRejected]);
     }
   };
+
+  // Log attachments: bounded by per-file and per-job bytes, never by count.
+  const addBundleFiles = (files: FileList | File[]) => {
+    const arr = Array.from(files);
+    const newRejected: RejectedFile[] = [];
+    setBundleEntries(prev => {
+      const next = [...prev];
+      let total = next.reduce((sum, e) => sum + e.file.size, 0);
+      for (const f of arr) {
+        if (f.size > MAX_LOG_FILE_SIZE) {
+          newRejected.push({ name: f.name, size: f.size, reason: `Log file too large (${fmtSize(f.size)} — max ${fmtSize(MAX_LOG_FILE_SIZE)} per file)` });
+          continue;
+        }
+        if (total + f.size > MAX_LOG_TOTAL_SIZE) {
+          newRejected.push({ name: f.name, size: f.size, reason: `Would exceed the ${fmtSize(MAX_LOG_TOTAL_SIZE)} total log budget for this job` });
+          continue;
+        }
+        if (next.some(e => e.file.name === f.name && e.file.size === f.size)) continue;
+        next.push({ file: f, label: "" });
+        total += f.size;
+      }
+      return next;
+    });
+    if (newRejected.length > 0) {
+      setRejectedFiles(prev => [...prev, ...newRejected]);
+    }
+  };
+
+  const bundleTotalSize = bundleEntries.reduce((sum, e) => sum + e.file.size, 0);
 
   const removeEntry = (idx: number) => setEntries(prev => prev.filter((_, i) => i !== idx));
 
@@ -301,13 +351,122 @@ export const NewAnalysisPage: React.FC = () => {
           >
             Arkime
           </button>
+          <button
+            data-testid="tab-code-artifact"
+            className={mode === "code_artifact" ? "font-semibold text-emerald-400" : "text-slate-400"}
+            onClick={() => setMode("code_artifact")}
+          >
+            Source Code
+          </button>
         </div>
+
+        {mode === "code_artifact" && (
+          <div className="space-y-4" data-testid="form-code-artifact">
+            <p className="text-slate-400">
+              Audit offensive tooling before deployment — source, binaries, and build
+              config scored along the DACV+R OPSEC pillars.
+            </p>
+
+            <div>
+              <label className="block text-slate-300 mb-1">Archive</label>
+              <input
+                ref={codeInputRef}
+                type="file"
+                accept=".zip,.tar.gz,.tgz,.tar.bz2,.tar"
+                data-testid="input-code-file"
+                className="text-slate-300"
+                onChange={(e) => {
+                  setCodeFile(e.target.files?.[0] ?? null);
+                  setCodeError(null);
+                }}
+              />
+              <p className="text-xs text-slate-500 mt-1">
+                Hostile archives are rejected rather than repaired — path traversal,
+                symlinks, and decompression bombs are refused with a reason.
+              </p>
+            </div>
+
+            <div>
+              <label className="block text-slate-300 mb-1">Scan profile</label>
+              <select
+                data-testid="select-code-profile"
+                className="bg-slate-900 border border-slate-700 rounded px-2 py-1 text-slate-200"
+                value={codeProfile}
+                onChange={(e) => setCodeProfile(e.target.value as typeof codeProfile)}
+              >
+                <option value="triage">Quick — source only</option>
+                <option value="standard">Standard — source + dependencies</option>
+                <option value="deep">Deep — source + binaries + dependencies</option>
+              </select>
+              {codeProfile !== "deep" && (
+                <p className="text-xs text-amber-500/80 mt-1">
+                  Scores only the pillars this profile assesses. Unassessed pillars are
+                  reported as such, not as clean, and no overall grade is produced.
+                </p>
+              )}
+            </div>
+
+            <div>
+              <label className="block text-slate-300 mb-1">
+                Project <span className="text-slate-500">(optional)</span>
+              </label>
+              <input
+                type="text"
+                data-testid="input-code-project"
+                placeholder="leave blank for an ad-hoc scan"
+                className="bg-slate-900 border border-slate-700 rounded px-2 py-1 w-full text-slate-200"
+                value={codeProject}
+                onChange={(e) => setCodeProject(e.target.value)}
+              />
+              {!codeProject && (
+                <p className="text-xs text-slate-500 mt-1">
+                  Ad-hoc scan — triage will not carry forward. You can bind this job to a
+                  project afterwards without re-scanning.
+                </p>
+              )}
+            </div>
+
+            {codeError && (
+              <p className="text-rose-400 text-xs" data-testid="code-artifact-error">{codeError}</p>
+            )}
+
+            <button
+              data-testid="btn-start-code-artifact"
+              disabled={!codeFile || codeBusy}
+              className="bg-emerald-600 disabled:bg-slate-700 px-3 py-1.5 rounded text-white"
+              onClick={async () => {
+                if (!codeFile) return;
+                setCodeBusy(true);
+                setCodeError(null);
+                try {
+                  const up = await api.uploadArtifact(codeFile);
+                  const job = await api.createJob({
+                    upload_id: up.upload_id,
+                    job_name: codeFile.name,
+                    source_type: "code_artifact",
+                    execution_profile: codeProfile,
+                    project_id: codeProject || undefined,
+                  });
+                  navigate(`/jobs/${job.job_id}`);
+                } catch (err: any) {
+                  setCodeError(err?.message ?? "Failed to start analysis");
+                } finally {
+                  setCodeBusy(false);
+                }
+              }}
+            >
+              {codeBusy ? "Starting…" : "Start Analysis"}
+            </button>
+          </div>
+        )}
 
         {mode === "upload" && (
           <div className="space-y-4" data-testid="form-upload">
             <p className="text-xs text-slate-500">Upload PCAP files and/or log bundles. Optional labels help compare snapshots (e.g. before/during/after).</p>
             <p className="text-xs text-slate-500">
-              Max <strong>{fmtSize(MAX_FILE_SIZE)}</strong> per file &middot; up to <strong>{MAX_PCAPS}</strong> files per job
+              PCAPs: max <strong>{fmtSize(MAX_FILE_SIZE)}</strong> per file &middot; up to <strong>{MAX_PCAPS}</strong> per job.
+              Logs: <strong>unlimited files</strong> &middot; max <strong>{fmtSize(MAX_LOG_FILE_SIZE)}</strong> each
+              &middot; <strong>{fmtSize(MAX_LOG_TOTAL_SIZE)}</strong> total.
             </p>
 
             {rejectedFiles.length > 0 && (
@@ -427,36 +586,37 @@ export const NewAnalysisPage: React.FC = () => {
                     )}
                   </div>
                   <p className="text-xs text-slate-500">
-                    Attach log files or archives (Sysmon, EVTX, auth logs, CSV, JSON, etc.) to correlate with PCAPs.
-                    Use labels to tag each file by phase (before/during/after).
+                    Attach log files or archives (C2 operator logs, Sysmon, EVTX, router/firewall syslog, CSV, JSON, etc.)
+                    to correlate against PCAP alerts and findings. Perspectives from outside the capture are what confirm
+                    a detection — a C2 log records what the operator actually ran. Use labels to tag each file by phase.
+                  </p>
+                  <p className="text-[11px] text-slate-600">
+                    No limit on how many log files you attach &middot; max <strong>{fmtSize(MAX_LOG_FILE_SIZE)}</strong> per file
+                    &middot; <strong>{fmtSize(MAX_LOG_TOTAL_SIZE)}</strong> total per job
                   </p>
 
-                  {bundleEntries.length < MAX_BUNDLES && (
-                    <div
-                      className="border border-dashed border-slate-600 rounded p-3 text-center cursor-pointer hover:border-slate-400 transition-colors"
-                      onClick={() => hybridBundleInputRef.current?.click()}
-                      onDragOver={e => { e.preventDefault(); e.stopPropagation(); }}
-                      onDrop={e => {
-                        e.preventDefault();
-                        const files = Array.from(e.dataTransfer.files);
-                        const newEntries = files.slice(0, MAX_BUNDLES - bundleEntries.length).map(f => ({ file: f, label: "" }));
-                        setBundleEntries(prev => [...prev, ...newEntries]);
-                      }}
-                    >
-                      <input ref={hybridBundleInputRef} type="file" accept=".zip,.tar.gz,.tgz,.tar.bz2,.tar,.json,.jsonl,.ndjson,.evtx,.log,.csv,.xml,.txt" multiple className="hidden"
-                        onChange={e => {
-                          if (e.target.files) {
-                            const files = Array.from(e.target.files);
-                            const newEntries = files.slice(0, MAX_BUNDLES - bundleEntries.length).map(f => ({ file: f, label: "" }));
-                            setBundleEntries(prev => [...prev, ...newEntries]);
-                            e.target.value = "";
-                          }
-                        }} />
-                      <span className="text-slate-500 text-xs">
-                        {bundleEntries.length === 0 ? "Drop log file(s) or archive(s) here or click to browse" : `+ Add more files (${bundleEntries.length}/${MAX_BUNDLES})`}
-                      </span>
-                    </div>
-                  )}
+                  <div
+                    className="border border-dashed border-slate-600 rounded p-3 text-center cursor-pointer hover:border-slate-400 transition-colors"
+                    onClick={() => hybridBundleInputRef.current?.click()}
+                    onDragOver={e => { e.preventDefault(); e.stopPropagation(); }}
+                    onDrop={e => {
+                      e.preventDefault();
+                      addBundleFiles(e.dataTransfer.files);
+                    }}
+                  >
+                    <input ref={hybridBundleInputRef} type="file" accept=".zip,.tar.gz,.tgz,.tar.bz2,.tar,.json,.jsonl,.ndjson,.evtx,.log,.csv,.xml,.txt" multiple className="hidden"
+                      onChange={e => {
+                        if (e.target.files) {
+                          addBundleFiles(e.target.files);
+                          e.target.value = "";
+                        }
+                      }} />
+                    <span className="text-slate-500 text-xs">
+                      {bundleEntries.length === 0
+                        ? "Drop log file(s) or archive(s) here or click to browse"
+                        : `+ Add more logs (${bundleEntries.length} file${bundleEntries.length !== 1 ? "s" : ""}, ${fmtSize(bundleTotalSize)} of ${fmtSize(MAX_LOG_TOTAL_SIZE)})`}
+                    </span>
+                  </div>
 
                   {bundleEntries.length > 0 && (
                     <div className="space-y-1">
