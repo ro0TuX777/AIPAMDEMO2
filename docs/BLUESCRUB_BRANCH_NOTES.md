@@ -32,7 +32,26 @@ Roughly 200 lines of foreign work is entangled. Everything **not** touching a
 BlueScrub seam was left alone and now lives on
 `wip/local-changes-20260827`, committed from `main` as a safety net.
 
-### Why it was not unpicked
+### Resolved 2026-08-27
+
+The split was worse than untidy attribution: two of the entangled changes had
+their **tests** on the WIP branch and their **implementations** here, so neither
+branch passed alone. The WIP branch failed 8 tests with
+`ImportError: cannot import name 'MAX_LOG_BYTES_PER_JOB'`.
+
+Both implementations — the log-bundle byte budget in `api/jobs.py` and the
+stage-failure resilience in `pipeline/orchestrator.py` — were relocated to
+`wip/local-changes-20260827`, which then merged to `main`. This branch keeps its
+copies; git resolves the duplication as an identical change, which is why
+merging `main` in afterwards was conflict-free.
+
+Both branches now pass independently: `main` at 985, this branch at 1141.
+
+The remaining entanglement is cosmetic — unrelated additions to `api.ts`,
+`NewAnalysisPage.tsx`, and `requirements.txt` sit inside BlueScrub commits. Those
+have no functional consequence now that main carries the same changes.
+
+### Why the rest was not unpicked
 
 The work is committed and safe, which is strictly better than the uncommitted
 state it was in. Extracting hunks across eleven commits would mean rewriting
