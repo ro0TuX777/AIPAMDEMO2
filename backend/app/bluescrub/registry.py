@@ -11,7 +11,7 @@ from __future__ import annotations
 
 from backend.app.bluescrub.isolation import ResourceLimits
 from backend.app.bluescrub.pillars import Pillar, RiskClass
-from backend.app.bluescrub.scanners import semgrep
+from backend.app.bluescrub.scanners import semgrep, vendored_analyzers
 from backend.app.bluescrub.scanners.base import ScannerSpec
 
 #: Which pillars each profile attempts. A pillar outside this set is
@@ -26,6 +26,18 @@ PROFILE_PILLARS: dict[str, tuple[Pillar, ...]] = {
 }
 
 SCANNERS: dict[str, ScannerSpec] = {
+    "bluescrub_analyzers": ScannerSpec(
+        name="bluescrub_analyzers",
+        run=vendored_analyzers.run,
+        pillars=(
+            Pillar.vulnerability, Pillar.attribution,
+            Pillar.co_optability, Pillar.detectability,
+        ),
+        risk_class=RiskClass.parse_only,
+        profiles=("triage", "standard", "deep"),
+        optional=False,
+        limits=ResourceLimits(),
+    ),
     "semgrep": ScannerSpec(
         name="semgrep",
         run=semgrep.run,

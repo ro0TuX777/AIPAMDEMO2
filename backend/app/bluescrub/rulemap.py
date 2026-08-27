@@ -58,6 +58,20 @@ CWE_FAMILY: dict[str, IssueFamily] = {
 _KEYWORD_FAMILY: tuple[tuple[re.Pattern[str], IssueFamily], ...] = tuple(
     (re.compile(pattern, re.I), family)
     for pattern, family in (
+        # Vendored-analyzer category labels. Their vocabulary differs from
+        # Semgrep rule ids, so these patterns exist to map it onto the same
+        # closed family set rather than letting a second taxonomy grow.
+        (r"weak[-_.]?algorithm", IssueFamily.weak_crypto),
+        (r"weak[-_.]?random|predictable[-_.]?seed", IssueFamily.insecure_random),
+        (r"internal[-_.]?(ip|host|domain|network)", IssueFamily.attribution_infrastructure),
+        (r"anti[-_.]?(debug|vm|analysis|sandbox|emulation)", IssueFamily.anti_analysis),
+        (r"shellcode|egg[-_.]?hunter", IssueFamily.shellcode_pattern),
+        (r"obfuscat|packer|encod(ed|ing)[-_.]?payload", IssueFamily.obfuscation_weak),
+        (r"privilege[-_.]?escalation|privesc|token[-_.]?steal", IssueFamily.signature_known),
+        (r"forensic|artefact|artifact|log[-_.]?tamper", IssueFamily.forensic_artifact),
+        (r"exploit[-_.]?(tool|framework|signature)|metasploit|cobalt",
+         IssueFamily.signature_known),
+        (r"reliab|crash|stability", IssueFamily.memory_safety),
         (r"hardcoded[-_.]?c2|beacon[-_.]?config|c2[-_.]?address", IssueFamily.hardcoded_c2),
         (r"kill[-_.]?switch", IssueFamily.kill_switch),
         (r"unauth\w*[-_.]?(control|channel|listener)", IssueFamily.unauth_control_channel),
@@ -83,6 +97,15 @@ _KEYWORD_FAMILY: tuple[tuple[re.Pattern[str], IssueFamily], ...] = tuple(
         (r"authz|authorization|access[-_.]?control", IssueFamily.authz_bypass),
     )
 )
+
+
+def normalize_label(label: str) -> str:
+    """Fold a human-written analyzer label into rule-id shape.
+
+    The vendored analyzers report free text ("Hardcoded API key") where Semgrep
+    reports dotted ids, and the keyword patterns are written for the latter.
+    """
+    return re.sub(r"[^a-z0-9]+", "_", label.lower()).strip("_")
 
 #: Explicit per-rule overrides, highest priority. Populated as rules are
 #: reviewed; an entry here is a reviewed decision, not a guess.

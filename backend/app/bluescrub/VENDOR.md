@@ -3,7 +3,7 @@
 > **Upstream**: `NhanBC/BlueScrub` (private)
 > **Pinned commit**: `9452a51673f5fb946b72faf1f51b1818b145fae7`
 > **Verified**: 2026-08-09 · **Sync**: `scripts/vendor_bluescrub.sh`
-> **State**: allowlist verified, copy not yet performed (Sprint 2)
+> **State**: vendored — 55 files, 12,038 lines
 
 ## Why a copy rather than a submodule
 
@@ -36,8 +36,14 @@ run and refuses to write if they stop holding.
    already decoupled; the port is a copy plus an import rewrite.
 
 2. **Third-party dependencies**: `pefile`, `pyelftools`, `capstone`, `lief`,
-   `yara-python`. AIPAM already carries `yara-python` via `binalysis`. The rest
-   are binary-analysis libraries, wheel-available and air-gap installable.
+   `yara-python`. AIPAM already carried `yara-python` via `binalysis`; the other
+   four are now declared in `backend/requirements.txt`.
+
+   They matter more than a dependency list usually does. Upstream guards every
+   one behind an `*_AVAILABLE` flag, so a missing package makes binary analysis
+   return no findings rather than fail — indistinguishable from a clean binary.
+   Declaring them makes that degradation a deployment choice instead of an
+   accident, and the health endpoint (G10) reports it either way.
 
 ## Known gap upstream — `advanced_binary_analyzer`
 
@@ -57,5 +63,18 @@ Sprint 9 builds it against the isolation contract instead of inheriting it.
 
 ## Local modifications
 
-None yet. Every modification must be recorded here with its reason. Prefer a
-wrapper one level up over an edit inside `vendored/`.
+**None.** The only transformation applied is the mechanical import rewrite in
+`scripts/vendor_bluescrub.sh`, which prefixes local imports with the vendored
+package path. Nothing else in `vendored/` differs from upstream.
+
+AIPAM-specific behaviour lives one level up:
+
+| Concern | Where |
+|---|---|
+| Running analyzers behind a process boundary | `isolation/analyzer_main.py` |
+| Normalising analyzer output onto the raw contract | `scanners/vendored_analyzers.py` |
+| Family and pillar assignment | `rulemap.py` |
+| Deduplication and scoring | `canonicalize.py`, `scoring.py` |
+
+Keep it that way: a modification inside `vendored/` turns the next re-sync from
+a diff into a merge.
