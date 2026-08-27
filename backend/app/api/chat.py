@@ -1000,6 +1000,9 @@ def _make_llm_client(settings: Settings) -> LLMClient:
         model=os.getenv("LLM_MODEL_NAME", "aipam-trafficllm-v10"),
         temperature=0.3,
         max_tokens=int(os.getenv("LLM_MAX_TOKENS", "4096")),
+        local_adapter_path=getattr(settings, "llm_local_adapter_path", None) or os.getenv("LLM_LOCAL_ADAPTER_PATH"),
+        local_adapter_model_name=getattr(settings, "llm_local_adapter_model_name", None) or os.getenv("LLM_LOCAL_ADAPTER_MODEL_NAME"),
+        local_adapter_quantization=getattr(settings, "llm_local_adapter_quantization", None) or os.getenv("LLM_LOCAL_ADAPTER_QUANTIZATION"),
     )
     return LLMClient(config=config)
 

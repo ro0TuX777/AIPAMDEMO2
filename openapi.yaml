@@ -198,6 +198,18 @@ components:
       in: query
       required: false
       schema: { type: string }
+    SensorFilter:
+      name: sensor
+      in: query
+      required: false
+      schema: { type: string }
+      description: Filter by the sensor that produced the record.
+    PcapLabelFilter:
+      name: pcap_label
+      in: query
+      required: false
+      schema: { type: string }
+      description: Filter by phase label (e.g. before / during / after).
     SidFilter:
       name: sid
       in: query
@@ -767,6 +779,24 @@ components:
           items: { $ref: "#/components/schemas/IocItem" }
         page: { $ref: "#/components/schemas/PageInfo" }
 
+    EvidenceStatus:
+      type: string
+      enum: [observed, inferred, corroborated, confirmed]
+      description: |
+        Evidence confidence lifecycle.
+          * `observed` — raw extraction from a single source.
+          * `inferred` — derived via analysis or heuristic.
+          * `corroborated` — an uploaded log from another perspective lines up with it.
+          * `confirmed` — a ground-truth source (e.g. a C2 operator log) attests to it.
+
+    FindingFeedback:
+      type: string
+      enum: [confirmed, false_positive, false_negative]
+
+    FindingExplanationFeedback:
+      type: string
+      enum: [useful, not_useful]
+
     FindingItem:
       type: object
       required: [finding_id, title, severity]
@@ -774,10 +804,104 @@ components:
         finding_id: { type: string }
         title: { type: string }
         severity: { $ref: "#/components/schemas/Severity" }
-        summary: { type: string }
+        category: { type: string, nullable: true }
+        sensor: { type: string, nullable: true }
+        pcap_label: { type: string, nullable: true }
+        summary: { type: string, nullable: true }
         evidence:
           type: object
           additionalProperties: true
+          nullable: true
+        feedback:
+          allOf: [{ $ref: "#/components/schemas/FindingFeedback" }]
+          nullable: true
+        confidence:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          default: 0
+        evidence_status:
+          allOf: [{ $ref: "#/components/schemas/EvidenceStatus" }]
+          default: observed
+        corroboration_score:
+          type: number
+          format: float
+          minimum: 0
+          maximum: 1
+          default: 0
+          description: Strength of the strongest uploaded-log match backing this finding.
+        corroborating_sources:
+          type: array
+          description: source_system names of the uploaded logs that attest to this finding.
+          items: { type: string }
+        analyst_status:
+          type: string
+          nullable: true
+          enum: [unreviewed, confirmed, false_positive, needs_review, deferred]
+        analyst_notes: { type: string, nullable: true }
+        reviewed_at: { type: string, format: date-time, nullable: true }
+        reviewer_id: { type: string, nullable: true }
+
+    FindingRelatedHost:
+      type: object
+      required: [ip]
+      properties:
+        ip: { type: string }
+        role: { type: string, nullable: true }
+        conn_count: { type: integer, nullable: true }
+        alert_count: { type: integer, nullable: true }
+        finding_count: { type: integer, nullable: true }
+
+    FindingRelatedAlert:
+      type: object
+      required: [alert_id, ts, severity, signature]
+      properties:
+        alert_id: { type: string }
+        ts: { type: string, format: date-time }
+        severity: { $ref: "#/components/schemas/Severity" }
+        signature: { type: string }
+        category: { type: string, nullable: true }
+        host_ip: { type: string, nullable: true }
+        src_ip: { type: string, nullable: true }
+        src_port: { type: integer, nullable: true }
+        dest_ip: { type: string, nullable: true }
+        dest_port: { type: integer, nullable: true }
+        proto: { type: string, nullable: true }
+        pcap_label: { type: string, nullable: true }
+
+    FindingRelatedConnection:
+      type: object
+      required: [connection_id, src_ip, dest_ip, proto, ts]
+      properties:
+        connection_id: { type: string }
+        src_ip: { type: string }
+        src_port: { type: integer, nullable: true }
+        dest_ip: { type: string }
+        dest_port: { type: integer, nullable: true }
+        proto: { type: string }
+        service: { type: string, nullable: true }
+        ts: { type: string, format: date-time }
+        pcap_label: { type: string, nullable: true }
+
+    FindingDetailResponse:
+      allOf:
+        - $ref: "#/components/schemas/FindingItem"
+        - type: object
+          properties:
+            community_id: { type: string, nullable: true }
+            explanation_feedback:
+              allOf: [{ $ref: "#/components/schemas/FindingExplanationFeedback" }]
+              nullable: true
+            related_hosts:
+              type: array
+              items: { $ref: "#/components/schemas/FindingRelatedHost" }
+            related_alerts:
+              type: array
+              items: { $ref: "#/components/schemas/FindingRelatedAlert" }
+            related_connections:
+              type: array
+              items: { $ref: "#/components/schemas/FindingRelatedConnection" }
 
     FindingListResponse:
       type: object
@@ -789,6 +913,33 @@ components:
           items: { $ref: "#/components/schemas/FindingItem" }
         page: { $ref: "#/components/schemas/PageInfo" }
 
+    FindingFeedbackRequest:
+      type: object
+      required: [feedback]
+      properties:
+        feedback:
+          allOf: [{ $ref: "#/components/schemas/FindingFeedback" }]
+          nullable: true
+          description: Null clears any existing feedback.
+
+    FindingExplainFeedbackRequest:
+      type: object
+      required: [explanation_feedback]
+      properties:
+        explanation_feedback:
+          allOf: [{ $ref: "#/components/schemas/FindingExplanationFeedback" }]
+          nullable: true
+          description: Null clears any existing explanation feedback.
+
+    FindingExplainFeedbackResponse:
+      type: object
+      required: [schema_version]
+      properties:
+        schema_version: { $ref: "#/components/schemas/SchemaVersion" }
+        explanation_feedback:
+          allOf: [{ $ref: "#/components/schemas/FindingExplanationFeedback" }]
+          nullable: true
+
     FindingExplainRequest:
       type: object
       required: [format]
@@ -797,9 +948,68 @@ components:
           type: string
           enum: [markdown, text]
 
+    GenerateRuleRequest:
+      type: object
+      required: [rule_type]
+      properties:
+        rule_type:
+          type: string
+          enum: [suricata, sigma]
+
+    GenerateRuleResponse:
+      type: object
+      required: [rule_type, rule_text, finding_id]
+      properties:
+        rule_type: { type: string }
+        rule_text: { type: string }
+        finding_id: { type: string }
+        description: { type: string, default: "" }
+
+    ArkimePivotResponse:
+      type: object
+      description: Arkime viewer pivot URL for an alert or finding.
+      required: [enabled]
+      properties:
+        schema_version: { $ref: "#/components/schemas/SchemaVersion" }
+        enabled: { type: boolean }
+        url: { type: string, nullable: true }
+        basis:
+          type: string
+          enum: [community_id, five_tuple, none]
+          default: none
+        import_status:
+          type: string
+          enum: [not_imported, queued, running, imported, failed]
+          default: not_imported
+        message: { type: string, nullable: true }
+
+    FindingExplainSection:
+      type: object
+      required: [id, title]
+      properties:
+        id:
+          type: string
+          enum: [assessment, why_it_matters, recommended_next_steps]
+        title: { type: string }
+        body: { type: string, nullable: true }
+        bullets:
+          type: array
+          items: { type: string }
+        citations:
+          type: array
+          items: { type: string }
+
+    FindingExplainEvidenceItem:
+      type: object
+      required: [label, value, citation]
+      properties:
+        label: { type: string }
+        value: { type: string }
+        citation: { type: string }
+
     FindingExplainResponse:
       type: object
-      required: [schema_version, format, content]
+      required: [schema_version, format, content, duration_ms, source]
       properties:
         schema_version: { $ref: "#/components/schemas/SchemaVersion" }
         format:
@@ -807,6 +1017,20 @@ components:
           enum: [markdown, text]
         content:
           type: string
+        duration_ms: { type: integer }
+        source:
+          type: string
+          enum: [deterministic, llm, fallback]
+        warning: { type: string, nullable: true }
+        explanation_feedback:
+          allOf: [{ $ref: "#/components/schemas/FindingExplanationFeedback" }]
+          nullable: true
+        sections:
+          type: array
+          items: { $ref: "#/components/schemas/FindingExplainSection" }
+        evidence_items:
+          type: array
+          items: { $ref: "#/components/schemas/FindingExplainEvidenceItem" }
 
     ArtifactItem:
       type: object
@@ -1594,10 +1818,10 @@ paths:
         - $ref: "#/components/parameters/JobIdPath"
         - $ref: "#/components/parameters/CursorQuery"
         - $ref: "#/components/parameters/LimitQuery"
-        - $ref: "#/components/parameters/SortQuery"
-        - $ref: "#/components/parameters/OrderQuery"
         - $ref: "#/components/parameters/SeverityFilter"
         - $ref: "#/components/parameters/CategoryFilter"
+        - $ref: "#/components/parameters/SensorFilter"
+        - $ref: "#/components/parameters/PcapLabelFilter"
         - $ref: "#/components/parameters/SearchQuery"
       responses:
         "200":
@@ -1608,6 +1832,124 @@ paths:
             application/json:
               schema: { $ref: "#/components/schemas/FindingListResponse" }
         "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /jobs/{jobId}/findings/{findingId}:
+    get:
+      tags: [Findings]
+      summary: Get a finding with its related hosts, alerts and connections
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/RequestIdHeader"
+        - $ref: "#/components/parameters/JobIdPath"
+        - $ref: "#/components/parameters/FindingIdPath"
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-Id: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FindingDetailResponse" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /jobs/{jobId}/findings/{findingId}/feedback:
+    patch:
+      tags: [Findings]
+      summary: Set analyst feedback on a finding
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/RequestIdHeader"
+        - $ref: "#/components/parameters/JobIdPath"
+        - $ref: "#/components/parameters/FindingIdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FindingFeedbackRequest" }
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-Id: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FindingItem" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /jobs/{jobId}/findings/{findingId}/explain/feedback:
+    patch:
+      tags: [Findings]
+      summary: Rate a generated finding explanation
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/RequestIdHeader"
+        - $ref: "#/components/parameters/JobIdPath"
+        - $ref: "#/components/parameters/FindingIdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/FindingExplainFeedbackRequest" }
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-Id: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/FindingExplainFeedbackResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /jobs/{jobId}/findings/{findingId}/generate-rule:
+    post:
+      tags: [Findings]
+      summary: Generate a Suricata or Sigma detection rule from a finding
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/RequestIdHeader"
+        - $ref: "#/components/parameters/JobIdPath"
+        - $ref: "#/components/parameters/FindingIdPath"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/GenerateRuleRequest" }
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-Id: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/GenerateRuleResponse" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+
+  /jobs/{jobId}/findings/{findingId}/arkime-link:
+    get:
+      tags: [Findings]
+      summary: Arkime viewer pivot URL for a finding
+      security: [{ bearerAuth: [] }]
+      parameters:
+        - $ref: "#/components/parameters/RequestIdHeader"
+        - $ref: "#/components/parameters/JobIdPath"
+        - $ref: "#/components/parameters/FindingIdPath"
+      responses:
+        "200":
+          description: OK
+          headers:
+            X-Request-Id: { schema: { type: string } }
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ArkimePivotResponse" }
         "401": { $ref: "#/components/responses/Unauthorized" }
         "404": { $ref: "#/components/responses/NotFound" }
 

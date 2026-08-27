@@ -90,18 +90,24 @@ def _handler(name: str) -> SensorHandler:
 
 
 SENSORS: dict[str, SensorDef] = {
+    # Capture-parsing ceilings are generous because cost tracks connection
+    # count, not file size: a 1.4 GB capture of a few large flows finishes in
+    # seconds while a 600 MB capture of ~200k short connections needs ~30 min,
+    # and Zeek slows as its connection table grows. A wedged process is caught
+    # by the stall watchdog in run_capture_tool within minutes, so the ceiling
+    # only has to bound genuinely-progressing work.
     "zeek": SensorDef(
         name="zeek",
         type="stage",
         handler=lambda *a, **kw: _handler("zeek")(*a, **kw),
-        timeout_seconds=1800,
+        timeout_seconds=5400,
         profiles=("triage", "standard", "deep"),
     ),
     "suricata": SensorDef(
         name="suricata",
         type="stage",
         handler=lambda *a, **kw: _handler("suricata")(*a, **kw),
-        timeout_seconds=1800,
+        timeout_seconds=5400,
         profiles=("triage", "standard", "deep"),
     ),
     "tls_enrich": SensorDef(

@@ -25,7 +25,10 @@ if (token) {
 }
 
 const demoMode = String((import.meta as any).env?.VITE_AIPAM_DEMO_MODE || "").toLowerCase() === "true";
-const routerBasename = demoMode ? "/AIPAMDEMO2" : "/";
+const viteBase = ((import.meta as any).env?.BASE_URL as string | undefined) || "/";
+const routerBasename = demoMode
+  ? (viteBase.endsWith("/") ? viteBase.slice(0, -1) : viteBase) || "/"
+  : "/";
 
 const queryClient = new QueryClient({
   defaultOptions: {

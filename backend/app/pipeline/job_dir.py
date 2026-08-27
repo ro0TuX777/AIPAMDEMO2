@@ -62,17 +62,30 @@ def link_pcap(job_dir: Path, pcap_source: Path) -> Path:
     return dest
 
 
-def link_pcap_labeled(job_dir: Path, pcap_source: Path, label: str) -> Path:
-    """Copy a PCAP into the job input directory with a label-based name.
+PCAP_LABEL_MANIFEST = "pcaps.json"
+"""Maps staged filename → phase label, since the two are no longer the same."""
 
-    For multi-PCAP jobs, each file is stored as input/<label>.pcap.
-    Also creates a symlink from input/pcap.pcap -> first PCAP for backward compat.
-    Returns the destination path.
+
+def link_pcap_labeled(
+    job_dir: Path, pcap_source: Path, label: str, ordinal: int = 0
+) -> Path:
+    """Copy a PCAP into the job input directory under a unique name.
+
+    Each file is stored as ``input/<label>-<ordinal>.pcap``. The ordinal is what
+    makes the name unique: a phase label is deliberately shared across captures
+    (three files can all be "during"), so naming by label alone made the second
+    and third collide with the first and silently never be staged at all.
+
+    The label→filename mapping is recorded in ``input/pcaps.json`` so downstream
+    handlers can recover the phase label without parsing it back out of the
+    filename. Also creates a symlink from input/pcap.pcap -> first PCAP for
+    backward compat. Returns the destination path.
     """
     # Sanitize label for use as filename
     safe_label = "".join(c if c.isalnum() or c in "-_" else "_" for c in label)
     suffix = pcap_source.suffix or ".pcap"
-    dest = job_dir / "input" / f"{safe_label}{suffix}"
+    dest = job_dir / "input" / f"{safe_label}-{ordinal}{suffix}"
+    _record_pcap_label(job_dir, dest.name, label)
     if dest.exists():
         return dest
 
@@ -90,6 +103,33 @@ def link_pcap_labeled(job_dir: Path, pcap_source: Path, label: str) -> Path:
             shutil.copy2(pcap_source, default)
 
     return dest
+
+
+def _record_pcap_label(job_dir: Path, filename: str, label: str) -> None:
+    """Add one staged-file → phase-label entry to the input manifest."""
+    path = job_dir / "input" / PCAP_LABEL_MANIFEST
+    mapping = load_pcap_labels(job_dir)
+    if mapping.get(filename) == label:
+        return
+    mapping[filename] = label
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(mapping, indent=2), encoding="utf-8")
+
+
+def load_pcap_labels(job_dir: Path) -> dict[str, str]:
+    """Return the staged-filename → phase-label map, empty when absent.
+
+    Jobs staged before the manifest existed have no file here; callers fall
+    back to the filename stem, which is what those jobs already used.
+    """
+    path = job_dir / "input" / PCAP_LABEL_MANIFEST
+    if not path.exists():
+        return {}
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
 def compute_pcap_sha256(pcap_path: Path) -> str:

@@ -42,8 +42,13 @@ class Settings(BaseSettings):
     aipam_disk_critical_pct: int = 95
 
     # --- Service URLs ---
-    aipam_ollama_url: str = "http://ollama:11434"
+    aipam_ollama_url: str = "http://127.0.0.1:11434"
     aipam_redis_url: str = "redis://redis:6379/0"
+
+    # --- Local adapter runtime (optional) ---
+    llm_local_adapter_path: str | None = None
+    llm_local_adapter_model_name: str | None = None
+    llm_local_adapter_quantization: str | None = None
 
     # --- Paths ---
     aipam_job_root: Path = Path("/jobs")

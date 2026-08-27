@@ -6,7 +6,7 @@ from pydantic import BaseModel, Field
 
 
 class ChatCitationOut(BaseModel):
-    type: str
+    type: str  # "finding", "alert", "host_summary", "knowledge_base", "code_evidence"
     id: str | None = None
     snippet: str
 

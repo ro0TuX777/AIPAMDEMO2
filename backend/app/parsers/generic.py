@@ -63,8 +63,21 @@ _CURRENT_YEAR = datetime.now(timezone.utc).year
 # Skip lines that are mostly non-text (ASCII art, banners)
 _MIN_ALPHA_RATIO = 0.15
 
-# Max events per file to avoid flooding
-_MAX_EVENTS_PER_FILE = 5000
+# Max events per file to avoid flooding. Raised from 5 000 because a router or
+# firewall syslog worth correlating routinely runs to hundreds of thousands of
+# lines, and truncating at 5 000 silently discarded most of the window an
+# analyst uploaded the file to cover. Truncation is now logged, not silent.
+_MAX_EVENTS_PER_FILE = 500_000
+
+
+def _warn_truncated(path: Path, kept: int, total: int | None = None) -> None:
+    """Record that a log file was cut short, so it never happens silently."""
+    suffix = f" of {total}" if total is not None else ""
+    logger.warning(
+        "Truncated %s at %d events%s — file exceeds the per-file parse limit; "
+        "correlation will only see the first %d events",
+        path.name, kept, suffix, kept,
+    )
 
 
 def _is_version_string(ip: str) -> bool:
@@ -195,6 +208,7 @@ class GenericLogParser(BaseParser):
                             yield self._fill_provenance(result, path)
                             count += 1
                             if count >= _MAX_EVENTS_PER_FILE:
+                                _warn_truncated(path, count)
                                 break
                 except json.JSONDecodeError:
                     continue
@@ -206,6 +220,8 @@ class GenericLogParser(BaseParser):
         elif isinstance(data, dict):
             records = [data]
 
+        if len(records) > _MAX_EVENTS_PER_FILE:
+            _warn_truncated(path, _MAX_EVENTS_PER_FILE, total=len(records))
         for idx, record in enumerate(records[:_MAX_EVENTS_PER_FILE]):
             result = self._json_record_to_result(record, path, source_type, exercise_id, idx)
             if result:
@@ -308,6 +324,7 @@ class GenericLogParser(BaseParser):
 
             count += 1
             if count >= _MAX_EVENTS_PER_FILE:
+                _warn_truncated(path, count)
                 break
 
     # ── Helpers ────────────────────────────────────────────────────────────

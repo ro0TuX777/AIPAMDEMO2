@@ -34,6 +34,7 @@ import {
 } from "../findingsExplain";
 import { severityClass } from "../theme/colors";
 import { JobBreadcrumbs } from "../components/Breadcrumbs";
+import { EvidenceStatusBadge } from "../components/EvidenceStatusBadge";
 
 const formatDateTime = (value?: string | null) => {
   if (!value) return "—";
@@ -356,6 +357,7 @@ export const FindingDetailPage: React.FC = () => {
                 </span>
               )}
               <ConfidenceBadge value={finding.confidence} showLabel />
+              <EvidenceStatusBadge finding={finding} />
             </div>
             <h1 className={`text-2xl font-semibold ${labelHint("finding_detail", activeHelpField)}`} onClick={() => toggleHelp("finding_detail")}>
               {finding.title}

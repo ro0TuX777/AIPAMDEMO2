@@ -26,13 +26,21 @@ import logging
 import os
 import shutil
 import subprocess
+import time
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Iterator
 
 from backend.app.config_v2 import get_settings
+from backend.app.pipeline.job_dir import load_pcap_labels
 from backend.app.suricata_rules import build_runtime_suricata_bundle
 
 logger = logging.getLogger("aipam.sensor_handlers")
+
+# How often the stall watchdog samples progress, and how long a capture-parsing
+# process may make no progress at all before it is treated as wedged.
+_WATCHDOG_POLL_SECONDS = 5.0
+_DEFAULT_STALL_SECONDS = 300.0
 
 
 # ---------------------------------------------------------------------------
@@ -64,6 +72,150 @@ def _find_all_pcaps(job_dir: Path) -> list[Path]:
     if not results:
         raise FileNotFoundError(f"No PCAP found in {input_dir}")
     return results
+
+
+def _find_all_pcaps_labeled(job_dir: Path) -> list[tuple[Path, str]]:
+    """Pair each staged PCAP with its phase label.
+
+    Filenames carry an ordinal so captures sharing a label don't collide, so the
+    label can no longer be read off the stem — it comes from the input manifest.
+    Jobs staged before that manifest existed fall back to the stem, which is
+    exactly what they were named with.
+    """
+    labels = load_pcap_labels(job_dir)
+    return [(p, labels.get(p.name) or p.stem) for p in _find_all_pcaps(job_dir)]
+
+
+def _sensor_timeout(name: str, default: int) -> int:
+    """Read a sensor's configured ceiling from the registry."""
+    # Local import: the registry imports this module to resolve handlers.
+    from backend.app.sensors.registry import SENSORS
+
+    sensor_def = SENSORS.get(name)
+    return sensor_def.timeout_seconds if sensor_def else default
+
+
+def _dir_bytes(path: Path) -> int:
+    """Total size of files directly produced under *path* (best effort)."""
+    total = 0
+    try:
+        for p in path.rglob("*"):
+            if p.is_file():
+                try:
+                    total += p.stat().st_size
+                except OSError:
+                    continue
+    except OSError:
+        return total
+    return total
+
+
+def _read_progress(pid: int, output_dir: Path) -> int:
+    """A monotonically-rising measure of work done, for stall detection.
+
+    Prefers bytes the process has read (it climbs steadily as the capture is
+    consumed, even while nothing is being written yet) and falls back to output
+    size where ``/proc`` is unavailable. Either advancing counts as progress.
+    """
+    read_bytes = 0
+    try:
+        with open(f"/proc/{pid}/io", encoding="utf-8") as f:
+            for line in f:
+                if line.startswith("rchar:"):
+                    read_bytes = int(line.split()[1])
+                    break
+    except (OSError, ValueError, IndexError):
+        pass
+    return read_bytes + _dir_bytes(output_dir)
+
+
+def run_capture_tool(
+    cmd: list[str],
+    cwd: Path,
+    *,
+    label: str,
+    ceiling_seconds: int,
+    stall_seconds: float = _DEFAULT_STALL_SECONDS,
+) -> subprocess.CompletedProcess[bytes]:
+    """Run a capture-parsing tool under a stall watchdog rather than a fixed clock.
+
+    How long Zeek or Suricata needs is driven by connection count, not file
+    size — a 1.4 GB capture of a few large flows finishes in seconds while a
+    600 MB capture of 200k short connections runs for half an hour. Any fixed
+    wall-clock limit is therefore either too tight for a dense capture or too
+    slack to catch a genuine hang, and the old fixed limit killed healthy runs.
+
+    So the process is killed only when it stops making progress for
+    *stall_seconds*, with *ceiling_seconds* as an absolute backstop. Progress is
+    logged as it goes, so a long run reads as slow rather than hung.
+
+    Raises ``subprocess.TimeoutExpired`` when either limit trips, leaving
+    whatever the tool already wrote in place for inspection.
+    """
+    stdout_path = cwd / "stdout.log"
+    stderr_path = cwd / "stderr.log"
+
+    started = time.monotonic()
+    last_advance = started
+    best_progress = -1
+
+    with open(stdout_path, "wb") as out, open(stderr_path, "wb") as err:
+        # Redirect to files rather than PIPE: a chatty tool can fill a pipe
+        # buffer and deadlock while we are polling instead of reading.
+        proc = subprocess.Popen(cmd, cwd=str(cwd), stdout=out, stderr=err)
+
+        while True:
+            try:
+                proc.wait(timeout=_WATCHDOG_POLL_SECONDS)
+                break
+            except subprocess.TimeoutExpired:
+                pass
+
+            now = time.monotonic()
+            progress = _read_progress(proc.pid, cwd)
+            if progress > best_progress:
+                best_progress = progress
+                last_advance = now
+
+            elapsed = now - started
+            stalled_for = now - last_advance
+
+            if stalled_for >= stall_seconds:
+                proc.kill()
+                proc.wait()
+                raise subprocess.TimeoutExpired(
+                    cmd, elapsed,
+                    output=(
+                        f"No progress for {stalled_for:.0f}s while processing "
+                        f"{label} ({best_progress / 1048576:.0f} MB processed in "
+                        f"{elapsed / 60:.1f} min) — treating as stalled"
+                    ).encode(),
+                )
+
+            if elapsed >= ceiling_seconds:
+                proc.kill()
+                proc.wait()
+                raise subprocess.TimeoutExpired(
+                    cmd, elapsed,
+                    output=(
+                        f"Hit the {ceiling_seconds}s ceiling on {label} while "
+                        f"still progressing ({best_progress / 1048576:.0f} MB in "
+                        f"{elapsed / 60:.1f} min) — raise the sensor timeout to "
+                        f"finish this capture"
+                    ).encode(),
+                )
+
+            if int(elapsed) % 60 < _WATCHDOG_POLL_SECONDS:
+                logger.info(
+                    "%s still running: %.1f min elapsed, %.0f MB processed",
+                    label, elapsed / 60, best_progress / 1048576,
+                )
+
+    return subprocess.CompletedProcess(
+        cmd, proc.returncode,
+        stdout=b"",
+        stderr=stderr_path.read_bytes()[-4096:] if stderr_path.exists() else b"",
+    )
 
 
 def _zeek_ts_to_iso(value: object) -> str | None:
@@ -103,72 +255,104 @@ def handle_zeek(
     raw subdirectory, and every result record is tagged with ``pcap_label``
     so downstream stages can group evidence by capture phase.
     """
-    pcaps = _find_all_pcaps(job_dir)
+    pcaps = _find_all_pcaps_labeled(job_dir)
     zeek_bin = shutil.which("zeek")
     if not zeek_bin:
         raise RuntimeError("Zeek binary not found on PATH")
 
-    all_results: list[dict] = []
+    timeout_seconds = _sensor_timeout("zeek", 1800)
 
-    for pcap in pcaps:
-        # Derive label from filename (e.g. "before.pcap" → "before")
-        pcap_label = pcap.stem
-
-        # Each PCAP gets its own raw subdirectory
-        if len(pcaps) == 1:
-            raw_dir = sensor_output_dir / "raw"
-        else:
-            raw_dir = sensor_output_dir / "raw" / pcap_label
-        raw_dir.mkdir(parents=True, exist_ok=True)
-
-        cmd = [zeek_bin, "-C", "-r", str(pcap), "LogAscii::use_json=T"]
-
-        # Enable file extraction — Zeek will carve transferred files
-        # into an extract_files/ subdirectory in the cwd.
-        extract_script = Path("/opt/zeek/share/zeek/policy/frameworks/files/extract-all-files.zeek")
-        if extract_script.exists():
-            cmd.append(str(extract_script))
-            logger.info("Zeek file extraction enabled via %s", extract_script)
-
-        logger.info("Running Zeek on %s: %s (cwd=%s)", pcap_label, " ".join(cmd), raw_dir)
-        result = subprocess.run(
-            cmd, cwd=str(raw_dir), timeout=1200, capture_output=True,
-        )
-        if result.returncode != 0:
-            stderr = result.stderr.decode("utf-8", errors="replace")[:2000]
-            logger.warning("Zeek exited %d for %s: %s", result.returncode, pcap_label, stderr)
-
-        # Parse results and tag with pcap_label
-        records = _parse_zeek_results(raw_dir)
-        for rec in records:
-            rec["pcap_label"] = pcap_label
-        all_results.extend(records)
-        logger.info("Zeek: %d records from %s", len(records), pcap_label)
-
-    # Write unified sensor.results.jsonl
+    # Records stream straight to disk rather than accumulating: a dense capture
+    # yields hundreds of thousands of them, and holding all of them (plus the
+    # raw log lines they came from) was several GB and minutes of stall. Written
+    # via a temp file so the results only appear once every capture succeeded.
     out = sensor_output_dir / "sensor.results.jsonl"
-    with open(out, "w") as f:
-        for r in all_results:
-            f.write(json.dumps(r) + "\n")
-    logger.info("Zeek: wrote %d total result records across %d PCAP(s)", len(all_results), len(pcaps))
+    tmp_out = out.with_suffix(".jsonl.partial")
+    total = 0
+
+    with open(tmp_out, "w") as sink:
+        for pcap, pcap_label in pcaps:
+            # Keyed on the staged filename, not the label — several captures can
+            # share a phase label and would otherwise overwrite each other's logs.
+            if len(pcaps) == 1:
+                raw_dir = sensor_output_dir / "raw"
+            else:
+                raw_dir = sensor_output_dir / "raw" / pcap.stem
+            raw_dir.mkdir(parents=True, exist_ok=True)
+
+            cmd = [zeek_bin, "-C", "-r", str(pcap), "LogAscii::use_json=T"]
+
+            # Enable file extraction — Zeek will carve transferred files
+            # into an extract_files/ subdirectory in the cwd.
+            extract_script = Path("/opt/zeek/share/zeek/policy/frameworks/files/extract-all-files.zeek")
+            if extract_script.exists():
+                cmd.append(str(extract_script))
+                logger.info("Zeek file extraction enabled via %s", extract_script)
+
+            logger.info("Running Zeek on %s: %s (cwd=%s)", pcap.name, " ".join(cmd), raw_dir)
+            result = run_capture_tool(
+                cmd, raw_dir,
+                label=f"zeek/{pcap.name}",
+                ceiling_seconds=timeout_seconds,
+            )
+            if result.returncode != 0:
+                stderr = result.stderr.decode("utf-8", errors="replace")[:2000]
+                logger.warning("Zeek exited %d for %s: %s", result.returncode, pcap.name, stderr)
+
+            count = 0
+            for rec in _iter_zeek_results(raw_dir):
+                rec["pcap_label"] = pcap_label
+                sink.write(json.dumps(rec) + "\n")
+                count += 1
+            total += count
+            logger.info("Zeek: %d records from %s (%s)", count, pcap.name, pcap_label)
+
+    tmp_out.replace(out)
+    logger.info("Zeek: wrote %d total result records across %d PCAP(s)", total, len(pcaps))
+
+
+def _iter_zeek_log(path: Path) -> Iterator[dict]:
+    """Yield JSON records from a Zeek log one line at a time.
+
+    Streaming matters here: a connection-dense capture produces a conn.log with
+    hundreds of thousands of lines, and materialising them as a Python list cost
+    multiple GB and minutes of wall-clock before anything was written out.
+    """
+    with open(path) as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#"):
+                continue
+            try:
+                yield json.loads(line)
+            except ValueError:
+                continue
 
 
 def _parse_zeek_results(raw_dir: Path) -> list[dict]:
-    """Parse Zeek logs from a raw directory and return result records."""
-    from backend.app.parsers import parse_zeek_conn
+    """Parse Zeek logs from a raw directory and return result records.
 
-    results: list[dict] = []
+    Materialising wrapper around :func:`_iter_zeek_results`, kept for callers
+    that genuinely want the whole list. The Zeek handler streams instead.
+    """
+    return list(_iter_zeek_results(raw_dir))
+
+
+def _iter_zeek_results(raw_dir: Path) -> Iterator[dict]:
+    """Stream result records parsed from a Zeek raw output directory."""
+    from backend.app.parsers import parse_zeek_conn
 
     # conn.log → flows
     conn_log = raw_dir / "conn.log"
     if conn_log.exists():
-        with open(conn_log) as f:
-            raw = [json.loads(line) for line in f
-                   if line.strip() and not line.startswith("#")]
-        flows = parse_zeek_conn(raw)
-        for flow in flows:
-            results.append({"type": "flow", "data": _flow_to_dict(flow)})
-        logger.info("Zeek: parsed %d flows from conn.log", len(flows))
+        flow_count = 0
+        for rec in _iter_zeek_log(conn_log):
+            # One record at a time keeps the normalization logic in one place
+            # without holding every flow in memory.
+            for flow in parse_zeek_conn((rec,)):
+                flow_count += 1
+                yield {"type": "flow", "data": _flow_to_dict(flow)}
+        logger.info("Zeek: parsed %d flows from conn.log", flow_count)
 
     # dns.log, http.log, ssl.log → normalized protocol events
     protocol_logs = {
@@ -179,11 +363,7 @@ def _parse_zeek_results(raw_dir: Path) -> list[dict]:
     for log_name, event_type in protocol_logs.items():
         log_path = raw_dir / log_name
         if log_path.exists():
-            with open(log_path) as f:
-                raw = [json.loads(line) for line in f
-                       if line.strip() and not line.startswith("#")]
-
-            for idx, rec in enumerate(raw):
+            for idx, rec in enumerate(_iter_zeek_log(log_path)):
                 if event_type == "dns":
                     details = {
                         "query": rec.get("query", ""),
@@ -213,7 +393,7 @@ def _parse_zeek_results(raw_dir: Path) -> list[dict]:
                         "issuer": rec.get("issuer", ""),
                     }
 
-                results.append({
+                yield {
                     "type": "event",
                     "data": {
                         "id": str(rec.get("uid") or rec.get("fuid") or rec.get("ts") or f"{event_type}-{idx}"),
@@ -226,18 +406,13 @@ def _parse_zeek_results(raw_dir: Path) -> list[dict]:
                         "transport_proto": str(rec.get("proto", "OTHER")).upper(),
                         "details": details,
                     },
-                })
+                }
 
     # x509.log is kept raw for TLS enrichment downstream
     x509_log = raw_dir / "x509.log"
     if x509_log.exists():
-        with open(x509_log) as f:
-            raw = [json.loads(line) for line in f
-                   if line.strip() and not line.startswith("#")]
-        for rec in raw:
-            results.append({"type": "x509", "data": rec})
-
-    return results
+        for rec in _iter_zeek_log(x509_log):
+            yield {"type": "x509", "data": rec}
 
 
 def _flow_to_dict(flow) -> dict:
@@ -277,10 +452,12 @@ def handle_suricata(
     For multi-PCAP jobs, each PCAP is processed independently and every
     result record is tagged with ``pcap_label``.
     """
-    pcaps = _find_all_pcaps(job_dir)
+    pcaps = _find_all_pcaps_labeled(job_dir)
     suricata_bin = shutil.which("suricata")
     if not suricata_bin:
         raise RuntimeError("Suricata binary not found on PATH")
+
+    timeout_seconds = _sensor_timeout("suricata", 1800)
 
     settings = get_settings()
     runtime_rules_bundle = build_runtime_suricata_bundle(settings.aipam_suricata_rules_dir)
@@ -294,24 +471,27 @@ def handle_suricata(
 
     all_results: list[dict] = []
 
-    for pcap in pcaps:
-        pcap_label = pcap.stem
-
+    for pcap, pcap_label in pcaps:
+        # Keyed on the staged filename, not the label — see handle_zeek.
         if len(pcaps) == 1:
             raw_dir = sensor_output_dir / "raw"
         else:
-            raw_dir = sensor_output_dir / "raw" / pcap_label
+            raw_dir = sensor_output_dir / "raw" / pcap.stem
         raw_dir.mkdir(parents=True, exist_ok=True)
 
         cmd = [suricata_bin, "-r", str(pcap), "-l", str(raw_dir),
                "--set", "community-id.enabled=true"]
         if runtime_rules_bundle:
             cmd.extend(["-S", str(runtime_rules_bundle)])
-        logger.info("Running Suricata on %s: %s", pcap_label, " ".join(cmd))
-        result = subprocess.run(cmd, timeout=1200, capture_output=True)
+        logger.info("Running Suricata on %s: %s", pcap.name, " ".join(cmd))
+        result = run_capture_tool(
+            cmd, raw_dir,
+            label=f"suricata/{pcap.name}",
+            ceiling_seconds=timeout_seconds,
+        )
         if result.returncode != 0:
             stderr = result.stderr.decode("utf-8", errors="replace")[:2000]
-            logger.warning("Suricata exited %d for %s: %s", result.returncode, pcap_label, stderr)
+            logger.warning("Suricata exited %d for %s: %s", result.returncode, pcap.name, stderr)
 
         # Parse results and tag with pcap_label
         records = _parse_suricata_results(raw_dir)
@@ -494,17 +674,22 @@ def handle_beaconing(
         zeek_raw = job_dir / "sensors" / "zeek" / "raw"
         raw_dirs: list[tuple[Path, str | None]] = []
         if zeek_raw.exists():
+            # Zeek's per-capture subdirectories are named for the staged file,
+            # which is no longer the phase label — translate back via the manifest.
+            try:
+                stem_to_label = {p.stem: lbl for p, lbl in _find_all_pcaps_labeled(job_dir)}
+            except FileNotFoundError:
+                stem_to_label = {}
+
             subdirs = [d for d in zeek_raw.iterdir() if d.is_dir() and d.name != "extract_files"]
             if subdirs and any((d / "conn.log").exists() or (d / "dns.log").exists() for d in subdirs):
-                raw_dirs = [(d, d.name) for d in sorted(subdirs)]
+                raw_dirs = [
+                    (d, stem_to_label.get(d.name, d.name)) for d in sorted(subdirs)
+                ]
             else:
                 fallback_label = None
-                try:
-                    pcaps = _find_all_pcaps(job_dir)
-                    if len(pcaps) == 1:
-                        fallback_label = pcaps[0].stem
-                except FileNotFoundError:
-                    fallback_label = None
+                if len(stem_to_label) == 1:
+                    fallback_label = next(iter(stem_to_label.values()))
                 raw_dirs = [(zeek_raw, fallback_label)]
 
         for raw_dir, pcap_label in raw_dirs:

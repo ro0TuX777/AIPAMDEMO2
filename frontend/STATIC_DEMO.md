@@ -15,10 +15,18 @@ This frontend supports a static demo mode that runs without backend services.
 npm run dev:demo
 ```
 
-## Build for GitHub Pages (AIPAMDEMO2)
+## Build for GitHub Pages
+
+Choose the script that matches your repository name (the Pages URL path):
 
 ```bash
 npm run build:demo:pages
+```
+
+For `https://nhanbc.github.io/AIPAM_DEMO/`:
+
+```bash
+npm run build:demo:pages:nhan
 ```
 
 The script uses base path `/AIPAMDEMO2/`, suitable for repository pages at:

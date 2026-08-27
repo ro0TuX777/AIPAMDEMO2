@@ -479,6 +479,13 @@ def _process_finding(evt: dict, job_id: str, hosts: HostAccumulator) -> Finding 
     if confidence is None:
         # Fall back to severity-based confidence
         confidence = _CONFIDENCE_MAP.get(evt.get("severity", "info"), 0.3)
+
+    # Carry the sensor's ts/IPs onto the row. Without these a finding has no
+    # temporal or spatial handle, so uploaded logs could never corroborate it.
+    ev = evidence if isinstance(evidence, dict) else {}
+    src_ip = evt.get("src_ip") or ev.get("src_ip") or host_ip
+    dest_ip = evt.get("dest_ip") or ev.get("dst_ip") or ev.get("dest_ip")
+
     return Finding(
         job_id=job_id,
         finding_id=evt.get("finding_id") or _uuid(),
@@ -491,6 +498,9 @@ def _process_finding(evt: dict, job_id: str, hosts: HostAccumulator) -> Finding 
         evidence_json=json.dumps(evidence) if evidence else None,
         pcap_label=evt.get("pcap_label"),
         confidence=confidence,
+        ts=evt.get("ts") or ev.get("ts") or ev.get("first_seen"),
+        src_ip=src_ip,
+        dest_ip=dest_ip,
     )
 
 
@@ -715,6 +725,11 @@ def correlate_job(
         category = alert_evts[0].get("category")
         engine = alert_evts[0].get("engine") or alert_evts[0].get("sensor", "suricata")
 
+        # Earliest firing anchors the group in time; uploaded logs correlate
+        # against that anchor with a widened window (findings are aggregates).
+        group_ts = min((ae.get("ts") for ae in alert_evts if ae.get("ts")), default=None)
+        first = alert_evts[0]
+
         # Use pcap_label from the first alert in the group (if available)
         pcap_label = alert_evts[0].get("pcap_label")
 
@@ -740,6 +755,9 @@ def correlate_job(
             }),
             pcap_label=pcap_label,
             confidence=round(alert_conf, 2),
+            ts=group_ts,
+            src_ip=first.get("src_ip") or first.get("host_ip"),
+            dest_ip=first.get("dest_ip"),
         )
         db.add(finding)
         counts["findings"] += 1

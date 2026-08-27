@@ -24,6 +24,12 @@ class FindingItem(BaseModel):
     feedback: str | None = None
     confidence: float = 0.0
 
+    # Ground-truth corroboration: which uploaded logs attest to this detection.
+    # "confirmed" means a ground-truth source (e.g. a C2 operator log) matched.
+    evidence_status: str = "observed"
+    corroboration_score: float = 0.0
+    corroborating_sources: list[str] = Field(default_factory=list)
+
     # HITL review state (Sprint 4)
     analyst_status: str | None = None
     analyst_notes: str | None = None

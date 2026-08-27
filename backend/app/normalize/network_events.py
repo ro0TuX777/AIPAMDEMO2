@@ -28,7 +28,10 @@ from backend.app.models.normalized_event import NormalizedEvent
 logger = logging.getLogger("aipam.normalize.network")
 
 # Marker so re-analysis can replace exactly the events this module wrote.
-_PARSER_NAME = "pcap_network_normalizer"
+# Also lets downstream correlators tell PCAP-derived events apart from events
+# parsed out of user-uploaded log bundles.
+PCAP_NORMALIZER_PARSER = "pcap_network_normalizer"
+_PARSER_NAME = PCAP_NORMALIZER_PARSER
 
 # Sensors whose records are network telemetry we surface as raw events.
 _NETWORK_SENSORS = {"zeek", "suricata"}

@@ -12,10 +12,35 @@ function pcapLinkFor(jobId: string, tc: TemporalCorrelationItem): string {
   if (tc.pcap_entity_type === "alert") {
     return `/jobs/${jobId}/alerts/${encodeURIComponent(tc.pcap_entity_id)}`;
   }
+  if (tc.pcap_entity_type === "finding") {
+    return `/jobs/${jobId}/findings/${encodeURIComponent(tc.pcap_entity_id)}`;
+  }
   // Connections don't have a dedicated detail page — jump to the host's
   // Connections tab filtered by the shared IP.
   return `/jobs/${jobId}/hosts/${encodeURIComponent(tc.shared_ip)}/connections`;
 }
+
+/** Badge styling + hover copy for each kind of PCAP-side counterparty. */
+const PCAP_ENTITY_META: Record<string, { label: string; cls: string; hover: string; title: string }> = {
+  alert: {
+    label: "ALERT",
+    cls: "bg-red-500/20 text-red-400 border-red-500/40",
+    hover: "hover:bg-red-500/5",
+    title: "View alert detail",
+  },
+  finding: {
+    label: "FINDING",
+    cls: "bg-amber-500/20 text-amber-300 border-amber-500/40",
+    hover: "hover:bg-amber-500/5",
+    title: "View finding detail",
+  },
+  connection: {
+    label: "CONNECTION",
+    cls: "bg-blue-500/20 text-blue-400 border-blue-500/40",
+    hover: "hover:bg-blue-500/5",
+    title: "View host connections",
+  },
+};
 
 function fmtTimestamp(ts: string): string {
   return ts.replace("T", " ").replace(/\.\d+Z?$/, "");
@@ -50,7 +75,9 @@ export const TemporalCorrelationsPage: React.FC = () => {
             Temporal Correlations
           </h1>
           <p className="text-xs text-slate-500 mt-1">
-            What the logs captured vs what the PCAP captured at the same time — linked by shared IP + time window.
+            What your uploaded logs captured vs what the capture detected at the same time — linked by community_id,
+            5-tuple or shared IP within a time window. A C2 or event log lining up with an alert or finding is what
+            confirms a detection is real activity rather than a false positive.
           </p>
         </div>
         <div className="flex items-center gap-3 text-xs">
@@ -77,8 +104,8 @@ export const TemporalCorrelationsPage: React.FC = () => {
       {error && <p className="text-red-400">Failed to load correlations.</p>}
       {!isLoading && items.length === 0 && (
         <div className="rounded border border-slate-800 bg-slate-900/50 p-6 text-center text-slate-400 text-sm">
-          No temporal correlations found. This happens when logs and PCAP events share no community_id, 5-tuple, or IP
-          within the matching window, or when the job only has one source of telemetry.
+          No temporal correlations found. This happens when no logs were uploaded with the capture, when the uploaded
+          logs carry no IP or community_id to match on, or when nothing lines up inside the matching window.
         </div>
       )}
 
@@ -131,10 +158,7 @@ const CorrelationRow: React.FC<RowProps> = ({ jobId, tc }) => {
     tc.match_score >= 0.8 ? "bg-emerald-900/30 text-emerald-400" :
     tc.match_score >= 0.5 ? "bg-amber-900/30 text-amber-400" :
     "bg-slate-700 text-slate-400";
-  const pcapLabel = tc.pcap_entity_type === "alert" ? "ALERT" : "CONNECTION";
-  const pcapCls = tc.pcap_entity_type === "alert"
-    ? "bg-red-500/20 text-red-400 border-red-500/40"
-    : "bg-blue-500/20 text-blue-400 border-blue-500/40";
+  const entity = PCAP_ENTITY_META[tc.pcap_entity_type] ?? PCAP_ENTITY_META.connection;
   const logLink = `/jobs/${jobId}/telemetry/${encodeURIComponent(tc.log_event_id)}`;
   const pcapLink = pcapLinkFor(jobId, tc);
 
@@ -213,13 +237,11 @@ const CorrelationRow: React.FC<RowProps> = ({ jobId, tc }) => {
           )}
         </Link>
         <Link to={pcapLink}
-              className={`p-3 space-y-1 transition-colors group ${
-                tc.pcap_entity_type === "alert" ? "hover:bg-red-500/5" : "hover:bg-blue-500/5"
-              }`}
-              title={tc.pcap_entity_type === "alert" ? "View alert detail" : "View host connections"}>
+              className={`p-3 space-y-1 transition-colors group ${entity.hover}`}
+              title={entity.title}>
           <div className="flex items-center gap-2 text-[10px]">
-            <span className={`px-1.5 py-0.5 rounded border font-semibold uppercase tracking-wider ${pcapCls}`}>
-              PCAP — {pcapLabel}
+            <span className={`px-1.5 py-0.5 rounded border font-semibold uppercase tracking-wider ${entity.cls}`}>
+              PCAP — {entity.label}
             </span>
             <span className="text-slate-500 font-mono ml-auto" title={tc.pcap_timestamp}>
               {fmtTimestamp(tc.pcap_timestamp)}

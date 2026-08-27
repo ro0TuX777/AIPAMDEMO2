@@ -36,25 +36,7 @@ import { useToast } from "../components/ToastProvider";
 import { CardGridSkeleton } from "../components/SkeletonLoader";
 import { severityClass } from "../theme/colors";
 import { JobBreadcrumbs } from "../components/Breadcrumbs";
-
-/** Corroboration badge — show when a finding was produced by cross-source fusion. */
-function CorroborationBadge({ sensor, category }: { sensor?: string | null; category?: string | null }) {
-  if (sensor === "c2_fusion") {
-    return (
-      <span className="inline-flex px-1.5 py-0.5 text-[9px] font-semibold border rounded text-green-300 bg-green-900/40 border-green-700">
-        C2 CONFIRMED
-      </span>
-    );
-  }
-  if (category?.startsWith("c2_confirmed")) {
-    return (
-      <span className="inline-flex px-1.5 py-0.5 text-[9px] font-semibold border rounded text-emerald-300 bg-emerald-900/40 border-emerald-700">
-        CORROBORATED
-      </span>
-    );
-  }
-  return null;
-}
+import { EvidenceStatusBadge } from "../components/EvidenceStatusBadge";
 
 export const FindingsListPage: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
@@ -330,7 +312,7 @@ export const FindingsListPage: React.FC = () => {
                       </span>
                     )}
                     <ConfidenceBadge value={f.confidence} density="compact" />
-                    <CorroborationBadge sensor={f.sensor} category={f.category} />
+                    <EvidenceStatusBadge finding={f} compact />
                     <h3 className="text-sm font-semibold text-slate-200">{f.title}</h3>
                   </div>
                   {(f.sensor || f.pcap_label) && (
