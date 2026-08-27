@@ -24,6 +24,9 @@ class LLMConfig:
     max_tokens: int = 4096
     timeout_seconds: float = 600.0  # 10 minutes; local LLMs can be slow
     provider: LLMProvider = LLMProvider.OLLAMA
+    local_adapter_path: Optional[str] = None
+    local_adapter_model_name: Optional[str] = None
+    local_adapter_quantization: Optional[str] = None
 
 
 @dataclass
@@ -61,7 +64,7 @@ class LLMClient:
         self.dual_config = dual_config
 
         if config is None:
-            endpoint = os.getenv("LLM_ENDPOINT", "http://localhost:11434/v1/chat/completions")
+            endpoint = os.getenv("LLM_ENDPOINT", "http://127.0.0.1:11434/v1/chat/completions")
             model = os.getenv("LLM_MODEL_NAME", "aipam-trafficllm-v10")
             temperature = float(os.getenv("LLM_TEMPERATURE", "0.1"))
             max_tokens = int(os.getenv("LLM_MAX_TOKENS", "4096"))
@@ -1417,6 +1420,55 @@ Provide your findings in a structured JSON format with this exact structure:
 
         return output
 
+    async def _chat_completion_local_adapter(
+        self,
+        messages: List[Dict[str, str]],
+        temperature: Optional[float] = None,
+        max_tokens: Optional[int] = None,
+    ) -> str:
+        """Generate a response using a local Hugging Face adapter when configured."""
+        if not self.config.local_adapter_path:
+            raise RuntimeError("Local adapter path is not configured")
+
+        try:
+            from transformers import AutoModelForCausalLM, AutoTokenizer
+            from peft import PeftModel
+            import torch
+        except Exception as exc:  # pragma: no cover - environment-specific
+            raise RuntimeError(f"Local adapter dependencies are unavailable: {exc}") from exc
+
+        adapter_path = self.config.local_adapter_path
+        model_name = self.config.local_adapter_model_name or self.config.model
+        quantization = self.config.local_adapter_quantization
+
+        tokenizer = AutoTokenizer.from_pretrained(model_name)
+        model_kwargs: Dict[str, Any] = {
+            "device_map": "auto",
+        }
+        if quantization == "4bit":
+            from transformers import BitsAndBytesConfig
+            model_kwargs["quantization_config"] = BitsAndBytesConfig(load_in_4bit=True)
+        elif quantization == "8bit":
+            from transformers import BitsAndBytesConfig
+            model_kwargs["quantization_config"] = BitsAndBytesConfig(load_in_8bit=True)
+
+        base_model = AutoModelForCausalLM.from_pretrained(model_name, **model_kwargs)
+        adapter_model = PeftModel.from_pretrained(base_model, adapter_path)
+        adapter_model.eval()
+
+        prompt = "\n".join(f"[{m['role']}] {m['content']}" for m in messages)
+        inputs = tokenizer(prompt, return_tensors="pt")
+        inputs = inputs.to(adapter_model.device)
+        with torch.no_grad():
+            output = adapter_model.generate(
+                **inputs,
+                max_new_tokens=max_tokens or self.config.max_tokens,
+                do_sample=True,
+                temperature=temperature if temperature is not None else self.config.temperature,
+                top_p=0.95,
+            )
+        return tokenizer.decode(output[0], skip_special_tokens=True)
+
     def _get_technique_name(self, tech_id: str) -> str:
         """Get the name for a MITRE ATT&CK technique ID using the comprehensive database."""
         return get_mitre_technique_name(tech_id)
@@ -1448,6 +1500,9 @@ Provide your findings in a structured JSON format with this exact structure:
         Returns:
             The assistant's response text.
         """
+        if self.config.local_adapter_path:
+            return await self._chat_completion_local_adapter(messages, temperature=temperature)
+
         payload = {
             "model": self.config.model,
             "temperature": temperature if temperature is not None else self.config.temperature,

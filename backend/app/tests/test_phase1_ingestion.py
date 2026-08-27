@@ -329,3 +329,58 @@ class TestManifestSerialization:
         assert loaded.job_id == "job-rt"
         assert loaded.exercise_id == "ex-01"
 
+
+
+# ---------------------------------------------------------------------------
+# Log upload budget — bounded by bytes, never by file count
+# ---------------------------------------------------------------------------
+
+class TestLogUploadLimits:
+    def test_many_small_files_are_all_extracted(self, tmp_path):
+        """No file-count ceiling: stacking perspectives is the point of log correlation."""
+        archive = _create_zip(tmp_path, {f"host{i}/auth.log": f"line {i}" for i in range(6_000)})
+        dest = tmp_path / "extracted"
+        files = extract_bundle(archive, dest)
+        assert len(files) == 6_000
+
+    def test_oversized_archive_still_rejected(self, tmp_path):
+        """The byte budget is what bounds a bundle."""
+        import pytest
+        from backend.app.pipeline import bundle_stager
+
+        archive = _create_zip(tmp_path, {"huge.log": "x" * 1024})
+        monkey = bundle_stager.MAX_EXTRACT_BYTES
+        bundle_stager.MAX_EXTRACT_BYTES = 100
+        try:
+            with pytest.raises(ValueError, match="exceeds limit"):
+                extract_bundle(archive, tmp_path / "out")
+        finally:
+            bundle_stager.MAX_EXTRACT_BYTES = monkey
+
+    def test_per_job_log_budget_rejects_oversized_set(self):
+        import pytest
+        from fastapi import HTTPException
+
+        from backend.app.api.jobs import MAX_LOG_BYTES_PER_JOB, _enforce_log_budget
+        from backend.app.models.upload import Upload
+
+        half = MAX_LOG_BYTES_PER_JOB // 2 + 1
+        uploads = [
+            Upload(upload_id="u1", filename="a.log", size_bytes=half, sha256="x", created_at="t"),
+            Upload(upload_id="u2", filename="b.log", size_bytes=half, sha256="y", created_at="t"),
+        ]
+        with pytest.raises(HTTPException) as exc:
+            _enforce_log_budget(uploads)
+        assert exc.value.status_code == 400
+        assert "no limit on how many log files" in exc.value.detail.lower()
+
+    def test_per_job_log_budget_allows_many_files_under_budget(self):
+        from backend.app.api.jobs import _enforce_log_budget
+        from backend.app.models.upload import Upload
+
+        uploads = [
+            Upload(upload_id=f"u{i}", filename=f"{i}.log", size_bytes=1024,
+                   sha256="z", created_at="t")
+            for i in range(500)
+        ]
+        _enforce_log_budget(uploads)   # 500 files, well under budget — no raise

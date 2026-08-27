@@ -35,8 +35,10 @@ from sqlalchemy.orm import Session
 
 from backend.app.models.alert import Alert
 from backend.app.models.connection import Connection
+from backend.app.models.finding import Finding
 from backend.app.models.normalized_event import NormalizedEvent
 from backend.app.models.temporal_correlation import TemporalCorrelation
+from backend.app.normalize.network_events import PCAP_NORMALIZER_PARSER
 
 logger = logging.getLogger("aipam.temporal_correlator")
 
@@ -46,6 +48,32 @@ DEFAULT_WINDOW_SECONDS = 30.0       # ±30 s gate for IP-only matches
 STRONG_KEY_WINDOW_SECONDS = 300.0   # ±5 min gate for community_id / 5-tuple
 MAX_MATCHES_PER_EVENT = 10          # cap per log event to avoid explosion
 MAX_TOTAL_CORRELATIONS = 5000       # safety cap per job
+
+# Findings are aggregates (a beaconing verdict, an alert group), not point-in-time
+# packets — their ts is only an anchor into a span, so the gate is widened rather
+# than applied as if it were an exact observation.
+FINDING_WINDOW_MULTIPLIER = 6.0
+
+# Uploaded telemetry that constitutes ground truth about attacker activity: a C2
+# operator log states what was actually run, so a detection it lines up with is
+# confirmed rather than merely corroborated by a second sensor.
+GROUND_TRUTH_EVENT_TYPES = frozenset({"c2_callback", "c2_task"})
+GROUND_TRUTH_SOURCE_TYPES = frozenset({"c2_bundle"})
+
+# Ranking nudge so ground-truth matches surface above ordinary ones.
+_GROUND_TRUTH_BONUS = 1.15
+
+# "Confirmed" is the strongest claim the system makes — it tells an analyst to
+# stop asking whether a detection is a false positive. A ground-truth log that
+# merely shares a host IP somewhere inside the (widened) finding window is not
+# enough: on a busy victim host every uploaded event overlaps every finding, and
+# confirming all of them confirms nothing. Weaker ground-truth matches still
+# corroborate, they just don't promote.
+MIN_SCORE_FOR_CONFIRMATION = 0.45
+
+# Cap on hosts read out of a finding's evidence blob — an alert group can name
+# hundreds, and each one widens the candidate fan-out.
+_MAX_EVIDENCE_IPS = 32
 
 MIN_ANCHORS_FOR_OFFSET = 3          # min strong anchors to trust a clock offset
 MAX_OFFSET_SECONDS = 3600.0         # ignore absurd (>1 h) estimated offsets
@@ -96,7 +124,7 @@ def _tuple_key(
 
 class _PcapEvent(NamedTuple):
     """Lightweight representation of a PCAP-derived entity for matching."""
-    entity_type: str        # "alert" | "connection"
+    entity_type: str        # "alert" | "connection" | "finding"
     entity_id: str
     summary: str
     ts: datetime
@@ -106,6 +134,7 @@ class _PcapEvent(NamedTuple):
     src_ip: str | None
     dest_ip: str | None
     label: str | None
+    window_multiplier: float = 1.0   # widens the time gate for aggregate entities
 
 
 class _LogEvent(NamedTuple):
@@ -119,6 +148,15 @@ class _LogEvent(NamedTuple):
     dest_ip: str | None
     label: str | None
     source: str | None          # log source_system, used for offset grouping
+    is_ground_truth: bool = False
+
+
+def _is_ground_truth(evt: NormalizedEvent) -> bool:
+    """True when this uploaded event attests to attacker activity directly."""
+    return (
+        (evt.event_type or "") in GROUND_TRUTH_EVENT_TYPES
+        or (evt.source_type or "") in GROUND_TRUTH_SOURCE_TYPES
+    )
 
 
 def _label_factor(log_label: str | None, pcap_label: str | None) -> float:
@@ -193,6 +231,8 @@ def _score_match(
         * _label_factor(log_evt.label, pe.label)
         * _direction_factor(log_evt, pe)
     )
+    if log_evt.is_ground_truth:
+        score *= _GROUND_TRUTH_BONUS
     return round(max(0.0, min(1.0, score)), 3)
 
 
@@ -325,9 +365,21 @@ def _build_alert_summary(alert: Alert) -> str:
 # ── Builders ──────────────────────────────────────────────────────────────
 
 def _build_log_events(db: Session, job_id: str) -> list[_LogEvent]:
-    """Load NormalizedEvents that carry at least one correlation handle."""
+    """Load log-derived NormalizedEvents that carry a correlation handle.
+
+    PCAP-derived rows are excluded. ``normalize_network_events`` writes zeek /
+    suricata records into the same table so the Raw Events explorer works for
+    plain captures — but the PCAP side of this join (Alert/Connection) is built
+    from those very same sensor records. Leaving them in makes every zeek flow
+    correlate with itself on an exact ``community_id`` at a zero time delta,
+    which scores at the ceiling and buries (or, past MAX_TOTAL_CORRELATIONS,
+    evicts) the real log ↔ PCAP matches this stage exists to find.
+    """
     rows = db.execute(
-        select(NormalizedEvent).where(NormalizedEvent.job_id == job_id)
+        select(NormalizedEvent).where(
+            NormalizedEvent.job_id == job_id,
+            NormalizedEvent.parser_name.is_distinct_from(PCAP_NORMALIZER_PARSER),
+        )
     ).scalars().all()
 
     out: list[_LogEvent] = []
@@ -349,12 +401,19 @@ def _build_log_events(db: Session, job_id: str) -> list[_LogEvent]:
             dest_ip=evt.dest_ip,
             label=evt.pcap_label,
             source=evt.source_system,
+            is_ground_truth=_is_ground_truth(evt),
         ))
     return out
 
 
 def _build_pcap_events(db: Session, job_id: str) -> list[_PcapEvent]:
-    """Load PCAP-derived alerts + connections with correlation handles."""
+    """Load PCAP-derived alerts, connections and findings with correlation handles.
+
+    Findings are the entity users actually act on — "is this detection real?" —
+    so they are counterparties in their own right, not just via the alerts that
+    produced them. A finding with no ``ts`` is skipped: sensors emit one, but
+    rows written before the column existed have nothing to anchor a window on.
+    """
     out: list[_PcapEvent] = []
 
     for a in db.execute(select(Alert).where(Alert.job_id == job_id)).scalars().all():
@@ -400,7 +459,48 @@ def _build_pcap_events(db: Session, job_id: str) -> list[_PcapEvent]:
             label=c.pcap_label,
         ))
 
+    for f in db.execute(select(Finding).where(Finding.job_id == job_id)).scalars().all():
+        ts = _parse_ts(f.ts)
+        if not ts:
+            continue
+        ips = frozenset(ip for ip in (f.src_ip, f.dest_ip, *_finding_evidence_ips(f)) if ip)
+        if not ips and not f.community_id:
+            continue
+        out.append(_PcapEvent(
+            entity_type="finding",
+            entity_id=f.finding_id,
+            summary=f"[{f.severity}] {f.title}",
+            ts=ts,
+            ips=ips,
+            community_id=f.community_id,
+            tuple_key=None,     # findings carry no ports, so no 5-tuple
+            src_ip=f.src_ip,
+            dest_ip=f.dest_ip,
+            label=f.pcap_label,
+            window_multiplier=FINDING_WINDOW_MULTIPLIER,
+        ))
+
     return out
+
+
+def _finding_evidence_ips(finding: Finding) -> list[str]:
+    """Pull affected hosts out of a finding's evidence blob.
+
+    Alert-group findings list every host that fired the rule under
+    ``affected_hosts``; matching only on src_ip/dest_ip would miss the rest.
+    """
+    if not finding.evidence_json:
+        return []
+    try:
+        ev = json.loads(finding.evidence_json)
+    except (ValueError, TypeError):
+        return []
+    if not isinstance(ev, dict):
+        return []
+    hosts = ev.get("affected_hosts")
+    if not isinstance(hosts, list):
+        return []
+    return [h for h in hosts if isinstance(h, str) and h][:_MAX_EVIDENCE_IPS]
 
 
 # ── Main entry point ─────────────────────────────────────────────────────
@@ -453,6 +553,8 @@ def correlate_temporal(
 
     total_matches = 0
     upgraded: dict[str, float] = {}   # event_id → best score
+    # finding_id → (best score, attesting source_systems, any ground truth?)
+    finding_support: dict[str, tuple[float, set[str], bool]] = {}
     capped = False
 
     for le in log_events:
@@ -477,6 +579,7 @@ def correlate_temporal(
                 continue
             strongest = keys[0]
             window = window_seconds if strongest == KEY_IP else STRONG_KEY_WINDOW_SECONDS
+            window *= pe.window_multiplier
             adjusted_delta = abs((le.ts - pe.ts).total_seconds() - offset)
             score = _score_match(strongest, adjusted_delta, window, le, pe)
             if score <= 0:
@@ -519,6 +622,14 @@ def correlate_temporal(
             prev = upgraded.get(le.event.event_id, 0.0)
             upgraded[le.event.event_id] = max(prev, score)
 
+            if pe.entity_type == "finding":
+                best, sources, truth = finding_support.get(pe.entity_id, (0.0, set(), False))
+                sources.add(le.source or le.event.parser_name or "unknown")
+                attests = le.is_ground_truth and score >= MIN_SCORE_FOR_CONFIRMATION
+                finding_support[pe.entity_id] = (
+                    max(best, score), sources, truth or attests,
+                )
+
             if total_matches >= MAX_TOTAL_CORRELATIONS:
                 capped = True
                 break
@@ -537,6 +648,8 @@ def correlate_temporal(
                 1.0, (le.event.corroboration_score or 0.0) + round(0.3 * best, 3)
             )
 
+    confirmed_findings = _apply_finding_support(db, job_id, finding_support)
+
     db.commit()
 
     summary = {
@@ -544,7 +657,49 @@ def correlate_temporal(
         "pcap_events": len(pcap_events),
         "matches": total_matches,
         "upgraded_events": len(upgraded),
+        "supported_findings": len(finding_support),
+        "confirmed_findings": confirmed_findings,
         "clock_offsets": offsets,
     }
     logger.info("Job %s: temporal correlation complete — %s", job_id, summary)
     return summary
+
+
+def _apply_finding_support(
+    db: Session,
+    job_id: str,
+    support: dict[str, tuple[float, set[str], bool]],
+) -> int:
+    """Write uploaded-log attestation back onto the findings it supports.
+
+    A finding an uploaded log lines up with is *corroborated*; one a ground-truth
+    source attests to (a C2 operator log recording the task that was actually
+    run) is *confirmed* — the analyst can stop asking whether the detection is a
+    false positive. Returns the number promoted to confirmed.
+    """
+    if not support:
+        return 0
+
+    rows = db.execute(
+        select(Finding).where(
+            Finding.job_id == job_id,
+            Finding.finding_id.in_(list(support)),
+        )
+    ).scalars().all()
+
+    confirmed = 0
+    for finding in rows:
+        best, sources, ground_truth = support[finding.finding_id]
+        finding.evidence_status = "confirmed" if ground_truth else "corroborated"
+        finding.corroboration_score = best
+        finding.corroborating_sources_json = json.dumps(sorted(sources))
+        # An independently attested detection is worth more than the sensor's
+        # own confidence; ground truth pins it outright.
+        if ground_truth:
+            finding.confidence = 1.0
+            confirmed += 1
+        else:
+            finding.confidence = round(
+                min(1.0, (finding.confidence or 0.0) + 0.2 * best), 2
+            )
+    return confirmed

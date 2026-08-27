@@ -6,8 +6,12 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
+      // Same-origin proxy: the deployed stack serves the UI and API from one
+      // host and CORS is disabled, so the dev server has to match that shape.
+      // Override the target to point at a locally-run API (e.g. on another
+      // port) without disturbing a container already bound to 8000.
       "/api": {
-        target: "http://localhost:8000",
+        target: process.env.VITE_API_PROXY_TARGET || "http://localhost:8000",
         changeOrigin: true,
       },
     },

@@ -7,7 +7,7 @@ from typing import Any, Dict
 import httpx
 import pytest
 
-from backend.app.llm_client import LLMClient, LLMConfig
+from backend.app.llm_client import LLMClient, LLMConfig, LLMProvider
 from backend.app.domain_models import LLMOutput
 
 
@@ -88,6 +88,34 @@ class _DummyAsyncClientInvalidSchema:
             content=json.dumps(bogus_payload).encode("utf-8"),
             request=httpx.Request("POST", "http://test"),
         )
+
+
+def test_default_chat_endpoint_uses_localhost(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("LLM_ENDPOINT", raising=False)
+    client = LLMClient(config=None)
+    assert client.config.endpoint == "http://127.0.0.1:11434/v1/chat/completions"
+
+
+def test_chat_completion_uses_local_adapter_when_configured(monkeypatch: pytest.MonkeyPatch) -> None:
+    async def _fake_local_adapter(self: LLMClient, messages: list[dict[str, str]], temperature: float | None = None, max_tokens: int | None = None) -> str:
+        assert messages[0]["role"] == "user"
+        assert "malware" in messages[0]["content"].lower()
+        return "local-adapter-response"
+
+    monkeypatch.setattr(LLMClient, "_chat_completion_local_adapter", _fake_local_adapter)
+
+    client = LLMClient(
+        config=LLMConfig(
+            endpoint="http://test",
+            model="test-model",
+            provider=LLMProvider.OLLAMA,
+            local_adapter_path="/tmp/fake-adapter",
+        )
+    )
+
+    response = asyncio.run(client.chat_completion([{"role": "user", "content": "Analyze malware traffic"}]))
+
+    assert response == "local-adapter-response"
 
 
 def test_analyze_chunk_network_error_returns_mock_output(monkeypatch: pytest.MonkeyPatch) -> None:
