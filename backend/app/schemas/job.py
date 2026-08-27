@@ -47,6 +47,8 @@ class JobCreateRequest(BaseModel):
     bundle_entries: list[BundleSourceEntry] | None = None  # metadata for non-PCAP bundles
     # --- Hybrid job: attach log bundles alongside PCAPs ---
     bundle_uploads: list[BundleUploadItem] | None = None  # labeled log bundles to fuse with PCAPs
+    # --- BlueScrub code-artifact jobs ---
+    project_id: str | None = None  # optional; unbound jobs scan but do not carry triage forward
 
 
 class JobCreateResponse(BaseModel):

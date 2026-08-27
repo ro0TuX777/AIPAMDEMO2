@@ -79,6 +79,7 @@ class SourceType(str, Enum):
     c2_bundle = "c2_bundle"
     exercise_bundle = "exercise_bundle"
     binary = "binary"
+    code_artifact = "code_artifact"   # BlueScrub: source, binaries, build config
 
 
 class EvidenceStatus(str, Enum):

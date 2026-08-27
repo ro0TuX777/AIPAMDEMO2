@@ -637,7 +637,7 @@ Non-negotiable #2 is enforced against this list; anything else requires review.
 | `schemas/job.py` | request/response unions | 1 |
 | `pipeline/orchestrator.py` | one branch beside the binary branch | 1 |
 | `pipeline/artifact_classifier.py` | classify source archives | 1 |
-| `api/uploads.py` | source-archive upload | 1 |
+| ~~`api/uploads.py`~~ | **not needed** — `POST /uploads/artifact` already exists and `artifact_classifier` already recognises zip/gzip/bzip2/tar, so code artifacts use the existing uploader unchanged (Sprint 1 finding) | — |
 | `api/jobs.py` | `_create_code_artifact_job()`, derived child job | 1, 8 |
 | `backend/app/main.py` | router registration | 1 |
 | `pipeline/sensor_runner.py` | image allowlist entries only | 1 |

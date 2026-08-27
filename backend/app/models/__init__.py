@@ -29,8 +29,22 @@ from backend.app.models.report import Report
 from backend.app.models.proof import Proof, ProofItem
 from backend.app.models.normalized_event import NormalizedEvent
 from backend.app.models.temporal_correlation import TemporalCorrelation
+from backend.app.models.bluescrub import (
+    BlueScrubAudit,
+    BlueScrubBaseline,
+    BlueScrubJobLineage,
+    BlueScrubProject,
+    BlueScrubScoreHistory,
+    BlueScrubTriageLedger,
+)
 
 __all__ = [
+    "BlueScrubAudit",
+    "BlueScrubBaseline",
+    "BlueScrubJobLineage",
+    "BlueScrubProject",
+    "BlueScrubScoreHistory",
+    "BlueScrubTriageLedger",
     "JobStatus",
     "JobStepStatus",
     "Job",
