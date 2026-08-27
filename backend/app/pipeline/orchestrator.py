@@ -518,6 +518,7 @@ def run_pipeline(
         # +6 for telemetry + correlate + index + theories + slices + annotations
         total_steps = len(stages) + len(sensors) + 6
         step_num = 0
+        failed_stages: set[str] = set()
         for stage_def in stages:
             step_num += 1
             logger.info("Running stage %s for job %s", stage_def.name, job_id)
@@ -539,10 +540,19 @@ def run_pipeline(
                   step=step_num, total_steps=total_steps,
                   duration_ms=result.duration_ms)
 
-            if result.status == "failed":
-                logger.error("Stage %s failed for job %s: %s", stage_def.name, job_id, result.error)
-                _update_job_status(db, job, "failed", f"Stage {stage_def.name} failed: {result.error}")
-                return "failed"
+            if result.status in ("failed", "timeout"):
+                # Not fatal. Zeek and Suricata are independent of each other, and
+                # neither is needed by the uploaded-log telemetry pipeline — so a
+                # Zeek timeout used to throw away perfectly good Suricata alerts,
+                # every uploaded log, and all downstream correlation. Record the
+                # failure, skip only what genuinely depended on this stage, and
+                # let the rest of the job produce what it still can.
+                failed_stages.add(stage_def.name)
+                has_errors = True
+                logger.error(
+                    "Stage %s %s for job %s — continuing without it: %s",
+                    stage_def.name, result.status, job_id, result.error,
+                )
 
         # --- Publish partial result: ingest/parse stage data ---
         _completed_stages: list[str] = [s.name for s in stages]
@@ -627,6 +637,14 @@ def run_pipeline(
             # Check skip conditions — resolve required inputs to sensor output dirs
             if sensor_def.skip_if_missing_inputs:
                 missing = False
+                reason = "Required inputs missing"
+                # A stage that failed still has an output directory — it is
+                # created before the stage runs — so directory existence alone
+                # would let dependents run against empty or partial input.
+                broken = sorted(set(sensor_def.inputs_required) & failed_stages)
+                if broken:
+                    missing = True
+                    reason = f"Upstream stage(s) did not complete: {', '.join(broken)}"
                 for req in sensor_def.inputs_required:
                     # Requirements refer to a previously-run sensor whose output lives
                     # under  job_dir / "sensors" / <req>  (e.g. "zeek", "suricata").
@@ -635,9 +653,13 @@ def run_pipeline(
                         missing = True
                         break
                 if missing:
+                    logger.info(
+                        "Skipping sensor %s for job %s: %s",
+                        sensor_def.name, job_id, reason,
+                    )
                     skip_result = SensorResult(
                         sensor=sensor_def.name, status="skipped",
-                        error="Required inputs missing",
+                        error=reason,
                         started_at=_now_iso(),
                     )
                     _record_sensor_result(db, job_id, skip_result)
