@@ -45,12 +45,19 @@ def _f(rule_id, family, sensor="bluescrub_analyzers", raw="LOW", line=1, file="a
 # ── the two judgements that motivated the table ───────────────────────────
 
 def test_hardcoded_c2_outranks_the_scanner_that_called_it_low():
-    """Whoever seizes that address inherits every implant pointing at it."""
+    """Whoever seizes that address inherits every implant pointing at it.
+
+    The family default is critical, but the shipped detector is a regex that
+    matches the substring "C2", so the precision ceiling caps it at high. Two
+    things are being asserted: the table still beats the scanner's LOW, and the
+    ceiling still applies to a rule nobody has reviewed.
+    """
     raw = [_f("NetworkTrafficAnalyzer.c2_references.x", IssueFamily.hardcoded_c2, raw="LOW")]
     group = canonicalize(raw, project_id="p", rule_mapping=build_rule_mapping(raw)).groups[0]
 
-    assert group.severity == "critical"
+    assert group.severity == "high"
     assert group.severity_source == "rule_mapping"
+    assert SEVERITY_BY_FAMILY[IssueFamily.hardcoded_c2] == "critical"
 
 
 def test_operator_identity_is_disqualifying():
@@ -177,3 +184,63 @@ def test_corpus_severity_distribution_is_plausible(corpus_groups):
     assert "critical" in severities
     low_or_info = sum(1 for s in severities if s in ("low", "info"))
     assert low_or_info < len(severities) / 2, "most of a leaky corpus rated low"
+
+
+# ── detector precision gating ─────────────────────────────────────────────
+
+def test_low_precision_detector_cannot_reach_critical_by_family_default():
+    """Measured at scale: the family defaults alone produced 344 criticals on a
+    300-file defensive codebase. The top drivers were regexes matching the
+    literal strings "C2", "beacon", and the English phrase "based on".
+    """
+    from backend.app.bluescrub.pillars import DetectorClass
+
+    for detector in (DetectorClass.regex_pattern, DetectorClass.heuristic):
+        assert canonical_severity(
+            "unreviewed.rule", IssueFamily.hardcoded_c2, detector
+        ) == "high"
+
+
+def test_high_precision_detector_keeps_critical():
+    from backend.app.bluescrub.pillars import DetectorClass
+
+    assert canonical_severity(
+        "r", IssueFamily.hardcoded_c2, DetectorClass.semantic_dataflow
+    ) == "critical"
+
+
+def test_reviewed_rule_overrides_beat_the_precision_ceiling():
+    """An explicit entry is a reviewed decision and is honoured as written."""
+    from backend.app.bluescrub.pillars import DetectorClass
+
+    assert canonical_severity(
+        "MetadataLeakageScanner.contact_info.email_address",
+        IssueFamily.attribution_identity,
+        DetectorClass.regex_pattern,
+    ) == "critical"
+
+
+def test_promotions_are_justified_by_measurement_not_by_concept():
+    """The promoted rules were measured precise; their loose siblings were not.
+
+    Same detector class, opposite decisions — which is why this is per-rule.
+    """
+    promoted = {
+        "MetadataLeakageScanner.contact_info.email_address",
+        "MetadataLeakageScanner.embedded_paths.linux_username",
+        "MetadataLeakageScanner.embedded_paths.windows_username",
+    }
+    assert promoted <= set(SEVERITY_BY_RULE)
+    # Their loose siblings must NOT be promoted.
+    for loose in ("MetadataLeakageScanner.contact_info.email_link",
+                  "MetadataLeakageScanner.contact_info.contact_information",
+                  "NetworkTrafficAnalyzer.c2_references.c2_reference"):
+        assert loose not in SEVERITY_BY_RULE, f"{loose} matches a loose substring"
+
+
+def test_fixture_still_disqualifies(corpus_groups):
+    """The precision ceiling must not have suppressed the signal it exists beside."""
+    criticals = [g for g in corpus_groups if g.severity == "critical"]
+    assert criticals, "the planted operator email must still be disqualifying"
+    families = {g.issue_family for g in criticals}
+    assert IssueFamily.attribution_identity in families

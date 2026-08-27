@@ -15,7 +15,7 @@ Reference: docs/BLUESCRUB_DATA_CONTRACTS.md §2.3
 
 from __future__ import annotations
 
-from backend.app.bluescrub.pillars import IssueFamily
+from backend.app.bluescrub.pillars import DetectorClass, IssueFamily
 
 #: Canonical severity per family. Rationale is per-entry because the reasoning
 #: is the useful part — a future reviewer needs to know *why* a family outranks
@@ -88,15 +88,68 @@ SEVERITY_BY_RULE: dict[str, str] = {
     "AntiAnalysisValidator.sandbox_evasion.timing_checks": "low",
     # A debugger check is a real EDR trigger, unlike a bare sleep.
     "AntiAnalysisValidator.debugger_detection.windows_debugger_detection": "medium",
+
+    # ── Reviewed promotions past the low-precision ceiling ──
+    #
+    # These three are regex detectors, so the ceiling in canonical_severity
+    # would cap them at "high". They are promoted back because measurement
+    # showed them to be precise, not because the concept sounds severe:
+    # across 300 files of real code, email_address produced five hits and all
+    # five were genuine addresses, linux_username produced one and it was a
+    # real hardcoded home directory, windows_username produced none.
+    #
+    # Contrast the rules left capped — c2_reference matches the substring
+    # "C2", attribution_comment matches the phrase "based on". Same detector
+    # class, entirely different precision, which is why this is a per-rule
+    # decision rather than a class-wide one.
+    "MetadataLeakageScanner.contact_info.email_address": "critical",
+    "MetadataLeakageScanner.embedded_paths.linux_username": "critical",
+    "MetadataLeakageScanner.embedded_paths.windows_username": "critical",
 }
 
 
-def canonical_severity(rule_id: str, family: IssueFamily) -> str | None:
-    """Tier-1 severity for a rule, or None to fall through to precedence."""
+#: Detector classes whose evidence is too weak to justify `critical` on its
+#: own. Measured at scale: on a 300-file real codebase the table produced 344
+#: criticals, and the top drivers were a regex matching the literal string
+#: "C2", one matching "beacon", and one matching the English phrase "based on".
+#: AIPAM contains all three because it *analyses* C2 traffic.
+#:
+#: The design already says a regex detector asserting CRITICAL must not
+#: outrank a dataflow detector asserting medium. That principle was applied to
+#: conflicts between detectors but not to canonical severity itself, which is
+#: how a two-character substring match came to trigger disqualification.
+LOW_PRECISION_DETECTORS = frozenset({
+    DetectorClass.regex_pattern,
+    DetectorClass.heuristic,
+})
+
+CRITICAL_CEILING_FOR_LOW_PRECISION = "high"
+
+
+def canonical_severity(
+    rule_id: str,
+    family: IssueFamily,
+    detector: DetectorClass | None = None,
+) -> str | None:
+    """Tier-1 severity for a rule, or None to fall through to precedence.
+
+    An explicit rule-level entry is a reviewed decision and is honoured as
+    written. A family default is a generalisation, so it is capped below
+    `critical` when the only evidence is a low-precision detector — critical
+    drives disqualification, and disqualification has to mean something.
+    """
     override = SEVERITY_BY_RULE.get(rule_id)
     if override:
         return override
-    return SEVERITY_BY_FAMILY.get(family)
+
+    severity = SEVERITY_BY_FAMILY.get(family)
+    if (
+        severity == "critical"
+        and detector is not None
+        and detector in LOW_PRECISION_DETECTORS
+    ):
+        return CRITICAL_CEILING_FOR_LOW_PRECISION
+    return severity
 
 
 def build_rule_mapping(findings) -> dict[str, str]:
@@ -110,7 +163,9 @@ def build_rule_mapping(findings) -> dict[str, str]:
     for finding in findings:
         if finding.rule_id in mapping:
             continue
-        severity = canonical_severity(finding.rule_id, finding.issue_family)
+        severity = canonical_severity(
+            finding.rule_id, finding.issue_family, finding.detector_class
+        )
         if severity:
             mapping[finding.rule_id] = severity
     return mapping
@@ -137,7 +192,9 @@ def build_impact_modifiers(findings, *, analysis_kind: str) -> dict[str, str]:
     for finding in findings:
         if FAMILY_PILLAR.get(finding.issue_family) is not Pillar.attribution:
             continue
-        base = canonical_severity(finding.rule_id, finding.issue_family)
+        base = canonical_severity(
+            finding.rule_id, finding.issue_family, finding.detector_class
+        )
         if base and base != "critical":
             # resolve() clamps to one level, so naming the ceiling is enough.
             modifiers[finding.rule_id] = "critical"

@@ -160,6 +160,20 @@ VENDORED_CATEGORY_FAMILY: dict[str, IssueFamily] = {
     "protocol_fingerprints": IssueFamily.signature_known,
     "hardcoded_delays_timing_signature": IssueFamily.signature_known,
     "unpinned_versions": IssueFamily.dependency_confusion,
+    # Surfaced by scanning a real 300-file codebase; the fixture was too small
+    # to reach any of these.
+    "system_info": IssueFamily.metadata_leak,
+    "tool_signatures": IssueFamily.signature_known,
+    "known_tool_similarity": IssueFamily.signature_known,
+    "kernel_structure_reference": IssueFamily.signature_known,
+    "information_disclosure_in_logs": IssueFamily.metadata_leak,
+    "credential_related_strings": IssueFamily.credential_exposure,
+    "url_patterns": IssueFamily.attribution_infrastructure,
+    "byte_encoded_addresses": IssueFamily.hardcoded_c2,
+    "string_patterns": IssueFamily.string_exposure,
+    "hardcoded_addresses": IssueFamily.hardcoded_c2,
+    "kernel_exploit": IssueFamily.signature_known,
+    "code_reuse": IssueFamily.attribution_identity,
 }
 
 #: Explicit per-rule overrides, highest priority. Populated as rules are

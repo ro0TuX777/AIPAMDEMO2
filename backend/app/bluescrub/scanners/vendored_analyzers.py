@@ -162,6 +162,12 @@ def specialised_to_raw_findings(
                 matched = next(
                     (str(item[k]) for k in _MATCH_KEYS if item.get(k)), ""
                 )
+                if not matched.strip():
+                    # 159 findings on a real 300-file codebase carried no
+                    # matched text at all. A finding that cannot show what it
+                    # matched is not reviewable, and it still consumed a slot
+                    # in the score.
+                    continue
                 severity = str(
                     item.get("risk") or item.get("effectiveness") or category_risk
                 ).upper()

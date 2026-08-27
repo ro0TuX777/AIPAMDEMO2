@@ -178,6 +178,56 @@ one level. Reachability, secret validity, and execution-path modifiers are
 absent rather than guessed — none is establishable without analysis this
 pipeline performs.
 
+### 2.3.2 Detector precision gates `critical`
+
+The family table above was calibrated on a small fixture. Run against 300 files
+of real code it produced **344 criticals** — enough to disqualify any
+repository. The top drivers were not concepts at all:
+
+| Count | Rule matched | Actual matched text |
+|---|---|---|
+| 159 | `kernel_exploit.kernel_structure_reference` | *(empty)* |
+| 67 | `c2_references.c2_reference` | `"C2"` |
+| 43 | `c2_references.c2_beacon_reference` | `"beacon"` |
+| 36 | `code_reuse.attribution_comment` | `"based on"` |
+
+AIPAM contains all of those strings because it *analyses* C2 traffic. The
+concept "hardcoded C2 address" genuinely is critical; the shipped detector for
+it matches a two-character substring. Assigning critical to the concept while
+the evidence comes from that detector is what produced the number.
+
+So `critical` from a **family default** is capped at `high` when the only
+evidence is a `regex_pattern` or `heuristic` detector. This is the principle
+already stated for detector conflicts — a regex asserting CRITICAL must not
+outrank a dataflow detector asserting medium — applied to canonical severity,
+where it had been missed.
+
+**Rule-level entries are exempt,** because they are reviewed decisions. Three
+are promoted back past the ceiling, each on measurement rather than on how
+severe the concept sounds:
+
+| Rule | Hits on 300 real files | False positives |
+|---|---|---|
+| `contact_info.email_address` | 5 | 0 — all genuine addresses |
+| `embedded_paths.linux_username` | 1 | 0 — a real hardcoded home directory |
+| `embedded_paths.windows_username` | 0 | — |
+
+Their loose siblings stay capped: `contact_info.email_link` matches `mailto:`,
+`contact_info.contact_information` matches `email:`. Same detector class,
+opposite decisions — which is why precision is a per-rule property and not a
+class-wide one.
+
+Two related changes fell out of the same run: findings carrying **no matched
+text at all** are dropped at the adapter (955 of them, unreviewable and
+occupying score slots), and twelve further category labels were mapped, taking
+unmapped from 971 to 210.
+
+**Known gap.** The vendored corpus ships false-positive helpers and the evidence
+envelope has an `fp_filters_applied` field, but nothing is wired to them yet.
+Most residual noise at scale comes from test fixtures and vendored third-party
+bundles, which path-based suppression would remove. That belongs with the
+Sprint 5 attribution work.
+
 ### 2.4 Scoring confidence
 
 ```
