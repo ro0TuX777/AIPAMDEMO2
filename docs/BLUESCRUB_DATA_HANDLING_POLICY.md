@@ -104,7 +104,17 @@ by someone with database read and no host access — and on a single-VM air-gapp
 the same principal. Consistency with `aipam_api_token` beats a marginal gain against a threat this
 deployment does not have.
 
-### 3.2 Rotation
+### 3.2 Missing key — masked, but not fingerprinted
+
+The gate said a missing key means secret scanners refuse to run. The intent —
+never write an unkeyed digest, because a structured 20-character secret is
+reversible by enumeration — is met more usefully by masking without a
+fingerprint. The operator still learns a credential is present, which is the
+finding they need; what they lose is deduplication of that secret across scans.
+Refusing to run would have withheld the finding too, protecting nothing. The
+count is reported as `secrets_without_fingerprint`.
+
+### 3.3 Rotation
 
 **Only on suspected key compromise. Never scheduled.**
 
@@ -164,6 +174,13 @@ invites reliance it cannot support.
 
 1. A canary secret planted in a fixture repo appears nowhere in the database, API responses, exported
    PDF/HTML/CSV, or any log file — only its mask and fingerprint.
+   *Implemented in `redaction.py`, which runs centrally between suppression and
+   canonicalization so a new detector cannot leak by forgetting to opt in.
+   Suppression runs first because it needs the plaintext to tell a real
+   credential from `password = "changeme"`. Two secrets that mask identically
+   stay distinct: `AKIA1111NARY` and `AKIA2222NARY` both render as `AKIA…NARY`,
+   so fingerprints are taken over the keyed HMAC rather than the mask —
+   otherwise two leaked credentials merge into one finding.*
 2. Quarantine contents are gone within one sweep interval of the 72-hour boundary.
 3. Staged source for a project scanned weekly is never purged; staged source for a project last scanned
    40 days ago is.
