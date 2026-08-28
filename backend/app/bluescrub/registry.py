@@ -14,6 +14,8 @@ from backend.app.bluescrub.pillars import Pillar, RiskClass
 from backend.app.bluescrub.scanners import (
     binary_analysis,
     dependencies,
+    deps_cve,
+    sbom,
     semgrep,
     vendored_analyzers,
 )
@@ -60,6 +62,35 @@ SCANNERS: dict[str, ScannerSpec] = {
         profiles=("standard", "deep"),
         optional=False,
         limits=ResourceLimits(),
+    ),
+    "osv": ScannerSpec(
+        name="osv",
+        run=deps_cve.run_osv,
+        pillars=(Pillar.co_optability,),
+        risk_class=RiskClass.parse_only,
+        profiles=("standard", "deep"),
+        # Optional: Grype covers the same pillar from a different database, so
+        # neither alone is required and installing one must not move the score.
+        optional=True,
+        limits=ResourceLimits(wall_clock_seconds=600, cpu_seconds=600),
+    ),
+    "grype": ScannerSpec(
+        name="grype",
+        run=deps_cve.run_grype,
+        pillars=(Pillar.co_optability,),
+        risk_class=RiskClass.parse_only,
+        profiles=("standard", "deep"),
+        optional=True,
+        limits=ResourceLimits(wall_clock_seconds=600, cpu_seconds=600),
+    ),
+    "syft": ScannerSpec(
+        name="syft",
+        run=sbom.run_syft,
+        pillars=(Pillar.co_optability,),
+        risk_class=RiskClass.parse_only,
+        profiles=("deep",),
+        optional=True,
+        limits=ResourceLimits(wall_clock_seconds=600, cpu_seconds=600),
     ),
     "semgrep": ScannerSpec(
         name="semgrep",

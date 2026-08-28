@@ -1,0 +1,178 @@
+{
+  "schema": "bluescrub.toolmanifest/1",
+  "bundle_version": "0.1.0-dev",
+  "built_at": "2026-08-27T00:00:00Z",
+  "notes": "Digests and checksums are null in this dev manifest because the scanner images have not been built. Startup validation must therefore treat this bundle as unverified; a release bundle with a null image_digest is a build failure, not a warning. See docs/BLUESCRUB_SUPPLY_CHAIN.md.",
+  "sbom_ref": null,
+  "signature_ref": null,
+  "tools": [
+    {
+      "name": "semgrep",
+      "version": "1.175.0",
+      "runner": "container",
+      "risk_class": "parse_only",
+      "pillars": [
+        "Vulnerability",
+        "Co-Optability"
+      ],
+      "licence": "LGPL-2.1-only",
+      "redistribution": "permitted",
+      "architectures": [
+        "amd64",
+        "arm64"
+      ],
+      "image": "aipam/bluescrub-semgrep",
+      "image_digest": null,
+      "ruleset_version": "bluescrub-pack@0.1.0",
+      "ruleset_checksum": null,
+      "licence_notes": "The LGPL applies to the engine. Semgrep-maintained registry rules are under the Semgrep Rules License v1.0, limited to internal, non-competing, non-SaaS use, and are NOT bundled. BlueScrub ships its own pack; an operator may point AIPAM_BLUESCRUB_SEMGREP_CONFIG at registry rules where their use permits it.",
+      "limits": {
+        "timeout_seconds": 900,
+        "mem_limit": "4g",
+        "pids_limit": 256
+      }
+    },
+    {
+      "name": "osv-scanner",
+      "version": "2.x",
+      "runner": "container",
+      "risk_class": "parse_only",
+      "pillars": [
+        "Co-Optability"
+      ],
+      "licence": "Apache-2.0",
+      "redistribution": "permitted",
+      "architectures": [
+        "amd64",
+        "arm64"
+      ],
+      "optional": true,
+      "image": "aipam/bluescrub-osv",
+      "image_digest": null,
+      "db_snapshot_date": null,
+      "db_checksum": null,
+      "licence_notes": "Tool is Apache-2.0. The OSV advisory data is licensed separately (CC-BY-4.0) and must ship with attribution.",
+      "limits": {
+        "timeout_seconds": 600,
+        "mem_limit": "2g",
+        "pids_limit": 128
+      }
+    },
+    {
+      "name": "grype",
+      "version": "0.9x",
+      "runner": "container",
+      "risk_class": "parse_only",
+      "pillars": [
+        "Co-Optability"
+      ],
+      "licence": "Apache-2.0",
+      "redistribution": "permitted",
+      "architectures": [
+        "amd64",
+        "arm64"
+      ],
+      "optional": true,
+      "image": "aipam/bluescrub-grype",
+      "image_digest": null,
+      "db_snapshot_date": null,
+      "db_checksum": null,
+      "licence_notes": "Vulnerability database is assembled from distro and language feeds with mixed terms; verify before redistributing the DB alongside the tool.",
+      "limits": {
+        "timeout_seconds": 600,
+        "mem_limit": "4g",
+        "pids_limit": 128
+      }
+    },
+    {
+      "name": "syft",
+      "version": "1.x",
+      "runner": "container",
+      "risk_class": "parse_only",
+      "pillars": [
+        "Co-Optability"
+      ],
+      "licence": "Apache-2.0",
+      "redistribution": "permitted",
+      "architectures": [
+        "amd64",
+        "arm64"
+      ],
+      "optional": true,
+      "image": "aipam/bluescrub-syft",
+      "image_digest": null,
+      "limits": {
+        "timeout_seconds": 600,
+        "mem_limit": "2g",
+        "pids_limit": 128
+      }
+    },
+    {
+      "name": "bluescrub_analyzers",
+      "version": "vendored@9452a51",
+      "runner": "subprocess",
+      "risk_class": "parse_only",
+      "pillars": [
+        "Detectability",
+        "Attribution",
+        "Co-Optability",
+        "Vulnerability"
+      ],
+      "licence": "proprietary",
+      "redistribution": "restricted",
+      "architectures": [
+        "amd64",
+        "arm64"
+      ],
+      "licence_notes": "Vendored from the private NhanBC/BlueScrub repository. Copyright notices are carried in vendored/. Not redistributable outside this programme.",
+      "limits": {
+        "timeout_seconds": 120,
+        "mem_limit": "2g",
+        "pids_limit": 64
+      }
+    },
+    {
+      "name": "binary_analyzer",
+      "version": "vendored@9452a51",
+      "runner": "subprocess",
+      "risk_class": "emulation",
+      "pillars": [
+        "Detectability",
+        "RE-Feasibility"
+      ],
+      "licence": "proprietary",
+      "redistribution": "restricted",
+      "architectures": [
+        "amd64",
+        "arm64"
+      ],
+      "licence_notes": "Requires pefile, pyelftools, capstone and lief. Each is guarded by an *_AVAILABLE flag upstream, so a missing package yields no findings rather than an error \u2014 indistinguishable from a clean binary. The adapter probes get_capabilities() and reports unavailable instead.",
+      "limits": {
+        "timeout_seconds": 900,
+        "mem_limit": "8g",
+        "pids_limit": 128
+      }
+    },
+    {
+      "name": "dependency_inventory",
+      "version": "vendored@9452a51",
+      "runner": "subprocess",
+      "risk_class": "parse_only",
+      "pillars": [
+        "Co-Optability"
+      ],
+      "licence": "proprietary",
+      "redistribution": "restricted",
+      "architectures": [
+        "amd64",
+        "arm64"
+      ],
+      "licence_notes": "Offline manifest parsing only. Establishes hygiene, not CVE status; reports database_stale when no offline vulnerability source is present.",
+      "limits": {
+        "timeout_seconds": 120,
+        "mem_limit": "2g",
+        "pids_limit": 64
+      }
+    }
+  ]
+}
