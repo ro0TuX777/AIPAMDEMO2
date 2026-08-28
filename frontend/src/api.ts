@@ -1,3 +1,5 @@
+import { handleDemoApiRequest } from "./demo/mockApi";
+
 // ─── V2 Enums ───────────────────────────────────────────────────────────────
 
 export type ExecutionProfile = "triage" | "standard" | "deep";
@@ -93,7 +95,11 @@ export interface JobPcapItem {
   sha256?: string | null;
 }
 
-export type SourceType = "pcap" | "log_bundle" | "netflow_bundle" | "c2_bundle" | "exercise_bundle";
+// Mirrors backend SourceType. "binary" was missing here while the backend has
+// shipped it since the binary pipeline landed — fixed alongside code_artifact.
+export type SourceType =
+  | "pcap" | "pcap+logs" | "log_bundle" | "netflow_bundle"
+  | "c2_bundle" | "exercise_bundle" | "binary" | "code_artifact";
 
 export interface BundleSourceEntry {
   filename: string;
@@ -115,6 +121,79 @@ export interface JobCreateRequest {
   bundle_entries?: BundleSourceEntry[];
   // --- Hybrid job: attach labeled log bundles alongside PCAPs ---
   bundle_uploads?: BundleUploadItem[];
+  // --- BlueScrub code-artifact jobs ---
+  // Optional. An unbound job still scans, but triage will not carry forward
+  // until it is bound to a project.
+  project_id?: string;
+}
+
+// ── BlueScrub DACV+R ──────────────────────────────────────────────────────
+
+export type Pillar =
+  | "Detectability" | "Attribution" | "Co-Optability"
+  | "Vulnerability" | "RE-Feasibility";
+
+export type PillarStatus = "assessed" | "degraded" | "not_assessed";
+
+export interface PillarScore {
+  status: PillarStatus;
+  /** null when not_assessed. Never 0 — zero means "measured, nothing found". */
+  score: number | null;
+  coverage: number;
+  findings: number;
+  raw?: number;
+  reason?: string;
+  top_driver?: { finding_id: string; rule_id: string; contribution: number };
+  unavailable_signals?: { signal: string; weight: number; reason: string }[];
+  effort_band?: "Trivial" | "Hours" | "Days" | "Weeks";
+}
+
+export interface BlueScrubProject {
+  project_id: string;
+  display_name: string;
+  created_at: string;
+  archived: boolean;
+}
+
+export interface BlueScrubLineage {
+  project_id: string | null;
+  lineage_parent_job_id: string | null;
+  derived_from_job_id: string | null;
+  analysis_kind: "source_audit" | "re_assessment";
+}
+
+export interface BlueScrubBindResult {
+  job_id: string;
+  project_id: string;
+  lineage_parent_job_id: string | null;
+  carry_forward_enabled: boolean;
+  note: string;
+}
+
+export interface DacvMetrics {
+  schema: string;
+  scoring_model: string;
+  calibration: "provisional" | "calibrated";
+  project_id: string | null;
+  analysis_kind: "source_audit" | "re_assessment";
+  profile: ExecutionProfile;
+  compatibility_signature: string;
+  pillars: Record<Pillar, PillarScore>;
+  /** Artifact-level grade. null unless every pillar was assessed. */
+  overall: { status: "complete" | "incomplete"; score: number | null; grade: string | null };
+  /** Always present, and never an artifact-level grade — render it labelled. */
+  scoped: {
+    profile: ExecutionProfile; score: number; grade: string;
+    pillars_assessed: number; pillars_total: 5; label: string;
+  };
+  disqualified: boolean;
+  grade_override?: { finding_id: string; reason: string };
+  files_scanned: number;
+  unmapped_findings: number;
+  partial: boolean;
+  partial_reasons: {
+    sensor: string; class: string; detail?: string; pillars_affected: Pillar[];
+  }[];
 }
 
 export interface JobCreateResponse {
@@ -758,6 +837,11 @@ export interface FindingItem {
   evidence?: Record<string, unknown>;
   feedback?: "confirmed" | "false_positive" | "false_negative" | null;
   confidence: number;
+  // Ground-truth corroboration from uploaded logs. "confirmed" means a
+  // ground-truth source (e.g. a C2 operator log) attests to this detection.
+  evidence_status?: "observed" | "inferred" | "corroborated" | "confirmed";
+  corroboration_score?: number;
+  corroborating_sources?: string[];
   // HITL review state (Sprint 4)
   analyst_status?: string | null;
   analyst_notes?: string | null;
@@ -1594,6 +1678,12 @@ const API_BASE =
   (import.meta as any).env.VITE_API_BASE_URL?.replace(/\/$/, "") ||
   "http://localhost:8000/api/v1";
 
+const DEMO_MODE = String((import.meta as any).env?.VITE_AIPAM_DEMO_MODE || "").toLowerCase() === "true";
+
+export function isDemoMode(): boolean {
+  return DEMO_MODE;
+}
+
 function qs(params: object): string {
   const parts: string[] = [];
   for (const [k, v] of Object.entries(params)) {
@@ -1616,6 +1706,11 @@ function authHeaders(): Record<string, string> {
 }
 
 async function request<T>(url: string, init: RequestInit = {}): Promise<T> {
+  if (DEMO_MODE) {
+    const demoResponse = await handleDemoApiRequest(url, init, API_BASE);
+    if (demoResponse !== null) return demoResponse as T;
+  }
+
   const headers = { ...authHeaders(), ...(init.headers as Record<string, string> || {}) };
   const res = await fetch(url, { ...init, headers });
   if (!res.ok) {
@@ -1662,6 +1757,17 @@ function patch<T>(path: string, body?: unknown): Promise<T> {
 export const api = {
   // ── Uploads ────────────────────────────────────────────────────────────
   uploadPcap(file: File, onProgress?: (pct: number) => void): Promise<UploadCreateResponse> {
+    if (DEMO_MODE) {
+      if (onProgress) onProgress(100);
+      return Promise.resolve({
+        schema_version: "1.0",
+        upload_id: `up-${Date.now()}`,
+        filename: file.name,
+        size_bytes: file.size,
+        sha256: `demo-${Date.now()}`,
+      });
+    }
+
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       xhr.open("POST", `${API_BASE}/uploads`);
@@ -1705,9 +1811,71 @@ export const api = {
     );
   },
   uploadBundle(file: File, onProgress?: (pct: number) => void): Promise<UploadCreateResponse> {
+    if (DEMO_MODE) {
+      if (onProgress) onProgress(100);
+      return Promise.resolve({
+        schema_version: "1.0",
+        upload_id: `bundle-${Date.now()}`,
+        filename: file.name,
+        size_bytes: file.size,
+        sha256: `demo-${Date.now()}`,
+      });
+    }
+
     return new Promise((resolve, reject) => {
       const xhr = new XMLHttpRequest();
       xhr.open("POST", `${API_BASE}/uploads/bundle`);
+
+      const headers = authHeaders();
+      Object.keys(headers).forEach(k => xhr.setRequestHeader(k, headers[k]));
+      xhr.setRequestHeader("Content-Disposition", `attachment; filename="${encodeURIComponent(file.name)}"`);
+
+      if (onProgress) {
+        xhr.upload.onprogress = (e) => {
+          if (e.lengthComputable) {
+            const pct = Math.round((e.loaded / e.total) * 100);
+            onProgress(pct);
+          }
+        };
+      }
+
+      xhr.onload = () => {
+        if (xhr.status >= 200 && xhr.status < 300) {
+          try {
+            resolve(JSON.parse(xhr.responseText));
+          } catch (err) {
+            reject(new Error("Invalid JSON response from server"));
+          }
+        } else {
+          let msg = `Upload failed with status ${xhr.status}`;
+          try { msg = JSON.parse(xhr.responseText).detail || msg; } catch {}
+          reject(new Error(msg));
+        }
+      };
+
+      xhr.onerror = () => reject(new Error("Network error during upload"));
+      xhr.send(file);
+    });
+  },
+
+  /** Upload a code artifact (source archive or standalone binary).
+   *  Uses the existing artifact endpoint — artifact_classifier already
+   *  recognises zip/gzip/bzip2/tar, so no new upload path was needed. */
+  uploadArtifact(file: File, onProgress?: (pct: number) => void): Promise<UploadCreateResponse> {
+    if (DEMO_MODE) {
+      if (onProgress) onProgress(100);
+      return Promise.resolve({
+        schema_version: "1.0",
+        upload_id: `artifact-${Date.now()}`,
+        filename: file.name,
+        size_bytes: file.size,
+        sha256: `demo-${Date.now()}`,
+      });
+    }
+
+    return new Promise((resolve, reject) => {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", `${API_BASE}/uploads/artifact`);
 
       const headers = authHeaders();
       Object.keys(headers).forEach(k => xhr.setRequestHeader(k, headers[k]));
@@ -1744,6 +1912,7 @@ export const api = {
     return post<UploadValidateResponse>(`/uploads/${uploadId}/validate`);
   },
   getExportUrl(jobId: string): string {
+    if (DEMO_MODE) return "#";
     const tokenQs = _token ? `?token=${encodeURIComponent(_token)}` : "";
     return `${API_BASE}/jobs/${jobId}/export${tokenQs}`;
   },
@@ -1751,6 +1920,28 @@ export const api = {
   listJobs(p: JobListParams = {}): Promise<JobListResponse> {
     return get<JobListResponse>(`/jobs${qs(p)}`);
   },
+  // ── BlueScrub ───────────────────────────────────────────────────────────
+  listBlueScrubProjects(): Promise<BlueScrubProject[]> {
+    return get<BlueScrubProject[]>("/bluescrub/projects");
+  },
+
+  createBlueScrubProject(display_name: string): Promise<BlueScrubProject> {
+    return post<BlueScrubProject>("/bluescrub/projects", { display_name });
+  },
+
+  /** Bind an ad-hoc code-artifact job to a project. No re-scan; carry-forward
+   *  applies from the next scan onward. */
+  bindJobToProject(
+    jobId: string,
+    body: { project_id?: string; display_name?: string; actor?: string },
+  ): Promise<BlueScrubBindResult> {
+    return put<BlueScrubBindResult>(`/bluescrub/jobs/${jobId}/project`, body);
+  },
+
+  getDacvReport(jobId: string): Promise<{ dacv: DacvMetrics; lineage?: BlueScrubLineage }> {
+    return get<{ dacv: DacvMetrics; lineage?: BlueScrubLineage }>(`/bluescrub/report/${jobId}`);
+  },
+
   createJob(body: JobCreateRequest): Promise<JobCreateResponse> {
     return post<JobCreateResponse>("/jobs", body);
   },
@@ -2043,9 +2234,11 @@ export const api = {
     return post<EvidencePackageCreateResponse>(`/jobs/${jobId}/artifacts/evidence-package`);
   },
   getArtifactDownloadUrl(artifactId: string): string {
+    if (DEMO_MODE) return "#";
     return `${API_BASE}/artifacts/${artifactId}/download`;
   },
   async downloadArtifact(artifactId: string, filename?: string): Promise<void> {
+    if (DEMO_MODE) return;
     const res = await fetch(`${API_BASE}/artifacts/${artifactId}/download`, {
       headers: authHeaders(),
     });
@@ -2062,6 +2255,7 @@ export const api = {
   },
 
   async downloadExtractedFile(jobId: string, fileId: string, filename?: string): Promise<void> {
+    if (DEMO_MODE) return;
     const res = await fetch(`${API_BASE}/jobs/${jobId}/files/${encodeURIComponent(fileId)}/download`, {
       headers: authHeaders(),
     });
@@ -2112,6 +2306,7 @@ export const api = {
     return post<TemporalNarrativeResponse>(`/jobs/${jobId}/temporal-narrative`);
   },
   getTemporalExportUrl(jobId: string, format: "markdown" | "html" = "markdown"): string {
+    if (DEMO_MODE) return "#";
     const tokenQs = _token ? `?token=${encodeURIComponent(_token)}&format=${format}` : `?format=${format}`;
     return `${API_BASE}/jobs/${jobId}/temporal-export${tokenQs}`;
   },

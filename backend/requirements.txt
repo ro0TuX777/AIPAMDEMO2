@@ -66,3 +66,13 @@ sentence-transformers>=2.2.0
 # Provides the `yara` module; without it binary analysis still hashes and
 # measures entropy but reports yara_available=false and matches nothing.
 yara-python>=4.3.0
+
+# BlueScrub vendored binary analysis (PE/ELF/Mach-O parsing, disassembly).
+# Every import is guarded by an *_AVAILABLE flag upstream, so a missing package
+# degrades to "no findings" rather than an error — indistinguishable from a
+# clean binary. Pin them here so that degradation is a deployment choice
+# rather than an accident. See backend/app/bluescrub/VENDOR.md.
+pefile>=2023.2.7
+pyelftools>=0.31
+capstone>=5.0.0
+lief>=0.14.0

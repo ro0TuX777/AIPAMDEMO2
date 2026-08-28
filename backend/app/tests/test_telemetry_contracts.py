@@ -65,9 +65,13 @@ class TestSourceTypeEnum:
             "c2_bundle",
             "exercise_bundle",
             "binary",
+            "code_artifact",
         }
         actual = {e.value for e in SourceType}
         assert actual == expected
+
+    def test_contains_code_artifact(self):
+        assert SourceType.code_artifact == "code_artifact"
 
 
 class TestEvidenceStatusEnum:

@@ -1,0 +1,54 @@
+# BlueScrub Co-Optability rules.
+#
+# Authored here rather than drawn from the Semgrep registry: registry rules
+# carry a licence limited to internal non-competing use, and these encode a
+# question no general SAST pack asks — could an adversary who obtains this
+# tooling turn it against the operator who deployed it?
+rules:
+  - id: bluescrub.cooptability.hardcoded-c2-address
+    languages: [python, go, javascript, typescript, java, c, cpp, csharp]
+    severity: ERROR
+    message: >-
+      Hardcoded C2 address. Anyone who obtains the binary learns the
+      infrastructure, and anyone who seizes that address inherits the implants.
+    metadata:
+      cwe: ["CWE-798: Use of Hard-coded Credentials"]
+      confidence: MEDIUM
+      bluescrub_family: hardcoded-c2
+    patterns:
+      - pattern-regex: >-
+          ["'](?:(?:\d{1,3}\.){3}\d{1,3}|[a-z0-9-]+\.(?:duckdns|no-ip|ngrok)\.[a-z]{2,})(?::\d{2,5})?["']
+      - pattern-not-regex: '["''](?:127\.0\.0\.1|0\.0\.0\.0|localhost)'
+
+  # Rewritten after probing: the original used `pattern-not-inside` with a bare
+  # $AUTH(...), which matches any code containing a function call and therefore
+  # excluded every match. "Unauthenticated" is not reliably detectable by
+  # pattern alone, so the rule now targets what *is* detectable and is the
+  # actual OPSEC concern — a control channel listening on every interface.
+  - id: bluescrub.cooptability.control-channel-on-all-interfaces
+    languages: [python]
+    severity: ERROR
+    message: >-
+      Listener bound to all interfaces. Anyone who can reach the host can reach
+      the control channel, and a third party who finds it can task the implant.
+    metadata:
+      cwe: ["CWE-1327: Binding to an Unrestricted IP Address"]
+      confidence: MEDIUM
+      bluescrub_family: unauth-control-channel
+    pattern-either:
+      - pattern: $S.bind(("0.0.0.0", ...))
+      - pattern: $S.bind(("", ...))
+      - pattern: $S.bind(("::", ...))
+
+  - id: bluescrub.cooptability.static-payload-key
+    languages: [python, go, c, cpp, csharp, java]
+    severity: WARNING
+    message: >-
+      Static key used to protect payload or config. A single recovered key
+      decrypts every build, so one captured sample compromises the fleet.
+    metadata:
+      cwe: ["CWE-321: Use of Hard-coded Cryptographic Key"]
+      confidence: MEDIUM
+      bluescrub_family: hardcoded-secret
+    pattern-regex: >-
+      (?i)\b\w*(xor|enc|crypt|aes|payload|cfg|config|beacon)_?key\s*[=:]\s*["'0-9a-fx{]

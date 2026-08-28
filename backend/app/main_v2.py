@@ -17,6 +17,7 @@ from fastapi.staticfiles import StaticFiles
 
 from backend.app.api import (
     alerts,
+    bluescrub,
     artifacts,
     binary,
     chat,
@@ -156,6 +157,7 @@ def create_app() -> FastAPI:
     app.include_router(investigation.router, prefix="/api/v1")
     app.include_router(binary.router, prefix="/api/v1")
     app.include_router(sigma.router, prefix="/api/v1")
+    app.include_router(bluescrub.router, prefix="/api/v1")
     app.include_router(streams.router, prefix="/api/v1")
     app.include_router(events.router, prefix="/api/v1")
 

@@ -1,0 +1,108 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://aipam.local/schemas/bluescrub/canonical-group/1",
+  "title": "BlueScrub canonical issue group",
+  "description": "The unit of scoring and persistence. One Finding row per group. See docs/BLUESCRUB_DATA_CONTRACTS.md §2.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema", "canonical_id", "fingerprint_scheme", "issue_family", "pillar",
+    "severity", "severity_source", "scoring_confidence", "primary_sensor",
+    "primary_rule_id", "occurrence_index", "members"
+  ],
+  "properties": {
+    "schema": { "const": "bluescrub.canon/1" },
+
+    "canonical_id": {
+      "description": "bs-{pillar_slug}-{tool}-{fp16}. Stable across re-scans.",
+      "type": "string",
+      "pattern": "^bs-[a-z-]+-[a-z0-9_]+-[a-f0-9]{16}(-dup[0-9]+)?$"
+    },
+    "fingerprint_scheme": { "const": "fp/2" },
+
+    "issue_family": { "type": "string", "minLength": 1, "maxLength": 64 },
+    "pillar": {
+      "enum": ["Detectability", "Attribution", "Co-Optability", "Vulnerability", "RE-Feasibility"]
+    },
+    "related_pillars": {
+      "description": "Displayed, never double-scored.",
+      "type": "array", "default": [],
+      "items": {
+        "enum": ["Detectability", "Attribution", "Co-Optability", "Vulnerability", "RE-Feasibility"]
+      }
+    },
+
+    "severity": { "enum": ["critical", "high", "medium", "low", "info"] },
+    "severity_source": {
+      "description": "Which precedence tier decided the severity.",
+      "enum": ["rule_mapping", "impact_modifier", "precedence", "fallback"]
+    },
+    "severity_rationale": { "type": ["string", "null"], "maxLength": 2048 },
+
+    "scoring_confidence": {
+      "description": "Calibrated confidence of the highest-precedence qualifying detector. Corroboration does NOT raise this in v1.",
+      "type": "number", "minimum": 0, "maximum": 1
+    },
+
+    "primary_sensor": { "type": "string", "maxLength": 64 },
+    "primary_rule_id": { "type": "string", "maxLength": 256 },
+    "primary_detector_class": {
+      "enum": ["semantic_dataflow", "taint", "ast_pattern", "regex_pattern", "heuristic"]
+    },
+
+    "corroborating_sensors": {
+      "description": "Evidence and display only. No scoring effect in v1.",
+      "type": "array", "default": [],
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sensor", "rule_id"],
+        "properties": {
+          "sensor": { "type": "string", "maxLength": 64 },
+          "rule_id": { "type": "string", "maxLength": 256 },
+          "detector_class": {
+            "enum": ["semantic_dataflow", "taint", "ast_pattern", "regex_pattern", "heuristic"]
+          },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+        }
+      }
+    },
+
+    "occurrence_index": {
+      "description": "Assigned after the deterministic sort. Distinguishes identical matches in one semantic scope; required for uniqueness.",
+      "type": "integer", "minimum": 0
+    },
+
+    "location": { "$ref": "https://aipam.local/schemas/bluescrub/raw-finding/1#/properties/location" },
+
+    "members": {
+      "description": "Raw findings collapsed into this group. At least one.",
+      "type": "array", "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["sensor", "rule_id"],
+        "properties": {
+          "sensor": { "type": "string", "maxLength": 64 },
+          "rule_id": { "type": "string", "maxLength": 256 },
+          "raw_severity": { "type": ["string", "null"], "maxLength": 32 },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+        }
+      }
+    },
+
+    "scored": {
+      "description": "False for unmapped rules: persisted and displayed, excluded from scoring.",
+      "type": "boolean", "default": true
+    },
+
+    "score_contribution": {
+      "description": "sev_weight[severity] x scoring_confidence, after caps. Null when scored is false.",
+      "type": ["number", "null"], "minimum": 0
+    },
+    "capped_by": {
+      "enum": ["rule_cap", "family_cap", "info_cap", null],
+      "default": null
+    }
+  }
+}

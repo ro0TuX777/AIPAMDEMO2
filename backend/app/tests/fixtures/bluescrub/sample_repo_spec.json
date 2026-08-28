@@ -1,0 +1,10 @@
+{
+  "_comment": "Deliberately leaky sample offensive tool. Each file plants issues the corpus should find; the differential baseline is captured against exactly this input. Attribution material lives in a .py comment, not the .txt: the vendored analyzers only scan a fixed source-extension list.",
+  "files": {
+    "agent/evade.py": "import time\nIsDebuggerPresent()\nGetTickCount()\ntime.sleep(60)\n",
+    "agent/tasks.py": "# built by jsmith@corp.internal at C:\\Users\\jsmith\\projects\\rt2411\nimport os, hashlib, base64\nAPI_KEY = 'AKIAIOSFODNN7EXAMPLE'\nC2 = '10.20.30.40:4444'\ndef run(cmd):\n    os.system(cmd)\ndef digest(d):\n    return hashlib.md5(d).hexdigest()\ndef load(b):\n    return exec(base64.b64decode(b))\n",
+    "build/notes.txt": "built by jsmith@corp.internal at C:\\Users\\jsmith\\projects\\rt2411\n",
+    "loader/beacon.c": "#include <windows.h>\nchar cfg_key = 0x2E;\nchar buf[64];\nvoid stage(char *in){ strcpy(buf, in); }\nvoid run(HANDLE h){ VirtualAllocEx(h,0,4096,0x3000,0x40); CreateRemoteThread(h,0,0,0,0,0,0); }\n",
+    "requirements.txt": "requests==2.6.0\nflask\n"
+  }
+}

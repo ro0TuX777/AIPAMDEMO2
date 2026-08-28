@@ -24,9 +24,11 @@ POST /jobs/{id}/security_onion/import – push PCAPs to Security Onion
 import hashlib
 import json
 import logging as _logging
+import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response, status
 from fastapi.responses import FileResponse, StreamingResponse
@@ -87,6 +89,7 @@ from backend.app.schemas.system import (
 from backend.app.schemas.timeline import TimelineItem, TimelineListResponse
 
 router = APIRouter(tags=["Jobs"], dependencies=[Depends(verify_token)])
+
 
 # Separate router for SSE endpoint — no router-level verify_token because
 # EventSource cannot send Authorization headers.  Auth is handled per-endpoint
@@ -159,6 +162,11 @@ async def create_job(
       - Hybrid jobs (PCAPs + bundle_upload_id in same request for fused analysis)
     """
     response.headers["X-Request-Id"] = request_id
+
+    # ── BlueScrub code-artifact path: source archives and standalone binaries
+    # audited along the DACV+R pillars. Never enters the PCAP pipeline. ──
+    if body.source_type == SourceType.code_artifact:
+        return _create_code_artifact_job(body, db, settings)
 
     # ── Bundle-only path (no PCAPs) ──
     if body.source_type != SourceType.pcap and not body.uploads and not body.bundle_upload_id:
@@ -313,7 +321,6 @@ async def create_job(
 
     return JobCreateResponse(schema_version="1.0", job_id=job_id)
 
-
 def _create_binary_job(
     body: JobCreateRequest,
     upload: Upload,
@@ -357,6 +364,100 @@ def _create_binary_job(
     # Dispatch the pipeline to the Celery worker
     _dispatch_job(job_id)
 
+    return JobCreateResponse(schema_version="1.0", job_id=job_id)
+
+
+def _create_code_artifact_job(
+    body: JobCreateRequest,
+    db: Session,
+    settings: Settings,
+) -> JobCreateResponse:
+    """Create a BlueScrub job from an uploaded source archive or binary.
+
+    The archive is staged through the hardened extractor, which rejects hostile
+    archives outright rather than sanitising them. Project binding is optional:
+    an unbound job still scans, but triage will not carry forward until it is
+    bound (``PUT /bluescrub/jobs/{id}/project``).
+    """
+    from backend.app.bluescrub.ingest import IngestError, IngestLimits, stage_archive
+    from backend.app.models.bluescrub import BlueScrubJobLineage, BlueScrubProject
+
+    upload_id = body.upload_id or (body.uploads[0].upload_id if body.uploads else None)
+    if not upload_id:
+        raise HTTPException(status_code=400, detail="code_artifact job requires an upload")
+
+    upload: Upload | None = db.get(Upload, upload_id)
+    if upload is None:
+        raise HTTPException(status_code=400, detail=f"Upload {upload_id} not found")
+
+    src = settings.aipam_upload_root / upload.upload_id / upload.filename
+    if not src.exists():
+        raise HTTPException(status_code=400, detail="Upload file missing from disk")
+
+    job_id = str(uuid.uuid4())
+    job_dir: Path = settings.aipam_job_root / job_id
+    source_root = job_dir / "input" / "source"
+
+    limits = IngestLimits(
+        max_files=int(os.getenv("AIPAM_BLUESCRUB_MAX_EXTRACT_FILES", "50000")),
+        max_total_bytes=int(os.getenv("AIPAM_BLUESCRUB_MAX_ARCHIVE_MB", "512")) * 1024 * 1024,
+    )
+    try:
+        stage_archive(src, source_root, limits)
+    except IngestError as exc:
+        # A rejected archive is a finding about the artifact, not a server
+        # error: report the reason so the operator knows what was refused.
+        raise HTTPException(
+            status_code=400,
+            detail=f"Rejected code artifact ({exc.reason}): {exc.detail}",
+        ) from exc
+
+    project_id = getattr(body, "project_id", None)
+    if project_id and db.get(BlueScrubProject, project_id) is None:
+        raise HTTPException(status_code=400, detail=f"Unknown project {project_id}")
+
+    job = Job(
+        job_id=job_id,
+        job_name=body.job_name or f"Code artifact: {upload.filename}",
+        notes=body.notes,
+        status="queued",
+        execution_profile=body.execution_profile.value,
+        priority=body.priority.value,
+        upload_id=upload.upload_id,
+        pcap_filename=None,
+        pcap_size_bytes=upload.size_bytes,
+        source_type=SourceType.code_artifact.value,
+        exercise_id=body.exercise_id,
+        created_at=_now_iso(),
+    )
+    db.add(job)
+
+    # Lineage is bound at creation, not resolved at persist time: two
+    # concurrent scans of one project must inherit from the same parent rather
+    # than racing on whichever finishes last.
+    parent = None
+    if project_id:
+        parent = db.execute(
+            select(Job.job_id)
+            .join(BlueScrubJobLineage, BlueScrubJobLineage.job_id == Job.job_id)
+            .where(
+                BlueScrubJobLineage.project_id == project_id,
+                Job.status.in_(("completed", "completed_with_errors")),
+            )
+            .order_by(Job.completed_at.desc())
+            .limit(1)
+        ).scalar_one_or_none()
+
+    db.add(BlueScrubJobLineage(
+        job_id=job_id,
+        project_id=project_id,
+        lineage_parent_job_id=parent,
+        analysis_kind="source_audit",
+        compatibility_signature="",   # filled in by the pipeline once known
+    ))
+    db.commit()
+
+    _dispatch_job(job_id)
     return JobCreateResponse(schema_version="1.0", job_id=job_id)
 
 

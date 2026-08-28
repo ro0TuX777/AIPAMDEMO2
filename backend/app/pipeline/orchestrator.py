@@ -24,6 +24,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.models.alert import Alert
+from backend.app.models.bluescrub import BlueScrubJobLineage
 from backend.app.models.finding import Finding
 from backend.app.models.host import Host
 from backend.app.models.job import Job
@@ -169,6 +170,66 @@ def _run_binary_pipeline(
         return "completed"
     except Exception as exc:
         logger.error("Binary pipeline failed for job %s: %s", job_id, exc, exc_info=True)
+        _update_job_status(db, job, "failed", str(exc))
+        _emit(job_id, "job.complete", status="failed")
+        return "failed"
+
+
+def _run_code_artifact_pipeline(
+    job_id: str,
+    job: Job,
+    db: Session,
+    *,
+    job_root: Path,
+    upload_root: Path,
+) -> str:
+    """Run BlueScrub DACV+R analysis for a ``code_artifact`` job and finalize.
+
+    Sibling of :func:`_run_binary_pipeline` — it never enters the Zeek/Suricata
+    ``has_pcaps`` path. The staged source tree is produced at job creation;
+    this drives the scanner registry, scores, persists, and finalizes.
+
+    A scanner failure degrades its pillar rather than failing the job, so the
+    terminal status is ``completed`` even when the report is partial.
+    """
+    from backend.app.bluescrub.service import analyze_and_persist
+
+    try:
+        job_dir = create_job_directory(job_root, job_id)
+        source_root = job_dir / "input" / "source"
+        if not source_root.exists() or not any(source_root.rglob("*")):
+            _update_job_status(db, job, "failed", "No staged source found for job")
+            _emit(job_id, "job.complete", status="failed")
+            return "failed"
+
+        profile = job.execution_profile or "standard"
+        lineage = db.get(BlueScrubJobLineage, job_id)
+
+        def _progress(sensor: str, status: str, message: str | None = None) -> None:
+            _emit(job_id, "stage.status", stage=sensor, status=status,
+                  message=message or "")
+
+        metrics = analyze_and_persist(
+            db, job_id, job_dir,
+            profile=profile,
+            project_id=lineage.project_id if lineage else None,
+            analysis_kind=lineage.analysis_kind if lineage else "source_audit",
+            progress=_progress,
+        )
+
+        job.metrics_json = json.dumps(metrics)
+        dacv = metrics["dacv"]
+        final = "completed_with_errors" if dacv.get("partial") else "completed"
+        _update_job_status(db, job, final)
+        _emit(job_id, "job.complete", status=final)
+        logger.info(
+            "BlueScrub pipeline %s for job %s: scoped=%s grade=%s overall=%s",
+            final, job_id, dacv["scoped"]["score"], dacv["scoped"]["grade"],
+            dacv["overall"]["status"],
+        )
+        return final
+    except Exception as exc:
+        logger.error("BlueScrub pipeline failed for job %s: %s", job_id, exc, exc_info=True)
         _update_job_status(db, job, "failed", str(exc))
         _emit(job_id, "job.complete", status="failed")
         return "failed"
@@ -372,12 +433,22 @@ def run_pipeline(
     if (job.source_type or "") == "binary":
         return _run_binary_pipeline(job_id, job, db, job_root=job_root, upload_root=upload_root)
 
+    if (job.source_type or "") == "code_artifact":
+        return _run_code_artifact_pipeline(
+            job_id, job, db, job_root=job_root, upload_root=upload_root
+        )
+
     profile: Profile = job.execution_profile  # type: ignore[assignment]
 
     # Determine what this job contains
     _source_type = job.source_type or "pcap"
     has_pcaps = _source_type in ("pcap", "pcap+logs")
-    has_telemetry_bundle = _source_type in ("pcap+logs", "log_bundle", "c2_export", "netflow", "exercise_bundle")
+    # NB: these must be SourceType *values* — "c2_export"/"netflow" were stale
+    # spellings that never matched, so C2/NetFlow bundles silently skipped the
+    # telemetry stage unless the on-disk manifest fallback below rescued them.
+    has_telemetry_bundle = _source_type in (
+        "pcap+logs", "log_bundle", "c2_bundle", "netflow_bundle", "exercise_bundle",
+    )
     # Also check for manifest on disk (fallback for hybrid jobs)
     _manifest_check_deferred = has_telemetry_bundle
 
@@ -408,8 +479,12 @@ def run_pipeline(
                     pcap_source = found[0]
                     total_pcap_size += pcap_source.stat().st_size
                     label = rec.label or "before"
-                    link_pcap_labeled(job_dir, pcap_source, label)
-                logger.info("Linked %d PCAPs for job %s", len(pcap_records), job_id)
+                    # Ordinal disambiguates captures sharing a phase label.
+                    link_pcap_labeled(job_dir, pcap_source, label, rec.ordinal or 0)
+                staged = len(list((job_dir / "input").glob("*.pcap*")))
+                logger.info(
+                    "Linked %d/%d PCAPs for job %s", staged, len(pcap_records), job_id,
+                )
             else:
                 # Fallback: single-PCAP legacy path
                 upload_dir = upload_root / (job.upload_id or "")
@@ -747,11 +822,12 @@ def run_pipeline(
                 exercise_id=job.exercise_id,
             )
             logger.info("Telemetry pipeline for job %s: %s", job_id, telemetry_result)
-            parsed = telemetry_result.get("parsed", 0)
-            correlated = telemetry_result.get("correlated", 0)
+            parsed = telemetry_result.get("files_parsed", 0)
+            events = telemetry_result.get("events_total", 0)
+            corroborated = telemetry_result.get("corroborated", 0)
             _emit(job_id, "stage.status", stage="telemetry", status="completed",
                   step=step_num, total_steps=total_steps,
-                  message=f"parsed={parsed} correlated={correlated}")
+                  message=f"files={parsed} events={events} corroborated={corroborated}")
             _completed_stages.append("telemetry")
         except Exception as exc:
             logger.error("Telemetry pipeline failed for job %s: %s", job_id, exc, exc_info=True)
