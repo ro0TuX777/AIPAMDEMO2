@@ -105,6 +105,25 @@ SEVERITY_BY_RULE: dict[str, str] = {
     "MetadataLeakageScanner.contact_info.email_address": "critical",
     "MetadataLeakageScanner.embedded_paths.linux_username": "critical",
     "MetadataLeakageScanner.embedded_paths.windows_username": "critical",
+
+    # ── Dirty-word: operator-declared terms ──
+    #
+    # Also regex detectors by class, and also promoted — but on different
+    # grounds. The three above earned it by measuring low false positives; a
+    # dirty-word hit is a literal match on a string the operator explicitly
+    # declared sensitive. Nothing in this pipeline is more precise than being
+    # told. The wordlist validator refuses terms under three characters, which
+    # is what stops the "C2" failure recurring on the input side.
+    "dirty_word.marking": "critical",
+    "dirty_word.identity": "critical",
+    "dirty_word.codename": "critical",
+    # Below: real, but not disqualifying on their own.
+    "dirty_word.org": "high",
+    "dirty_word.hostname": "high",
+    "dirty_word.path": "high",
+    "dirty_word.mutex": "medium",
+    "dirty_word.ticket": "medium",
+    "dirty_word.tooling": "high",
 }
 
 

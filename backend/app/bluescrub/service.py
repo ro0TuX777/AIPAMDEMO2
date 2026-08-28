@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import logging
 from datetime import datetime, timezone
 from pathlib import Path
@@ -19,7 +20,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.bluescrub import SCORING_MODEL
-from backend.app.bluescrub import fpfilter, redaction
+from backend.app.bluescrub import fpfilter, redaction, wordlists
+from backend.app.bluescrub.scanners import dirty_word as dirty_word_scanner
 from backend.app.bluescrub.canonicalize import canonicalize
 from backend.app.bluescrub.persistence import persist_groups
 from backend.app.bluescrub.pillars import Pillar
@@ -89,6 +91,11 @@ def analyze_and_persist(
     raw: list = []
     runs: list[ScannerRun] = []
 
+    # The dirty-word list holds the very codenames and markings being hunted,
+    # so it is handed to the sandbox by path at mode 0600 — never as argv,
+    # where `ps` would publish it — and removed once the scan finishes.
+    wordlist_path = _stage_wordlist(db, job_dir)
+
     for step, spec in enumerate(specs, start=1):
         if progress:
             progress(spec.name, "running", f"{step}/{len(specs)}")
@@ -141,6 +148,8 @@ def analyze_and_persist(
     # through to the scanner's own severity string, which is calibrated for
     # services rather than offensive tooling — it rates a hardcoded C2 address
     # "low".
+    _discard_wordlist(wordlist_path)
+
     result = canonicalize(
         raw,
         project_id=project_id or job_id,
@@ -189,6 +198,31 @@ def analyze_and_persist(
     metrics["dacv"]["findings_created"] = created
     metrics["dacv"]["findings_updated"] = updated
     return metrics
+
+
+def _stage_wordlist(db: Session, job_dir: Path) -> Path | None:
+    """Seed the shipped packs, then write every active term for the sandbox."""
+    try:
+        wordlists.seed_builtins(db)
+        terms = wordlists.active_terms(db)
+    except Exception as exc:  # a wordlist problem must not fail the job
+        logger.warning("could not assemble dirty-word terms: %s", exc)
+        return None
+
+    path = dirty_word_scanner.write_wordlist(job_dir, terms)
+    if path:
+        os.environ[dirty_word_scanner.WORDLIST_ENV] = str(path)
+    return path
+
+
+def _discard_wordlist(path: Path | None) -> None:
+    os.environ.pop(dirty_word_scanner.WORDLIST_ENV, None)
+    if path is None:
+        return
+    try:
+        path.unlink(missing_ok=True)
+    except OSError as exc:  # pragma: no cover - runtime dir is writable
+        logger.warning("could not remove staged wordlist %s: %s", path, exc)
 
 
 def _manifest_digest(runs: list[ScannerRun]) -> str:

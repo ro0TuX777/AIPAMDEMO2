@@ -223,7 +223,7 @@ def specialised_to_raw_findings(
 
 
 def run(source_root: Path, output_dir: Path, *,
-        limits: ResourceLimits | None = None) -> ScannerOutcome:
+        limits: ResourceLimits | None = None, **_kw) -> ScannerOutcome:
     """Run every vendored analyzer, each behind its own process boundary."""
     limits = limits or ResourceLimits()
     require_drop = os.getenv("AIPAM_BLUESCRUB_REQUIRE_UID_DROP", "true").lower() not in (

@@ -103,7 +103,7 @@ def _has_vulnerability_source(inventory: dict) -> bool:
 
 
 def run(source_root: Path, output_dir: Path, *,
-        limits: ResourceLimits | None = None) -> ScannerOutcome:
+        limits: ResourceLimits | None = None, **_kw) -> ScannerOutcome:
     result = run_analyzer(
         [sys.executable, "-m", "backend.app.bluescrub.isolation.analyzer_main",
          "__deps__", str(source_root), "dependencies"],

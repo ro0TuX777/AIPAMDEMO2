@@ -169,7 +169,7 @@ def _rules_config() -> str | None:
     return None
 
 
-def run(source_root: Path, output_dir: Path, *, limits: ResourceLimits | None = None) -> ScannerOutcome:
+def run(source_root: Path, output_dir: Path, *, limits: ResourceLimits | None = None, **_kw) -> ScannerOutcome:
     """Run Semgrep over ``source_root`` inside the analyzer process boundary."""
     binary = shutil.which("semgrep")
     if not binary:

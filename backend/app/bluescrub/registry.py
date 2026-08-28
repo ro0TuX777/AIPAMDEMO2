@@ -15,6 +15,7 @@ from backend.app.bluescrub.scanners import (
     binary_analysis,
     dependencies,
     deps_cve,
+    dirty_word,
     sbom,
     semgrep,
     vendored_analyzers,
@@ -24,8 +25,15 @@ from backend.app.bluescrub.scanners.base import ScannerSpec
 #: Which pillars each profile attempts. A pillar outside this set is
 #: ``not_assessed`` — never scored zero.
 PROFILE_PILLARS: dict[str, tuple[Pillar, ...]] = {
-    "triage": (Pillar.vulnerability,),
-    "standard": (Pillar.vulnerability, Pillar.co_optability),
+    # Attribution is in Quick deliberately. Dirty-word matching is literal and
+    # cheap, and a leaked operator handle or operation codename is the most
+    # consequential thing a pre-commit check can catch — a fast scan that finds
+    # a buffer overflow while missing a classification marking has the priority
+    # backwards.
+    "triage": (Pillar.vulnerability, Pillar.attribution),
+    "standard": (
+        Pillar.vulnerability, Pillar.attribution, Pillar.co_optability,
+    ),
     "deep": (
         Pillar.vulnerability, Pillar.co_optability,
         Pillar.attribution, Pillar.detectability, Pillar.re_feasibility,
@@ -60,6 +68,15 @@ SCANNERS: dict[str, ScannerSpec] = {
         pillars=(Pillar.co_optability,),
         risk_class=RiskClass.parse_only,
         profiles=("standard", "deep"),
+        optional=False,
+        limits=ResourceLimits(),
+    ),
+    "dirty_word": ScannerSpec(
+        name="dirty_word",
+        run=dirty_word.run,
+        pillars=(Pillar.attribution, Pillar.detectability),
+        risk_class=RiskClass.parse_only,
+        profiles=("triage", "standard", "deep"),
         optional=False,
         limits=ResourceLimits(),
     ),

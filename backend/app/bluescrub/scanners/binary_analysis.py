@@ -105,7 +105,7 @@ def to_raw_findings(records: list[dict], source_root: Path) -> list[RawFinding]:
 
 
 def run(source_root: Path, output_dir: Path, *,
-        limits: ResourceLimits | None = None) -> ScannerOutcome:
+        limits: ResourceLimits | None = None, **_kw) -> ScannerOutcome:
     missing = missing_capabilities()
     if missing:
         # Reporting "no findings" here would be a lie about an unexamined

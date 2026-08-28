@@ -40,6 +40,24 @@ def main(argv: list[str]) -> int:
             from backend.app.bluescrub.vendored.scanners.binary import BinaryAnalyzer
 
             findings = BinaryAnalyzer().analyze_directory(directory)
+        elif mode == "dirty_word":
+            import json as _json
+            import os as _os
+
+            from backend.app.bluescrub.vendored.dirty_word_scanner import scan_directory
+
+            terms_path = _os.environ.get("AIPAM_BLUESCRUB_WORDLIST_FILE", "")
+            terms = _json.loads(open(terms_path).read()) if terms_path else []
+            # Case sensitivity is per-list; run the sensitive terms separately
+            # so a case-sensitive marking is not matched case-insensitively.
+            words_ci = [t["term"] for t in terms if not t.get("case_sensitive")]
+            words_cs = [t["term"] for t in terms if t.get("case_sensitive")]
+            findings = {"matches": []}
+            for words, sensitive in ((words_ci, False), (words_cs, True)):
+                if not words:
+                    continue
+                out = scan_directory(directory, words, case_sensitive=sensitive)
+                findings["matches"].extend(out.get("matches") or [])
         elif mode == "dependencies":
             from backend.app.bluescrub.vendored.dependency_scanner import (
                 build_dependency_inventory,

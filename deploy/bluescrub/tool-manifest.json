@@ -173,6 +173,28 @@
         "mem_limit": "2g",
         "pids_limit": 64
       }
+    },
+    {
+      "name": "dirty_word",
+      "version": "vendored@9452a51",
+      "runner": "subprocess",
+      "risk_class": "parse_only",
+      "pillars": [
+        "Attribution",
+        "Detectability"
+      ],
+      "licence": "proprietary",
+      "redistribution": "restricted",
+      "architectures": [
+        "amd64",
+        "arm64"
+      ],
+      "licence_notes": "Vendored matcher plus the three shipped packs. Operator wordlists live in bluescrub_wordlists, not on disk. The staged term file is written at mode 0600 and removed after each scan because it holds the markings and codenames being hunted.",
+      "limits": {
+        "timeout_seconds": 120,
+        "mem_limit": "2g",
+        "pids_limit": 64
+      }
     }
   ]
 }
