@@ -5,202 +5,525 @@
   "description": "The 'dacv' object written into Job.metrics_json. See docs/BLUESCRUB_SCORING_SPEC.md.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["dacv"],
+  "required": [
+    "dacv"
+  ],
   "properties": {
     "dacv": {
       "type": "object",
       "additionalProperties": false,
       "required": [
-        "schema", "scoring_model", "fingerprint_scheme", "canonicalization_version",
-        "analysis_kind", "profile", "compatibility_signature", "pillars", "overall", "scoped",
-        "scanners", "partial"
+        "schema",
+        "scoring_model",
+        "fingerprint_scheme",
+        "canonicalization_version",
+        "analysis_kind",
+        "profile",
+        "compatibility_signature",
+        "pillars",
+        "overall",
+        "scoped",
+        "scanners",
+        "partial"
       ],
       "properties": {
-        "schema": { "const": "bluescrub/2" },
-        "scoring_model": { "type": "string", "pattern": "^dacvr/[0-9]+\\.[0-9]+$" },
-        "fingerprint_scheme": { "const": "fp/2" },
-        "canonicalization_version": { "type": "string", "pattern": "^canon/[0-9]+$" },
-        "calibration": { "enum": ["provisional", "calibrated"], "default": "provisional" },
-
-        "project_id": { "type": ["string", "null"] },
-        "analysis_kind": { "enum": ["source_audit", "re_assessment"] },
-        "profile": { "enum": ["triage", "standard", "deep"] },
-        "compatibility_signature": { "type": "string", "pattern": "^sha256:[a-f0-9]{64}$" },
-
+        "schema": {
+          "const": "bluescrub/2"
+        },
+        "scoring_model": {
+          "type": "string",
+          "pattern": "^dacvr/[0-9]+\\.[0-9]+$"
+        },
+        "fingerprint_scheme": {
+          "const": "fp/2"
+        },
+        "canonicalization_version": {
+          "type": "string",
+          "pattern": "^canon/[0-9]+$"
+        },
+        "calibration": {
+          "enum": [
+            "provisional",
+            "calibrated"
+          ],
+          "default": "provisional"
+        },
+        "project_id": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "analysis_kind": {
+          "enum": [
+            "source_audit",
+            "re_assessment"
+          ]
+        },
+        "profile": {
+          "enum": [
+            "triage",
+            "standard",
+            "deep"
+          ]
+        },
+        "compatibility_signature": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        },
         "pillars": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["Detectability", "Attribution", "Co-Optability", "Vulnerability", "RE-Feasibility"],
+          "required": [
+            "Detectability",
+            "Attribution",
+            "Co-Optability",
+            "Vulnerability",
+            "RE-Feasibility"
+          ],
           "patternProperties": {
             "^(Detectability|Attribution|Co-Optability|Vulnerability|RE-Feasibility)$": {
               "type": "object",
               "additionalProperties": false,
-              "required": ["status", "score", "coverage", "findings"],
+              "required": [
+                "status",
+                "score",
+                "coverage",
+                "findings"
+              ],
               "properties": {
-                "status": { "enum": ["assessed", "degraded", "not_assessed"] },
+                "status": {
+                  "enum": [
+                    "assessed",
+                    "degraded",
+                    "not_assessed"
+                  ]
+                },
                 "score": {
                   "description": "null when not_assessed. NEVER 0 to mean unmeasured.",
-                  "type": ["integer", "null"], "minimum": 0, "maximum": 100
+                  "type": [
+                    "integer",
+                    "null"
+                  ],
+                  "minimum": 0,
+                  "maximum": 100
                 },
-                "raw": { "type": ["number", "null"], "minimum": 0 },
-                "coverage": { "type": "number", "minimum": 0, "maximum": 1 },
-                "findings": { "type": "integer", "minimum": 0 },
+                "raw": {
+                  "type": [
+                    "number",
+                    "null"
+                  ],
+                  "minimum": 0
+                },
+                "coverage": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "findings": {
+                  "type": "integer",
+                  "minimum": 0
+                },
                 "reason": {
                   "description": "Required when status is not_assessed.",
-                  "type": ["string", "null"], "maxLength": 256
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "maxLength": 256
                 },
                 "top_driver": {
-                  "type": ["object", "null"],
+                  "type": [
+                    "object",
+                    "null"
+                  ],
                   "additionalProperties": false,
                   "properties": {
-                    "finding_id": { "type": "string" },
-                    "rule_id": { "type": "string" },
-                    "contribution": { "type": "number", "minimum": 0 }
+                    "finding_id": {
+                      "type": "string"
+                    },
+                    "rule_id": {
+                      "type": "string"
+                    },
+                    "contribution": {
+                      "type": "number",
+                      "minimum": 0
+                    }
                   }
                 },
                 "unavailable_signals": {
                   "description": "RE-Feasibility only. Weights are reported, never redistributed.",
-                  "type": "array", "default": [],
+                  "type": "array",
+                  "default": [],
                   "items": {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["signal", "weight", "reason"],
+                    "required": [
+                      "signal",
+                      "weight",
+                      "reason"
+                    ],
                     "properties": {
-                      "signal": { "type": "string", "maxLength": 64 },
-                      "weight": { "type": "number", "minimum": 0, "maximum": 1 },
-                      "reason": { "type": "string", "maxLength": 256 }
+                      "signal": {
+                        "type": "string",
+                        "maxLength": 64
+                      },
+                      "weight": {
+                        "type": "number",
+                        "minimum": 0,
+                        "maximum": 1
+                      },
+                      "reason": {
+                        "type": "string",
+                        "maxLength": 256
+                      }
                     }
                   }
                 },
                 "effort_band": {
                   "description": "RE-Feasibility only.",
-                  "enum": ["Trivial", "Hours", "Days", "Weeks", null]
+                  "enum": [
+                    "Trivial",
+                    "Hours",
+                    "Days",
+                    "Weeks",
+                    null
+                  ]
                 }
               },
               "allOf": [
                 {
-                  "if": { "properties": { "status": { "const": "not_assessed" } } },
+                  "if": {
+                    "properties": {
+                      "status": {
+                        "const": "not_assessed"
+                      }
+                    }
+                  },
                   "then": {
-                    "properties": { "score": { "const": null } },
-                    "required": ["reason"]
+                    "properties": {
+                      "score": {
+                        "const": null
+                      }
+                    },
+                    "required": [
+                      "reason"
+                    ]
                   }
                 }
               ]
             }
           }
         },
-
         "overall": {
           "type": "object",
           "additionalProperties": false,
-          "required": ["status", "score", "grade"],
+          "required": [
+            "status",
+            "score",
+            "grade"
+          ],
           "properties": {
-            "status": { "enum": ["complete", "incomplete"] },
-            "score": { "type": ["integer", "null"], "minimum": 0, "maximum": 100 },
-            "grade": { "enum": ["A", "B", "C", "D", "F", null] }
+            "status": {
+              "enum": [
+                "complete",
+                "incomplete"
+              ]
+            },
+            "score": {
+              "type": [
+                "integer",
+                "null"
+              ],
+              "minimum": 0,
+              "maximum": 100
+            },
+            "grade": {
+              "enum": [
+                "A",
+                "B",
+                "C",
+                "D",
+                "F",
+                null
+              ]
+            }
           },
           "allOf": [
             {
-              "if": { "properties": { "status": { "const": "incomplete" } } },
-              "then": { "properties": { "score": { "const": null }, "grade": { "const": null } } }
+              "if": {
+                "properties": {
+                  "status": {
+                    "const": "incomplete"
+                  }
+                }
+              },
+              "then": {
+                "properties": {
+                  "score": {
+                    "const": null
+                  },
+                  "grade": {
+                    "const": null
+                  }
+                }
+              }
             }
           ]
         },
-
         "scoped": {
           "description": "Always populated. Structurally separate from overall so a client cannot render it as an artifact grade.",
           "type": "object",
           "additionalProperties": false,
-          "required": ["profile", "score", "grade", "pillars_assessed", "pillars_total", "label"],
+          "required": [
+            "profile",
+            "score",
+            "grade",
+            "pillars_assessed",
+            "pillars_total",
+            "label"
+          ],
           "properties": {
-            "profile": { "enum": ["triage", "standard", "deep"] },
-            "score": { "type": "integer", "minimum": 0, "maximum": 100 },
-            "grade": { "enum": ["A", "B", "C", "D", "F"] },
-            "pillars_assessed": { "type": "integer", "minimum": 0, "maximum": 5 },
-            "pillars_total": { "const": 5 },
-            "label": { "type": "string", "maxLength": 128 }
+            "profile": {
+              "enum": [
+                "triage",
+                "standard",
+                "deep"
+              ]
+            },
+            "score": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 100
+            },
+            "grade": {
+              "enum": [
+                "A",
+                "B",
+                "C",
+                "D",
+                "F"
+              ]
+            },
+            "pillars_assessed": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 5
+            },
+            "pillars_total": {
+              "const": 5
+            },
+            "label": {
+              "type": "string",
+              "maxLength": 128
+            }
           }
         },
-
-        "disqualified": { "type": "boolean", "default": false },
+        "disqualified": {
+          "type": "boolean",
+          "default": false
+        },
         "grade_override": {
-          "type": ["object", "null"],
+          "type": [
+            "object",
+            "null"
+          ],
           "additionalProperties": false,
-          "required": ["finding_id", "reason"],
+          "required": [
+            "finding_id",
+            "reason"
+          ],
           "properties": {
-            "finding_id": { "type": "string" },
-            "reason": { "const": "critical_attribution_exposure" }
+            "finding_id": {
+              "type": "string"
+            },
+            "reason": {
+              "const": "critical_attribution_exposure"
+            }
           }
         },
-
         "caps_applied": {
           "type": "object",
           "additionalProperties": false,
           "properties": {
-            "rule_cap": { "type": "integer", "minimum": 0 },
-            "family_cap": { "type": "integer", "minimum": 0 },
-            "info_cap": { "type": "integer", "minimum": 0 }
+            "rule_cap": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "family_cap": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "info_cap": {
+              "type": "integer",
+              "minimum": 0
+            }
           }
         },
-        "unmapped_findings": { "type": "integer", "minimum": 0, "default": 0 },
-        "fingerprint_collisions": { "type": "integer", "minimum": 0, "default": 0 },
-        "files_scanned": { "type": "integer", "minimum": 0 },
-
+        "unmapped_findings": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        },
+        "fingerprint_collisions": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        },
+        "files_scanned": {
+          "type": "integer",
+          "minimum": 0
+        },
         "scanners": {
           "type": "array",
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["sensor", "status"],
+            "required": [
+              "sensor",
+              "status"
+            ],
             "properties": {
-              "sensor": { "type": "string", "maxLength": 64 },
+              "sensor": {
+                "type": "string",
+                "maxLength": 64
+              },
               "status": {
-                "enum": ["completed", "completed_truncated", "timeout", "oom", "crashed",
-                         "unparseable", "unavailable", "skipped"]
+                "enum": [
+                  "completed",
+                  "completed_truncated",
+                  "timeout",
+                  "oom",
+                  "crashed",
+                  "unparseable",
+                  "unavailable",
+                  "skipped"
+                ]
               },
               "required_for": {
                 "type": "array",
                 "items": {
-                  "enum": ["Detectability", "Attribution", "Co-Optability", "Vulnerability",
-                           "RE-Feasibility"]
+                  "enum": [
+                    "Detectability",
+                    "Attribution",
+                    "Co-Optability",
+                    "Vulnerability",
+                    "RE-Feasibility"
+                  ]
                 }
               },
-              "optional": { "type": "boolean", "default": false },
-              "version": { "type": ["string", "null"], "maxLength": 64 },
-              "ruleset_version": { "type": ["string", "null"], "maxLength": 128 },
-              "ruleset_state": {
-                "enum": ["current", "rules_stale", "database_stale", "unknown", null]
+              "optional": {
+                "type": "boolean",
+                "default": false
               },
-              "duration_ms": { "type": ["integer", "null"], "minimum": 0 },
-              "reason": { "type": ["string", "null"], "maxLength": 256 },
-              "truncated": { "type": "boolean", "default": false }
+              "version": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 64
+              },
+              "ruleset_version": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 128
+              },
+              "ruleset_state": {
+                "enum": [
+                  "current",
+                  "rules_stale",
+                  "database_stale",
+                  "unknown",
+                  null
+                ]
+              },
+              "duration_ms": {
+                "type": [
+                  "integer",
+                  "null"
+                ],
+                "minimum": 0
+              },
+              "reason": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 256
+              },
+              "truncated": {
+                "type": "boolean",
+                "default": false
+              }
             }
           }
         },
-
-        "partial": { "type": "boolean" },
+        "partial": {
+          "type": "boolean"
+        },
         "partial_reasons": {
           "description": "Structured, not a single string.",
-          "type": "array", "default": [],
+          "type": "array",
+          "default": [],
           "items": {
             "type": "object",
             "additionalProperties": false,
-            "required": ["sensor", "class"],
+            "required": [
+              "sensor",
+              "class"
+            ],
             "properties": {
-              "sensor": { "type": "string", "maxLength": 64 },
-              "class": {
-                "enum": ["unsupported_format", "timeout", "oom", "crashed", "unparseable",
-                         "unavailable", "truncated"]
+              "sensor": {
+                "type": "string",
+                "maxLength": 64
               },
-              "detail": { "type": ["string", "null"], "maxLength": 512 },
+              "class": {
+                "enum": [
+                  "unsupported_format",
+                  "timeout",
+                  "oom",
+                  "crashed",
+                  "unparseable",
+                  "unavailable",
+                  "truncated"
+                ]
+              },
+              "detail": {
+                "type": [
+                  "string",
+                  "null"
+                ],
+                "maxLength": 512
+              },
               "pillars_affected": {
                 "type": "array",
                 "items": {
-                  "enum": ["Detectability", "Attribution", "Co-Optability", "Vulnerability",
-                           "RE-Feasibility"]
+                  "enum": [
+                    "Detectability",
+                    "Attribution",
+                    "Co-Optability",
+                    "Vulnerability",
+                    "RE-Feasibility"
+                  ]
                 }
               }
             }
+          }
+        },
+        "suppressed_findings": {
+          "description": "Findings removed by false-positive filters. Reported so suppression is visible rather than silent.",
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        },
+        "suppressed_by_filter": {
+          "description": "Suppression counts by filter name, so an operator can tell which rule removed what.",
+          "type": "object",
+          "additionalProperties": {
+            "type": "integer",
+            "minimum": 0
           }
         }
       }

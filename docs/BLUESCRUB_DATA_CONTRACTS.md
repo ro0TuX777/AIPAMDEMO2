@@ -222,11 +222,45 @@ text at all** are dropped at the adapter (955 of them, unreviewable and
 occupying score slots), and twelve further category labels were mapped, taking
 unmapped from 971 to 210.
 
-**Known gap.** The vendored corpus ships false-positive helpers and the evidence
-envelope has an `fp_filters_applied` field, but nothing is wired to them yet.
-Most residual noise at scale comes from test fixtures and vendored third-party
-bundles, which path-based suppression would remove. That belongs with the
-Sprint 5 attribution work.
+### 2.3.3 False-positive suppression
+
+Two rules, both narrow, because over-suppression is the worse error.
+
+**Value filters** apply everywhere: `password = "changeme"` is a placeholder in
+any domain and `user@example.com` is documentation. The vendored helpers do this
+already, but their entries are separator-specific — the list holds `change_me`
+and not `changeme` — so candidates are compared with separators stripped.
+
+**Third-party attribution filters** apply to the Attribution pillar only. An
+email address inside a vendored dependency is somebody else's identity, not this
+artifact author's. Every other pillar keeps those findings, because a CVE in a
+vendored dependency ships in your binary and is entirely your problem.
+
+Two deliberate non-rules:
+
+- **`tests/` is not suppressed.** Semgrep's built-in ignore list does suppress
+  it and the adapter disables that on purpose (§Supply chain 4.1): in offensive
+  tooling the test directory is where real C2 addresses and operator
+  credentials live. Filtering it here would reintroduce by the back door what
+  was removed at the front.
+- **The vendored `is_false_positive_path` helper is not used.** It treats any
+  path under `/home/` as noise, which is right for defensive appsec and exactly
+  wrong here — `/home/<username>/` embedded in source is the attribution leak.
+  It found a real one in AIPAM's own `training_routes.py`.
+
+Suppressed findings are counted and reported in `metrics_json.dacv`
+(`suppressed_findings`, `suppressed_by_filter`), never silently dropped.
+
+**Measured effect** on 300 files of real code: 3,502 raw findings to 2,787 kept
+(715 placeholder suppressions), 2,100 canonical groups, six criticals.
+
+**Remaining limitation, stated rather than filtered away.** Of those six, one is
+the genuine `/home/bc/` leak, four are planted test fixtures the detectors
+correctly matched, and one is prose — this document's own sibling module
+explains that `/home/` must not be filtered, and the detector matched the path
+inside that explanation. Distinguishing a path *in* code from a path *described
+by* a comment needs parsing the regex detectors do not do. Narrowing further
+would start costing real findings, so the limit is documented instead.
 
 ### 2.4 Scoring confidence
 

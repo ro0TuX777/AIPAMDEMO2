@@ -19,6 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.bluescrub import SCORING_MODEL
+from backend.app.bluescrub import fpfilter
 from backend.app.bluescrub.canonicalize import canonicalize
 from backend.app.bluescrub.persistence import persist_groups
 from backend.app.bluescrub.pillars import Pillar
@@ -124,6 +125,12 @@ def analyze_and_persist(
             progress(spec.name, "completed",
                      f"{len(outcome.findings)} findings ({outcome.status})")
 
+    # Suppression runs before canonicalization so a suppressed finding cannot
+    # become the primary detector of a group it should not be in. The count is
+    # reported, never silent.
+    filtered = fpfilter.apply(raw)
+    raw = filtered.kept
+
     # Tier 1 and 2 of the severity chain. Without these every finding falls
     # through to the scanner's own severity string, which is calibrated for
     # services rather than offensive tooling — it rates a hardcoded C2 address
@@ -158,6 +165,7 @@ def analyze_and_persist(
         collisions=result.collisions,
         compat_signature=signature,
     )
+    metrics["dacv"].update(filtered.as_metrics())
 
     created, updated = persist_groups(
         db, job_id, result.groups, project_id=project_id
