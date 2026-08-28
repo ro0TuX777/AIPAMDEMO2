@@ -814,6 +814,45 @@ a project.
 
 ---
 
+## 6.5) Domain separation — traffic versus code
+
+AIPAM analyses **traffic**: what was observed on the wire. BlueScrub analyses
+**code**: source, binaries, and build configuration. Every BlueScrub finding is
+derived from a file, never from an observation, and the two must not be
+mistakable for one another in the same cockpit.
+
+Three guarantees, each enforced by test rather than convention:
+
+**No shared storage.** BlueScrub writes to `findings` and its own tables. It
+references no network model — not `Connection`, `DnsQuery`, `TlsSession`,
+`Alert`, `Host`, `NormalizedEvent`, `TimelineEvent`, or `JobPcap`. Asserted
+against the package source, so a future import fails the suite rather than
+quietly landing.
+
+**No borrowed evidence.** A code finding leaves `community_id`, `src_ip`,
+`dest_ip`, `ts`, and `pcap_label` null. An IP literal in a source file is not
+an observed connection, and a finding that populated `src_ip` would enter host
+views, connection views, and the IOC bridge as though something had been seen
+on the wire. Every envelope also carries `analysis_domain: "code"` explicitly.
+
+**No borrowed vocabulary.** This is the one that nearly slipped through.
+Several vendored analyzers use AIPAM's own terms for source patterns:
+`beacon_patterns`, `dns_patterns`, `c2_references`, `network_indicators`.
+AIPAM's `beaconing` sensor reports beaconing observed in captured traffic;
+BlueScrub's `beacon_patterns` reports a hardcoded sleep interval in a file.
+Side by side in one findings list they read alike and mean nothing alike, so
+those titles are annotated — "Fixed sleep interval (hardcoded beacon interval
+in source)". Sensor names are also asserted disjoint from AIPAM's, since
+`Finding.sensor` is a filter facet and a shared name would merge the two
+domains in the UI.
+
+**The deliberate exception** is §7. Typed observables extracted from code flow
+into AIPAM's existing IOC pipeline, so a domain literal in source can be matched
+against the same domain seen in traffic. That is a join on an *indicator value*,
+not a merging of evidence: the code finding stays a code finding, the network
+finding stays a network finding, and the correlation records that both mention
+the same string. Nothing about the source finding claims it was observed.
+
 ## 7) Source ↔ Network Correlation
 
 The stated product advantage — correlating tooling with network evidence — needs a real mechanism.

@@ -6,15 +6,16 @@
   "type": "object",
   "additionalProperties": false,
   "required": [
-    "schema",
+    "analysis_domain",
     "fingerprint_scheme",
-    "scoring_model",
-    "pillar",
     "issue_family",
+    "location",
+    "pillar",
     "primary_sensor",
     "rule_id",
-    "severity_source",
-    "location"
+    "schema",
+    "scoring_model",
+    "severity_source"
   ],
   "properties": {
     "schema": {
@@ -417,6 +418,10 @@
         "corroborated",
         "confirmed"
       ]
+    },
+    "analysis_domain": {
+      "description": "Always 'code'. BlueScrub findings are derived from source, binaries, or build config \u2014 never from observed traffic. Stated explicitly because parts of the vendored vocabulary collide with AIPAM's network terms.",
+      "const": "code"
     }
   }
 }

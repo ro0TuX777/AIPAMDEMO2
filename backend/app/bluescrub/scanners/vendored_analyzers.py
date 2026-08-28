@@ -64,6 +64,28 @@ _SEVERITY = {"CRITICAL": "CRITICAL", "HIGH": "HIGH", "MEDIUM": "MEDIUM",
 _MATCH_KEYS = ("technique", "pattern", "path", "contact", "indicator",
                "reference", "signature", "match", "value", "issue")
 
+#: Vendored category labels that reuse AIPAM's network vocabulary for what are
+#: actually source-code patterns. AIPAM's `beaconing` sensor reports beaconing
+#: observed in traffic; this reports a hardcoded sleep interval in a file. Left
+#: side-by-side in a findings list the two are indistinguishable, so the title
+#: says which kind of evidence it is.
+_AMBIGUOUS_WITH_NETWORK_DOMAIN = {
+    "beacon_patterns": "hardcoded beacon interval in source",
+    "dns_patterns": "DNS pattern in source",
+    "c2_references": "C2 reference in source",
+    "network_indicators": "network indicator in source",
+    "http_headers": "HTTP header set in source",
+    "tls_issues": "TLS usage in source",
+    "protocol_fingerprints": "protocol fingerprint in source",
+    "unencrypted_traffic": "unencrypted transport in source",
+}
+
+
+def _disambiguate(category: str, title: str) -> str:
+    """Prefix titles whose wording collides with AIPAM's network findings."""
+    hint = _AMBIGUOUS_WITH_NETWORK_DOMAIN.get(category)
+    return f"{title} ({hint})" if hint else title
+
 
 def _label(item: dict) -> str:
     """The best available description of what the analyzer matched."""
@@ -184,7 +206,9 @@ def specialised_to_raw_findings(
                     raw_severity=_SEVERITY.get(severity, "MEDIUM"),
                     confidence=0.6,
                     source_facet="source",
-                    title=str(item.get("type") or category.replace("_", " ")),
+                    title=_disambiguate(
+                        category, str(item.get("type") or category.replace("_", " "))
+                    ),
                     description=str(item.get("explanation") or explanation)[:4096],
                     mitre=mitre_for(matched, str(item.get("type") or ""), category),
                     matched_tokens=matched[:4096],

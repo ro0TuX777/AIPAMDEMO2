@@ -66,6 +66,12 @@ def build_evidence(group: CanonicalGroup) -> dict:
 
     envelope = {
         "schema": SCHEMA_VERSION,
+        # AIPAM analyses traffic; BlueScrub analyses code. Several vendored
+        # analyzers use AIPAM's vocabulary — "beacon", "dns", "c2" — for source
+        # patterns, so a reader could mistake a hardcoded sleep interval for an
+        # observed beacon. The domain is stated on every finding rather than
+        # inferred from which sensor produced it.
+        "analysis_domain": "code",
         "fingerprint_scheme": FINGERPRINT_SCHEME,
         "scoring_model": SCORING_MODEL,
         "canonicalization_version": CANONICALIZATION_VERSION,
