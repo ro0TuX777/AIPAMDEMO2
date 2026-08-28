@@ -435,9 +435,11 @@
                   "current",
                   "rules_stale",
                   "database_stale",
+                  "strings_static_only",
                   "unknown",
                   null
-                ]
+                ],
+                "description": "`strings_static_only` means a deep scan asked for emulation-grade string recovery and got only the static pass, because FLOSS was absent and no recovered-string cache was written."
               },
               "duration_ms": {
                 "type": [
@@ -537,6 +539,18 @@
           "minimum": 0,
           "default": 0,
           "description": "Redacted secrets carrying no fingerprint because AIPAM_BLUESCRUB_SECRET_HMAC_KEY is unset. They cannot be deduplicated across scans."
+        },
+        "findings_created": {
+          "description": "Rows inserted by persistence. Added by the service after scoring, which is why the object served by /report differs from what score_job returns \u2014 the scoring test validated the latter and this pair went unvalidated.",
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
+        },
+        "findings_updated": {
+          "description": "Rows updated in place by upsert. With findings_created this distinguishes a first scan of a project from a re-scan, which the counts alone cannot.",
+          "type": "integer",
+          "minimum": 0,
+          "default": 0
         }
       }
     }

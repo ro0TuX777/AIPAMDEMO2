@@ -252,6 +252,76 @@ registry. `ScannerSpec.order` makes the producer run first — `floss` sorts
 after both its consumers alphabetically, so the dependency had to be declared
 rather than left to a name.
 
+## Running it on its intended subject, for the first time
+
+Every measurement that shaped this pipeline — the severity ladder, the category
+tiers, the false-positive filters, the `K_P` constants — was taken against
+**source trees**. BlueScrub grades offensive tooling, which is compiled. The
+existing `sample_repo_spec.json` is source only, so nothing had ever exercised
+the pipeline against the thing it exists for.
+
+`implant_spec.json` fixes that: a small, inert C artifact compiled stripped,
+carrying a codename, an operator build path, an internal hostname, a hardcoded
+C2 address, a mutex name, a user-agent and a ticket reference. The result was
+worth the hour.
+
+**What worked.** The declared codename surfaced twice — in the build path and
+inside the mutex name — at critical, disqualifying the artifact. The operator
+build path, the org term and the internal hostname came back at high, the
+compiler version string at medium. Attribution assessed at full coverage. Every
+binary finding carried a real artifact digest and a seekable offset.
+
+**What did not, and why it matters.** The artifact has `10.20.30.40:8443`
+compiled into it and **nothing reported it**. Co-Optability scored zero with
+zero findings — on an implant with a hardcoded C2, which is the single finding
+that pillar exists for, because whoever seizes that address inherits every
+implant pointing at it.
+
+The capability is not missing. The vendored binary analyzer's
+`_find_suspicious_strings` extracts urls, IPs, domains and registry paths with
+pure regex over bytes and needs no third-party library at all. It is gated
+behind `REQUIRED_CAPABILITIES = ("pe_analysis", "elf_analysis")`, so on a host
+without `pefile`/`pyelftools` it goes down with the parsers — a dependency-free
+capability lost to the absence of libraries it never uses. The mutex and the
+user-agent go the same way, and the mutex surfaces at all only because it
+happens to contain a declared term. Rename it and it vanishes.
+
+These are recorded as **tripwire tests** in `test_bluescrub_corpus.py`: the
+gaps are asserted, so a fix breaks the test and has to be acknowledged rather
+than absorbed. A gap that is merely known gets forgotten.
+
+**How much rests on the operator.** Scanned with no wordlist at all, the same
+artifact yields two findings — the build path and the toolchain string. Both
+come from detectors that need nothing declared. Everything else depended on
+somebody having named the terms in advance.
+
+## Contracts are now enforced at runtime
+
+Three violations were live simultaneously, and none was found by 1500 tests.
+Each escaped the same way: the schema was enforced only where a test happened
+to call it, and a test validates whatever object it was handed rather than the
+one that ships.
+
+1. A binary dirty-word finding wrote a byte offset into a `source` location,
+   which the contract rejects for want of a line number. No test exercised the
+   binary path. *(Fixed in Sprint 5.)*
+2. `dacv` is `additionalProperties: false`, and the service adds
+   `findings_created` and `findings_updated` **after** scoring. The scoring
+   test validated `score_job`'s return value, so the object actually served by
+   `/report/{job_id}` was never checked. Both keys are real data, so they were
+   added to the schema rather than removed from the object.
+3. `strings_static_only` was introduced as a `ruleset_state` in Sprint 5 —
+   by this branch — without extending the enum, so every deep scan without
+   FLOSS produced metrics that failed their own schema.
+
+`bluescrub/validation.py` now validates raw findings after redaction and the
+metrics object last, and the suite's conftest turns it on globally — which
+makes every existing test that runs the pipeline a contract check at no
+authoring cost. Off in production: validating thousands of findings per job
+costs real time, and a contract violation must never lose a scan. Violations
+are logged with the rule id and never the evidence, because a violating finding
+may hold a plaintext credential and the policy names logs explicitly.
+
 ## Still open
 
 - The differential baseline (`upstream_baseline.json`) is captured from
@@ -261,6 +331,12 @@ rather than left to a name.
   run on the deployment host before each merge.
 - Binary analysis reports `unavailable` here because `pefile`, `pyelftools`,
   `capstone`, and `lief` are declared but not installed.
+- **Nothing extracts network indicators from binaries on a host without the
+  binary-parsing libraries.** The capability needs no dependency and is gated
+  behind ones it does not use. Asserted by tripwire tests in
+  `test_bluescrub_corpus.py`; the fix is either to relax the gate or to move
+  the extraction alongside `build_paths`, which already reads every binary's
+  strings for free.
 - The architecture gate is unsigned five sprints after it was meant to close;
   see the notice at the top of [BLUESCRUB_GATE.md](BLUESCRUB_GATE.md). Both
   blocking items are unanswered, and Semgrep rule licensing has been sidestepped

@@ -1,0 +1,18 @@
+{
+  "_comment": "A compiled artifact, which is what BlueScrub actually grades. The existing sample_repo_spec.json is source only, so until this landed nothing exercised the pipeline against its intended subject — and the calibration measurements that shaped the severity ladder were all taken against source trees. Inert by construction: strings and structure, no behaviour. Compiled stripped (-s) so it resembles something that would ship.",
+  "source_name": "agent.c",
+  "binary_name": "agent",
+  "compile_args": ["-O2", "-s"],
+  "planted": {
+    "codename": "NIGHTFALL, in both the build path and the mutex name",
+    "org": "redcell, in the hostname, the operator address and the build path",
+    "operator_path": "/home/a.chen/src/redcell/nightfall/agent.c",
+    "hostname": "cdn-update.redcell-ops.internal",
+    "c2_address": "10.20.30.40:8443",
+    "mutex": "Global\\RC-NIGHTFALL-0x41",
+    "user_agent": "Mozilla/5.0 (Windows NT 10.0; RC/2.4)",
+    "ticket": "RT-2411",
+    "toolchain": "the GCC version string the compiler embeds"
+  },
+  "source": "/* Inert fixture: strings and structure only, no behaviour. */\n#include <stdio.h>\n#include <string.h>\n\nstatic const char *C2_HOST   = \"cdn-update.redcell-ops.internal\";\nstatic const char *C2_ADDR   = \"10.20.30.40:8443\";\nstatic const char *MUTEX     = \"Global\\\\RC-NIGHTFALL-0x41\";\nstatic const char *UA        = \"Mozilla/5.0 (Windows NT 10.0; RC/2.4)\";\nstatic const char *BUILD     = \"/home/a.chen/src/redcell/nightfall/agent.c\";\nstatic const char *OPERATOR  = \"a.chen@redcell-ops.internal\";\nstatic const char *TICKET    = \"RT-2411\";\nstatic const char cfg_key    = 0x2E;\n\nstatic void decode(char *s, int n) { for (int i = 0; i < n; i++) s[i] ^= cfg_key; }\n\nint main(void) {\n    char scratch[64];\n    strncpy(scratch, C2_ADDR, sizeof scratch - 1);\n    scratch[sizeof scratch - 1] = 0;\n    decode(scratch, 8);\n    printf(\"%s %s %s %s %s %s %s\\n\", C2_HOST, MUTEX, UA, BUILD, OPERATOR, TICKET, scratch);\n    return 0;\n}\n"
+}

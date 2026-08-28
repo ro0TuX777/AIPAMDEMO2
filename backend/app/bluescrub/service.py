@@ -20,7 +20,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.bluescrub import SCORING_MODEL
-from backend.app.bluescrub import binstrings, fpfilter, redaction, wordlists
+from backend.app.bluescrub import binstrings, fpfilter, redaction, validation, wordlists
 from backend.app.bluescrub.scanners import dirty_word as dirty_word_scanner
 from backend.app.bluescrub.canonicalize import canonicalize
 from backend.app.bluescrub.persistence import persist_groups
@@ -147,6 +147,10 @@ def analyze_and_persist(
     redacted = redaction.redact(filtered.kept)
     raw = redacted.findings
 
+    # After redaction, so what is checked is what is persisted — a finding that
+    # validated before its plaintext was masked proves nothing about the row.
+    validation.check_raw_findings(raw)
+
     # Tier 1 and 2 of the severity chain. Without these every finding falls
     # through to the scanner's own severity string, which is calibrated for
     # services rather than offensive tooling — it rates a hardcoded C2 address
@@ -200,6 +204,11 @@ def analyze_and_persist(
 
     metrics["dacv"]["findings_created"] = created
     metrics["dacv"]["findings_updated"] = updated
+
+    # Last, because these two keys are added after scoring and the scoring
+    # test therefore never saw them — which is exactly how they came to violate
+    # `additionalProperties: false` unnoticed.
+    validation.check_metrics(metrics)
     return metrics
 
 
