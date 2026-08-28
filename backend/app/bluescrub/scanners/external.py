@@ -18,13 +18,17 @@ from __future__ import annotations
 
 import json
 import logging
-import os
 import shutil
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable, Sequence
 
-from backend.app.bluescrub.isolation import AnalyzerStatus, ResourceLimits, run_analyzer
+from backend.app.bluescrub.isolation import (
+    AnalyzerStatus,
+    ResourceLimits,
+    require_privilege_drop,
+    run_analyzer,
+)
 from backend.app.bluescrub.models import RawFinding
 from backend.app.bluescrub.scanners.base import ScannerOutcome
 
@@ -144,6 +148,4 @@ def _quarantine(output_dir: Path, sensor: str, raw: bytes) -> None:
 
 
 def _require_drop() -> bool:
-    return os.getenv("AIPAM_BLUESCRUB_REQUIRE_UID_DROP", "true").lower() not in (
-        "0", "false", "no"
-    )
+    return require_privilege_drop()

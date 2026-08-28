@@ -9,7 +9,10 @@ Reference: docs/BLUESCRUB_ISOLATION_CONTRACT.md
 
 from __future__ import annotations
 
-from backend.app.bluescrub.isolation.limits import ResourceLimits
+from backend.app.bluescrub.isolation.limits import ResourceLimits, require_privilege_drop
 from backend.app.bluescrub.isolation.runner import AnalyzerResult, AnalyzerStatus, run_analyzer
 
-__all__ = ["ResourceLimits", "AnalyzerResult", "AnalyzerStatus", "run_analyzer"]
+__all__ = [
+    "ResourceLimits", "AnalyzerResult", "AnalyzerStatus", "run_analyzer",
+    "require_privilege_drop",
+]

@@ -124,6 +124,27 @@ SEVERITY_BY_RULE: dict[str, str] = {
     "dirty_word.mutex": "medium",
     "dirty_word.ticket": "medium",
     "dirty_word.tooling": "high",
+
+    # ── Git history metadata ──
+    #
+    # Every entry here is explicit because the family defaults would be wrong
+    # in both directions. `attribution-identity` defaults to critical, which
+    # disqualifies outright — and a repository has authors by definition, so
+    # that would fail any artifact that shipped its history, including a
+    # vendored open-source tree whose contributors are not the operator.
+    # gitmeta cannot tell whose identity it found, so it reports high and
+    # leaves the judgement to the analyst.
+    "gitmeta.author_identity": "high",
+    # The exception, on the dirty-word argument: the identity carries a term
+    # the operator declared sensitive. Being told is what makes it decisive.
+    "gitmeta.declared_identity": "critical",
+    # `metadata-leak` defaults to medium, which reads as a formatting nit. A
+    # shipped `.git` carries every commit message, every branch name, and the
+    # content of every file ever deleted from the tree.
+    "gitmeta.history_present": "high",
+    "gitmeta.deleted_sensitive_file": "high",
+    # Timezone is left at the family default: it is a genuine signal and a
+    # weak one, inferred from timestamps rather than read off a field.
 }
 
 

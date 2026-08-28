@@ -94,3 +94,15 @@ def build_preexec(
         resource.setrlimit(resource.RLIMIT_CORE, (0, 0))
 
     return _preexec
+
+
+def require_privilege_drop() -> bool:
+    """Whether a missing uid drop should refuse the run rather than proceed.
+
+    Defaults to refusing. Tests and local development opt out explicitly; a
+    deployment that forgets to create the account gets a loud failure instead
+    of analyzers quietly running with worker privileges.
+    """
+    return os.getenv("AIPAM_BLUESCRUB_REQUIRE_UID_DROP", "true").strip().lower() not in (
+        "0", "false", "no",
+    )

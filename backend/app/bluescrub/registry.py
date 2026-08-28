@@ -16,6 +16,7 @@ from backend.app.bluescrub.scanners import (
     dependencies,
     deps_cve,
     dirty_word,
+    gitmeta,
     sbom,
     semgrep,
     vendored_analyzers,
@@ -79,6 +80,20 @@ SCANNERS: dict[str, ScannerSpec] = {
         profiles=("triage", "standard", "deep"),
         optional=False,
         limits=ResourceLimits(),
+    ),
+    "gitmeta": ScannerSpec(
+        name="gitmeta",
+        run=gitmeta.run,
+        pillars=(Pillar.attribution,),
+        # The only repo_history scanner in R2. Gitleaks and TruffleHog join it
+        # in the same class; all three are enabled wherever Attribution is in
+        # scope, with network verification hard-disabled.
+        risk_class=RiskClass.repo_history,
+        profiles=("triage", "standard", "deep"),
+        # Not optional: nothing else reads commit metadata, so if git is
+        # missing the pillar really has lost coverage rather than a duplicate.
+        optional=False,
+        limits=gitmeta.DEFAULT_LIMITS,
     ),
     "osv": ScannerSpec(
         name="osv",

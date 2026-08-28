@@ -195,6 +195,28 @@
         "mem_limit": "2g",
         "pids_limit": 64
       }
+    },
+    {
+      "name": "gitmeta",
+      "version": "host-git",
+      "runner": "subprocess",
+      "risk_class": "repo_history",
+      "pillars": [
+        "Attribution"
+      ],
+      "licence": "GPL-2.0-only",
+      "redistribution": "permitted_with_notice",
+      "architectures": [
+        "amd64",
+        "arm64"
+      ],
+      "network_verification_flag": "protocol.allow=never",
+      "licence_notes": "The adapter is AIPAM's; the analysis is performed by the host's git binary, which is not bundled here \u2014 an air-gapped bundle that ships git must carry the GPL-2.0 notice and source offer with it. Only read-only history commands are issued, and the repository's own config is overridden on the command line because several of its keys name programs git would otherwise execute.",
+      "limits": {
+        "timeout_seconds": 300,
+        "mem_limit": "2g",
+        "pids_limit": 64
+      }
     }
   ]
 }

@@ -114,6 +114,32 @@ Declared per scanner in `bluescrub/registry.py` and enforced by profile gating.
 `build_capable` is the class that matters: a scanner that builds the project executes attacker-authored
 code by design, and no amount of process isolation makes that equivalent to parsing.
 
+### 3.1 `repo_history` — the repository's config is not configuration
+
+Found while implementing gitmeta, and it applies to Gitleaks and TruffleHog too because all three
+invoke git or read a repository git also reads.
+
+`.git/config` ships inside the artifact, which makes it attacker-authored input. Several of its keys
+do not hold data — they hold the name of a program git will run: `core.pager`, `core.fsmonitor`,
+`core.sshCommand`, `core.alternateRefsCommand`, `core.hooksPath`, `diff.external`, and
+`log.showSignature`, which reaches for gpg. Repository-local config cannot be switched off the way
+system and global config can (`GIT_CONFIG_NOSYSTEM`, `GIT_CONFIG_GLOBAL`), so the boundary here is not
+"do not read it" but "outrank it": every invocation passes those keys as `-c key=` on the command
+line, where they take precedence over the repository's own values. `protocol.allow=never` is set on
+the same line, so a transport cannot be reached even by a future misuse of the adapter.
+
+Two consequences worth carrying to the other two scanners in this class:
+
+- **Remotes are read by parsing the file, not by asking git.** The file is evidence; handing it back
+  to the program we are keeping it away from would defeat the point.
+- **`safe.directory` must be set explicitly.** The staged tree belongs to the worker and the analyzer
+  drops to a dedicated account, so git refuses the repository as "dubious ownership" and every history
+  scanner silently reports nothing. This presents as a clean result, which is the failure mode this
+  project keeps finding.
+
+A `.git` *file* — how submodules and linked worktrees record their object store — holds a
+`gitdir:` pointer that may be absolute. It is resolved and refused when it leaves the staged tree.
+
 ## 4. What this contract does not cover
 
 - The container runner's existing isolation is inherited, not re-specified. Changes to

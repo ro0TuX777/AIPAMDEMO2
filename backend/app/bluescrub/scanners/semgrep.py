@@ -22,7 +22,12 @@ from pathlib import Path
 import yaml
 
 from backend.app.bluescrub.enrich import mitre_for
-from backend.app.bluescrub.isolation import AnalyzerStatus, ResourceLimits, run_analyzer
+from backend.app.bluescrub.isolation import (
+    AnalyzerStatus,
+    ResourceLimits,
+    require_privilege_drop,
+    run_analyzer,
+)
 from backend.app.bluescrub.models import Location, RawFinding
 from backend.app.bluescrub.rulemap import detector_for, normalize_cwes, resolve_family
 from backend.app.bluescrub.scanners.base import ScannerOutcome
@@ -260,6 +265,4 @@ def _neutralise_default_ignores(source_root: Path) -> None:
 
 
 def _require_drop() -> bool:
-    return os.getenv("AIPAM_BLUESCRUB_REQUIRE_UID_DROP", "true").lower() not in (
-        "0", "false", "no"
-    )
+    return require_privilege_drop()
