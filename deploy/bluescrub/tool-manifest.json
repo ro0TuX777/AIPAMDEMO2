@@ -309,6 +309,28 @@
         "mem_limit": "8g",
         "pids_limit": 128
       }
+    },
+    {
+      "name": "binary_indicators",
+      "version": "builtin",
+      "runner": "subprocess",
+      "risk_class": "parse_only",
+      "pillars": [
+        "Co-Optability",
+        "Attribution"
+      ],
+      "licence": "proprietary",
+      "redistribution": "restricted",
+      "architectures": [
+        "amd64",
+        "arm64"
+      ],
+      "licence_notes": "AIPAM's own detector, no third-party component. Extracts network indicators from strings recovered out of compiled artifacts. The vendored binary analyzer can do the same thing with no dependency, but is gated behind pefile/pyelftools and so goes dark on a host without them \u2014 which left a hardcoded C2 unreported on the one artifact class this product exists to grade. Only rules measured against a real binary corpus are shipped; mutex, registry and user-agent extraction await a Windows corpus.",
+      "limits": {
+        "timeout_seconds": 300,
+        "mem_limit": "2g",
+        "pids_limit": 64
+      }
     }
   ]
 }

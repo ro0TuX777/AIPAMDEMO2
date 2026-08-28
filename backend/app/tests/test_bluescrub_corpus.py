@@ -172,28 +172,45 @@ def test_hygiene_terms_do_not_flood_a_compiled_artifact(scanned):
 
 # ── the tripwire: gaps asserted so a fix cannot pass unnoticed ────────────
 
-def test_known_gap_no_network_indicator_is_extracted_from_the_binary(scanned):
-    """**This assertion is a tripwire, not an endorsement.**
+def test_the_hardcoded_c2_is_reported(scanned):
+    """This was a tripwire, and it fired. Kept as a positive assertion.
 
-    The artifact has `10.20.30.40:8443` compiled into it, and a hardcoded C2 is
-    the single finding the Co-Optability pillar exists for — whoever seizes
-    that address inherits every implant pointing at it. Nothing reports it.
-
-    The capability exists: the vendored binary analyzer's
-    `_find_suspicious_strings` extracts urls, IPs, domains and registry paths
-    with pure regex over bytes and needs no third-party library. It is gated
-    behind `REQUIRED_CAPABILITIES = ("pe_analysis", "elf_analysis")`, so on a
-    host without `pefile`/`pyelftools` it goes down with the parsers — losing a
-    dependency-free capability because of libraries it never uses.
-
-    When that is fixed this test fails, and the fix has to be acknowledged
-    rather than absorbed. Delete it then.
+    A hardcoded C2 is the single finding the Co-Optability pillar exists for —
+    whoever seizes that address inherits every implant pointing at it — and for
+    five sprints nothing reported one. The capability was never missing: the
+    vendored binary analyzer extracts addresses with regex over bytes and no
+    third-party library, but sits behind
+    `REQUIRED_CAPABILITIES = ("pe_analysis", "elf_analysis")` and so went dark
+    on any host without `pefile`/`pyelftools`.
     """
     dacv, _rows, evidence, spec = scanned
 
-    assert spec["planted"]["c2_address"] == "10.20.30.40:8443"
-    assert not [e for e in evidence if e.get("issue_family") == "hardcoded-c2"]
-    assert dacv["pillars"][Pillar.co_optability.value]["findings"] == 0
+    c2 = [e for e in evidence if e.get("issue_family") == "hardcoded-c2"]
+    assert c2, "the compiled-in C2 address was missed"
+    assert spec["planted"]["c2_address"].startswith(c2[0]["code"])
+    assert dacv["pillars"][Pillar.co_optability.value]["findings"] > 0
+
+
+def test_the_c2_offset_points_at_the_address(implant, scanned):
+    """The address is recovered as `........10.20.30.40:8443` — surrounding
+    binary junk includes dots, which is why matching the quad with a lookbehind
+    silently dropped the one finding this detector exists for."""
+    root, spec = implant
+    _dacv, _rows, evidence, _spec = scanned
+
+    c2 = next(e for e in evidence if e.get("issue_family") == "hardcoded-c2")
+    artifact = (root / "input" / "source" / spec["binary_name"]).read_bytes()
+    at = c2["location"]["offset"]
+
+    assert artifact[at:at + 11] == b"10.20.30.40"
+
+
+def test_the_internal_hostname_is_reported(scanned):
+    _dacv, _rows, evidence, spec = scanned
+    hosts = [e for e in evidence
+             if e.get("rule_id") == "binary_indicators.internal_host"]
+
+    assert spec["planted"]["hostname"] in {e["code"] for e in hosts}
 
 
 def test_known_gap_the_mutex_is_found_only_because_it_holds_a_declared_term(scanned):
@@ -240,6 +257,9 @@ def test_without_a_wordlist_the_artifact_still_reports_something(implant,
                     for r in db.scalars(select(Finding)).all()])
 
     assert "build_paths.operator_path" in rules
+    assert "binary_indicators.hardcoded_address" in rules, (
+        "the C2 must not depend on somebody having declared a term"
+    )
     assert dacv["disqualified"] is False, (
         "nothing was declared, so nothing should be decisive"
     )

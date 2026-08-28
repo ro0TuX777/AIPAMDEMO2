@@ -322,6 +322,42 @@ costs real time, and a contract violation must never lose a scan. Violations
 are logged with the rule id and never the evidence, because a violating finding
 may hold a plaintext credential and the policy names logs explicitly.
 
+## The C2 gap, closed
+
+Running the pipeline on a compiled artifact showed Co-Optability scoring zero
+on an implant with `10.20.30.40:8443` compiled into it — the one finding that
+pillar exists for. `binary_indicators` closes it, and the interesting part is
+what the measurement changed about the design.
+
+**An IP regex over binary strings is the shape that once produced 344
+criticals**, so the rules were measured before they were written. Across six
+unrelated system binaries — git, ls, bash, gcc, libc, python — the shipped
+rules produce two hits in total, both genuine IP literals from CPython's own
+documentation.
+
+**The obvious regex silently missed the only case that mattered.** A lookbehind
+excluding a preceding dot looks right and passes every hand-written test. In a
+real binary the address is recovered as `........10.20.30.40:8443` — adjacent
+printable junk includes dots — so the detector reported nothing and looked like
+it was working. Examining the whole dotted run instead is also what separates an
+address from a version string: `1.2.3.4.5` contains a perfectly well-formed
+quad, and no lookaround can reject it.
+
+**What was deliberately not shipped.** General domains and URLs measured as
+almost entirely licence and bug-tracker boilerplate — gnu.org, python.org,
+mitre.org, launchpad.net — and an allowlist separating those from a real host
+would be endless. Only internal namespaces are reported, where there is nothing
+to separate. `.local` is excluded with them: measured, it is mDNS and
+string-boundary noise (`thread.local`, `Setup.local`).
+
+**Private space is reported, not filtered.** `10.20.30.40` in a shipped implant
+is exactly the finding, and an internal address additionally says where the
+thing was built or aimed.
+
+The detector imports nothing — asserted by a test that parses its imports —
+which is the whole point: the vendored analyzer could always do this, and went
+dark on any host without `pefile`/`pyelftools`, libraries this code never uses.
+
 ## Still open
 
 - The differential baseline (`upstream_baseline.json`) is captured from
@@ -331,12 +367,16 @@ may hold a plaintext credential and the policy names logs explicitly.
   run on the deployment host before each merge.
 - Binary analysis reports `unavailable` here because `pefile`, `pyelftools`,
   `capstone`, and `lief` are declared but not installed.
-- **Nothing extracts network indicators from binaries on a host without the
-  binary-parsing libraries.** The capability needs no dependency and is gated
-  behind ones it does not use. Asserted by tripwire tests in
-  `test_bluescrub_corpus.py`; the fix is either to relax the gate or to move
-  the extraction alongside `build_paths`, which already reads every binary's
-  strings for free.
+- **Binary grouping buckets on position, not distance.** `_grouping_key` uses
+  `offset // 64` where the contract says "offsets within 64 bytes". Two findings
+  11 bytes apart were reported twice because a bucket edge fell between them
+  (8382 and 8393 → buckets 130 and 131). Recorded in
+  [DATA_CONTRACTS §2.1](BLUESCRUB_DATA_CONTRACTS.md); it is a `canon/2` change
+  because grouping decides fingerprints and fingerprints carry triage.
+- Mutex names, registry paths and hardcoded user-agents are still not extracted
+  from binaries. They are Windows-shaped and there is no Windows corpus here to
+  calibrate a threshold against — shipping them would be guessing. Held as
+  tripwire assertions in `test_bluescrub_corpus.py`.
 - The architecture gate is unsigned five sprints after it was meant to close;
   see the notice at the top of [BLUESCRUB_GATE.md](BLUESCRUB_GATE.md). Both
   blocking items are unanswered, and Semgrep rule licensing has been sidestepped

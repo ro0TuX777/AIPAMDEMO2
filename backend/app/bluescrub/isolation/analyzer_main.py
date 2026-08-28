@@ -79,6 +79,14 @@ def main(argv: list[str]) -> int:
                 if m.get("file") not in owned and m.get("type") != "binary"
             ]
             findings["matches"].extend(scan_binaries(_Path(directory), terms))
+        elif mode == "binary_indicators":
+            from pathlib import Path as _Path
+
+            from backend.app.bluescrub.scanners.binary_indicators import (
+                collect as _collect_indicators,
+            )
+
+            findings = _collect_indicators(_Path(directory))
         elif mode == "build_paths":
             from pathlib import Path as _Path
 

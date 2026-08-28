@@ -13,6 +13,7 @@ from backend.app.bluescrub.isolation import ResourceLimits
 from backend.app.bluescrub.pillars import Pillar, RiskClass
 from backend.app.bluescrub.scanners import (
     binary_analysis,
+    binary_indicators,
     buildpaths,
     dependencies,
     deps_cve,
@@ -65,6 +66,20 @@ SCANNERS: dict[str, ScannerSpec] = {
         profiles=("deep",),
         optional=False,
         limits=ResourceLimits.for_emulation(),
+    ),
+    "binary_indicators": ScannerSpec(
+        name="binary_indicators",
+        run=binary_indicators.run,
+        # Co-Optability is the point — a hardcoded address is what that pillar
+        # exists for — and internal hostnames land in Attribution.
+        pillars=(Pillar.co_optability, Pillar.attribution),
+        risk_class=RiskClass.parse_only,
+        profiles=("standard", "deep"),
+        # Nothing else extracts network indicators from a compiled artifact on
+        # a host without the binary-parsing libraries, which is the gap this
+        # closes.
+        optional=False,
+        limits=binary_indicators.DEFAULT_LIMITS,
     ),
     "build_paths": ScannerSpec(
         name="build_paths",

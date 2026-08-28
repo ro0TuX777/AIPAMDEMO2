@@ -111,6 +111,18 @@ Two raw findings join the same canonical group when **all** hold:
      report one.
    - *Binary*: same `artifact_sha256` **and** same `section` **and** offsets within 64 bytes, or the
      same recovered-function fingerprint.
+
+     > **Known deviation.** The implementation buckets on `offset // 64` rather than measuring the
+     > distance between two offsets. Those are not the same rule: two findings 11 bytes apart merge
+     > when they fall inside one bucket and do not when a bucket edge lands between them. Measured on
+     > the compiled fixture — an internal hostname reported by two sensors at offsets 8382 and 8393,
+     > 11 bytes apart, buckets 130 and 131, reported twice. The effect is duplicate findings for one
+     > underlying fact, bounded by the family cap.
+     >
+     > Not fixed in place, because grouping decides fingerprints and fingerprints carry triage:
+     > changing it re-keys every stored binary finding and orphans the analyst decisions attached to
+     > them. It is a `canon/2` change and belongs with one, alongside the equivalent work for
+     > recovered-function fingerprints.
    - *Project-scoped* (dependency, git metadata, IaC): same `issue_family` and same subject identifier
      (package name + version, commit, file path).
 
