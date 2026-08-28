@@ -19,7 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.bluescrub import SCORING_MODEL
-from backend.app.bluescrub import fpfilter
+from backend.app.bluescrub import fpfilter, redaction
 from backend.app.bluescrub.canonicalize import canonicalize
 from backend.app.bluescrub.persistence import persist_groups
 from backend.app.bluescrub.pillars import Pillar
@@ -129,7 +129,13 @@ def analyze_and_persist(
     # become the primary detector of a group it should not be in. The count is
     # reported, never silent.
     filtered = fpfilter.apply(raw)
-    raw = filtered.kept
+
+    # Redaction runs after suppression, which needs the plaintext to tell a real
+    # credential from `password = "changeme"`, and before canonicalization, so
+    # nothing downstream — fingerprints, evidence, exports — ever sees the
+    # original value.
+    redacted = redaction.redact(filtered.kept)
+    raw = redacted.findings
 
     # Tier 1 and 2 of the severity chain. Without these every finding falls
     # through to the scanner's own severity string, which is calibrated for
@@ -166,6 +172,7 @@ def analyze_and_persist(
         compat_signature=signature,
     )
     metrics["dacv"].update(filtered.as_metrics())
+    metrics["dacv"].update(redacted.as_metrics())
 
     created, updated = persist_groups(
         db, job_id, result.groups, project_id=project_id

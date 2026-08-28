@@ -525,6 +525,18 @@
             "type": "integer",
             "minimum": 0
           }
+        },
+        "secrets_redacted": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0,
+          "description": "Findings whose plaintext credential was replaced by a mask before persistence."
+        },
+        "secrets_without_fingerprint": {
+          "type": "integer",
+          "minimum": 0,
+          "default": 0,
+          "description": "Redacted secrets carrying no fingerprint because AIPAM_BLUESCRUB_SECRET_HMAC_KEY is unset. They cannot be deduplicated across scans."
         }
       }
     }

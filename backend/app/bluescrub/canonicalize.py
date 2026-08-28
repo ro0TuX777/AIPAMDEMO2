@@ -170,6 +170,13 @@ def _fingerprint_for(finding: RawFinding, project_id: str, *, occurrence_index: 
             normalized_value=finding.matched_tokens or "",
             occurrence_index=occurrence_index,
         )
+    # A redacted secret masks to first-four/last-four, so AKIA1111NARY and
+    # AKIA2222NARY both render as "AKIA…NARY". Fingerprinting the mask would
+    # collide two distinct secrets into one finding; the keyed HMAC does not.
+    tokens = finding.matched_tokens or ""
+    if finding.secret and finding.secret.fingerprint:
+        tokens = finding.secret.fingerprint
+
     return source_fingerprint(
         project_id=project_id,
         rule_namespace=finding.rule_namespace,
@@ -177,7 +184,7 @@ def _fingerprint_for(finding: RawFinding, project_id: str, *, occurrence_index: 
         relative_path=loc.file or loc.subject or "",
         enclosing_symbol=loc.symbol,
         node_kind=loc.node_kind,
-        normalized_tokens=finding.matched_tokens or "",
+        normalized_tokens=tokens,
         context_digest=finding.context_hash or "",
         occurrence_index=occurrence_index,
     )
