@@ -36,6 +36,7 @@ from backend.app.models.bluescrub import (
     BlueScrubProject,
     BlueScrubScoreHistory,
     BlueScrubTriageLedger,
+    BlueScrubWordlist,
 )
 
 __all__ = [
@@ -45,6 +46,7 @@ __all__ = [
     "BlueScrubProject",
     "BlueScrubScoreHistory",
     "BlueScrubTriageLedger",
+    "BlueScrubWordlist",
     "JobStatus",
     "JobStepStatus",
     "Job",

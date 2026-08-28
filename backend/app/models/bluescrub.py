@@ -90,6 +90,26 @@ class BlueScrubTriageLedger(Base):
     )
 
 
+class BlueScrubWordlist(Base):
+    """Operator-editable dirty-word lists, plus the read-only shipped packs.
+
+    Replaces the vendored file-backed store. Two sources of truth for the same
+    data is how an air-gapped deployment ends up scanning against a list nobody
+    can find.
+    """
+
+    __tablename__ = "bluescrub_wordlists"
+
+    id = Column(String, primary_key=True)
+    name = Column(String, nullable=False, unique=True)
+    builtin = Column(Boolean, nullable=False, default=False, server_default="0")
+    category = Column(String, nullable=True)
+    entries_json = Column(Text, nullable=False)   # [{term, kind, category}]
+    case_sensitive = Column(Boolean, nullable=False, default=False, server_default="0")
+    created_at = Column(String, nullable=False)
+    updated_at = Column(String, nullable=True)
+
+
 class BlueScrubBaseline(Base):
     """Frozen comparison point.
 
