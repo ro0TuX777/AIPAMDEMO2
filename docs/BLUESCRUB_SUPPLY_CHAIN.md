@@ -115,6 +115,28 @@ install.
 
 ---
 
+### 4.1 Semgrep is a binary, not a Python dependency
+
+Adding `semgrep` to `backend/requirements.txt` broke the knowledge base: its
+dependency tree pulled `opentelemetry-sdk` back to 1.37, and `chromadb`'s OTLP
+exporter needs `ReadableLogRecord`, which arrived in 1.38. Five KB tests went
+red for a reason unrelated to anything they test.
+
+The mistake was architectural, not just a version clash. Semgrep is invoked as
+a subprocess through the isolation boundary and is never imported by AIPAM
+code, so it has no business in the application's Python environment competing
+for shared transitive dependencies. It belongs in the scanner container image
+and the offline tool bundle, pinned by digest like every other external tool
+(§1.1).
+
+The same reasoning applies to the rest of Sprint 4's toolchain — CodeQL, Joern,
+Weggli, gosec, cargo-audit, OSV-Scanner, Grype, Syft. None of them should
+appear in `requirements.txt`.
+
+For local rule development, install Semgrep outside the application
+environment — `pipx install semgrep`, or a separate virtualenv. The rule-pack
+tests skip cleanly when it is absent.
+
 ## 5. Network-verification lockdown
 
 Secret scanners offer online verification modes that call out to third-party APIs to check whether a
