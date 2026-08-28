@@ -127,8 +127,8 @@ Required behaviour on rotation:
 1. Write `secret_hmac.rotate` to `bluescrub_audit`.
 2. Trend rendering reads those rows and draws a discontinuity marker at the boundary, so the jump in
    open Attribution findings is visibly a key change rather than a real regression.
-3. The startup check warns if the key is absent and **refuses to run secret scanners** rather than
-   falling back to an unkeyed digest.
+3. The startup check warns if the key is absent. Scanners still run and still mask; they simply omit
+   the fingerprint (§3.2). An unkeyed digest is never written under any condition.
 
 ---
 
