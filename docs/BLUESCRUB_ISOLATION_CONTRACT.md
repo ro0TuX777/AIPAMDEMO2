@@ -140,6 +140,41 @@ Two consequences worth carrying to the other two scanners in this class:
 A `.git` *file* — how submodules and linked worktrees record their object store — holds a
 `gitdir:` pointer that may be absolute. It is resolved and refused when it leaves the staged tree.
 
+### 3.2 `emulation` — emulate once, share the result
+
+Found while wiring FLOSS, and it applies to capa, Ghidra and rizin for the same
+reason.
+
+Three scanners want recovered strings: FLOSS reports on them directly, and the
+dirty-word and build-path scanners match against them. The obvious shape gives
+each one its own recovery pass, and it is wrong twice over. It triples the
+cost, which for an emulation-class tool is 900 seconds per artifact. More
+importantly it triples the *exposure*: emulation is the tier where
+attacker-authored code is interpreted rather than parsed, and running it three
+times over the same bytes multiplies the number of chances for a vivisect or
+Ghidra defect to matter.
+
+So the artifact is emulated **once**, by the one scanner that is declared
+`emulation` class and therefore gets the extended ceilings, and the recovered
+strings are written to a job-scoped cache the `parse_only` consumers read. The
+consumers do not gain an emulation capability by reading a file.
+
+Two consequences worth stating:
+
+- **The cache is keyed on the artifact digest, not its path.** The same binary
+  staged twice under different names is one recovery, and a path that differs
+  between scanners is not a cache miss.
+- **Run order is declared, not inferred.** `ScannerSpec.order` puts the
+  producer ahead of its consumers. `floss` sorts *after* both `build_paths` and
+  `dirty_word` alphabetically, so leaving the dependency to the accident of a
+  name would make it invisible and one rename away from silently breaking —
+  with the symptom being reduced findings, not an error.
+
+A `parse_only` scanner must never invoke an `emulation`-class tool itself. That
+would promote its risk class in fact while leaving it `parse_only` in the
+registry, and would run a 900-second tool inside a 120-second process boundary
+that would kill it.
+
 ## 4. What this contract does not cover
 
 - The container runner's existing isolation is inherited, not re-specified. Changes to

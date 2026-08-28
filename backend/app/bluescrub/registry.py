@@ -17,6 +17,7 @@ from backend.app.bluescrub.scanners import (
     dependencies,
     deps_cve,
     dirty_word,
+    floss,
     gitmeta,
     sbom,
     secrets,
@@ -121,6 +122,23 @@ SCANNERS: dict[str, ScannerSpec] = {
         optional=True,
         limits=ResourceLimits(wall_clock_seconds=600, cpu_seconds=600),
     ),
+    "floss": ScannerSpec(
+        name="floss",
+        run=floss.run,
+        # Detectability only. Its cache also feeds the Attribution scanners,
+        # but that shows up as *their* coverage rather than a pillar of its
+        # own — they are the ones who report `strings_static_only` without it.
+        pillars=(Pillar.detectability,),
+        risk_class=RiskClass.emulation,
+        profiles=("deep",),
+        # Whether the obfuscation holds is unanswerable without emulating it,
+        # and nothing else emulates.
+        optional=False,
+        # Ahead of dirty_word and build_paths, which read what it recovers.
+        # Alphabetically `floss` sorts after both, so this is not decoration.
+        order=10,
+        limits=floss.DEFAULT_LIMITS,
+    ),
     "gitleaks": ScannerSpec(
         name="gitleaks",
         run=secrets.run_gitleaks,
@@ -173,9 +191,11 @@ SCANNERS: dict[str, ScannerSpec] = {
 
 
 def scanners_for(profile: str) -> list[ScannerSpec]:
-    """Scanners enabled for a profile, in deterministic order."""
+    """Scanners enabled for a profile, in deterministic dependency order."""
     return [
-        spec for name, spec in sorted(SCANNERS.items())
+        spec for _key, spec in sorted(
+            ((spec.order, name), spec) for name, spec in SCANNERS.items()
+        )
         if profile in spec.profiles
     ]
 

@@ -286,6 +286,29 @@
         "mem_limit": "2g",
         "pids_limit": 64
       }
+    },
+    {
+      "name": "floss",
+      "version": "3.x",
+      "runner": "subprocess",
+      "risk_class": "emulation",
+      "pillars": [
+        "Detectability"
+      ],
+      "licence": "Apache-2.0",
+      "redistribution": "permitted",
+      "architectures": [
+        "amd64",
+        "arm64"
+      ],
+      "binary_checksum": null,
+      "network_verification_flag": "n/a \u2014 floss does not verify",
+      "licence_notes": "FLOSS is Apache-2.0 and bundles vivisect (Apache-2.0). It emulates the sample's decoding routines, which is why it is emulation class and deep-profile only: it never executes the sample natively, but it does interpret attacker-authored code, so it runs under the extended ceilings with the same process-group kill as everything else. `--no static` is passed because the static pass has already run in-process and already has the file offsets.",
+      "limits": {
+        "timeout_seconds": 900,
+        "mem_limit": "8g",
+        "pids_limit": 128
+      }
     }
   ]
 }

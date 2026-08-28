@@ -97,6 +97,7 @@ def analyze_and_persist(
     # The recovery tier is profile-gated: FLOSS emulates the sample, and the
     # isolation contract confines emulation to `deep`.
     os.environ[binstrings.PROFILE_ENV] = profile
+    os.environ.pop(binstrings.CACHE_ENV, None)
 
     for step, spec in enumerate(specs, start=1):
         if progress:
@@ -220,6 +221,9 @@ def _stage_wordlist(db: Session, job_dir: Path) -> Path | None:
 def _discard_wordlist(path: Path | None) -> None:
     os.environ.pop(dirty_word_scanner.WORDLIST_ENV, None)
     os.environ.pop(binstrings.PROFILE_ENV, None)
+    # The recovered-string cache is job-scoped like the wordlist. Leaving the
+    # variable set would point the next job at the previous job's artifacts.
+    os.environ.pop(binstrings.CACHE_ENV, None)
     if path is None:
         return
     try:

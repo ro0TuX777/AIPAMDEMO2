@@ -215,6 +215,43 @@ one: a tool that is installed, an adapter that still reports `unavailable` or
 the version on that host. Run it on the deployment host alongside the golden
 PCAP gate.
 
+## Sprint 6 — started: FLOSS
+
+The first `emulation`-class scanner, and the one that closes Sprint 5's last
+gap.
+
+**What it uniquely reports.** A string recovered from a stack, a tight loop or
+a decoding routine is a string somebody deliberately kept out of the data
+section. Recovering it proves the obfuscation was attempted and did not work —
+a Detectability finding no pattern matcher can produce, because the evidence is
+that the code was run. It is the only detector in this pipeline classed
+`semantic_dataflow`.
+
+**What it does not report, and why.** An early draft flagged high plaintext
+string yield as "trivially signaturable". Measured across six unrelated system
+binaries — git, ls, bash, gcc, libc, python — yield sat between 5.9 and 9.1
+strings per KiB with no separation whatsoever. A rule that fires on every
+unpacked binary ever built is the "C2 matched 67 times" failure in a new hat,
+so it was dropped before it shipped. Low yield is the interesting direction and
+belongs to the RE-Feasibility packing signal.
+
+**It closes the `strings_static_only` coverage loss.** Dirty-word and
+build-path scanning over binaries are both `parse_only`, so both saw only what
+was already in the file; a codename assembled at runtime was invisible and a
+deep scan admitted it by degrading Attribution. FLOSS now writes what it
+recovered to a job-scoped cache keyed by artifact digest, and those scanners
+merge it into their own static pass. The test that matters puts a declared term
+*only* in the cache and asserts the dirty-word scanner finds it.
+
+**One emulation, shared.** Written up as [ISOLATION_CONTRACT
+§3.2](BLUESCRUB_ISOLATION_CONTRACT.md): the artifact is emulated once by the
+scanner that is declared emulation class, not once per consumer. Three passes
+would triple the cost and triple the exposure, and a `parse_only` scanner that
+invoked FLOSS itself would be emulation class in fact and `parse_only` in the
+registry. `ScannerSpec.order` makes the producer run first — `floss` sorts
+after both its consumers alphabetically, so the dependency had to be declared
+rather than left to a name.
+
 ## Still open
 
 - The differential baseline (`upstream_baseline.json`) is captured from

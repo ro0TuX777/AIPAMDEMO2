@@ -48,6 +48,7 @@ docs/BLUESCRUB_DACV_IMPLEMENTATION_PLAN.md §14 Sprint 5
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import os
 import re
@@ -68,6 +69,12 @@ NON_TEXT_RATIO = 0.30
 
 PROFILE_ENV = "AIPAM_BLUESCRUB_PROFILE"
 FLOSS_BINARY = "floss"
+
+#: Path to the recovered-string cache the FLOSS scanner writes, handed to the
+#: scanners that consume it the same way the wordlist is: by path, through the
+#: environment, because they run behind a process boundary.
+CACHE_ENV = "AIPAM_BLUESCRUB_STRINGS_CACHE"
+CACHE_SCHEMA = "bluescrub.strings/1"
 
 #: Container formats worth naming in a finding's location. The value goes into
 #: ``Location.format``, which the binary fingerprint keys on.
@@ -300,6 +307,12 @@ def recover(
         reason=f"read capped at {max_bytes} bytes" if truncated else None,
     )
 
+    # A previous emulation pass over this same artifact, if one ran. This is
+    # what makes "dirty-word over binaries with FLOSS recovery" true rather
+    # than aspirational: the consumers are parse_only and may not emulate, but
+    # they can read what an emulation-class scanner already recovered.
+    _merge(recovery, read_cache(recovery.sha256))
+
     if run_floss is None:
         return recovery
 
@@ -310,14 +323,84 @@ def recover(
         payload = None
 
     if payload:
-        seen = {(s.value, s.offset) for s in recovery.strings}
-        for entry in parse_floss(payload):
-            if (entry.value, entry.offset) not in seen:
-                recovery.strings.append(entry)
-                seen.add((entry.value, entry.offset))
-        recovery.method = "floss"
+        _merge(recovery, parse_floss(payload))
 
     return recovery
+
+
+def _merge(recovery: Recovery, extra: list[RecoveredString]) -> None:
+    """Add recovered strings the static pass did not already have."""
+    if not extra:
+        return
+    seen = {(s.value, s.offset) for s in recovery.strings}
+    for entry in extra:
+        if (entry.value, entry.offset) in seen:
+            continue
+        recovery.strings.append(entry)
+        seen.add((entry.value, entry.offset))
+    recovery.method = "floss"
+
+
+# ── the shared cache ──────────────────────────────────────────────────────
+
+def cache_payload(entries: dict[str, Recovery]) -> dict:
+    """Serialise recoveries keyed by artifact digest.
+
+    Keyed on the digest rather than the path because it is the *artifact* that
+    was emulated: the same binary staged twice under different names is one
+    recovery, and a path that changed between scanners is not a cache miss.
+    """
+    return {
+        "schema": CACHE_SCHEMA,
+        "method": "floss",
+        "artifacts": {
+            digest: {
+                "format": recovery.binary_format,
+                "truncated": recovery.truncated,
+                "strings": [
+                    {"value": entry.value, "offset": entry.offset,
+                     "encoding": entry.encoding, "method": entry.method}
+                    for entry in recovery.strings
+                ],
+            }
+            for digest, recovery in entries.items()
+        },
+    }
+
+
+def read_cache(sha256: str, path: str | None = None) -> list[RecoveredString]:
+    """Strings a previous emulation pass recovered from this artifact.
+
+    Returns an empty list for every failure — a missing file, a malformed one,
+    an artifact that was not in it. The consumer always has its own static pass
+    to fall back on, so a cache problem costs depth, never correctness.
+    """
+    location = path or os.getenv(CACHE_ENV)
+    if not location or not sha256:
+        return []
+    try:
+        payload = json.loads(Path(location).read_text())
+    except (OSError, json.JSONDecodeError) as exc:
+        logger.warning("unreadable string cache %s: %s", location, exc)
+        return []
+    if payload.get("schema") != CACHE_SCHEMA:
+        logger.warning("string cache has schema %r, expected %r",
+                       payload.get("schema"), CACHE_SCHEMA)
+        return []
+
+    record = (payload.get("artifacts") or {}).get(sha256) or {}
+    recovered: list[RecoveredString] = []
+    for entry in record.get("strings") or []:
+        if not isinstance(entry, dict) or not entry.get("value"):
+            continue
+        offset = entry.get("offset")
+        recovered.append(RecoveredString(
+            value=str(entry["value"]),
+            offset=offset if isinstance(offset, int) else None,
+            encoding=str(entry.get("encoding") or "unknown"),
+            method=str(entry.get("method") or "decoded"),
+        ))
+    return recovered
 
 
 def recovery_state(profile: str | None = None) -> str | None:
@@ -329,5 +412,11 @@ def recovery_state(profile: str | None = None) -> str | None:
     """
     active = profile if profile is not None else os.getenv(PROFILE_ENV, "")
     if active != "deep":
+        return None
+    # A cache means an emulation pass ran and its output is available here, so
+    # the deep profile got what it asked for. Reporting on whether the binary
+    # is installed would answer a different question.
+    cache = os.getenv(CACHE_ENV)
+    if cache and Path(cache).exists():
         return None
     return None if floss_enabled(active) else "strings_static_only"
