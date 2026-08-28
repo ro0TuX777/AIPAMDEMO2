@@ -1,10 +1,44 @@
 # BlueScrub — Architecture Gate
 
-> **Branch**: `spike/bluescrub-contracts` · **Status**: contracts drafted, awaiting review
+> **Branch**: `spike/bluescrub-contracts` · **Status**: contracts drafted, **review not signed off**
 > **Exit criterion**: all eleven contracts reviewed and merged. **No implementation code.**
 > **Plan**: [BLUESCRUB_DACV_IMPLEMENTATION_PLAN.md](BLUESCRUB_DACV_IMPLEMENTATION_PLAN.md) §1
 
-Sprint 1 does not open until this gate closes.
+> ## ⚠ This gate did not hold
+>
+> The line below used to read "Sprint 1 does not open until this gate closes."
+> Sprints 1 through 5 have shipped and every checkbox in the review checklist is
+> still empty, including both items marked as blocking. Leaving the original
+> sentence in place would have made this document assert something untrue about
+> how the work actually happened, so it is recorded here instead.
+>
+> **What that means in practice.** The contracts were used as designed — the
+> implementation follows them closely and several of them caught real defects
+> during Sprint 5 — but nobody with authority has signed them off, so their
+> authority is self-asserted. Where implementation and contract disagreed, the
+> contract won and was amended in the same commit; those amendments are also
+> unreviewed.
+>
+> **The two blocking items are still unanswered**, and one of them has already
+> been overtaken:
+>
+> - **Semgrep rule licensing (G10)** was to be resolved *before Sprint 1*
+>   because Semgrep was the Sprint 1 vertical slice. Sprint 1 shipped with a
+>   BlueScrub-authored rule pack instead of registry rules, which sidesteps the
+>   licensing question rather than answering it. It becomes live again the
+>   moment anyone points `AIPAM_BLUESCRUB_SEMGREP_CONFIG` at the registry.
+> - **Accepting the retention consequence (G9)** — job-level evidence expires
+>   at the platform's 30-day setting. This has been implemented on the
+>   assumption the answer is yes. If it is no, the triage ledger, baselines and
+>   score history are unaffected, but snippets and per-job detail are already
+>   being written on that assumption.
+>
+> **Recommended disposition.** Do not retro-tick the boxes. Either run the
+> review now against the shipped implementation — which is a stronger review
+> than the paper one would have been, because the contracts have been tested —
+> or convert this document into a post-hoc design record and drop the gate
+> framing. What should not persist is a gate that says work cannot start on
+> work that has finished.
 
 ## Deliverables
 
@@ -84,6 +118,11 @@ in Sprint 9.
 ## Review checklist
 
 Reviewer signs off per item. The gate closes when all eleven are accepted.
+
+**Unsigned as of Sprint 5.** Every box below is empty and the implementation is
+five sprints past it. Where Sprint 5's work bore directly on an item, the
+evidence now exists to review it against something real rather than against a
+proposal — G1, G2 and G10 in particular. See the notice at the top.
 
 - [ ] **G1** — Every analyzer, including pure-Python ones, runs behind a process boundary. Credential
       scrubbing is allowlist-based, not deletion-based. Failure classes map to pillar degradation, never

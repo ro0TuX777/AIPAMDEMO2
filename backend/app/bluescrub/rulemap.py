@@ -197,6 +197,39 @@ VENDORED_CATEGORY_FAMILY: dict[str, IssueFamily] = {
     # Matching a known tool's function body is what a defender signatures on,
     # which is the same call already made for "known_tool_similarity".
     "function_similarity": IssueFamily.signature_known,
+
+    # ── Reviewed from the unmapped counter, measured on a 414-file corpus ──
+    #
+    # The counter exists so unreviewed rules are persisted and displayed while
+    # being kept out of the grade. These twenty were sitting in it. Reviewed
+    # against what each analyzer actually matches, not against its name.
+
+    # Operator hygiene. A hardcoded username is an identity; the rest are
+    # development metadata that shipped. None is promoted past the ceiling —
+    # the reviewed promotions in severity_table.py earned that by measurement,
+    # and these have not been measured.
+    "hardcoded_username": IssueFamily.attribution_identity,
+    "sensitive_info_in_print_statements": IssueFamily.metadata_leak,
+    "developer_note_with_sensitive_info": IssueFamily.metadata_leak,
+    "sensitive_info_in_logs": IssueFamily.metadata_leak,
+    "hardcoded_log_file_paths": IssueFamily.forensic_artifact,
+    # An internal service URL names infrastructure, not a person.
+    "hardcoded_service_url": IssueFamily.attribution_infrastructure,
+    "network_info": IssueFamily.attribution_infrastructure,
+    "internal_info": IssueFamily.metadata_leak,
+
+    # Exploit construction. These are Detectability, not Vulnerability: a
+    # stack pivot in your own exploit is not a bug in your tool, it is a
+    # pattern a defender writes a rule for. EDR hooks the DEP-override APIs
+    # by name, and 0x0C0C0C0C is in every heap-spray signature ever written.
+    "bypass_techniques": IssueFamily.signature_known,
+    "heap_sprays": IssueFamily.shellcode_pattern,
+    "stack_pivots": IssueFamily.shellcode_pattern,
+    "predictable_patterns": IssueFamily.signature_trivial,
+
+    # Home-rolled crypto is a defect in the tool, which is the one group here
+    # that genuinely is Vulnerability.
+    "custom_crypto": IssueFamily.weak_crypto,
 }
 
 #: Explicit per-rule overrides, highest priority. Populated as rules are
@@ -254,11 +287,41 @@ def resolve_family(sensor: str, rule_id: str, cwes: list[str] | None = None) -> 
         if family:
             return family
 
+    prefixed = _category_prefix(rule_id)
+    if prefixed:
+        return prefixed
+
     for pattern, family in _KEYWORD_FAMILY:
         if pattern.search(rule_id):
             return family
 
     return IssueFamily.unmapped
+
+
+def _category_prefix(rule_id: str) -> IssueFamily | None:
+    """Resolve ``<category>_<subtype>`` to ``<category>``'s family.
+
+    The two normalisation paths disagree about what they hand this function.
+    Specialised analyzers pass a bare category, which this table is keyed on;
+    pattern analyzers pass the whole finding label, so
+    ``information_disclosure_in_logs`` arrives as
+    ``information_disclosure_in_logs_f_string_formatting`` and misses a key
+    that is right there. 125 findings on one corpus were unmapped for that
+    reason alone.
+
+    This is not the guess the module docstring warns against: it resolves a
+    rule to the family of its own category, which is exactly the relationship
+    the specialised path already encodes as ``category.subtype``. The match is
+    anchored on a separator so ``system_info`` cannot claim
+    ``system_information_leak``, and the longest key wins so a more specific
+    category is never shadowed by a shorter one.
+    """
+    best: tuple[int, IssueFamily] | None = None
+    for key, family in VENDORED_CATEGORY_FAMILY.items():
+        if rule_id.startswith(f"{key}_") or rule_id.startswith(f"{key}."):
+            if best is None or len(key) > best[0]:
+                best = (len(key), family)
+    return best[1] if best else None
 
 
 def detector_for(sensor: str) -> DetectorClass:

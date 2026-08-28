@@ -175,3 +175,60 @@ def test_golden_pcap_job(tmp_path):
     pcap = GOLDEN / "mixed_traffic.pcap"
     assert pcap.exists(), "golden fixture missing"
     pytest.skip("baseline capture pending — see docs/BLUESCRUB_GATE.md")
+
+
+# ── the migration chain ───────────────────────────────────────────────────
+#
+# Alembic is not installed on the development machine, so `alembic heads`
+# cannot run and a branched chain would be discovered on the deployment host
+# instead — where the symptom is a failed upgrade, not a failed test.
+
+def _revisions() -> dict[str, str | None]:
+    import re
+
+    versions = REPO / "backend" / "alembic" / "versions"
+    chain: dict[str, str | None] = {}
+    for path in versions.glob("*.py"):
+        text = path.read_text()
+        rev = re.search(r'^revision(?::\s*str)?\s*=\s*"([^"]+)"', text, re.M)
+        down = re.search(r"^down_revision[^=]*=\s*(.+)$", text, re.M)
+        if not rev:
+            continue
+        raw = (down.group(1).strip() if down else "None")
+        chain[rev.group(1)] = raw
+    return chain
+
+
+def test_the_migration_chain_has_exactly_one_head():
+    """A second head is a merge conflict that only shows up at upgrade time."""
+    chain = _revisions()
+    referenced = set()
+    for down in chain.values():
+        # A down_revision may be a tuple when two branches were merged.
+        referenced.update(part.strip().strip("()'\",") for part in down.split(","))
+
+    heads = [rev for rev in chain if rev not in referenced]
+    assert len(heads) == 1, f"multiple alembic heads: {heads}"
+
+
+def test_every_bluescrub_migration_is_additive():
+    """BlueScrub is an additive feature. It may add columns and tables; it may
+    not alter or drop anything that was there before it."""
+    versions = REPO / "backend" / "alembic" / "versions"
+    for path in sorted(versions.glob("*bluescrub*.py")):
+        text = path.read_text()
+        for forbidden in ("alter_column", "drop_column(", "drop_table("):
+            # `downgrade` legitimately reverses what `upgrade` added.
+            upgrade = text.split("def downgrade")[0]
+            assert forbidden not in upgrade, f"{path.name} performs {forbidden}"
+
+
+def test_the_wordlist_enabled_column_defaults_to_on():
+    """Existing lists must keep scanning. A migration that silently switches
+    off a list somebody was already using is indistinguishable, later, from a
+    list whose terms stopped matching."""
+    path = (REPO / "backend" / "alembic" / "versions"
+            / "c9d3e4f5a6b7_bluescrub_wordlist_enabled.py").read_text()
+
+    assert 'server_default="1"' in path
+    assert "nullable=False" in path

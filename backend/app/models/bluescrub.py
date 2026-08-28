@@ -106,6 +106,10 @@ class BlueScrubWordlist(Base):
     category = Column(String, nullable=True)
     entries_json = Column(Text, nullable=False)   # [{term, kind, category}]
     case_sensitive = Column(Boolean, nullable=False, default=False, server_default="0")
+    #: Whether the list contributes terms to a scan. Separate from ``builtin``,
+    #: and togglable on builtins: choosing not to hunt a shipped pack is not
+    #: editing it, and the packs are seeded whether or not anyone wants them.
+    enabled = Column(Boolean, nullable=False, default=True, server_default="1")
     created_at = Column(String, nullable=False)
     updated_at = Column(String, nullable=True)
 

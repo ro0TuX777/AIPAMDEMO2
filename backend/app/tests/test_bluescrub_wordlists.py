@@ -115,9 +115,11 @@ def test_unknown_list_is_reported(db):
 # ── builtin packs ─────────────────────────────────────────────────────────
 
 def test_seeding_is_idempotent(db):
-    assert wl.seed_builtins(db) == 3
+    # Four, not three: the opt-in tier is lifted out of the upstream packs
+    # into a list of its own so it can be switched off without editing them.
+    assert wl.seed_builtins(db) == 4
     assert wl.seed_builtins(db) == 0
-    assert len(wl.all_lists(db)) == 3
+    assert len(wl.all_lists(db)) == 4
 
 
 def test_builtin_names_have_no_decoration(db):
@@ -225,7 +227,11 @@ def test_pack_terms_carry_a_reviewed_category(db, term, category):
     """One category per pack was not enough: "Common Leaks (OPSEC)" holds
     personal mail domains next to developer-note markers."""
     wl.seed_builtins(db)
-    by_term = {t["term"]: t["category"] for t in wl.active_terms(db)}
+    by_term = {
+        entry["term"]: entry["category"]
+        for row in wl.all_lists(db)
+        for entry in json.loads(row.entries_json)
+    }
 
     assert by_term[term] == category
 
@@ -251,3 +257,77 @@ def test_a_hygiene_term_is_still_attribution_not_nothing():
     from backend.app.bluescrub.scanners.dirty_word import CATEGORY_FAMILY
 
     assert FAMILY_PILLAR[CATEGORY_FAMILY["hygiene"]] is Pillar.attribution
+
+
+# ── the shipped packs are seeded, not imposed ─────────────────────────────
+
+def test_the_hygiene_pack_is_seeded_switched_off(db):
+    """Measured on a 414-file corpus, 2853 of 5866 findings — 49% — were
+    hygiene terms. This scanner's premise is that the operator declared what
+    matters, and nobody declared `TODO`."""
+    wl.seed_builtins(db)
+    by_name = {row.name: row for row in wl.all_lists(db)}
+
+    assert by_name[wl.OPT_IN_LIST_NAME].enabled is False
+    assert all(row.enabled for name, row in by_name.items()
+               if name != wl.OPT_IN_LIST_NAME)
+
+
+def test_the_terms_are_lifted_out_rather_than_dropped(db):
+    """Weak is not absent. An operator who wants TODO markers hunted can have
+    them, and one who does not is not asked to delete anything."""
+    wl.seed_builtins(db)
+    hygiene = next(r for r in wl.all_lists(db) if r.name == wl.OPT_IN_LIST_NAME)
+    terms = {e["term"] for e in json.loads(hygiene.entries_json)}
+
+    assert {"TODO", "DEBUG", "password", "admin"} <= terms
+
+
+def test_a_disabled_list_contributes_nothing(db):
+    wl.seed_builtins(db)
+    assert not [t for t in wl.active_terms(db) if t["category"] == "hygiene"]
+
+
+def test_one_toggle_turns_the_pack_on(db):
+    wl.seed_builtins(db)
+    hygiene = next(r for r in wl.all_lists(db) if r.name == wl.OPT_IN_LIST_NAME)
+
+    before = len(wl.active_terms(db))
+    wl.set_enabled(db, hygiene.id, True)
+    after = wl.active_terms(db)
+
+    assert len(after) > before
+    assert any(t["term"] == "TODO" for t in after)
+
+
+def test_a_builtin_can_be_switched_off_but_not_edited(db):
+    """`builtin` means "these terms are not yours to edit". Whether a pack is
+    hunted at all is a different question."""
+    wl.seed_builtins(db)
+    pack = next(r for r in wl.all_lists(db) if r.name == "Tool Signatures")
+
+    wl.set_enabled(db, pack.id, False)
+    assert not [t for t in wl.active_terms(db) if t["list"] == "Tool Signatures"]
+
+    with pytest.raises(wl.WordlistError) as exc:
+        wl.update(db, pack.id, entries=[{"term": "something", "category": "codename"}])
+    assert exc.value.reason == "builtin_is_read_only"
+
+
+def test_an_operator_list_is_enabled_when_created(db):
+    """A migration must not quietly stop scanning against a list somebody was
+    already using."""
+    row = wl.create(db, "Ops", [{"term": "NIGHTFALL", "category": "codename"}])
+    assert row.enabled is True
+    assert any(t["term"] == "NIGHTFALL" for t in wl.active_terms(db))
+
+
+
+def test_opting_out_does_not_lose_the_operators_own_terms(db):
+    wl.seed_builtins(db)
+    wl.create(db, "Ops", [{"term": "housekeeping", "category": "hygiene"}])
+
+    terms = wl.active_terms(db)
+    assert any(t["term"] == "housekeeping" for t in terms), (
+        "an operator-declared hygiene term was declared, unlike the pack's"
+    )

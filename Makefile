@@ -17,6 +17,7 @@ export AIPAM_API_TOKEN ?= test-token-v2
 
 .PHONY: test-unit test-contract test-api test-worker test-sse test-sensor-contract \
         test-integration test-smoke test-parity test-e2e benchmark test-all \
+        bluescrub-preflight bluescrub-preflight-strict \
         lint fmt check db-migrate db-upgrade db-downgrade clean help
 
 ## Unit tests — pure logic, no Docker, no network
@@ -65,6 +66,18 @@ benchmark:
 
 ## Run everything except parity, e2e, benchmark
 test-all: test-unit test-contract test-api test-worker test-sse
+
+## BlueScrub deployment preflight.
+## Every external adapter was written against a tool that is not installed on
+## a development machine, so their parsers are tested against recorded output
+## and their argv is tested by nothing. This runs each adapter for real. Run it
+## on the deployment host before each merge, alongside the golden PCAP gate.
+bluescrub-preflight:
+	$(PYTHON) scripts/bluescrub_preflight.py
+
+## The same, but fails the build when required tooling is missing.
+bluescrub-preflight-strict:
+	$(PYTHON) scripts/bluescrub_preflight.py --strict
 
 # ---------------------------------------------------------------------------
 # Code quality

@@ -58,7 +58,46 @@ with analyst-assigned OPSEC grades, minimising disagreement between computed and
 then, reports carry `"calibration": "provisional"` and the UI states that pillar scores are directionally
 meaningful but not yet calibrated.
 
-### 1.2 Worked example
+### 1.2 Measured behaviour — input for the Sprint 9 calibration
+
+Recorded during Sprint 5 against real corpora, because §1.1 committed to
+calibrating "against a labelled corpus" without anyone having measured what the
+provisional constants actually do. Attribution, `K = 15`:
+
+| Corpus | Files | `pillar_raw` | Score | Grade |
+|---|---|---|---|---|
+| Clean 3-file library, no findings | 3 | 0.0 | **0** | A |
+| Same, plus one file with an operator email, an internal hostname and an internal IP | 4 | 13.1 | **58** | C |
+| AIPAM `backend/app/api` | 29 | 188.7 | **100** | D |
+| AIPAM `backend/app` | 414 | 1601.3 | **100** | F |
+
+Three things follow, and they matter for how the calibration is set up.
+
+**The model discriminates over roughly `raw` 0–80 and is pinned above it.**
+`round(100 × (1 − exp(−raw / 15)))` reaches 100 at `raw ≥ 80`; the equivalent
+thresholds are 106 for Co-Optability, 133 for Detectability and 212 for
+Vulnerability. That is a saturating curve behaving as specified, not a defect —
+but it means the useful dynamic range corresponds to a *small* artifact.
+
+**That range matches the intended subject, and the corpora above mostly do
+not.** BlueScrub grades offensive tooling: an implant, a loader, a post-ex
+module — five to fifty files. A 414-file defensive application is not a
+representative artifact, and measuring against one overstates the problem. The
+labelled corpus in §1.1 should be built from artifacts of the intended size, or
+the fitted constants will be tuned for the wrong subject.
+
+**`pillar_raw` scales with corpus size; density is close to invariant.** Across
+the 14× size change above, `raw` moved 8.5× while weighted-findings-per-file
+moved 1.7×. For Detectability the density was 110.7 against 106.3 — a 1.04×
+spread. If the calibration corpus mixes artifact sizes, fit against a density
+rather than against `raw`, or size will dominate the fit.
+
+Nothing here changes a formula or a constant, so `scoring_model` is unchanged.
+Whether to normalise by corpus size is a real question and it is a **`dacvr/2`**
+question: it alters `pillar_raw` for every artifact and every historical score
+becomes incomparable, which is exactly what §6 exists to prevent.
+
+### 1.3 Worked example
 
 Attribution, `K = 15`, three groups:
 

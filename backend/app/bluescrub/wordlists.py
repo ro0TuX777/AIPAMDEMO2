@@ -48,6 +48,18 @@ TERM_CATEGORIES: frozenset[str] = frozenset({
 
 _DEFAULT_CATEGORY = "codename"
 
+#: Categories whose builtin terms are seeded switched **off**.
+#:
+#: Measured on a 414-file corpus, 2853 of 5866 findings — 49% — came from the
+#: hygiene tier of the shipped packs. This scanner's whole premise is that the
+#: operator declared what matters, and nobody declared `TODO`. The terms are
+#: real and weak, so they are neither dropped nor forced on: they are seeded
+#: into their own list, visible, one toggle from active.
+OPT_IN_CATEGORIES: frozenset[str] = frozenset({"hygiene"})
+
+#: Where the opt-in terms from every shipped pack are collected.
+OPT_IN_LIST_NAME = "Developer Hygiene"
+
 
 class WordlistError(ValueError):
     """Rejected wordlist input. ``reason`` is a stable machine-readable code."""
@@ -156,6 +168,23 @@ def update(db: Session, list_id: str, **fields) -> BlueScrubWordlist:
     return row
 
 
+def set_enabled(db: Session, list_id: str, enabled: bool) -> BlueScrubWordlist:
+    """Turn a list on or off. Permitted on builtins, unlike ``update``.
+
+    ``builtin`` means "these terms are not yours to edit". Whether a pack is
+    hunted at all is a different question, and an operator who cannot answer it
+    ends up either drowning in a pack they did not ask for or deleting terms
+    they may want back.
+    """
+    row = db.get(BlueScrubWordlist, list_id)
+    if row is None:
+        raise WordlistError("not_found", list_id)
+    row.enabled = bool(enabled)
+    row.updated_at = _now()
+    db.commit()
+    return row
+
+
 def delete(db: Session, list_id: str) -> None:
     row = db.get(BlueScrubWordlist, list_id)
     if row is None:
@@ -239,6 +268,7 @@ def seed_builtins(db: Session) -> int:
     from backend.app.bluescrub.vendored.dirty_word_scanner import _DEFAULT_PREBUILT
 
     installed = 0
+    deferred: list[dict] = []
     for pack in _DEFAULT_PREBUILT:
         # Upstream decorates names with emoji; strip so lookups are stable.
         name = re.sub(r"^[^\w]+", "", str(pack.get("name") or "")).strip()
@@ -260,12 +290,30 @@ def seed_builtins(db: Session) -> int:
             for w in pack.get("words") or []
             if len(str(w).strip()) >= 3
         ]
+        # The shipped packs are mixed. The opt-in tier is lifted out rather
+        # than dropped: an operator who wants TODO markers hunted can have
+        # them, and one who does not is not asked to delete anything.
+        deferred.extend(t for t in terms if t["category"] in OPT_IN_CATEGORIES)
+        terms = [t for t in terms if t["category"] not in OPT_IN_CATEGORIES]
         if not terms:
             continue
 
         db.add(BlueScrubWordlist(
             id=str(uuid.uuid4()), name=name, builtin=True, category=category,
-            entries_json=json.dumps(terms), case_sensitive=False, created_at=_now(),
+            entries_json=json.dumps(terms), case_sensitive=False,
+            enabled=True, created_at=_now(),
+        ))
+        installed += 1
+
+    if deferred and db.scalar(
+        select(BlueScrubWordlist).where(BlueScrubWordlist.name == OPT_IN_LIST_NAME)
+    ) is None:
+        db.add(BlueScrubWordlist(
+            id=str(uuid.uuid4()), name=OPT_IN_LIST_NAME, builtin=True,
+            category=sorted(OPT_IN_CATEGORIES)[0],
+            entries_json=json.dumps(deferred), case_sensitive=False,
+            # Off by default. This is the one pack nobody asked for.
+            enabled=False, created_at=_now(),
         ))
         installed += 1
 
@@ -276,10 +324,12 @@ def seed_builtins(db: Session) -> int:
 
 
 def active_terms(db: Session) -> list[dict]:
-    """Every term from every list, deduplicated, with its category preserved."""
+    """Every term from every **enabled** list, deduplicated, with its category."""
     seen: set[str] = set()
     terms: list[dict] = []
     for row in all_lists(db):
+        if not row.enabled:
+            continue
         try:
             entries = json.loads(row.entries_json)
         except (TypeError, ValueError):

@@ -162,6 +162,59 @@ against a value rather than guessing at a pattern.
   The cost is reported, not hidden: on `deep`, `recovery_state()` returns
   `strings_static_only` and Attribution coverage degrades.
 
+## Post-Sprint-5 pass — measured against a real corpus
+
+Sprint 5 shipped, then the pipeline was run against AIPAM's own backend (414
+files) because that is how every calibration defect in this branch has been
+found. Four things came out of it.
+
+**The unmapped backlog was 287 findings across 20 rules, and is now zero.**
+The counter had been doing its job and nobody had emptied it. Nineteen were
+genuinely unreviewed and are now mapped — the exploit-construction categories
+(`bypass_techniques`, `heap_sprays`, `stack_pivots`, `predictable_patterns`)
+to **Detectability**, on the grounds that a stack pivot in your own exploit is
+not a bug in your tool, it is a pattern a defender writes a rule for. One was a
+keying gap rather than a review gap: the two normalisation paths disagree about
+what they hand `resolve_family` — specialised analyzers pass a bare category,
+pattern analyzers pass the whole finding label — so
+`information_disclosure_in_logs` arrived as
+`information_disclosure_in_logs_f_string_formatting` and missed a key that was
+right there. 125 findings were unmapped for that reason alone. Resolved with a
+separator-anchored longest-prefix fallback, which resolves a rule to the family
+of its own category rather than guessing.
+
+**49% of all findings came from terms nobody declared.** 2853 of 5866 were the
+builtin packs' developer-hygiene tier. The scanner's premise is that the
+operator declared what matters; upstream's packs declared `TODO`. The terms are
+real and weak, so they are neither dropped nor forced on: they now seed into
+their own `Developer Hygiene` list, switched off, one toggle from active. This
+needed an `enabled` column, which is separate from `builtin` on purpose —
+`builtin` means "these terms are not yours to edit", and whether a pack is
+hunted at all is a different question. Findings on the corpus fell from 5866 to
+2982 and the info tier from 2853 to 3.
+
+**A claim made mid-session was wrong and is corrected here.** The first reading
+of the measurement was that the DACV score "does not discriminate", because
+Attribution returned 100 on both a 29-file and a 414-file corpus. Measuring the
+low end disproved it: a clean library scores 0/A and a single leaky file in
+four scores 58/C. The model discriminates over roughly `raw` 0–80 and saturates
+above, which is a saturating curve working as specified — and that range
+matches the intended subject, an implant of five to fifty files, not a 414-file
+defensive application. **No scoring change was made.** The measurement is
+recorded in [SCORING_SPEC §1.2](BLUESCRUB_SCORING_SPEC.md) as input for the
+Sprint 9 calibration, including the finding that `raw` scales with corpus size
+while density is nearly invariant (1.04× for Detectability across a 14× size
+change) — which is how that calibration should be fitted.
+
+**External adapter argv is still untested, and now there is something that
+tests it.** `make bluescrub-preflight` runs every adapter for real against a
+fixture that includes a binary, a git repository and a staged wordlist, and
+reports what each one came back with. The case it exists to catch is the quiet
+one: a tool that is installed, an adapter that still reports `unavailable` or
+`unparseable`, and a pillar that degrades — which means the argv does not match
+the version on that host. Run it on the deployment host alongside the golden
+PCAP gate.
+
 ## Still open
 
 - The differential baseline (`upstream_baseline.json`) is captured from
@@ -171,6 +224,11 @@ against a value rather than guessing at a pattern.
   run on the deployment host before each merge.
 - Binary analysis reports `unavailable` here because `pefile`, `pyelftools`,
   `capstone`, and `lief` are declared but not installed.
+- The architecture gate is unsigned five sprints after it was meant to close;
+  see the notice at the top of [BLUESCRUB_GATE.md](BLUESCRUB_GATE.md). Both
+  blocking items are unanswered, and Semgrep rule licensing has been sidestepped
+  rather than resolved — it becomes live again the moment anyone points
+  `AIPAM_BLUESCRUB_SEMGREP_CONFIG` at the registry.
 - Gitleaks, TruffleHog and FLOSS are not installed here either. Their argv is a
   documented decision a deployment must confirm; their parsers — which is where
   the Semgrep adapter's three defects actually lived — are pure functions tested
