@@ -199,7 +199,8 @@ def coverage_for(pillar: Pillar, runs: list[ScannerRun]) -> tuple[float, bool, l
     ok = [r for r in required if r.succeeded]
     missing = [r.sensor for r in required if not r.succeeded]
     truncated = any(r.truncated for r in ok) or any(
-        r.ruleset_state in ("rules_stale", "database_stale") for r in ok
+        r.ruleset_state in ("rules_stale", "database_stale", "strings_static_only")
+        for r in ok
     )
     return len(ok) / len(required), truncated, missing
 

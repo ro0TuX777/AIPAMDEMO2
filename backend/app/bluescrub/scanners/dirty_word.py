@@ -24,9 +24,11 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import sys
 from pathlib import Path
 
+from backend.app.bluescrub import binstrings
 from backend.app.bluescrub.isolation import AnalyzerStatus, ResourceLimits, run_analyzer
 from backend.app.bluescrub.models import Location, RawFinding
 from backend.app.bluescrub.pillars import FAMILY_PILLAR, DetectorClass, IssueFamily
@@ -52,6 +54,12 @@ CATEGORY_FAMILY: dict[str, IssueFamily] = {
     # A framework signature in your own tool is a detection problem, not an
     # attribution one — defenders match it, they do not trace it to you.
     "tooling": IssueFamily.signature_known,
+    # Compiler and build-system identifiers describe the environment rather
+    # than whoever ran it, which is the split the build-path scanner draws too.
+    "toolchain": IssueFamily.metadata_leak,
+    # Developer-note markers, placeholder credentials, generic account names.
+    # Real enough to show an operator, never enough to disqualify on.
+    "hygiene": IssueFamily.metadata_leak,
 }
 
 
@@ -65,6 +73,149 @@ def write_wordlist(job_dir: Path, terms: list[dict]) -> Path | None:
     path.write_text(json.dumps(terms))
     path.chmod(0o600)
     return path
+
+
+#: One term repeated through a data section is one finding's worth of signal.
+#: The cap is reported rather than applied silently.
+MAX_BINARY_HITS_PER_FILE = 200
+#: Characters of surrounding string kept as evidence.
+BINARY_CONTEXT = 24
+
+
+def binary_paths(root: Path) -> set[str]:
+    """Files this scanner recovers strings from, as paths relative to *root*.
+
+    Content **or** extension. Content is what catches the stripped ELF called
+    `loader`, which extension-based classification misses entirely; extension is
+    kept because it is what the vendored matcher used, and dropping it would
+    quietly lose the files it was already covering.
+    """
+    from backend.app.bluescrub.vendored.dirty_word_scanner import BINARY_EXTENSIONS
+
+    found: set[str] = set()
+    if not root.is_dir():
+        return found
+    for path in root.rglob("*"):
+        if not path.is_file() or path.is_symlink():
+            continue
+        if path.suffix.lower() in BINARY_EXTENSIONS or binstrings.is_binary_file(path):
+            found.add(str(path.relative_to(root)))
+    return found
+
+
+def _occurrences(value: str, term: str, case_sensitive: bool):
+    haystack = value if case_sensitive else value.casefold()
+    needle = term if case_sensitive else term.casefold()
+    if not needle:
+        return
+    index = haystack.find(needle)
+    while index != -1:
+        yield index
+        index = haystack.find(needle, index + 1)
+
+
+def scan_binaries(root: Path, terms: list[dict], *,
+                  profile: str | None = None, run_floss=None) -> list[dict]:
+    """Match declared terms against strings recovered from binary artifacts.
+
+    Returns match records in the vendored scanner's shape, plus the artifact
+    identity and encoding the raw-finding contract needs for a binary location.
+    """
+    matches: list[dict] = []
+
+    for rel in sorted(binary_paths(root)):
+        recovery = binstrings.recover(root / rel, profile=profile, run_floss=run_floss)
+        if not recovery.sha256:
+            logger.warning("dirty_word: could not read %s: %s", rel, recovery.reason)
+            continue
+
+        per_file = 0
+        for entry in recovery.strings:
+            if per_file >= MAX_BINARY_HITS_PER_FILE:
+                break
+            # UTF-16LE is two bytes per character, so a character index inside
+            # the recovered string is not a byte offset into the file.
+            width = 2 if entry.encoding == "utf-16le" else 1
+            for term in terms:
+                word = str(term.get("term") or "")
+                sensitive = bool(term.get("case_sensitive"))
+                for index in _occurrences(entry.value, word, sensitive):
+                    if per_file >= MAX_BINARY_HITS_PER_FILE:
+                        break
+                    per_file += 1
+                    start = max(0, index - BINARY_CONTEXT)
+                    end = index + len(word) + BINARY_CONTEXT
+                    matches.append({
+                        "file": rel,
+                        "word": entry.value[index:index + len(word)],
+                        "line": None,
+                        "offset": (entry.offset + index * width
+                                   if entry.offset is not None else None),
+                        "context": entry.value[start:end],
+                        "type": "binary",
+                        "sha256": recovery.sha256,
+                        "format": recovery.binary_format,
+                        "encoding": entry.encoding,
+                        "recovery": entry.method,
+                    })
+
+        if per_file >= MAX_BINARY_HITS_PER_FILE:
+            logger.warning(
+                "dirty_word: %s hit the %d-match cap; further matches not reported",
+                rel, MAX_BINARY_HITS_PER_FILE,
+            )
+
+    return matches
+
+
+_SHA256 = re.compile(r"^[a-f0-9]{64}$")
+
+
+def _locate(hit: dict, rel: str, line, offset) -> tuple[Location, str, str]:
+    """Build the location, facet, and evidence phrase for one hit.
+
+    A binary hit used to be written into a ``source`` location carrying an
+    offset and no line number — which the raw-finding contract rejects, since a
+    source location must have one. The offset was computed and then discarded.
+    A binary location needs the artifact digest, so a hit that cannot supply
+    one is reported project-scoped rather than given a location it cannot
+    support.
+    """
+    digest = str(hit.get("sha256") or "")
+    if hit.get("type") == "binary" or hit.get("binary"):
+        method = str(hit.get("recovery") or "static")
+        encoding = str(hit.get("encoding") or "ascii")
+        where = f", recovered as a {encoding} string"
+        if method != "static":
+            # A runtime-assembled string was never on disk, so there is no
+            # offset to seek to and saying so is the useful part.
+            where += f" that FLOSS reconstructed at runtime ({method})"
+        elif isinstance(offset, int):
+            where += f" at offset 0x{offset:x}"
+
+        if _SHA256.match(digest):
+            return (
+                Location(
+                    kind="binary", file=rel or None, artifact_sha256=digest,
+                    format=str(hit.get("format") or "") or None,
+                    offset=offset if isinstance(offset, int) else None,
+                ),
+                "binary", where,
+            )
+        return (
+            Location(kind="project", file=rel or None,
+                     subject=f"artifact:{rel or 'unknown'}"),
+            "binary", where,
+        )
+
+    return (
+        Location(
+            kind="source", file=rel,
+            start_line=int(line) if isinstance(line, int) else 1,
+            start_column=0,
+        ),
+        "source", "",
+    )
 
 
 def parse_hits(payload: dict, terms: list[dict], source_root: Path) -> list[RawFinding]:
@@ -92,6 +243,7 @@ def parse_hits(payload: dict, terms: list[dict], source_root: Path) -> list[RawF
 
         line = hit.get("line") or hit.get("line_number")
         offset = hit.get("offset")
+        location, facet, where = _locate(hit, rel, line, offset)
 
         findings.append(RawFinding(
             sensor=SENSOR, sensor_version="vendored",
@@ -102,20 +254,16 @@ def parse_hits(payload: dict, terms: list[dict], source_root: Path) -> list[RawF
             issue_family=family, pillar_hint=FAMILY_PILLAR.get(family),
             detector_class=DetectorClass.regex_pattern,
             raw_severity="HIGH", confidence=0.9,
-            source_facet="binary" if hit.get("binary") else "source",
+            source_facet=facet,
             title=f"Declared term found ({category})",
             description=(
                 f"The term {term!r} from the {meta.get('list', 'operator')} list "
-                f"appears in {rel or 'the artifact'}. It was declared sensitive, "
-                "so its presence in shipped material is a leak by definition."
+                f"appears in {rel or 'the artifact'}{where}. It was declared "
+                "sensitive, so its presence in shipped material is a leak by "
+                "definition."
             )[:4096],
             matched_tokens=str(hit.get("context") or term)[:4096],
-            location=Location(
-                kind="source", file=rel,
-                start_line=int(line) if isinstance(line, int) else None,
-                start_column=0,
-                offset=int(offset) if isinstance(offset, int) else None,
-            ),
+            location=location,
         ))
 
     return findings
@@ -148,7 +296,12 @@ def run(source_root: Path, output_dir: Path, *,
             "AIPAM_BLUESCRUB_REQUIRE_UID_DROP", "true"
         ).lower() not in ("0", "false", "no"),
         # By path, never by value: the terms are the secrets.
-        env_extra={"PYTHONPATH": os.getcwd(), WORDLIST_ENV: wordlist_path},
+        env_extra={
+            "PYTHONPATH": os.getcwd(), WORDLIST_ENV: wordlist_path,
+            # FLOSS is emulation-class, so the recovery pass needs to know
+            # whether this is a deep scan before it may run it.
+            binstrings.PROFILE_ENV: os.getenv(binstrings.PROFILE_ENV, ""),
+        },
     )
 
     if not result.ok:
@@ -173,5 +326,8 @@ def run(source_root: Path, output_dir: Path, *,
     return ScannerOutcome(
         sensor=SENSOR, status=AnalyzerStatus.completed.value, findings=findings,
         version="vendored", ruleset_version=f"{len(terms)} terms",
+        # A deep scan without FLOSS recovered only what was already on disk.
+        # That is partial coverage of the question the profile asked.
+        ruleset_state=binstrings.recovery_state(),
         duration_ms=result.duration_ms,
     )

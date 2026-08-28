@@ -217,6 +217,75 @@
         "mem_limit": "2g",
         "pids_limit": 64
       }
+    },
+    {
+      "name": "gitleaks",
+      "version": "8.x",
+      "runner": "subprocess",
+      "risk_class": "repo_history",
+      "pillars": [
+        "Attribution"
+      ],
+      "licence": "MIT",
+      "redistribution": "permitted",
+      "architectures": [
+        "amd64",
+        "arm64"
+      ],
+      "optional": true,
+      "binary_checksum": null,
+      "network_verification_flag": "n/a \u2014 gitleaks does not verify",
+      "licence_notes": "Engine is MIT. The default rule pack ships with it and is covered by the same licence. `--redact` is deliberately NOT passed: redaction is central, and redacting at the tool would destroy the value before the keyed fingerprint is computed, so two scans of the same secret would stop deduplicating. Its output is therefore plaintext and is written to quarantine/, not beside the findings.",
+      "limits": {
+        "timeout_seconds": 900,
+        "mem_limit": "2g",
+        "pids_limit": 128
+      }
+    },
+    {
+      "name": "trufflehog",
+      "version": "3.x",
+      "runner": "subprocess",
+      "risk_class": "repo_history",
+      "pillars": [
+        "Attribution"
+      ],
+      "licence": "AGPL-3.0-only",
+      "redistribution": "permitted_with_notice",
+      "architectures": [
+        "amd64",
+        "arm64"
+      ],
+      "optional": true,
+      "binary_checksum": null,
+      "network_verification_flag": "--no-verification",
+      "licence_notes": "AGPL-3.0. Invoked as a separate process over a pipe, which is not linking, but an air-gapped bundle redistributing the binary must carry the licence and the source offer. Verification is hard-disabled: it proves a credential live by authenticating to the issuing service, which is an outbound connection carrying somebody else's secret from a host with no egress. Asserted by test, not by configuration.",
+      "limits": {
+        "timeout_seconds": 900,
+        "mem_limit": "2g",
+        "pids_limit": 128
+      }
+    },
+    {
+      "name": "build_paths",
+      "version": "builtin",
+      "runner": "subprocess",
+      "risk_class": "parse_only",
+      "pillars": [
+        "Attribution"
+      ],
+      "licence": "proprietary",
+      "redistribution": "restricted",
+      "architectures": [
+        "amd64",
+        "arm64"
+      ],
+      "licence_notes": "AIPAM's own detector, no third-party component. Reads build and PDB paths out of strings recovered from compiled artifacts; the source side of the same question is covered by the vendored MetadataLeakageScanner and is deliberately not duplicated.",
+      "limits": {
+        "timeout_seconds": 300,
+        "mem_limit": "2g",
+        "pids_limit": 64
+      }
     }
   ]
 }

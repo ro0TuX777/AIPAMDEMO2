@@ -173,7 +173,30 @@ VENDORED_CATEGORY_FAMILY: dict[str, IssueFamily] = {
     "string_patterns": IssueFamily.string_exposure,
     "hardcoded_addresses": IssueFamily.hardcoded_c2,
     "kernel_exploit": IssueFamily.signature_known,
-    "code_reuse": IssueFamily.attribution_identity,
+
+    # ── code similarity ──
+    #
+    # These four were left unmapped through Sprint 2, which the unmapped
+    # counter is there to surface: persisted and displayed, excluded from the
+    # grade, waiting for review rather than a guess. Reviewed here.
+    #
+    # A TODO comment, a DEBUG print, an @author tag and a copyright notice are
+    # all development metadata that shipped. None of them names anybody on its
+    # own; together they cluster artifacts by the habits of whoever wrote them,
+    # which is what the detector is for. Their per-rule severities are set in
+    # severity_table.py, because the family default would put a stray TODO at
+    # the same weight as an author byline.
+    "fingerprint_patterns": IssueFamily.metadata_leak,
+    # A distinctive dependency combination is the same kind of signal: it
+    # narrows who built the thing without identifying them.
+    "library_fingerprints": IssueFamily.metadata_leak,
+    # Consistent with "compiler_references" above, and with the build-path
+    # scanner's toolchain tier: a compiler version string describes the build
+    # environment, not its operator.
+    "compiler_artifacts": IssueFamily.metadata_leak,
+    # Matching a known tool's function body is what a defender signatures on,
+    # which is the same call already made for "known_tool_similarity".
+    "function_similarity": IssueFamily.signature_known,
 }
 
 #: Explicit per-rule overrides, highest priority. Populated as rules are

@@ -124,6 +124,11 @@ SEVERITY_BY_RULE: dict[str, str] = {
     "dirty_word.mutex": "medium",
     "dirty_word.ticket": "medium",
     "dirty_word.tooling": "high",
+    # The bottom of the ladder, and the reason it exists. `TODO` and `DEBUG`
+    # ship in the builtin packs; categorised as identity they disqualified
+    # every tree that contained a comment.
+    "dirty_word.toolchain": "medium",
+    "dirty_word.hygiene": "info",
 
     # ── Git history metadata ──
     #
@@ -145,6 +150,25 @@ SEVERITY_BY_RULE: dict[str, str] = {
     "gitmeta.deleted_sensitive_file": "high",
     # Timezone is left at the family default: it is a genuine signal and a
     # weak one, inferred from timestamps rather than read off a field.
+
+    # ── Code-similarity fingerprints ──
+    #
+    # The family default is medium, which is right for a copyright notice and
+    # wrong at both ends of the rest. A codebase of any size contains hundreds
+    # of TODO comments; scoring each at medium would let a habit marker outweigh
+    # a byline, which is the same shape as the failure that produced the
+    # critical ceiling — volume standing in for significance.
+    "CodeSimilarityDetector.fingerprint_patterns.code_quality_markers": "info",
+    "CodeSimilarityDetector.fingerprint_patterns.developer_note_comments_developer_habit": "info",
+    "CodeSimilarityDetector.fingerprint_patterns.unfinished_code": "info",
+    # A debug artifact is weak evidence of habit and a little more than that:
+    # it also means diagnostic output ships.
+    "CodeSimilarityDetector.fingerprint_patterns.debug_print_statements": "low",
+    "CodeSimilarityDetector.fingerprint_patterns.debugger_breakpoints": "low",
+    # The one in this group that points at a person. Capped at high rather than
+    # critical because the pattern finds the *tag*, not the name in it — the
+    # name is what the dirty-word and gitmeta detectors are for.
+    "CodeSimilarityDetector.fingerprint_patterns.author_attribution": "high",
 }
 
 

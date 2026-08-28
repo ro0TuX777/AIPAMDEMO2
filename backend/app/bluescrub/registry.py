@@ -13,11 +13,13 @@ from backend.app.bluescrub.isolation import ResourceLimits
 from backend.app.bluescrub.pillars import Pillar, RiskClass
 from backend.app.bluescrub.scanners import (
     binary_analysis,
+    buildpaths,
     dependencies,
     deps_cve,
     dirty_word,
     gitmeta,
     sbom,
+    secrets,
     semgrep,
     vendored_analyzers,
 )
@@ -63,6 +65,19 @@ SCANNERS: dict[str, ScannerSpec] = {
         optional=False,
         limits=ResourceLimits.for_emulation(),
     ),
+    "build_paths": ScannerSpec(
+        name="build_paths",
+        run=buildpaths.run,
+        pillars=(Pillar.attribution,),
+        risk_class=RiskClass.parse_only,
+        # Not in Quick: it re-reads every binary's strings, and Quick's
+        # Attribution budget is spent on the declared terms over the same bytes.
+        profiles=("standard", "deep"),
+        # Nothing else reads a compiled artifact for build paths, so it is not
+        # a corroborator of anything.
+        optional=False,
+        limits=buildpaths.DEFAULT_LIMITS,
+    ),
     "dependency_inventory": ScannerSpec(
         name="dependency_inventory",
         run=dependencies.run,
@@ -106,6 +121,18 @@ SCANNERS: dict[str, ScannerSpec] = {
         optional=True,
         limits=ResourceLimits(wall_clock_seconds=600, cpu_seconds=600),
     ),
+    "gitleaks": ScannerSpec(
+        name="gitleaks",
+        run=secrets.run_gitleaks,
+        pillars=(Pillar.attribution,),
+        risk_class=RiskClass.repo_history,
+        profiles=("standard", "deep"),
+        # Optional, on the OSV/Grype argument: TruffleHog and the vendored
+        # secrets analyzer cover the same pillar by different means, so
+        # installing this one must not move a score.
+        optional=True,
+        limits=secrets.LIMITS,
+    ),
     "grype": ScannerSpec(
         name="grype",
         run=deps_cve.run_grype,
@@ -114,6 +141,15 @@ SCANNERS: dict[str, ScannerSpec] = {
         profiles=("standard", "deep"),
         optional=True,
         limits=ResourceLimits(wall_clock_seconds=600, cpu_seconds=600),
+    ),
+    "trufflehog": ScannerSpec(
+        name="trufflehog",
+        run=secrets.run_trufflehog,
+        pillars=(Pillar.attribution,),
+        risk_class=RiskClass.repo_history,
+        profiles=("standard", "deep"),
+        optional=True,
+        limits=secrets.LIMITS,
     ),
     "syft": ScannerSpec(
         name="syft",

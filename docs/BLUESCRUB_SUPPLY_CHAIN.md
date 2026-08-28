@@ -148,8 +148,16 @@ Verification is **hard-disabled**, and asserted by test rather than by configura
 1. The container runner already sets `network_mode="none"`, so an attempt fails at the socket.
 2. The scanner adapter additionally passes the tool's own disable flag, so a failed connection never
    even appears in output.
-3. A test asserts that no scanner invocation includes a verification flag, and that the
-   `repo_history` risk class carries no networking capability.
+3. A test asserts that each scanner invocation carries its **disable** flag and no **enabling** one,
+   and that the `repo_history` risk class carries no networking capability.
+
+Points 2 and 3 read as a contradiction if 3 is taken to forbid every flag whose name contains
+"verification" — TruffleHog's disable flag is `--no-verification`, so the invocation necessarily
+contains one. The assertion is about the *sense* of the flag, not the string. Each tool's disable
+flag is recorded in `network_verification_flag` in the manifest so the check has something to compare
+against rather than a pattern to guess at; `gitmeta` records `protocol.allow=never`, which is a
+transport lockdown rather than a verification switch, and Gitleaks records that it has no verification
+mode at all.
 
 Defence in depth here is warranted: a future change that grants a scanner network access for a
 legitimate reason must not silently re-enable credential exfiltration.
@@ -164,7 +172,8 @@ legitimate reason must not silently re-enable credential exfiltration.
    pillar to `degraded` with the age in the report.
 4. `agent/health` reports capa rule availability on a deployment with `AIPAM_CAPA_RULES_DIR` unset,
    without any change to `sensor_handlers.py`.
-5. No scanner invocation contains a network-verification flag.
+5. Every secret scanner's invocation carries its disable flag, and no invocation carries an
+   enabling one. Each tool's flag is declared in the manifest.
 6. A bundle build with an `unknown` licence field fails.
 7. A job report distinguishes "scanner ran, no findings" from "scanner unavailable" in both the API and
    the UI.

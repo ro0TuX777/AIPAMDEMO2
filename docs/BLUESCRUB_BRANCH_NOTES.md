@@ -81,6 +81,87 @@ Two defects were found by making that measurement and are fixed in `7edc0d6`:
 **Lesson worth keeping:** run the suite against a clean tree before reporting
 a result. A green run in a dirty tree measures the tree, not the branch.
 
+## Sprint 5 — Attribution, closed
+
+All seven items in the plan's Sprint 5 line have landed. Three of them were
+already partly present and turned out to be wrong rather than missing, which is
+recorded here because the failures rhyme.
+
+| Item | State |
+|---|---|
+| Dirty-word over source | Already landed (`a5950f9`) |
+| Dirty-word over **binaries** | New. See below — the binary path did not work |
+| FLOSS recovery | Recovery module, tiering, parser and invocation all landed and tested; the emulation-class *invocation* is Sprint 6's — see below |
+| Pre-built packs | Landed, **re-calibrated** — see below |
+| Category severity ladder | Extended with two tiers below `medium` |
+| Regex safety | Landed (`fd5dbcb`): literal-only matcher, three-character floor |
+| Gitleaks | New adapter, parser tested against recorded output |
+| TruffleHog (verification disabled) | New adapter; disable flag asserted by test |
+| gitmeta | Landed (`d2a85e5`) |
+| Hardcoded build/PDB paths | New `build_paths` scanner, binaries only |
+| Code-similarity fingerprinting | Detector was wired in Sprint 2; four of its six categories were `unmapped` and are now reviewed and mapped |
+| Secret masking, keyed fingerprints | Landed (`75e57ab`) |
+
+### Three defects the acceptance criteria found
+
+**1. A codename in a binary could not be reported at all.** The vendored
+matcher classifies a file as binary by *extension*, so a stripped ELF named
+`loader` was read as text and matched at a line number and column that mean
+nothing in a file with no lines. When it did take the binary branch, the adapter
+wrote the byte offset into a `source` location — which the raw-finding contract
+rejects, because a source location must carry a line number. Nothing validates
+raw findings at runtime, so it reached the database anyway, with
+`source_facet: "source"` on a binary hit and every offset in a file collapsed
+into one canonical group. The offset was being computed and then thrown away.
+
+**2. Any tree containing a `TODO` comment scored F.** The shipped "Common Leaks
+(OPSEC)" pack is a mixed bag — personal mail domains next to `TODO`, `DEBUG`,
+`admin`, `password` and `/home/` — and the whole pack carried one category,
+`identity`, which is the disqualifying tier. So the builtin packs alone, with
+no operator input, disqualified essentially every artifact. This is the same
+failure the critical ceiling was written for, arriving through the *input* side
+rather than the detector side, and the three-character floor does not catch it:
+`TODO` is four characters. Fixed with per-term categories and two new tiers
+below `medium` (`toolchain`, `hygiene`). Four terms can now disqualify, all of
+them personal mail domains.
+
+**3. Two documented rules contradicted each other.** SUPPLY_CHAIN §5 requires
+the adapter to pass each tool's verification-disable flag, and its acceptance
+list forbade any invocation containing a verification flag — TruffleHog's
+disable flag is `--no-verification`. Resolved in favour of the sense of the
+flag, with each tool's flag declared in the manifest so the check compares
+against a value rather than guessing at a pattern.
+
+### Scope decisions worth knowing
+
+- **`build_paths` reads binaries only.** `MetadataLeakageScanner.embedded_paths`
+  already covers `/home/<user>/` in source, and the false-positive measurement
+  is explicit that such a path in source *is* the finding. A second regex
+  detector over the same text is noise. The gap was the compiled side.
+- **A toolchain path is not an operator path.** Every Rust binary contains
+  `/rustc/<hash>/`; reporting those at Attribution severity buries the one path
+  that does name somebody. CI service accounts (`runner`, `jenkins`) sit on the
+  toolchain side of that line for the same reason.
+- **Gitleaks and TruffleHog are optional.** They disagree constantly and the
+  vendored secrets analyzer already covers the pillar, so neither is required
+  and installing either must not move a score — the OSV/Grype argument.
+- **Their artefacts go to `quarantine/`.** Their matches *are* the credential,
+  and the normalised results file is written before central redaction runs. It
+  would otherwise be the one place plaintext lands on disk under the 30-day job
+  clock instead of the 72-hour quarantine one. The evidence fields are dropped
+  from it entirely, so in the happy path no plaintext reaches disk at all.
+- **FLOSS is not wired to a scanner, deliberately.** It is `emulation` class:
+  8 GiB, 900 seconds, `deep` only. The two scanners that consume the recovery
+  module — dirty-word and build-paths — are `parse_only` and run in profiles
+  where `deep` is not selected. Calling FLOSS from inside either one would
+  promote a `parse_only` scanner to `emulation` in fact while leaving it
+  `parse_only` in the registry, and would run a 900-second tool inside a
+  120-second process boundary that would kill it. The recovery module takes
+  FLOSS as an injected runner and its parser, tiering and argv are tested; the
+  invocation lands with the FLOSS scanner in Sprint 6, where the plan puts it.
+  The cost is reported, not hidden: on `deep`, `recovery_state()` returns
+  `strings_static_only` and Attribution coverage degrades.
+
 ## Still open
 
 - The differential baseline (`upstream_baseline.json`) is captured from
@@ -90,3 +171,8 @@ a result. A green run in a dirty tree measures the tree, not the branch.
   run on the deployment host before each merge.
 - Binary analysis reports `unavailable` here because `pefile`, `pyelftools`,
   `capstone`, and `lief` are declared but not installed.
+- Gitleaks, TruffleHog and FLOSS are not installed here either. Their argv is a
+  documented decision a deployment must confirm; their parsers — which is where
+  the Semgrep adapter's three defects actually lived — are pure functions tested
+  against recorded output. `binstrings` and `build_paths` need no binary and are
+  tested against artifacts the suite compiles with `gcc`.

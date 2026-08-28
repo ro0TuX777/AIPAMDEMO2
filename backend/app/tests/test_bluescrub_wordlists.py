@@ -182,3 +182,72 @@ def test_unreadable_list_is_skipped_not_fatal(db):
     terms = wl.active_terms(db)
     assert [t["term"] for t in terms] == ["NIGHTFALL"]
     assert good is not None
+
+
+# ── the shipped packs must not disqualify by themselves ───────────────────
+
+def _pack_severity(category: str) -> str:
+    from backend.app.bluescrub.pillars import DetectorClass
+    from backend.app.bluescrub.scanners.dirty_word import CATEGORY_FAMILY
+    from backend.app.bluescrub.severity_table import canonical_severity
+
+    return canonical_severity(
+        f"dirty_word.{category}", CATEGORY_FAMILY[category],
+        DetectorClass.regex_pattern,
+    )
+
+
+def test_only_a_personal_mail_domain_disqualifies_from_the_builtin_packs(db):
+    """A pack-level category put `TODO`, `DEBUG`, `admin`, `password` and
+    `/home/` into the `identity` tier, so any tree containing a comment scored
+    F with `disqualified: true` — from the builtin packs alone, with no
+    operator input. Same shape as the "C2" failure, arriving through the input
+    side instead of the detector side."""
+    wl.seed_builtins(db)
+
+    disqualifying = {
+        t["term"] for t in wl.active_terms(db)
+        if _pack_severity(t["category"]) == "critical"
+    }
+    assert disqualifying == {
+        "@gmail.com", "@outlook.com", "@yahoo.com", "@protonmail.com",
+    }
+
+
+@pytest.mark.parametrize("term,category", [
+    ("TODO", "hygiene"), ("DEBUG", "hygiene"), ("password", "hygiene"),
+    ("admin", "hygiene"), ("root", "hygiene"), ("localhost", "hygiene"),
+    ("/home/", "path"), ("C:\\Users\\", "path"),
+    (".internal", "hostname"), ("@gmail.com", "identity"),
+    ("gcc", "toolchain"), ("Makefile", "toolchain"),
+])
+def test_pack_terms_carry_a_reviewed_category(db, term, category):
+    """One category per pack was not enough: "Common Leaks (OPSEC)" holds
+    personal mail domains next to developer-note markers."""
+    wl.seed_builtins(db)
+    by_term = {t["term"]: t["category"] for t in wl.active_terms(db)}
+
+    assert by_term[term] == category
+
+
+def test_the_ladder_bottoms_out_below_medium():
+    """Without a tier under `medium`, every weak-but-real term had to be filed
+    somewhere that overstated it."""
+    assert _pack_severity("hygiene") == "info"
+    assert _pack_severity("toolchain") == "medium"
+    assert _pack_severity("identity") == "critical"
+
+
+def test_the_new_tiers_are_accepted_from_an_operator(db):
+    row = wl.create(db, "Ops", [{"term": "internal-build", "category": "toolchain"},
+                                {"term": "scratchpad", "category": "hygiene"}])
+    assert row.id
+
+
+def test_a_hygiene_term_is_still_attribution_not_nothing():
+    """Weak is not absent. The operator asked to see these; they are shown,
+    counted, and capped — the info cap bounds them at 10% of the pillar."""
+    from backend.app.bluescrub.pillars import FAMILY_PILLAR, Pillar
+    from backend.app.bluescrub.scanners.dirty_word import CATEGORY_FAMILY
+
+    assert FAMILY_PILLAR[CATEGORY_FAMILY["hygiene"]] is Pillar.attribution

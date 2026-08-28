@@ -42,6 +42,8 @@ TERM_CATEGORIES: frozenset[str] = frozenset({
     "path",         # build and PDB paths
     "mutex",        # unique mutex or pipe names
     "tooling",      # framework and tool signatures
+    "toolchain",    # compiler and build-system identifiers
+    "hygiene",      # developer-note markers, placeholders, generic accounts
 })
 
 _DEFAULT_CATEGORY = "codename"
@@ -180,6 +182,57 @@ _PACK_CATEGORY = {
     "Build Artifacts": "path",
 }
 
+#: Per-term overrides for the shipped packs.
+#:
+#: A pack-level category was not enough, and the gap was not cosmetic. "Common
+#: Leaks (OPSEC)" is a mixed bag — personal email domains next to `TODO`,
+#: `DEBUG`, `admin` and `password` — and one category for all of it put
+#: developer-hygiene markers into the `identity` tier, which is the
+#: disqualifying one. The effect: **any** source tree containing a TODO comment
+#: scored F with `disqualified: true`, from the builtin packs alone, with no
+#: operator input at all.
+#:
+#: This is the same failure the critical ceiling was written for — a term that
+#: matches everywhere standing in for a term that means something — arriving
+#: through the input side rather than the detector side. The three-character
+#: floor does not catch it: `TODO` is four characters.
+#:
+#: Reviewed per term. Anything not listed keeps its pack's category.
+_TERM_CATEGORY: dict[str, str] = {
+    # Developer-note markers. Present in essentially every codebase.
+    "todo": "hygiene", "fixme": "hygiene", "hack": "hygiene",
+    "xxx": "hygiene", "debug": "hygiene",
+    # Placeholder credentials. `fpfilter` already suppresses these as values;
+    # as declared terms they would fire on every assignment that mentions one.
+    "password": "hygiene", "changeme": "hygiene", "passw0rd": "hygiene",
+    "secret": "hygiene",
+    # Generic account names. A hardcoded `Administrator` may well be a finding,
+    # but it is a default-credential finding, not an identity leak — and
+    # `admin`, `root`, `user` and `test` appear in every tree there is.
+    "administrator": "hygiene", "admin": "hygiene", "root": "hygiene",
+    "user": "hygiene", "test": "hygiene", "jdoe": "hygiene",
+    # Ubiquitous paths that precede nothing in particular. `C:\Users\` and
+    # `/home/` are kept at `path` because a username follows them.
+    "/tmp/": "hygiene", "c:\\windows\\temp": "hygiene",
+    "localhost": "hygiene", ".local": "hygiene",
+    # These two do precede a username, which is the leak — but the prefix on
+    # its own appears in every path-handling routine ever written, so it is a
+    # build-path finding and not an identity one.
+    "/home/": "path", "c:\\users\\": "path",
+    # Internal namespaces do name infrastructure.
+    ".internal": "hostname", ".corp": "hostname", ".lab": "hostname",
+    # Personal mail domains in offensive tooling are the end of deniability.
+    "@gmail.com": "identity", "@outlook.com": "identity",
+    "@yahoo.com": "identity", "@protonmail.com": "identity",
+    # Build Artifacts: the compiler identifiers describe the build environment,
+    # not its operator — the same split the build-path scanner draws.
+    "gcc": "toolchain", "clang": "toolchain", "mingw": "toolchain",
+    "msvc": "toolchain", "visual studio": "toolchain",
+    "cmakelists": "toolchain", "makefile": "toolchain",
+    "__file__": "toolchain", "__line__": "toolchain", "__function__": "toolchain",
+    "build:": "toolchain", "version:": "toolchain", "compiled by": "toolchain",
+}
+
 
 def seed_builtins(db: Session) -> int:
     """Install the vendored packs as read-only lists. Idempotent."""
@@ -202,7 +255,8 @@ def seed_builtins(db: Session) -> int:
             _DEFAULT_CATEGORY,
         )
         terms = [
-            {"term": w, "kind": "literal", "category": category}
+            {"term": w, "kind": "literal",
+             "category": _TERM_CATEGORY.get(str(w).strip().casefold(), category)}
             for w in pack.get("words") or []
             if len(str(w).strip()) >= 3
         ]

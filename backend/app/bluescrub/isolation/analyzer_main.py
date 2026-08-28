@@ -58,6 +58,33 @@ def main(argv: list[str]) -> int:
                     continue
                 out = scan_directory(directory, words, case_sensitive=sensitive)
                 findings["matches"].extend(out.get("matches") or [])
+
+            # One owner per file. The vendored matcher decides a file is binary
+            # from its extension and reports a byte offset with no artifact
+            # digest, which cannot form a valid binary location; the recovery
+            # pass classifies by content, carries the digest, and reports an
+            # offset an analyst can seek to. Every file it owns is removed from
+            # the vendored results rather than merged, so nothing is counted
+            # twice and nothing is left with the weaker location.
+            from pathlib import Path as _Path
+
+            from backend.app.bluescrub.scanners.dirty_word import (
+                binary_paths,
+                scan_binaries,
+            )
+
+            owned = binary_paths(_Path(directory))
+            findings["matches"] = [
+                m for m in findings["matches"]
+                if m.get("file") not in owned and m.get("type") != "binary"
+            ]
+            findings["matches"].extend(scan_binaries(_Path(directory), terms))
+        elif mode == "build_paths":
+            from pathlib import Path as _Path
+
+            from backend.app.bluescrub.scanners.buildpaths import collect
+
+            findings = collect(_Path(directory))
         elif mode == "dependencies":
             from backend.app.bluescrub.vendored.dependency_scanner import (
                 build_dependency_inventory,

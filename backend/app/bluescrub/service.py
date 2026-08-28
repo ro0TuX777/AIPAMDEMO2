@@ -20,11 +20,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.bluescrub import SCORING_MODEL
-from backend.app.bluescrub import fpfilter, redaction, wordlists
+from backend.app.bluescrub import binstrings, fpfilter, redaction, wordlists
 from backend.app.bluescrub.scanners import dirty_word as dirty_word_scanner
 from backend.app.bluescrub.canonicalize import canonicalize
 from backend.app.bluescrub.persistence import persist_groups
-from backend.app.bluescrub.pillars import Pillar
 from backend.app.bluescrub.registry import (
     optional_sensors,
     pillars_in_scope,
@@ -95,6 +94,9 @@ def analyze_and_persist(
     # so it is handed to the sandbox by path at mode 0600 — never as argv,
     # where `ps` would publish it — and removed once the scan finishes.
     wordlist_path = _stage_wordlist(db, job_dir)
+    # The recovery tier is profile-gated: FLOSS emulates the sample, and the
+    # isolation contract confines emulation to `deep`.
+    os.environ[binstrings.PROFILE_ENV] = profile
 
     for step, spec in enumerate(specs, start=1):
         if progress:
@@ -217,6 +219,7 @@ def _stage_wordlist(db: Session, job_dir: Path) -> Path | None:
 
 def _discard_wordlist(path: Path | None) -> None:
     os.environ.pop(dirty_word_scanner.WORDLIST_ENV, None)
+    os.environ.pop(binstrings.PROFILE_ENV, None)
     if path is None:
         return
     try:
