@@ -358,6 +358,77 @@ The detector imports nothing — asserted by a test that parses its imports —
 which is the whole point: the vendored analyzer could always do this, and went
 dark on any host without `pefile`/`pyelftools`, libraries this code never uses.
 
+## Provisioning the environment found four defects in an hour
+
+`backend/requirements.txt` declares `pefile`, `pyelftools`, `capstone` and
+`lief`. None was installed, so `binary_analyzer` reported `unavailable` on
+every scan that had ever been run here — and its adapter had therefore never
+executed against real output. `pip install -r backend/requirements.txt` was the
+whole fix, and it immediately surfaced this:
+
+**1. The adapter read a record shape the analyzer does not produce.** It looked
+for a top-level `sha256`, `format` and `architecture`; the analyzer nests them
+under `hashes`, `file_type` and `elf_info`. Every binary finding was therefore
+built with `artifact_sha256=None` — which the raw-finding contract rejects, so
+each one was a live contract violation.
+
+**2. Offsets were silently discarded.** Upstream reports them as `"0x1111"` as
+often as `4369`, and the adapter guarded with `isinstance(offset, int)`. The
+same shape as the dirty-word defect fixed in Sprint 5: an offset present in the
+data, dropped on the way out, with nothing to indicate it had happened.
+
+**3. Every finding had empty evidence.** The adapter looked for `match`, `api`
+or `value` on the issue record; the values live in a sibling `suspicious_strings`
+list keyed by offset. Correlating on that offset recovers them —
+`10.20.30.40` instead of an empty string — without parsing English out of a
+description. The offset suffix upstream appends to descriptions is stripped
+before the text can reach the evidence field, because it changes on every
+rebuild and the evidence feeds the fingerprint.
+
+**4. The unmapped backlog was not actually zero.** The earlier review was
+measured with this scanner dark, so its rules were never in the sample.
+`OPSEC: Extractable String (<kind>)` became a family of rules, now mapped by
+kind: an address is somebody's infrastructure, a PEM header is a key, a shell
+path is what a defender signatures. `url`, `domain` and `base64_blob` measure
+as licence and bug-tracker boilerplate in ordinary binaries, so they are string
+exposure rather than something to inflate a pillar with.
+
+**Both safety nets fired, on their first contact with real data.** Runtime
+contract validation reported the missing digests by rule id. The compiled-artifact
+regression test failed on two assertions —
+`test_every_binary_finding_carries_a_seekable_location` and
+`test_nothing_lands_unmapped` — which is exactly the pair of things it was
+written to catch and could not have been caught by any unit test, because the
+defect was in a scanner that had never run.
+
+**5. The two scanners described one artifact two different ways.** Upstream
+reports the container in prose — `"ELF Executable (Linux/Unix)"` — where
+`binstrings` reports `"elf"`. `Location.format` feeds `binary_fingerprint`, so
+whichever scanner won severity precedence decided the digest, and a change in
+which one won would re-key the finding and orphan its triage. Normalised to the
+token vocabulary on the way in.
+
+**And canonicalization did its job.** With both scanners live, `binary_indicators`
+and the binary analyzer independently report the C2 at offset 8416; they now
+collapse to one canonical finding with the second recorded as a corroborating
+sensor, rather than counting the same address twice. Detectability scores for
+the first time on a compiled artifact — five shellcode-pattern findings, each
+with a seekable offset.
+
+**A sixth defect, outside BlueScrub, was unmasked by the same install.**
+`test_flow_vectorstore.py` opens with `pytest.importorskip("lancedb")`, and
+lancedb was not installed — so all ten of its tests had been skipping. With the
+module present they fail immediately on
+`patch("app.flow_vectorstore.get_effective_settings")`: a patch target that
+predates the `backend.app.` layout. The file has been dead for however long
+that has been true, and nothing said so, because a skipped test and a passing
+test look identical in a summary line.
+
+`alembic` arrived with the same install, so `alembic heads` now runs and
+confirms a single head. The hand-written chain-parsing test stays: it is the
+only check that works on a machine where alembic is absent, which is the
+machine this was written on.
+
 ## Still open
 
 - The differential baseline (`upstream_baseline.json`) is captured from
@@ -365,8 +436,8 @@ dark on any host without `pefile`/`pyelftools`, libraries this code never uses.
   asserts the pin matches `VENDOR.md` so the two cannot drift silently.
 - The golden PCAP behavioural gate skips without Zeek and Suricata. It must be
   run on the deployment host before each merge.
-- Binary analysis reports `unavailable` here because `pefile`, `pyelftools`,
-  `capstone`, and `lief` are declared but not installed.
+- Semgrep is still absent, so the Vulnerability pillar runs at half coverage;
+  it is the one *required* binary still missing after provisioning.
 - **Binary grouping buckets on position, not distance.** `_grouping_key` uses
   `offset // 64` where the contract says "offsets within 64 bytes". Two findings
   11 bytes apart were reported twice because a bucket edge fell between them

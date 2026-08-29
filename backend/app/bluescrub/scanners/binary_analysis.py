@@ -14,13 +14,14 @@ from __future__ import annotations
 import json
 import logging
 import os
+import re
 import sys
 from pathlib import Path
 
-from backend.app.bluescrub.enrich import autofix_for, mitre_for
+from backend.app.bluescrub.enrich import mitre_for
 from backend.app.bluescrub.isolation import AnalyzerStatus, ResourceLimits, run_analyzer
 from backend.app.bluescrub.models import Location, RawFinding
-from backend.app.bluescrub.pillars import FAMILY_PILLAR, DetectorClass, IssueFamily
+from backend.app.bluescrub.pillars import FAMILY_PILLAR, DetectorClass
 from backend.app.bluescrub.rulemap import normalize_label, resolve_family
 from backend.app.bluescrub.scanners.base import ScannerOutcome
 
@@ -60,9 +61,34 @@ def to_raw_findings(records: list[dict], source_root: Path) -> list[RawFinding]:
         except (ValueError, OSError):
             rel = raw_path
 
-        sha256 = str(record.get("sha256") or "") or None
-        fmt = str(record.get("format") or record.get("type") or "") or None
-        arch = str(record.get("architecture") or record.get("arch") or "") or None
+        # The record is nested, and reading it flat cost every binary finding
+        # its digest, its format and its offset — which the contract needs and
+        # which an analyst needs to seek to. None of it showed while the
+        # scanner reported `unavailable` for want of pefile and pyelftools.
+        hashes = record.get("hashes") if isinstance(record.get("hashes"), dict) else {}
+        sha256 = str(hashes.get("sha256") or record.get("sha256") or "") or None
+
+        file_type = record.get("file_type") if isinstance(record.get("file_type"), dict) else {}
+        fmt = _normalise_format(
+            file_type.get("type") or record.get("format") or record.get("type") or ""
+        )
+
+        info = next(
+            (record[key] for key in ("elf_info", "pe_info", "macho_info")
+             if isinstance(record.get(key), dict)), {}
+        )
+        arch = str(
+            info.get("machine") or record.get("architecture") or record.get("arch") or ""
+        ) or None
+
+        # The issue records carry a description and an offset; the values they
+        # describe live in a sibling list. Correlating on offset recovers the
+        # evidence without parsing English out of the description.
+        by_offset = {
+            _offset(entry.get("offset")): str(entry.get("value") or "")
+            for entry in record.get("suspicious_strings") or []
+            if isinstance(entry, dict) and entry.get("value")
+        }
 
         for issue in record.get("issues") or []:
             if not isinstance(issue, dict):
@@ -73,7 +99,14 @@ def to_raw_findings(records: list[dict], source_root: Path) -> list[RawFinding]:
 
             family = resolve_family(SENSOR, normalize_label(label))
             description = str(issue.get("description") or label)
+            offset = _offset(issue.get("offset"))
             matched = str(issue.get("match") or issue.get("api") or issue.get("value") or "")
+            if not matched:
+                matched = by_offset.get(offset, "")
+            if not matched:
+                # The offset moves on every rebuild, so it must not reach the
+                # fingerprint through the evidence field.
+                matched = _OFFSET_SUFFIX.sub("", description).strip()
 
             findings.append(RawFinding(
                 sensor=SENSOR,
@@ -97,11 +130,71 @@ def to_raw_findings(records: list[dict], source_root: Path) -> list[RawFinding]:
                     kind="binary", file=rel, artifact_sha256=sha256,
                     format=fmt, architecture=arch,
                     section=str(issue.get("section") or "") or None,
-                    offset=issue.get("offset") if isinstance(issue.get("offset"), int) else None,
+                    offset=offset,
                 ),
             ))
 
-    return findings
+    return [f for f in findings if _has_valid_location(f)]
+
+
+_SHA256 = re.compile(r"^[a-f0-9]{64}$")
+#: Upstream appends " (at offset 0x…)" to several descriptions. It changes on
+#: every rebuild, and the description reaches the evidence field.
+_OFFSET_SUFFIX = re.compile(r"\s*\(at offset 0x[0-9a-fA-F]+\)\s*$")
+
+
+#: Upstream describes the container in prose — "ELF Executable (Linux/Unix)" —
+#: while `binstrings` reports a token. `binary_fingerprint` keys on this field,
+#: so two scanners describing one artifact differently produce two fingerprints
+#: and never group: the same address gets counted twice instead of once with a
+#: corroborating sensor.
+_FORMAT_TOKENS: tuple[tuple[str, str], ...] = (
+    ("elf", "elf"), ("mach-o", "macho"), ("macho", "macho"),
+    ("pe32", "pe"), ("portable executable", "pe"), ("ms-dos", "pe"),
+    ("wasm", "wasm"), ("java", "class"), ("archive", "ar"),
+)
+
+
+def _normalise_format(value: object) -> str | None:
+    """Map a container description onto the token `binstrings` reports."""
+    text = str(value or "").strip().lower()
+    if not text:
+        return None
+    for needle, token in _FORMAT_TOKENS:
+        if needle in text:
+            return token
+    # An unrecognised description is still better evidence than nothing, but it
+    # is truncated to the contract's ceiling.
+    return text[:32]
+
+
+def _offset(value: object) -> int | None:
+    """Parse an offset that upstream reports as ``"0x1111"`` as often as ``4369``."""
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value if value >= 0 else None
+    if isinstance(value, str):
+        text = value.strip()
+        try:
+            return int(text, 16) if text.lower().startswith("0x") else int(text)
+        except ValueError:
+            return None
+    return None
+
+
+def _has_valid_location(finding: RawFinding) -> bool:
+    """A binary location without the artifact digest is rejected by the
+    contract, and nothing validates raw findings in production."""
+    if finding.location.kind != "binary":
+        return True
+    if _SHA256.match(finding.location.artifact_sha256 or ""):
+        return True
+    logger.warning(
+        "%s: dropping %s — the record carried no artifact digest",
+        SENSOR, finding.rule_id,
+    )
+    return False
 
 
 def run(source_root: Path, output_dir: Path, *,

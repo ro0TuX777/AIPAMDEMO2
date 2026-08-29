@@ -133,7 +133,10 @@ def lance_dir(tmp_path):
         mock_model.encode = _fake_encode
         mock_get_model.return_value = mock_model
 
-        with patch("app.flow_vectorstore.get_effective_settings", return_value=mock_settings):
+        # `app.` predates the `backend.app.` layout. The whole file was skipped
+        # while lancedb was uninstalled, so this never ran to fail.
+        with patch("backend.app.flow_vectorstore.get_effective_settings",
+                   return_value=mock_settings):
             yield tmp_path
 
     # Reset after test

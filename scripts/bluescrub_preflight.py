@@ -62,6 +62,10 @@ def _fixture(root: Path) -> Path:
         b"\x7fELF\x02\x01\x01" + b"\x00" * 500
         + b"OPERATION NIGHTFALL\x00"
         + rb"C:\Users\ada.chen\source\repos\loader\obj\Release\loader.pdb" + b"\x00"
+        # Every adapter must have something to find, or a broken one and a
+        # working one both report zero and the check tells you nothing.
+        + b"10.20.30.40:8443\x00"
+        + b"cdn-update.redcell-ops.internal\x00"
     )
 
     # The history scanners need a repository, and the dirty-word scanner needs

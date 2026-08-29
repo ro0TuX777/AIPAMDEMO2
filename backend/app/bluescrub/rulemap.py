@@ -230,6 +230,32 @@ VENDORED_CATEGORY_FAMILY: dict[str, IssueFamily] = {
     # Home-rolled crypto is a defect in the tool, which is the one group here
     # that genuinely is Vulnerability.
     "custom_crypto": IssueFamily.weak_crypto,
+
+    # ── Binary analyzer ──
+    #
+    # These only appeared once `pefile` and `pyelftools` were installed and the
+    # scanner stopped reporting `unavailable`. The earlier unmapped review was
+    # measured with it dark, so its rules were never in the sample — which is
+    # its own argument for provisioning a host before trusting a backlog count.
+    #
+    # `OPSEC: Extractable String (<kind>)` becomes
+    # `opsec_extractable_string_<kind>`, and the kind decides the family: an
+    # address is somebody's infrastructure, a PEM header is a key, and a shell
+    # path is what a defender signatures. The generic entry catches kinds that
+    # upstream adds later.
+    "opsec_extractable_string_ip_address": IssueFamily.hardcoded_c2,
+    "opsec_extractable_string_crypto": IssueFamily.hardcoded_secret,
+    "opsec_extractable_string_registry": IssueFamily.forensic_artifact,
+    "opsec_extractable_string_cmd_exec": IssueFamily.signature_known,
+    # url, domain and base64_blob measure as licence and bug-tracker
+    # boilerplate in ordinary binaries, so they are string exposure — real,
+    # visible, and not something to inflate a pillar with.
+    "opsec_extractable_string": IssueFamily.string_exposure,
+
+    "opsec_monitored_api_import": IssueFamily.import_exposure,
+    "opsec_monitored_function": IssueFamily.signature_known,
+    "opsec_capa_capability_match": IssueFamily.signature_known,
+    "opsec_high_entropy_detection": IssueFamily.packer_detected,
 }
 
 #: Explicit per-rule overrides, highest priority. Populated as rules are
