@@ -220,7 +220,7 @@
     },
     {
       "name": "gitleaks",
-      "version": "8.x",
+      "version": "8.30.1",
       "runner": "subprocess",
       "risk_class": "repo_history",
       "pillars": [
@@ -235,7 +235,7 @@
       "optional": true,
       "binary_checksum": null,
       "network_verification_flag": "n/a \u2014 gitleaks does not verify",
-      "licence_notes": "Engine is MIT. The default rule pack ships with it and is covered by the same licence. `--redact` is deliberately NOT passed: redaction is central, and redacting at the tool would destroy the value before the keyed fingerprint is computed, so two scans of the same secret would stop deduplicating. Its output is therefore plaintext and is written to quarantine/, not beside the findings.",
+      "licence_notes": "Engine is MIT. The default rule pack ships with it and is covered by the same licence. `--redact` is deliberately NOT passed: redaction is central, and redacting at the tool would destroy the value before the keyed fingerprint is computed, so two scans of the same secret would stop deduplicating. Its output is therefore plaintext and is written to quarantine/, not beside the findings. Verified end to end against 8.30.1: the `detect --source ... --report-path /dev/stdout` invocation and the bare-array TitleCase report shape are both correct for this version, and a planted GitHub PAT reached the database as a mask plus a keyed fingerprint with the plaintext nowhere in it. Note 8.19+ also offers `gitleaks git` / `gitleaks dir`; `detect` still works and is what the adapter uses.",
       "limits": {
         "timeout_seconds": 900,
         "mem_limit": "2g",
@@ -259,7 +259,7 @@
       "optional": true,
       "binary_checksum": null,
       "network_verification_flag": "--no-verification",
-      "licence_notes": "AGPL-3.0. Invoked as a separate process over a pipe, which is not linking, but an air-gapped bundle redistributing the binary must carry the licence and the source offer. Verification is hard-disabled: it proves a credential live by authenticating to the issuing service, which is an outbound connection carrying somebody else's secret from a host with no egress. Asserted by test, not by configuration.",
+      "licence_notes": "AGPL-3.0. Invoked as a separate process over a pipe, which is not linking, but an air-gapped bundle redistributing the binary must carry the licence and the source offer. Verification is hard-disabled: it proves a credential live by authenticating to the issuing service, which is an outbound connection carrying somebody else's secret from a host with no egress. Asserted by test, not by configuration. NOT verifiable by `go install`: its go.mod carries replace directives, which Go refuses for module installs. It needs a release binary or their install script, so its argv and parser remain tested against recorded output only.",
       "limits": {
         "timeout_seconds": 900,
         "mem_limit": "2g",

@@ -51,6 +51,10 @@ def _fixture(root: Path) -> Path:
     src.mkdir(parents=True)
     (src / "settings.py").write_text(
         "# Maintainer: a.chen@redcell.internal\n"
+        # Gitleaks allowlists the AWS documentation keys, so a fixture built
+        # only from those reports zero and tells you nothing about whether the
+        # adapter works. This is a PAT-shaped string it does detect.
+        'GITHUB_TOKEN = "ghp_16C7e42F292c6912E7710c838347Ae178B4a"\n'
         'AWS_KEY = "AKIAIOSFODNN7EXAMPLE"\n'
         'HOST = "buildbox01.redcell.internal"\n'
         "import subprocess\n"

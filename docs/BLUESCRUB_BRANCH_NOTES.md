@@ -505,6 +505,42 @@ Realigned, and written up as
 business sharing the application's dependency resolution. Install them with
 pipx, a container, or a dedicated virtualenv on `PATH`.
 
+## Gitleaks validated; the secret path holds against a real scanner
+
+Installed outside the virtualenv this time — `GOBIN=~/.local/bin go install`,
+per the lesson above — so nothing in the application's dependency resolution
+moved.
+
+**The argv guess was right.** `detect --source ... --report-path /dev/stdout`
+works on 8.30.1, and the report is the bare TitleCase array the parser was
+written for. 8.19+ also offers `gitleaks git` / `gitleaks dir`, but `detect`
+still works and is what the adapter uses.
+
+**The Sprint 5 acceptance criterion now holds against a real tool rather than a
+stub.** A planted GitHub PAT reached the database as `ghp_…8B4a` with an
+`hmac-sha256:` fingerprint, the plaintext appeared in no column and in no file
+except the artifact the operator uploaded, and the normalised output went to
+`quarantine/` with its evidence withheld. Until today that path had only ever
+been exercised by a synthetic scanner the tests wrote themselves.
+
+**One finding in, one finding out.** Gitleaks reports a single hit on a file
+holding three credential-shaped strings, because it allowlists the AWS
+documentation keys itself. Worth checking rather than assuming: an adapter that
+silently drops findings looks identical to a tool that is simply precise.
+
+**TruffleHog could not be installed the same way.** Its `go.mod` carries
+`replace` directives, which Go refuses for module installs, so it needs a
+release binary or the vendor's install script. Its argv and parser remain
+tested against recorded output only, and it is the one remaining adapter in
+that state.
+
+**Semgrep is still in the application virtualenv.** Moving it out needs a
+second virtualenv, and `ensurepip` is unavailable here — `python3.12-venv` is
+not installed and needs apt. The opentelemetry pin from earlier keeps the
+environment consistent, but the recommendation in
+[SUPPLY_CHAIN §5.1](BLUESCRUB_SUPPLY_CHAIN.md) stands and this machine does not
+yet follow it.
+
 ## Still open
 
 - The differential baseline (`upstream_baseline.json`) is captured from
@@ -529,7 +565,7 @@ pipx, a container, or a dedicated virtualenv on `PATH`.
   blocking items are unanswered, and Semgrep rule licensing has been sidestepped
   rather than resolved — it becomes live again the moment anyone points
   `AIPAM_BLUESCRUB_SEMGREP_CONFIG` at the registry.
-- Gitleaks, TruffleHog and FLOSS are not installed here either. Their argv is a
+- TruffleHog is the one adapter still unvalidated against its tool. Their argv is a
   documented decision a deployment must confirm; their parsers — which is where
   the Semgrep adapter's three defects actually lived — are pure functions tested
   against recorded output. `binstrings` and `build_paths` need no binary and are
