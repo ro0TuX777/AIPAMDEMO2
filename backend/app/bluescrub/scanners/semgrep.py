@@ -31,11 +31,31 @@ from backend.app.bluescrub.isolation import (
 from backend.app.bluescrub.models import Location, RawFinding
 from backend.app.bluescrub.rulemap import detector_for, normalize_cwes, resolve_family
 from backend.app.bluescrub.scanners.base import ScannerOutcome
-from backend.app.bluescrub.pillars import FAMILY_PILLAR, IssueFamily
+from backend.app.bluescrub.pillars import FAMILY_PILLAR, DetectorClass, IssueFamily
 
 logger = logging.getLogger(__name__)
 
 SENSOR = "semgrep"
+
+#: Semgrep is OCaml and cannot run under RLIMIT_AS at any value — 2, 4 and
+#: 8 GiB all produce "the engine was killed" and exit 2. Declared here
+#: rather than only in the registry, because the registry's `limits` field
+#: never reaches the scanner: the service calls `spec.run(root, out)` and
+#: each module's own default is what applies.
+DEFAULT_LIMITS = ResourceLimits.for_external_tool()
+
+#: Semgrep forks one worker per core unless told otherwise, and its memory
+#: need scales with that. Measured on a 32-core host against the 8 GiB data
+#: ceiling: `-j 1`, `-j 2` and `-j 4` complete; `-j 8` and `-j 16` are killed,
+#: and so is the default. Raising the ceiling instead would work here and fail
+#: on a larger machine, because the requirement follows the core count.
+#:
+#: Pinning it is not only about fitting the ceiling. A scanner that succeeds on
+#: a four-core host and dies on a thirty-two-core one violates the
+#: machine-independence invariant in SCORING_SPEC §5 in the worst way: the
+#: pillar silently degrades on the bigger machine, and the grade depends on
+#: what you ran it on.
+MAX_JOBS = 4
 DEFAULT_RULES = Path(__file__).resolve().parent.parent / "rules" / "bluescrub"
 
 #: Semgrep confidence metadata, mapped onto the 0–1 scale.
@@ -122,6 +142,7 @@ def parse_output(payload: dict, source_root: Path, config: str | None = None) ->
         start = item.get("start") or {}
         end = item.get("end") or {}
 
+        evidence = _evidence(extra, raw_path, start, end)
         namespace = rule_id.rsplit(".", 1)[0] if "." in rule_id else None
         confidence = _CONFIDENCE.get(str(metadata.get("confidence", "")).upper(), 0.65)
 
@@ -132,15 +153,15 @@ def parse_output(payload: dict, source_root: Path, config: str | None = None) ->
             rule_id=rule_id,
             issue_family=family,
             pillar_hint=FAMILY_PILLAR.get(family),
-            detector_class=detector_for(SENSOR),
+            detector_class=_declared_detector(metadata) or detector_for(SENSOR),
             raw_severity=str(extra.get("severity") or "WARNING"),
             confidence=confidence,
             source_facet="source",
             title=rule_id.rsplit(".", 1)[-1].replace("-", " "),
             description=str(extra.get("message") or "")[:4096],
             cwe=cwes,
-            mitre=mitre_for(str(extra.get("lines") or ""), rule_id),
-            matched_tokens=str(extra.get("lines") or "")[:4096],
+            mitre=mitre_for(evidence, rule_id),
+            matched_tokens=evidence[:4096],
             location=Location(
                 kind="source",
                 file=rel,
@@ -152,6 +173,61 @@ def parse_output(payload: dict, source_root: Path, config: str | None = None) ->
         ))
 
     return findings
+
+
+#: Semgrep's OSS build does not return the matched text — every finding comes
+#: back with `lines: "requires login"`. Written into evidence that is useless
+#: to an analyst, and worse: `matched_tokens` feeds `source_fingerprint`, so
+#: every semgrep finding in a job would share the same token stream and the
+#: fingerprints would stop distinguishing them.
+_REDACTED_LINES = frozenset({"requires login", "requires login.", ""})
+
+#: A matched region longer than this is a pattern that matched a whole file.
+_MAX_EVIDENCE_LINES = 12
+
+
+def _evidence(extra: dict, raw_path: str, start: dict, end: dict) -> str:
+    """The matched source, read from disk when Semgrep declines to return it."""
+    lines = str(extra.get("lines") or "").strip()
+    if lines.lower() not in _REDACTED_LINES:
+        return lines
+
+    first = start.get("line")
+    last = end.get("line", first)
+    if not isinstance(first, int) or first < 1:
+        return ""
+    if not isinstance(last, int) or last < first:
+        last = first
+    last = min(last, first + _MAX_EVIDENCE_LINES - 1)
+
+    try:
+        with open(raw_path, encoding="utf-8", errors="replace") as handle:
+            selected = [
+                text for number, text in enumerate(handle, start=1)
+                if first <= number <= last
+            ]
+    except OSError as exc:
+        logger.info("could not read %s for evidence: %s", raw_path, exc)
+        return ""
+    return "".join(selected).strip()
+
+
+def _declared_detector(metadata: dict) -> DetectorClass | None:
+    """Honour a rule's declared detector class.
+
+    Assigning one class per tool is wrong for Semgrep in the same way assigning
+    one pillar per tool would be: the shipped pack mixes `pattern-regex` rules
+    with AST ones, and calling a regex match an AST match exempts it from the
+    ceiling that stops a regex disqualifying an artifact.
+    """
+    value = metadata.get("bluescrub_detector")
+    if not value:
+        return None
+    try:
+        return DetectorClass(str(value))
+    except ValueError:
+        logger.warning("rule declares unknown bluescrub_detector %r", value)
+        return None
 
 
 def _declared_family(value: object) -> IssueFamily | None:
@@ -205,6 +281,7 @@ def run(source_root: Path, output_dir: Path, *, limits: ResourceLimits | None = 
         binary, "--json", "--quiet", "--no-git-ignore",
         "--metrics", "off",          # never phone home from an air-gapped host
         "--disable-version-check",
+        "-j", str(MAX_JOBS),
         "--config", config,
         str(source_root),
     ]
@@ -212,7 +289,7 @@ def run(source_root: Path, output_dir: Path, *, limits: ResourceLimits | None = 
     result = run_analyzer(
         argv,
         cwd=source_root,
-        limits=limits or ResourceLimits(),
+        limits=limits or DEFAULT_LIMITS,
         require_privilege_drop=_require_drop(),
     )
 

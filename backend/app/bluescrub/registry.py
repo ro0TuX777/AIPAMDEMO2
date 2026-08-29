@@ -135,7 +135,7 @@ SCANNERS: dict[str, ScannerSpec] = {
         # Optional: Grype covers the same pillar from a different database, so
         # neither alone is required and installing one must not move the score.
         optional=True,
-        limits=ResourceLimits(wall_clock_seconds=600, cpu_seconds=600),
+        limits=ResourceLimits.for_external_tool(),
     ),
     "floss": ScannerSpec(
         name="floss",
@@ -173,7 +173,7 @@ SCANNERS: dict[str, ScannerSpec] = {
         risk_class=RiskClass.parse_only,
         profiles=("standard", "deep"),
         optional=True,
-        limits=ResourceLimits(wall_clock_seconds=600, cpu_seconds=600),
+        limits=ResourceLimits.for_external_tool(),
     ),
     "trufflehog": ScannerSpec(
         name="trufflehog",
@@ -191,7 +191,7 @@ SCANNERS: dict[str, ScannerSpec] = {
         risk_class=RiskClass.parse_only,
         profiles=("deep",),
         optional=True,
-        limits=ResourceLimits(wall_clock_seconds=600, cpu_seconds=600),
+        limits=ResourceLimits.for_external_tool(),
     ),
     "semgrep": ScannerSpec(
         name="semgrep",
@@ -200,7 +200,8 @@ SCANNERS: dict[str, ScannerSpec] = {
         risk_class=RiskClass.parse_only,
         profiles=("triage", "standard", "deep"),
         optional=False,
-        limits=ResourceLimits(),
+        # Semgrep is OCaml and cannot run under RLIMIT_AS at any value.
+        limits=ResourceLimits.for_external_tool(),
     ),
 }
 

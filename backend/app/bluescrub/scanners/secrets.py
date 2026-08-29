@@ -52,7 +52,10 @@ from backend.app.bluescrub.scanners.external import ExternalTool, run_external
 
 logger = logging.getLogger(__name__)
 
-LIMITS = ResourceLimits(wall_clock_seconds=900, cpu_seconds=900)
+#: Both are Go binaries, and a Go runtime reserves a large virtual arena at
+#: startup — so RLIMIT_AS bounds something unrelated to what they use. See
+#: ResourceLimits.for_external_tool.
+LIMITS = ResourceLimits.for_external_tool()
 
 #: Rule or detector names that describe a login rather than a machine key. The
 #: distinction is not cosmetic: `credential-exposure` and `hardcoded-secret`

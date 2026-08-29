@@ -77,6 +77,13 @@ def write_wordlist(job_dir: Path, terms: list[dict]) -> Path | None:
 
 #: One term repeated through a data section is one finding's worth of signal.
 #: The cap is reported rather than applied silently.
+#: Directories whose contents are not the artifact. Kept in step with
+#: `fpfilter.NON_ARTIFACT_SEGMENTS`, which suppresses findings from them.
+_NON_ARTIFACT_DIRS: frozenset[str] = frozenset({
+    ".git", ".hg", ".svn", "__pycache__", ".mypy_cache", ".pytest_cache",
+    ".ruff_cache", ".tox",
+})
+
 MAX_BINARY_HITS_PER_FILE = 200
 #: Characters of surrounding string kept as evidence.
 BINARY_CONTEXT = 24
@@ -97,6 +104,12 @@ def binary_paths(root: Path) -> set[str]:
         return found
     for path in root.rglob("*"):
         if not path.is_file() or path.is_symlink():
+            continue
+        # Loose git objects and the index are binary by content and are not
+        # artifacts. Emulating them wastes the expensive tier and reports
+        # failures that read as coverage loss; `fpfilter` already treats
+        # anything under `.git` as tool-owned output rather than the artifact.
+        if any(part in _NON_ARTIFACT_DIRS for part in path.parts):
             continue
         if path.suffix.lower() in BINARY_EXTENSIONS or binstrings.is_binary_file(path):
             found.add(str(path.relative_to(root)))

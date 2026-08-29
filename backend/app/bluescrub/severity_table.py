@@ -169,6 +169,15 @@ SEVERITY_BY_RULE: dict[str, str] = {
     # critical because the pattern finds the *tag*, not the name in it — the
     # name is what the dirty-word and gitmeta detectors are for.
     "CodeSimilarityDetector.fingerprint_patterns.author_attribution": "high",
+
+    # ── Shipped Semgrep pack ──
+    #
+    # Same judgement as the vendored habit markers, reached the same way. This
+    # rule fires on a bare "# TODO:", and while its family was
+    # `attribution-identity` a two-line file containing one TODO comment scored
+    # F with `disqualified: true`. It was invisible because semgrep was not
+    # installed on the machine the calibration was done on.
+    "bluescrub.attribution.operator-todo": "info",
 }
 
 

@@ -164,6 +164,30 @@ legitimate reason must not silently re-enable credential exfiltration.
 
 ---
 
+## 5.1 External binaries do not belong in the application virtualenv
+
+Learned by breaking it. Semgrep was installed with `pip install semgrep` into
+the same virtualenv as the application, and pip resolved a shared transitive
+dependency in semgrep's favour: `opentelemetry-*` was pinned down to 1.37.0
+while `opentelemetry-exporter-otlp-proto-grpc` stayed at 1.44.0. LanceDB uses
+the grpc exporter, so knowledge-base indexing began failing with
+`ModuleNotFoundError: ..._exporter_metrics` — an unrelated product feature,
+broken by installing an analysis tool.
+
+Every tool in the manifest with `runner: subprocess` is **invoked by path and
+never imported**. It therefore has no business sharing the application's
+dependency resolution, and giving it one means any tool can silently re-resolve
+any application dependency.
+
+Install them out of the environment: `pipx`, a distribution package, a
+container, or a dedicated virtualenv on `PATH`. The adapters use
+`shutil.which`, so anything on `PATH` works and nothing needs to change in the
+code. `make bluescrub-preflight` reports what it finds either way.
+
+The one exception is a tool that is genuinely a library — the binary-analysis
+parsers (`pefile`, `pyelftools`, `capstone`, `lief`) are imported and belong in
+`requirements.txt`, where they already are.
+
 ## 6. Acceptance
 
 1. A registry entry with no manifest entry fails startup.

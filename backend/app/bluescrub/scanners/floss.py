@@ -19,6 +19,15 @@ job-scoped cache keyed by artifact digest; those scanners merge it into their
 own static pass, and the coverage loss clears because the recovery genuinely
 happened.
 
+**For PE, and only PE.** This was written against recorded output and shipped
+claiming more than the tool does: FLOSS 3.1 decodes strings and recovers stack
+strings for PE alone. Handed an ELF it prints "FLOSS currently supports the
+following formats ...: PE" and exits **0**, which the adapter read as a failed
+emulation — reporting lost coverage on every Linux artifact for a question no
+tool in the manifest can answer. An artifact of an unsupported format is now
+skipped and said so, which is not the same as a failure, and a PE that
+genuinely fails still degrades.
+
 That is why this scanner runs **first** — `ScannerSpec.order`, not the accident
 that `floss` sorts after `build_paths` and `dirty_word` alphabetically.
 
@@ -78,6 +87,17 @@ MAX_EVIDENCE_CHARS = 512
 #: Recovery methods that mean the string was assembled at runtime. `static` is
 #: excluded: those were in the file, and the consumers find them unaided.
 RUNTIME_METHODS: frozenset[str] = frozenset({"stack", "tight", "decoded"})
+
+#: FLOSS 3.1 decodes strings for **PE only**. Handed an ELF it answers
+#: "FLOSS currently supports the following formats for string decoding and
+#: stackstrings: PE" and exits 0, which the adapter read as a failed emulation
+#: and reported as lost coverage on every Linux artifact.
+#:
+#: It can also take shellcode with an explicit `--format sc32|sc64`, which is
+#: deliberately not used: guessing that a blob is shellcode and guessing its
+#: bitness are two guesses, and being wrong produces emulated nonsense rather
+#: than an error.
+SUPPORTED_FORMATS: frozenset[str] = frozenset({"pe"})
 
 
 def _run_floss(binary: str, path: Path, limits: ResourceLimits) -> dict | None:
@@ -188,12 +208,19 @@ def run(source_root: Path, output_dir: Path, *,
     findings: list[RawFinding] = []
     cache: dict[str, binstrings.Recovery] = {}
     failures: list[str] = []
+    inapplicable: list[str] = []
 
     for rel in artifacts:
         path = source_root / rel
         recovery = binstrings.recover(path)
         if not recovery.sha256:
             failures.append(rel)
+            continue
+
+        if recovery.binary_format not in SUPPORTED_FORMATS:
+            # Not a failure and not lost coverage: no tool in the manifest can
+            # answer this question for this format, so there is nothing to lose.
+            inapplicable.append(rel)
             continue
 
         payload = _run_floss(binary, path, limits or DEFAULT_LIMITS)
@@ -223,12 +250,19 @@ def run(source_root: Path, output_dir: Path, *,
         "\n".join(json.dumps(f.to_dict()) for f in findings)
     )
 
+    # An artifact FLOSS cannot read is not a degradation. An artifact it should
+    # have been able to read and could not, is.
     degraded = bool(failures) or truncated
     reason = None
     if truncated:
         reason = f"emulated the first {MAX_ARTIFACTS} of {len(binary_paths(source_root))} artifacts"
     elif failures:
         reason = f"could not emulate {len(failures)} artifact(s): {', '.join(failures[:3])}"
+    elif inapplicable and not cache:
+        reason = (
+            f"{len(inapplicable)} artifact(s) are not PE; FLOSS decodes strings "
+            "for PE only, so there was nothing here for it to recover"
+        )
 
     return ScannerOutcome(
         sensor=SENSOR,
@@ -236,7 +270,10 @@ def run(source_root: Path, output_dir: Path, *,
                 else AnalyzerStatus.completed.value),
         findings=findings,
         version=_probe_version(binary),
-        ruleset_version=f"{len(artifacts)} artifact(s), {len(cache)} with runtime strings",
+        ruleset_version=(
+            f"{len(artifacts) - len(inapplicable)} of {len(artifacts)} artifact(s) "
+            f"emulated, {len(cache)} with runtime strings"
+        ),
         reason=reason,
     )
 
@@ -244,7 +281,8 @@ def run(source_root: Path, output_dir: Path, *,
 def _probe_version(binary: str) -> str | None:
     result = run_analyzer(
         [binary, "--version"],
-        limits=ResourceLimits(wall_clock_seconds=60, cpu_seconds=60),
+        limits=ResourceLimits(address_space_bytes=None, data_bytes=8 * 1024**3,
+                              wall_clock_seconds=60, cpu_seconds=60),
         require_privilege_drop=require_privilege_drop(),
     )
     if not result.ok:

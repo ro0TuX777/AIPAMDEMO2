@@ -41,6 +41,11 @@ def elf_with(payload: bytes, *, pad: int = 512) -> bytes:
     return b"\x7fELF\x02\x01\x01" + b"\x00" * (pad - 7) + payload + b"\x00" * 64
 
 
+def pe_with(payload: bytes, *, pad: int = 512) -> bytes:
+    """FLOSS decodes strings for PE only, so its fixtures have to be PE."""
+    return b"MZ\x90\x00\x03" + b"\x00" * (pad - 5) + payload + b"\x00" * 64
+
+
 FLOSS_OUTPUT = {
     "strings": {
         "static_strings": [{"string": "libc.so.6", "offset": 512, "encoding": "ASCII"}],
@@ -208,7 +213,7 @@ def test_a_cache_problem_costs_depth_not_correctness(tmp_path):
 def test_only_runtime_strings_are_cached(tmp_path, monkeypatch):
     """A large binary yields tens of thousands of static strings. Caching them
     would write megabytes the consumers already derive for themselves."""
-    (tmp_path / "loader").write_bytes(elf_with(b"libc.so.6"))
+    (tmp_path / "loader.exe").write_bytes(pe_with(b"libc.so.6"))
     _stub_floss(monkeypatch)
 
     floss.run(tmp_path, tmp_path / "out")
@@ -223,7 +228,7 @@ def test_only_runtime_strings_are_cached(tmp_path, monkeypatch):
 
 def test_floss_missing_is_real_coverage_loss(tmp_path, monkeypatch):
     """Whether the obfuscation holds cannot be answered without emulating it."""
-    (tmp_path / "loader").write_bytes(elf_with(b"x"))
+    (tmp_path / "loader.exe").write_bytes(pe_with(b"x"))
     monkeypatch.setattr(floss.shutil, "which", lambda _n: None)
     outcome = floss.run(tmp_path, tmp_path / "out")
 
@@ -256,7 +261,7 @@ def test_a_deep_scan_stops_degrading_once_a_cache_exists(tmp_path, monkeypatch):
 
 
 def test_an_artifact_that_will_not_emulate_degrades_the_rest(tmp_path, monkeypatch):
-    (tmp_path / "loader").write_bytes(elf_with(b"x"))
+    (tmp_path / "loader.exe").write_bytes(pe_with(b"x"))
     _stub_floss(monkeypatch, payload=None)          # unparseable output
     outcome = floss.run(tmp_path, tmp_path / "out")
 
@@ -266,7 +271,7 @@ def test_an_artifact_that_will_not_emulate_degrades_the_rest(tmp_path, monkeypat
 
 def test_the_artifact_count_is_bounded_and_says_so(tmp_path, monkeypatch, caplog):
     for n in range(floss.MAX_ARTIFACTS + 5):
-        (tmp_path / f"loader{n}").write_bytes(elf_with(b"x"))
+        (tmp_path / f"loader{n}.exe").write_bytes(pe_with(b"x"))
     _stub_floss(monkeypatch)
     outcome = floss.run(tmp_path, tmp_path / "out")
 
@@ -371,3 +376,48 @@ def test_a_stale_cache_path_is_cleared_before_the_scan(tmp_path, monkeypatch):
         "a previous job's recovered strings were attributed to this artifact"
     )
     db.close()
+
+
+# ── FLOSS decodes strings for PE only ─────────────────────────────────────
+
+def test_an_elf_is_not_a_failed_emulation(tmp_path, monkeypatch):
+    """Handed an ELF, FLOSS 3.1 answers "supports the following formats ...:
+    PE" and exits 0. The adapter read that as a failed emulation and reported
+    lost coverage on every Linux artifact — which would have degraded
+    Attribution on a question no tool in the manifest can answer."""
+    (tmp_path / "loader").write_bytes(elf_with(b"OPERATION NIGHTFALL"))
+    _stub_floss(monkeypatch)
+    outcome = floss.run(tmp_path, tmp_path / "out")
+
+    assert outcome.status == "completed", "an inapplicable format is not a failure"
+    assert "not PE" in outcome.reason
+    assert "PE only" in outcome.reason
+
+
+def test_a_pe_is_emulated(tmp_path, monkeypatch):
+    (tmp_path / "loader.exe").write_bytes(pe_with(b"anything"))
+    _stub_floss(monkeypatch)
+    outcome = floss.run(tmp_path, tmp_path / "out")
+
+    assert outcome.status == "completed"
+    assert outcome.findings, "the stubbed payload should have produced findings"
+
+
+def test_floss_is_never_asked_to_guess_shellcode():
+    """`--format sc32|sc64` would let it read a raw blob, at the price of two
+    guesses — that the blob is shellcode, and its bitness. Being wrong emulates
+    nonsense rather than erroring."""
+    assert floss.SUPPORTED_FORMATS == frozenset({"pe"})
+    assert "--format" not in binstrings.floss_argv(Path("/a"))
+
+
+def test_an_inapplicable_artifact_does_not_hide_a_real_failure(tmp_path, monkeypatch):
+    """A PE that genuinely fails must still degrade, even alongside an ELF that
+    was merely skipped."""
+    (tmp_path / "skipped").write_bytes(elf_with(b"x"))
+    (tmp_path / "broken.exe").write_bytes(pe_with(b"y"))
+    _stub_floss(monkeypatch, payload=None)
+    outcome = floss.run(tmp_path, tmp_path / "out")
+
+    assert outcome.status == "completed_truncated"
+    assert "could not emulate" in outcome.reason

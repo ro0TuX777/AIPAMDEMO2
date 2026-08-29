@@ -72,7 +72,10 @@ def probe_version(tool: ExternalTool) -> str | None:
         return None
     result = run_analyzer(
         [binary, *tool.version_argv],
-        limits=ResourceLimits(wall_clock_seconds=30, cpu_seconds=30),
+        # A version probe still has to start the runtime, so it needs the same
+        # memory control as a real invocation.
+        limits=ResourceLimits(address_space_bytes=None, data_bytes=8 * 1024**3,
+                              wall_clock_seconds=30, cpu_seconds=30),
         require_privilege_drop=_require_drop(),
     )
     if not result.ok:
@@ -97,7 +100,9 @@ def run_external(
     result = run_analyzer(
         argv,
         cwd=source_root,
-        limits=tool.limits or ResourceLimits(),
+        # Every tool reached through this harness is a compiled binary with a
+        # reserving runtime, so the external profile is the right default.
+        limits=tool.limits or ResourceLimits.for_external_tool(),
         require_privilege_drop=_require_drop(),
     )
 

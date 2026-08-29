@@ -429,6 +429,82 @@ confirms a single head. The hand-written chain-parsing test stays: it is the
 only check that works on a machine where alembic is absent, which is the
 machine this was written on.
 
+## Installing the tools found what writing the adapters could not
+
+Two `pip install`s — semgrep and flare-floss — produced more defects in an hour
+than a day of feature work.
+
+**Semgrep could not run at all, for a contract-level reason.** `RLIMIT_AS`
+kills it at *every* value tested: 2, 4 and 8 GiB all produce "the engine was
+killed" and exit 2. Its OCaml core reserves an enormous virtual arena at
+startup, and `RLIMIT_AS` bounds address space reserved rather than memory used,
+so the two are barely related. `RLIMIT_DATA` is the control that means what
+§2.2 intended — semgrep runs at 8 GiB under it and is killed at 4. Every
+remaining external tool (Gitleaks, TruffleHog, OSV-Scanner, Grype, Syft) is a
+Go binary with the same reserving runtime, so this was blocking five more
+adapters nobody had reached yet. `ResourceLimits.for_external_tool()` sets
+`RLIMIT_DATA` and leaves `RLIMIT_AS` unset; the wall clock, CPU ceiling, file
+size and process-group kill are unchanged, and they are what actually bound a
+runaway tool.
+
+**Its failure was machine-dependent.** Semgrep forks a worker per core, and its
+memory need scales with that. On this 32-core host at an 8 GiB ceiling, `-j 4`
+completes and `-j 8` is killed — so the same artifact would have scanned
+cleanly on a small machine and silently degraded the Vulnerability pillar on a
+large one. That is the machine-independence invariant in
+[SCORING_SPEC §5](BLUESCRUB_SCORING_SPEC.md) failing in the worst way: not a
+different score, but a different *coverage*, depending on the hardware. Job
+count is pinned at 4.
+
+**A shipped rule disqualified any file containing a TODO comment.** Identical
+to the dirty-word pack defect fixed the day before, in a different place, and
+invisible for the same reason: semgrep was not installed on the machine the
+calibration was done on. `bluescrub.attribution.operator-todo` declares
+`severity: INFO, confidence: LOW`, but its family was `attribution-identity`,
+whose default is critical — tier-1 severity comes from the family and the
+rule's own severity is discarded.
+
+Underneath it, a deeper error: **detector class was assigned per tool.**
+`semgrep → ast_pattern`, while the shipped pack mixes `pattern-regex` rules
+with real AST ones. Calling a regex match an AST match exempts it from the
+ceiling that exists precisely to stop a regex disqualifying an artifact. The
+rulemap's own docstring says pillar assignment is "rule-level, never
+tool-level"; the same argument applies to detector class, and rules now declare
+`bluescrub_detector` alongside `bluescrub_family`.
+
+**Every Semgrep finding carried the evidence `requires login`.** The OSS build
+does not return matched lines. That is useless to an analyst and worse than
+useless to the fingerprint: `matched_tokens` feeds `source_fingerprint`, so
+every Semgrep finding in a job shared one token stream. The adapter now reads
+the matched region from disk.
+
+**FLOSS is PE-only, and the adapter claimed otherwise.** Handed an ELF, FLOSS
+3.1 prints "supports the following formats ...: PE" and exits **0** — read as a
+failed emulation and reported as lost coverage on every Linux artifact. Worse,
+`recovery_state()` cleared the degradation whenever a cache file existed, and
+the cache is written even when empty: a deep ELF scan would have reported
+*full* Attribution coverage having recovered nothing. An unsupported format is
+now skipped and said so, and a PE that genuinely fails still degrades.
+
+The adapter itself was correct. Validated against a real PE — a setuptools
+launcher stub — it emulated the binary, recovered two genuine stack strings and
+wrote the cache. The parser written from recorded output needed no changes.
+
+**Two of this branch's own tests had encoded a broken environment.** They
+asserted that Detectability and Vulnerability were below full coverage, which
+was true only because the tooling was missing. Installing it made them fail.
+Restated as the rule rather than the observation: whatever is missing must be
+reported, and whatever ran must not be.
+
+**And installing semgrep broke an unrelated feature.** Into the application
+virtualenv, pip resolved `opentelemetry-*` in semgrep's favour and left
+LanceDB's grpc exporter mismatched, so knowledge-base indexing started failing.
+Realigned, and written up as
+[SUPPLY_CHAIN §5.1](BLUESCRUB_SUPPLY_CHAIN.md): a tool declared
+`runner: subprocess` is invoked by path and never imported, so it has no
+business sharing the application's dependency resolution. Install them with
+pipx, a container, or a dedicated virtualenv on `PATH`.
+
 ## Still open
 
 - The differential baseline (`upstream_baseline.json`) is captured from

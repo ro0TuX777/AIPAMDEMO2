@@ -50,5 +50,6 @@ rules:
       cwe: ["CWE-321: Use of Hard-coded Cryptographic Key"]
       confidence: MEDIUM
       bluescrub_family: hardcoded-secret
+      bluescrub_detector: regex_pattern
     pattern-regex: >-
       (?i)\b\w*(xor|enc|crypt|aes|payload|cfg|config|beacon)_?key\s*[=:]\s*["'0-9a-fx{]

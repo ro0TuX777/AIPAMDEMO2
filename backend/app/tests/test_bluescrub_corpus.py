@@ -229,15 +229,34 @@ def test_known_gap_the_hardcoded_user_agent_is_not_reported(scanned):
     assert spec["planted"]["user_agent"] not in json.dumps(evidence)
 
 
-def test_the_pillars_that_need_absent_tooling_say_so(scanned):
-    """The honest half of the picture: where coverage is missing it is
-    reported as missing rather than scored zero."""
+def test_missing_tooling_is_reported_as_missing_not_scored_zero(scanned):
+    """The honest half of the picture.
+
+    This asserted that Detectability and Vulnerability were specifically below
+    full coverage, which was true only because semgrep and the binary parsers
+    were not installed on the machine it was written on. Installing them made
+    it fail — a test encoding a broken environment as an expectation, which is
+    the same failure as a skipped test that looks like a passing one. Stated as
+    the rule instead: whatever is missing must be reported, and whatever ran
+    must not be."""
     dacv, _rows, _evidence, _spec = scanned
 
-    for pillar in (Pillar.detectability, Pillar.vulnerability):
-        result = dacv["pillars"][pillar.value]
-        assert result["coverage"] < 1.0
-        assert result["status"] in ("degraded", "not_assessed")
+    for name, result in dacv["pillars"].items():
+        if result["coverage"] < 1.0:
+            assert result["status"] in ("degraded", "not_assessed"), name
+        if result["status"] == "assessed":
+            assert result["coverage"] >= 1.0, name
+            assert result["score"] is not None, name
+
+
+def test_a_pillar_never_scores_zero_for_want_of_a_tool(scanned):
+    """Zero means "measured, nothing found". Unavailable means "not measured".
+    Conflating them is the failure this whole pipeline is built against."""
+    dacv, _rows, _evidence, _spec = scanned
+
+    for name, result in dacv["pillars"].items():
+        if result["coverage"] == 0.0:
+            assert result["score"] is None, name
 
 
 def test_without_a_wordlist_the_artifact_still_reports_something(implant,

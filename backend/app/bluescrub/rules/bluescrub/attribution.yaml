@@ -11,6 +11,7 @@ rules:
       cwe: ["CWE-200: Exposure of Sensitive Information"]
       confidence: MEDIUM
       bluescrub_family: build-path-leak
+      bluescrub_detector: regex_pattern
     pattern-regex: >-
       (?:[A-Z]:\\Users\\[^\\\s"']+|/home/[^/\s"']+|/Users/[^/\s"']+)[\\/][^\s"']*
 
@@ -22,6 +23,16 @@ rules:
       ticket ids in comments are attribution material.
     metadata:
       confidence: LOW
-      bluescrub_family: attribution-identity
+      # Not attribution-identity. That family defaults to critical, which
+      # disqualifies an artifact outright — and this rule fires on a bare
+      # "# TODO:". Measured: a two-line file containing one TODO comment and
+      # one DEBUG print came back grade F, disqualified. Development metadata
+      # that shipped is exactly what metadata-leak is for, and the per-rule
+      # severity in severity_table.py puts it at info.
+      bluescrub_family: metadata-leak
+      # A `pattern-regex` rule is a regex matcher. Classing it with semgrep's
+      # AST rules exempted it from the ceiling that exists to stop a regex
+      # match disqualifying anything.
+      bluescrub_detector: regex_pattern
     pattern-regex: >-
       (?i)(?://|#|/\*)\s*(?:TODO|FIXME|HACK|XXX|NOTE)\s*[\(\[:@]\s*[A-Za-z][\w.\-]{1,30}

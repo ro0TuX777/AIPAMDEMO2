@@ -21,7 +21,8 @@ ENV_ALLOWLIST: tuple[str, ...] = ("PATH", "LANG", "LC_ALL", "HOME", "TMPDIR")
 class ResourceLimits:
     """Per-invocation ceilings enforced by ``setrlimit`` before ``exec``."""
 
-    address_space_bytes: int = 2 * 1024**3     # RLIMIT_AS
+    #: RLIMIT_AS. ``None`` disables it — see ``for_external_tool``.
+    address_space_bytes: int | None = 2 * 1024**3
     cpu_seconds: int = 120                     # RLIMIT_CPU
     max_processes: int = 64                    # RLIMIT_NPROC, per-UID; needs a dedicated uid
     cpu_hard_margin: int = 5                   # RLIMIT_CPU hard - soft, so SIGXCPU fires first
@@ -29,6 +30,35 @@ class ResourceLimits:
     wall_clock_seconds: int = 120              # enforced by the runner, not rlimit
     grace_seconds: int = 5                     # SIGTERM -> SIGKILL window
     max_stdout_bytes: int = 64 * 1024**2
+    #: RLIMIT_DATA. Bounds the data segment, which since Linux 4.7 includes
+    #: anonymous mmap — so it measures memory a process actually asks to use,
+    #: rather than address space it merely reserves.
+    data_bytes: int | None = None
+
+    @classmethod
+    def for_external_tool(cls) -> "ResourceLimits":
+        """Ceilings for a compiled third-party binary.
+
+        **`RLIMIT_AS` is not set, and that is a measurement, not a
+        concession.** Semgrep 1.175 fails to run under `RLIMIT_AS` at *any*
+        value tested — 2, 4 and 8 GiB all produce "the engine was killed" and
+        exit 2. Its OCaml core reserves an enormous virtual arena at startup,
+        and `RLIMIT_AS` caps virtual address space rather than memory in use,
+        so the two have almost no relationship. The same is true of Go
+        runtimes, which is what Gitleaks, TruffleHog, OSV-Scanner, Grype and
+        Syft are.
+
+        `RLIMIT_DATA` is the control that means what was intended: under it
+        semgrep runs at 8 GiB and is killed at 4. The other ceilings — wall
+        clock, CPU, file size, no core dump — and the process-group kill are
+        unchanged, and they are what actually bound a runaway tool.
+        """
+        return cls(
+            address_space_bytes=None,
+            data_bytes=8 * 1024**3,
+            cpu_seconds=900,
+            wall_clock_seconds=900,
+        )
 
     @classmethod
     def for_emulation(cls) -> "ResourceLimits":
@@ -69,8 +99,15 @@ def build_preexec(
         if uid is not None:
             os.setresuid(uid, uid, uid)
 
-        resource.setrlimit(resource.RLIMIT_AS,
-                           (limits.address_space_bytes, limits.address_space_bytes))
+        # A vendored Python analyzer is bounded by address space, which is the
+        # right control for CPython. A compiled tool with a reserving runtime
+        # is not: see `for_external_tool`.
+        if limits.address_space_bytes is not None:
+            resource.setrlimit(resource.RLIMIT_AS,
+                               (limits.address_space_bytes, limits.address_space_bytes))
+        if limits.data_bytes is not None:
+            resource.setrlimit(resource.RLIMIT_DATA,
+                               (limits.data_bytes, limits.data_bytes))
 
         # Soft must be strictly below hard. At the soft limit the kernel sends
         # SIGXCPU, which we classify as a timeout; at the hard limit it sends
