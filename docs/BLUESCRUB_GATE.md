@@ -33,6 +33,10 @@
 >   score history are unaffected, but snippets and per-job detail are already
 >   being written on that assumption.
 >
+> The four questions waiting on a person — these two plus the gate's own
+> disposition and a real-artifact review — are gathered with their evidence in
+> [BLUESCRUB_OPEN_DECISIONS.md](BLUESCRUB_OPEN_DECISIONS.md).
+>
 > **Recommended disposition.** Do not retro-tick the boxes. Either run the
 > review now against the shipped implementation — which is a stronger review
 > than the paper one would have been, because the contracts have been tested —

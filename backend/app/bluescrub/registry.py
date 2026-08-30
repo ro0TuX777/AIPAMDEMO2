@@ -24,6 +24,7 @@ from backend.app.bluescrub.scanners import (
     secrets,
     semgrep,
     vendored_analyzers,
+    yara_scan,
 )
 from backend.app.bluescrub.scanners.base import ScannerSpec
 
@@ -174,6 +175,20 @@ SCANNERS: dict[str, ScannerSpec] = {
         profiles=("standard", "deep"),
         optional=True,
         limits=ResourceLimits.for_external_tool(),
+    ),
+    "yara": ScannerSpec(
+        name="yara",
+        run=yara_scan.run,
+        pillars=(Pillar.detectability,),
+        risk_class=RiskClass.parse_only,
+        # Deep only: it is the defender's own tooling over every artifact, and
+        # Quick exists to be quick.
+        profiles=("deep",),
+        # Not optional. "No signature caught this" is a real answer and nothing
+        # else can give it; without rules the pillar has genuinely lost
+        # coverage rather than gained a clean result.
+        optional=False,
+        limits=yara_scan.DEFAULT_LIMITS,
     ),
     "trufflehog": ScannerSpec(
         name="trufflehog",

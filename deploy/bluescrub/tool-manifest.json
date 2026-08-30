@@ -331,6 +331,29 @@
         "mem_limit": "2g",
         "pids_limit": 64
       }
+    },
+    {
+      "name": "yara",
+      "version": "yara-python 4.5.4",
+      "runner": "subprocess",
+      "risk_class": "parse_only",
+      "pillars": [
+        "Detectability"
+      ],
+      "licence": "BSD-3-Clause",
+      "redistribution": "permitted",
+      "architectures": [
+        "amd64",
+        "arm64"
+      ],
+      "ruleset_version": null,
+      "ruleset_checksum": null,
+      "licence_notes": "yara-python is BSD-3-Clause and already a declared AIPAM dependency; the scanner reuses binalysis.engine rather than compiling its own rules, so there is one rule path and one failure mode. **The rules are the licensing question, not the engine**: signature packs carry their own terms and are not shipped here. Without a rules directory the scanner reports unavailable, because zero matches from an empty rule set and zero matches from an artifact no signature catches are opposite conclusions that look identical.",
+      "limits": {
+        "timeout_seconds": 300,
+        "mem_limit": "2g",
+        "pids_limit": 64
+      }
     }
   ]
 }

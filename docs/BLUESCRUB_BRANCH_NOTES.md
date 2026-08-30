@@ -640,6 +640,49 @@ were we comparing against in March" stays answerable.
 matters — and no `new`/`fixed`/`regressed` keys at all, because including
 counts alongside a refusal invites reading them.
 
+## YARA, and what capa turned out not to need
+
+**capa was already integrated.** The vendored binary analyzer resolves the capa
+CLI at runtime and reports matches as
+`BinaryAnalyzer.opsec_capa_capability_match` — a rule mapped to
+`signature_known` earlier this week. A second capa scanner would have been a
+duplicate path to the same answer, so Sprint 6's capa item needs the CLI and
+rules present, not new code. Worth checking before building: the plan lists
+"YARA/capa/FLOSS" as one item and two of the three were partly done already.
+
+**YARA reuses `binalysis.engine`** rather than compiling its own rules. A
+second compiler would mean two rule paths, two failure modes, and two places
+for "YARA is unavailable" to come from — and a test asserts the module never
+imports `yara` directly, so the reuse cannot quietly regress.
+
+**Absence of rules is reported as absence.** An empty rules directory returns
+zero matches, and so does an artifact no signature catches. Those are opposite
+conclusions and they look identical, so no rules is `unavailable` and the
+pillar loses coverage rather than gaining a clean result.
+
+**A match is Detectability, and only Detectability.** The temptation is to read
+a malware-family hit as attribution, and rule metadata usually names a family —
+but a signature says a defender will catch this, not who wrote it. Families are
+assigned by whoever authored the rule, from behaviour that is frequently shared,
+copied, or deliberately imitated. The family travels as typed evidence, visible
+to an analyst and deciding nothing. The rule *name* is the rule id, because two
+rules for one family are two signatures and silencing one must not silence both.
+
+Tested against real compiled rules rather than a stubbed engine, since
+`yara-python` is installed.
+
+## The four open decisions, gathered
+
+[BLUESCRUB_OPEN_DECISIONS.md](BLUESCRUB_OPEN_DECISIONS.md) states each question,
+what is true today, and what happens on either answer — including what would
+have to be undone. Two have been open since the architecture gate.
+
+The one that matters most is the one no code can answer: **nobody has put a real
+artifact in front of a person who does OPSEC review.** Every calibration
+decision here was measured against source trees and synthetic binaries written
+by the same process that then graded them. That has already produced one wrong
+conclusion this week, caught only because the low end was measured afterwards.
+
 ## Still open
 
 - The differential baseline (`upstream_baseline.json`) is captured from
