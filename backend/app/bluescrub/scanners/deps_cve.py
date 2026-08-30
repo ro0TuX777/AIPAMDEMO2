@@ -123,7 +123,10 @@ OSV = ExternalTool(
     # osv-scanner exits 1 when it finds vulnerabilities.
     finding_exit_codes=(0, 1),
     version_argv=("--version",),
-    limits=ResourceLimits(wall_clock_seconds=600, cpu_seconds=600),
+    # Go binary: a Go runtime reserves a large virtual arena at startup, so
+    # RLIMIT_AS bounds something unrelated to what it uses and kills it at
+    # any value. See ResourceLimits.for_external_tool.
+    limits=ResourceLimits.for_external_tool(),
 )
 
 
@@ -168,7 +171,10 @@ GRYPE = ExternalTool(
     parse=parse_grype,
     finding_exit_codes=(0, 1),
     version_argv=("version", "-o", "text"),
-    limits=ResourceLimits(wall_clock_seconds=600, cpu_seconds=600),
+    # Go binary: a Go runtime reserves a large virtual arena at startup, so
+    # RLIMIT_AS bounds something unrelated to what it uses and kills it at
+    # any value. See ResourceLimits.for_external_tool.
+    limits=ResourceLimits.for_external_tool(),
 )
 
 

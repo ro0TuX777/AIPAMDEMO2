@@ -295,7 +295,7 @@ def score_re_pillar(
     )
 
 
-def compatibility_signature(
+def signature_payload(
     *,
     profile: str,
     scanner_manifest_digest: str,
@@ -303,9 +303,16 @@ def compatibility_signature(
     required_scanners: list[str],
     pillar_scope: list[Pillar],
     config_hash: str,
-) -> str:
-    """Baselines and trends compare only where this matches."""
-    payload = {
+) -> dict[str, Any]:
+    """The fields comparability is decided on, before they are digested.
+
+    Exposed separately because the digest alone cannot answer the question the
+    contract requires an answer to. §6 says a rejected comparison must name the
+    **differing field**, and "these two hashes differ" is exactly the
+    unactionable message it forbids. Whoever stores a signature has to store
+    what went into it.
+    """
+    return {
         "profile": profile,
         "scoring_model": SCORING_MODEL,
         "fingerprint_scheme": FINGERPRINT_SCHEME,
@@ -317,8 +324,16 @@ def compatibility_signature(
         "coverage_threshold": COVERAGE_THRESHOLD,
         "config_hash": config_hash,
     }
+
+
+def digest_payload(payload: dict[str, Any]) -> str:
     blob = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return "sha256:" + hashlib.sha256(blob.encode()).hexdigest()
+
+
+def compatibility_signature(**kwargs) -> str:
+    """Baselines and trends compare only where this matches."""
+    return digest_payload(signature_payload(**kwargs))
 
 
 def score_job(

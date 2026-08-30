@@ -200,12 +200,31 @@ def test_parser_failure_is_contained_and_quarantined(tmp_path, monkeypatch):
     monkeypatch.setattr(_shutil, "which", lambda n: "/bin/sh")
     monkeypatch.setenv("AIPAM_BLUESCRUB_REQUIRE_UID_DROP", "false")
 
-    out = tmp_path / "out"
+    out = tmp_path / "sensors" / "boomer"
     outcome = run_external(tool, tmp_path, out)
 
     assert outcome.status == "unparseable"
     assert "parser exploded" in outcome.reason
-    assert (out / "boomer.unparseable.raw").exists(), "raw output must be kept"
+    # Raw output is kept for diagnosis, under the 72-hour quarantine clock
+    # rather than beside the findings under the job's 30-day one: any tool's
+    # stdout can carry a credential, whatever the tool was looking for.
+    assert (tmp_path / "quarantine" / "boomer.unparseable.raw").exists()
+    assert not (out / "boomer.unparseable.raw").exists()
+
+
+def test_the_job_root_is_found_by_layout_not_by_counting(tmp_path):
+    """Counting parents assumes a depth a caller may not have, and the failure
+    is silent: quarantine created *above* the job, where no retention sweep
+    will ever look at it."""
+    from backend.app.bluescrub.scanners.external import job_root, quarantine_dir
+
+    job = tmp_path / "job-1"
+    assert job_root(job / "sensors" / "osv") == job
+    assert quarantine_dir(job / "sensors" / "osv") == job / "quarantine"
+
+    # An unconventional layout keeps its own directory rather than escaping.
+    assert job_root(job / "somewhere") == job / "somewhere"
+    assert quarantine_dir(job / "somewhere").is_relative_to(job)
 
 
 # ── registry wiring ───────────────────────────────────────────────────────

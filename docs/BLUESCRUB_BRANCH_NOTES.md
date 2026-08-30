@@ -541,6 +541,75 @@ environment consistent, but the recommendation in
 [SUPPLY_CHAIN §5.1](BLUESCRUB_SUPPLY_CHAIN.md) stands and this machine does not
 yet follow it.
 
+## The dependency scanners, and a quarantine defect they exposed
+
+`osv-scanner`, `grype` and `syft` installed with `go install` outside the
+virtualenv. All three crashed at exit 2 on first contact — the same
+`RLIMIT_AS`-versus-Go-runtime failure as semgrep, because `deps_cve.py` and
+`sbom.py` declare their own limits and the earlier fix had only reached the
+registry and `secrets.py`. With the external profile applied: **osv-scanner 36
+findings, grype 18, syft correctly 0** on declared packages and **1** on an
+undeclared one, which is the discrimination that adapter exists to make.
+
+Grype returned nothing on its very first run because it downloads a
+vulnerability database on demand. Worth knowing for an air-gapped deployment,
+where that download will not happen and the manifest's `db_snapshot_date` and
+`db_checksum` — both still null — are what has to carry it.
+
+**Then a Sprint 5 acceptance test failed, and it was right to.** With real
+scanners installed, a parser failure wrote a tool's raw stdout to
+`sensors/<tool>/<tool>.unparseable.raw`, under the job's 30-day clock, holding
+a plaintext secret.
+
+Two things were wrong. The quarantine tier was routed on `secret_bearing` — the
+tool's declared purpose — where the policy tier reads "plaintext secrets in
+**raw scanner output**". Semgrep's raw report carries the matched source lines,
+and a matched line can be a credential whatever rule found it, so *any* tool's
+unparseable stdout belongs under the 72-hour clock. And the test asserted no
+plaintext in *any* file in the job, which is stricter than the policy: it
+permits `quarantine/` explicitly. That assertion passed for as long as it did
+because nothing was exercising the code path — it was measuring the absence of
+a failure, not the presence of a rule.
+
+**The fix exposed a third.** `output_dir.parents[1]` assumed a
+`<job>/sensors/<sensor>` depth. Given anything shallower it resolves *above*
+the job directory, so the quarantine folder would be created outside everything
+the retention sweep looks at — silently, and only on the path that runs when a
+parser has already failed. The job root is now found by the layout convention
+rather than by counting.
+
+## Baselines and comparability enforcement
+
+`bluescrub/baseline.py`, with the design decided by one line of the contract:
+
+    A rejected comparison returns `incomparable` with the differing field
+    named. "Incomparable" without a reason is an error message users cannot
+    act on.  — SCORING_SPEC §6
+
+A differing field cannot be recovered from a SHA-256, so a baseline stores the
+signature's *payload* beside its digest. The digest still decides comparability;
+the payload only explains it, naming each field that moved, both values, and
+why it matters. No migration: it goes in the existing `findings_json` blob.
+
+**New, fixed and regressed are three separate answers.** A net count cannot
+tell "three fixed, three appeared" from "nothing happened", and a severity that
+rose on a finding nobody touched is the one an analyst most needs to see. A
+refusal carries no diff at all — returning counts alongside "incomparable"
+invites reading them anyway.
+
+**A snapshot stores the minimum a diff needs.** Not the evidence: baselines are
+kept indefinitely while job evidence expires at thirty days, and freezing
+snippets here would quietly recreate the retention the policy removed.
+
+One defect found by its own tests: unreadable baseline content fell through to
+the digest path and reported *every* current finding as new — the same
+misleading answer as treating an absent baseline as empty, reached from the
+other direction. `_stored` now separates "unparseable" from "legacy row" and
+refuses rather than guessing.
+
+Still to do before it is usable: wiring into the service, and the
+`PUT /baseline` and diff endpoints.
+
 ## Still open
 
 - The differential baseline (`upstream_baseline.json`) is captured from
@@ -565,7 +634,9 @@ yet follow it.
   blocking items are unanswered, and Semgrep rule licensing has been sidestepped
   rather than resolved — it becomes live again the moment anyone points
   `AIPAM_BLUESCRUB_SEMGREP_CONFIG` at the registry.
-- TruffleHog is the one adapter still unvalidated against its tool. Their argv is a
+- TruffleHog is the one adapter still unvalidated against its tool: its
+  `go.mod` carries replace directives, so it needs a release binary.
+- Baselines are implemented but not wired: no service hook, no endpoint. Their argv is a
   documented decision a deployment must confirm; their parsers — which is where
   the Semgrep adapter's three defects actually lived — are pure functions tested
   against recorded output. `binstrings` and `build_paths` need no binary and are

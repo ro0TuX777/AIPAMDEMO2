@@ -193,16 +193,34 @@ def test_no_plaintext_secret_reaches_the_database(gitleaks_job):
     assert CANARY not in dumped
 
 
-def test_no_plaintext_secret_reaches_any_file_in_the_job(gitleaks_job):
-    """Including `quarantine/`, where a secret scanner's artefacts are routed so
-    they inherit the 72-hour clock rather than the job's 30-day one."""
+def test_no_plaintext_secret_reaches_a_file_outside_quarantine(gitleaks_job):
+    """`quarantine/` is the one place the policy permits plaintext, bounded at
+    72 hours. Everywhere else in the job is under the platform's 30-day clock.
+
+    This originally asserted *no* file in the job, which is stricter than the
+    policy and passed only because nothing was writing raw output. With real
+    scanners installed a parser failure quarantined a tool's stdout, and the
+    assertion was measuring the absence of a code path rather than a rule."""
     _db, _metrics, job = gitleaks_job
     checked = 0
     for path in job.rglob("*"):
-        if path.is_file():
-            checked += 1
-            assert CANARY not in path.read_text(errors="ignore"), path
+        if not path.is_file() or "quarantine" in path.parts:
+            continue
+        checked += 1
+        assert CANARY not in path.read_text(errors="ignore"), path
     assert checked, "no artefacts were written, so nothing was checked"
+
+
+def test_unreadable_raw_output_is_quarantined_not_left_beside_the_findings(
+    gitleaks_job,
+):
+    """The tier is "plaintext secrets in raw scanner output" — not "output of a
+    secret scanner". Semgrep's raw report carries matched source lines, and a
+    matched line can be a credential whatever rule found it."""
+    _db, _metrics, job = gitleaks_job
+
+    stray = [p for p in (job / "sensors").rglob("*.unparseable.raw")]
+    assert stray == [], f"raw output left under the job's 30-day clock: {stray}"
 
 
 def test_the_secret_scanners_artefacts_are_in_the_quarantine_tier(gitleaks_job):

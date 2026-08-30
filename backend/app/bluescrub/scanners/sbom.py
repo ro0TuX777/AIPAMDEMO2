@@ -111,7 +111,10 @@ SYFT = ExternalTool(
     argv=lambda root: ["scan", f"dir:{root}", "-o", "syft-json", "-q"],
     parse=parse_syft,
     version_argv=("version", "-o", "text"),
-    limits=ResourceLimits(wall_clock_seconds=600, cpu_seconds=600),
+    # Go binary: a Go runtime reserves a large virtual arena at startup, so
+    # RLIMIT_AS bounds something unrelated to what it uses and kills it at
+    # any value. See ResourceLimits.for_external_tool.
+    limits=ResourceLimits.for_external_tool(),
 )
 
 

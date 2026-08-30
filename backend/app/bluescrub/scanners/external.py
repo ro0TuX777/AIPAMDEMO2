@@ -171,6 +171,24 @@ def decode_payload(raw: bytes, *, json_lines: bool = False) -> Any:
     return {"results": records}
 
 
+def job_root(output_dir: Path) -> Path:
+    """The job directory a sensor's output lives under.
+
+    Located by the layout convention — ``<job>/sensors/<sensor>`` — rather
+    than by counting parents. Indexing assumes a depth that a caller passing
+    any other shape does not have, and the failure mode is silent: the
+    quarantine directory is created *above* the job, outside anything the
+    retention sweep will ever look at.
+    """
+    if output_dir.parent.name == "sensors":
+        return output_dir.parent.parent
+    return output_dir
+
+
+def quarantine_dir(output_dir: Path) -> Path:
+    return job_root(output_dir) / "quarantine"
+
+
 def results_path(output_dir: Path, sensor: str, *, secret_bearing: bool) -> Path:
     """Where a tool's normalised output goes.
 
@@ -181,8 +199,7 @@ def results_path(output_dir: Path, sensor: str, *, secret_bearing: bool) -> Path
     """
     if not secret_bearing:
         return output_dir / "sensor.results.jsonl"
-    root = output_dir.parents[1] if len(output_dir.parents) >= 2 else output_dir
-    return root / "quarantine" / f"{sensor}.results.jsonl"
+    return quarantine_dir(output_dir) / f"{sensor}.results.jsonl"
 
 
 def write_results(output_dir: Path, findings: list[RawFinding], *,
@@ -213,12 +230,21 @@ def write_results(output_dir: Path, findings: list[RawFinding], *,
 
 def _quarantine(output_dir: Path, sensor: str, raw: bytes,
                 secret_bearing: bool = False) -> None:
+    """Keep unreadable output for diagnosis, under the 72-hour clock.
+
+    Always `quarantine/`, not only for a scanner declared `secret_bearing`.
+    The policy tier is "plaintext secrets in **raw scanner output**", not
+    "output of a secret scanner", and it is right to be: Semgrep's raw report
+    carries the matched source lines, and a matched line can be a credential
+    whatever rule found it. Routing on the tool's declared purpose put a
+    tool's stdout under the job's 30-day clock whenever its parser happened to
+    fail — which is exactly when nobody has looked at it yet.
+
+    ``secret_bearing`` is retained for callers but no longer changes the
+    destination; it is the *normalised results* file that still differs.
+    """
     try:
-        if secret_bearing:
-            root = output_dir.parents[1] if len(output_dir.parents) >= 2 else output_dir
-            target = root / "quarantine" / f"{sensor}.unparseable.raw"
-        else:
-            target = output_dir / f"{sensor}.unparseable.raw"
+        target = quarantine_dir(output_dir) / f"{sensor}.unparseable.raw"
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(raw[:1024 * 1024])
     except OSError:  # pragma: no cover - best effort
