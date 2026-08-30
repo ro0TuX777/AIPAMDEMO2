@@ -70,9 +70,14 @@ def dacv(sig: dict) -> dict:
 def set_it(db, groups, sig=None, **kw):
     sig = sig or fields()
     return bl.set_baseline(
-        db, project_id="p", job_id="j1", dacv=dacv(sig), groups=groups,
-        signature_fields=sig, **kw,
+        db, project_id="p", job_id="j1", dacv=dacv(sig),
+        findings=bl.snapshot(groups), signature_fields=sig, **kw,
     )
+
+
+def cmp(db, groups, sig=None):
+    return bl.compare(db, project_id="p", findings=bl.snapshot(groups),
+                      signature_fields=sig or fields())
 
 
 # ── freezing a comparison point ───────────────────────────────────────────
@@ -105,16 +110,14 @@ def test_the_active_baseline_is_the_one_compared_against(db):
     set_it(db, [group("bs-a")], label="first")
     set_it(db, [group("bs-a"), group("bs-b")], label="second")
 
-    result = bl.compare(db, project_id="p", groups=[group("bs-a")],
-                        signature_fields=fields())
+    result = cmp(db, [group("bs-a")])
     assert result.baseline_label == "second"
     assert [d.finding_id for d in result.fixed] == ["bs-b"]
 
 
 def test_no_baseline_is_reported_rather_than_treated_as_empty(db):
     """An empty baseline would make every finding look new."""
-    result = bl.compare(db, project_id="p", groups=[group("bs-a")],
-                        signature_fields=fields())
+    result = cmp(db, [group("bs-a")])
 
     assert result.comparable is False
     assert "no active baseline" in result.reason
@@ -128,9 +131,8 @@ def test_new_fixed_and_regressed_are_three_separate_answers(db):
     "nothing happened"."""
     set_it(db, [group("bs-keep"), group("bs-gone"), group("bs-worse", "low")])
 
-    result = bl.compare(db, project_id="p", signature_fields=fields(), groups=[
-        group("bs-keep"), group("bs-worse", "critical"), group("bs-fresh"),
-    ])
+    result = cmp(db, [group("bs-keep"), group("bs-worse", "critical"),
+                      group("bs-fresh")])
 
     assert [d.finding_id for d in result.new] == ["bs-fresh"]
     assert [d.finding_id for d in result.fixed] == ["bs-gone"]
@@ -142,8 +144,7 @@ def test_a_regression_reports_what_it_was(db):
     """The severity that rose on a finding nobody touched is the one an analyst
     most needs to see."""
     set_it(db, [group("bs-a", "low")])
-    result = bl.compare(db, project_id="p", signature_fields=fields(),
-                        groups=[group("bs-a", "critical")])
+    result = cmp(db, [group("bs-a", "critical")])
 
     regressed = result.regressed[0]
     assert (regressed.was, regressed.severity) == ("low", "critical")
@@ -152,17 +153,15 @@ def test_a_regression_reports_what_it_was(db):
 
 def test_a_severity_that_falls_is_not_a_regression(db):
     set_it(db, [group("bs-a", "critical")])
-    result = bl.compare(db, project_id="p", signature_fields=fields(),
-                        groups=[group("bs-a", "low")])
+    result = cmp(db, [group("bs-a", "low")])
 
     assert result.regressed == [] and result.unchanged == 1
 
 
 def test_the_diff_is_ordered_worst_first(db):
     set_it(db, [])
-    result = bl.compare(db, project_id="p", signature_fields=fields(), groups=[
-        group("bs-1", "low"), group("bs-2", "critical"), group("bs-3", "medium"),
-    ])
+    result = cmp(db, [group("bs-1", "low"), group("bs-2", "critical"),
+                      group("bs-3", "medium")])
 
     assert [d.severity for d in result.new] == ["critical", "medium", "low"]
 
@@ -170,7 +169,7 @@ def test_the_diff_is_ordered_worst_first(db):
 def test_an_identical_scan_reports_nothing_changed(db):
     groups = [group("bs-a"), group("bs-b", "medium")]
     set_it(db, groups)
-    result = bl.compare(db, project_id="p", groups=groups, signature_fields=fields())
+    result = cmp(db, groups)
 
     assert (result.new, result.fixed, result.regressed) == ([], [], [])
     assert result.unchanged == 2
@@ -187,8 +186,7 @@ def test_an_identical_scan_reports_nothing_changed(db):
 ])
 def test_an_incomparable_scan_names_the_field(db, override, field):
     set_it(db, [group("bs-a")])
-    result = bl.compare(db, project_id="p", groups=[group("bs-a")],
-                        signature_fields=fields(**override))
+    result = cmp(db, [group("bs-a")], fields(**override))
 
     assert result.comparable is False
     assert field in result.reason
@@ -199,8 +197,7 @@ def test_the_refusal_shows_both_values_and_why_it_matters(db):
     """"Incomparable" without a reason is an error message users cannot act
     on. A field name alone is barely better."""
     set_it(db, [group("bs-a")])
-    result = bl.compare(db, project_id="p", groups=[group("bs-a")],
-                        signature_fields=fields(profile="triage"))
+    result = cmp(db, [group("bs-a")], fields(profile="triage"))
 
     差 = result.differing_fields[0]
     assert 差["baseline"] == "deep" and 差["current"] == "triage"
@@ -211,8 +208,7 @@ def test_quick_is_never_compared_to_deep(db):
     """The comparison table forbids it outright: the two scans looked for
     different things."""
     set_it(db, [group("bs-a")], sig=fields(profile="triage"))
-    result = bl.compare(db, project_id="p", groups=[group("bs-a")],
-                        signature_fields=fields(profile="deep"))
+    result = cmp(db, [group("bs-a")], fields(profile="deep"))
 
     assert result.comparable is False
     assert result.to_dict()["status"] == "incomparable"
@@ -231,8 +227,7 @@ def test_a_refusal_carries_no_diff(db):
     """Reporting new/fixed counts alongside "incomparable" would invite
     reading them anyway."""
     set_it(db, [group("bs-a")])
-    payload = bl.compare(db, project_id="p", groups=[group("bs-b")],
-                         signature_fields=fields(profile="triage")).to_dict()
+    payload = cmp(db, [group("bs-b")], fields(profile="triage")).to_dict()
 
     assert set(payload) == {"status", "reason", "differing_fields"}
 
@@ -248,8 +243,7 @@ def test_a_baseline_without_stored_fields_falls_back_to_the_digest(db):
          "severity": "high"}]})
     db.commit()
 
-    result = bl.compare(db, project_id="p", groups=[group("bs-a")],
-                        signature_fields=fields())
+    result = cmp(db, [group("bs-a")])
     assert result.comparable is True and result.unchanged == 1
 
 
@@ -259,8 +253,7 @@ def test_a_legacy_baseline_that_does_not_match_says_why_it_cannot_explain(db):
     row.findings_json = json.dumps({"findings": []})
     db.commit()
 
-    result = bl.compare(db, project_id="p", groups=[group("bs-a")],
-                        signature_fields=fields(profile="triage"))
+    result = cmp(db, [group("bs-a")], fields(profile="triage"))
     assert result.comparable is False
     assert "cannot be recovered from a digest" in result.reason
 
@@ -270,8 +263,7 @@ def test_unreadable_baseline_content_does_not_raise(db):
     row.findings_json = "{not json"
     db.commit()
 
-    result = bl.compare(db, project_id="p", groups=[group("bs-a")],
-                        signature_fields=fields())
+    result = cmp(db, [group("bs-a")])
     assert result.comparable is False
 
 
@@ -294,6 +286,5 @@ def test_the_baseline_survives_its_job(db):
     row.job_id = None
     db.commit()
 
-    result = bl.compare(db, project_id="p", groups=[group("bs-a")],
-                        signature_fields=fields())
+    result = cmp(db, [group("bs-a")])
     assert result.comparable is True and result.unchanged == 1

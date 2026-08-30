@@ -138,6 +138,29 @@ class Comparison:
         }
 
 
+def snapshot_from_findings(rows) -> list[dict[str, str]]:
+    """The same snapshot, rebuilt from persisted ``Finding`` rows.
+
+    A baseline is set when an operator decides a scan is the reference point,
+    which is not when the scan ran — by then the canonical groups are gone and
+    the rows are all there is. Both paths must produce byte-identical
+    snapshots or a diff between them reports phantom changes.
+    """
+    out: list[dict[str, str]] = []
+    for row in rows:
+        try:
+            evidence = json.loads(row.evidence_json or "{}")
+        except (TypeError, ValueError):
+            evidence = {}
+        out.append({
+            "finding_id": row.finding_id,
+            "rule_id": str(evidence.get("rule_id") or ""),
+            "pillar": str(row.category or ""),
+            "severity": str(row.severity or ""),
+        })
+    return sorted(out, key=lambda entry: entry["finding_id"])
+
+
 def snapshot(groups: list[CanonicalGroup]) -> list[dict[str, str]]:
     """The minimum a diff needs, and nothing an analyst could not re-derive.
 
@@ -165,7 +188,7 @@ def set_baseline(
     project_id: str,
     job_id: str | None,
     dacv: dict[str, Any],
-    groups: list[CanonicalGroup],
+    findings: list[dict[str, str]],
     signature_fields: dict[str, Any],
     label: str | None = None,
     actor: str | None = None,
@@ -193,7 +216,7 @@ def set_baseline(
         findings_json=json.dumps({
             "schema": "bluescrub.baseline/1",
             "signature_fields": signature_fields,
-            "findings": snapshot(groups),
+            "findings": sorted(findings, key=lambda e: e["finding_id"]),
         }),
         metrics_json=json.dumps(dacv),
         created_at=_now(),
@@ -202,7 +225,7 @@ def set_baseline(
     db.add(row)
     db.commit()
     logger.info("baseline set for project %s from job %s (%d findings)",
-                project_id, job_id, len(groups))
+                project_id, job_id, len(findings))
     return row
 
 
@@ -257,7 +280,7 @@ def compare(
     db: Session,
     *,
     project_id: str,
-    groups: list[CanonicalGroup],
+    findings: list[dict[str, str]],
     signature_fields: dict[str, Any],
 ) -> Comparison:
     """Diff the current scan against the project's active baseline."""
@@ -308,7 +331,7 @@ def compare(
             differing_fields=differing,
         )
 
-    return _diff(row, stored.get("findings") or [], groups)
+    return _diff(row, stored.get("findings") or [], findings)
 
 
 def _digest_of(fields: dict[str, Any]) -> str:
@@ -318,7 +341,7 @@ def _digest_of(fields: dict[str, Any]) -> str:
 
 
 def _diff(
-    row: BlueScrubBaseline, before: list[dict], groups: list[CanonicalGroup]
+    row: BlueScrubBaseline, before: list[dict], after: list[dict]
 ) -> Comparison:
     """New, fixed and regressed as three separate answers.
 
@@ -331,7 +354,11 @@ def _diff(
         for entry in before
         if isinstance(entry, dict) and entry.get("finding_id")
     }
-    current = {g.canonical_id: g for g in groups}
+    current = {
+        str(entry.get("finding_id")): entry
+        for entry in after
+        if isinstance(entry, dict) and entry.get("finding_id")
+    }
 
     comparison = Comparison(
         comparable=True,
@@ -339,19 +366,20 @@ def _diff(
         baseline_created_at=row.created_at,
     )
 
-    for finding_id, group in current.items():
+    for finding_id, entry in current.items():
+        severity = str(entry.get("severity") or "")
         previous = baseline_rows.get(finding_id)
         if previous is None:
             comparison.new.append(FindingDelta(
-                finding_id=finding_id, rule_id=group.primary_rule_id,
-                pillar=group.pillar.value, severity=group.severity,
+                finding_id=finding_id, rule_id=str(entry.get("rule_id") or ""),
+                pillar=str(entry.get("pillar") or ""), severity=severity,
             ))
             continue
         was = str(previous.get("severity") or "")
-        if _severity_rank(group.severity) > _severity_rank(was):
+        if _severity_rank(severity) > _severity_rank(was):
             comparison.regressed.append(FindingDelta(
-                finding_id=finding_id, rule_id=group.primary_rule_id,
-                pillar=group.pillar.value, severity=group.severity, was=was,
+                finding_id=finding_id, rule_id=str(entry.get("rule_id") or ""),
+                pillar=str(entry.get("pillar") or ""), severity=severity, was=was,
             ))
         else:
             comparison.unchanged += 1

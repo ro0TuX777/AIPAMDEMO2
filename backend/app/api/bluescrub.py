@@ -16,11 +16,13 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.api.deps import get_db, get_request_id, verify_token
+from backend.app.bluescrub import baseline as bl
 from backend.app.models.bluescrub import (
     BlueScrubAudit,
     BlueScrubJobLineage,
     BlueScrubProject,
 )
+from backend.app.models.finding import Finding
 from backend.app.models.job import Job
 
 router = APIRouter(prefix="/bluescrub", tags=["BlueScrub"], dependencies=[Depends(verify_token)])
@@ -209,4 +211,130 @@ async def get_report(job_id: str, db: Session = Depends(get_db)):
             "derived_from_job_id": lineage.derived_from_job_id,
             "analysis_kind": lineage.analysis_kind,
         }
+    return payload
+
+
+# ── baselines ─────────────────────────────────────────────────────────────
+
+
+class BaselineSet(BaseModel):
+    label: str | None = Field(default=None, max_length=200)
+    actor: str | None = Field(
+        default=None,
+        description="Self-asserted; AIPAM has no identity model. Recorded, not verified.",
+    )
+
+
+class BaselineOut(BaseModel):
+    project_id: str
+    job_id: str
+    label: str | None
+    findings: int
+    created_at: str
+    note: str
+
+
+def _completed_job(db: Session, job_id: str) -> Job:
+    job = db.get(Job, job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"Job {job_id} not found")
+    if (job.source_type or "") != "code_artifact":
+        raise HTTPException(status_code=400, detail="Not a code_artifact job")
+    if not job.metrics_json:
+        raise HTTPException(status_code=409, detail="Analysis has not completed")
+    return job
+
+
+def _lineage(db: Session, job_id: str) -> BlueScrubJobLineage:
+    row = db.get(BlueScrubJobLineage, job_id)
+    if row is None or not row.project_id:
+        # A baseline is a project's reference point. An ad-hoc scan has no
+        # project to be the reference for, and binding one is a separate,
+        # deliberate action rather than something to infer here.
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "Job is not bound to a project. Bind it with "
+                "PUT /jobs/{job_id}/project first — a baseline is a property "
+                "of a project, not of one scan."
+            ),
+        )
+    return row
+
+
+def _signature_fields(row: BlueScrubJobLineage) -> dict:
+    try:
+        fields = json.loads(row.signature_fields_json or "{}")
+    except (TypeError, ValueError):
+        fields = {}
+    return fields if isinstance(fields, dict) else {}
+
+
+def _job_findings(db: Session, job_id: str) -> list[dict]:
+    rows = db.scalars(select(Finding).where(Finding.job_id == job_id)).all()
+    return bl.snapshot_from_findings(rows)
+
+
+@router.put("/jobs/{job_id}/baseline", response_model=BaselineOut)
+async def set_baseline(job_id: str, body: BaselineSet, db: Session = Depends(get_db)):
+    """Freeze this job as the project's reference point for future scans."""
+    job = _completed_job(db, job_id)
+    lineage = _lineage(db, job_id)
+    findings = _job_findings(db, job_id)
+
+    previous = bl.active_baseline(db, lineage.project_id)
+    row = bl.set_baseline(
+        db,
+        project_id=lineage.project_id,
+        job_id=job_id,
+        dacv=json.loads(job.metrics_json).get("dacv", {}),
+        findings=findings,
+        signature_fields=_signature_fields(lineage),
+        label=body.label,
+        actor=body.actor,
+    )
+
+    db.add(BlueScrubAudit(
+        actor=body.actor, at=_now(), action="baseline.set",
+        project_id=lineage.project_id, job_id=job_id,
+        old_json=json.dumps(
+            {"job_id": previous.job_id, "label": previous.label} if previous else None
+        ),
+        new_json=json.dumps({"job_id": job_id, "label": body.label,
+                             "findings": len(findings)}),
+    ))
+    db.commit()
+
+    return BaselineOut(
+        project_id=lineage.project_id, job_id=job_id, label=row.label,
+        findings=len(findings), created_at=row.created_at,
+        note=(
+            "Frozen. Future scans of this project are compared against it, and "
+            "a scan that measured something different is reported as "
+            "incomparable rather than diffed."
+        ),
+    )
+
+
+@router.get("/jobs/{job_id}/baseline-diff")
+async def baseline_diff(job_id: str, db: Session = Depends(get_db)):
+    """What changed between this job and the project's active baseline.
+
+    Returns ``status: "incomparable"`` with the differing fields named when the
+    two scans did not measure the same thing the same way. A diff between
+    incomparable scans is worse than no diff: it reads as findings appearing
+    and disappearing when nothing about the artifact moved.
+    """
+    _completed_job(db, job_id)
+    lineage = _lineage(db, job_id)
+
+    result = bl.compare(
+        db,
+        project_id=lineage.project_id,
+        findings=_job_findings(db, job_id),
+        signature_fields=_signature_fields(lineage),
+    )
+    payload = result.to_dict()
+    payload["job_id"] = job_id
+    payload["project_id"] = lineage.project_id
     return payload

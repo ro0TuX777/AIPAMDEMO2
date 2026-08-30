@@ -610,6 +610,36 @@ refuses rather than guessing.
 Still to do before it is usable: wiring into the service, and the
 `PUT /baseline` and diff endpoints.
 
+## Baselines, wired
+
+`PUT /jobs/{job_id}/baseline` and `GET /jobs/{job_id}/baseline-diff`.
+
+**The snapshot is the currency, not the canonical groups.** A baseline is set
+when an operator decides a scan is the reference point, which is not when the
+scan ran — by then the groups are gone and `Finding` rows are all there is. So
+both paths build the same snapshot shape, and a test pins that they agree,
+because a mismatch would report phantom changes on the first diff.
+
+**The signature fields had to survive the scan.** A digest cannot name the
+field that differs, so `bluescrub_job_lineage` gains `signature_fields_json`
+(migration `d4e5f6a7b8c9`). Nullable on purpose: a baseline built from an
+older row falls back to comparing digests — able to say whether two scans are
+comparable, honest that it cannot say which field moved. Recomputing the
+fields from the stored report was rejected: the report does not carry all of
+them, and guessing at a comparability decision is worse than declining to
+explain one.
+
+**A baseline belongs to a project, so an unbound job is refused** with the
+binding endpoint named rather than inferred. Inferring one would bind the job
+by side effect, which is the kind of quiet action an audit trail exists to
+prevent — and replacing a baseline records the one it superseded, so "what
+were we comparing against in March" stays answerable.
+
+**A refusal carries no diff over the API either.** The endpoint returns
+`status: "incomparable"` with the differing fields, both values, and why each
+matters — and no `new`/`fixed`/`regressed` keys at all, because including
+counts alongside a refusal invites reading them.
+
 ## Still open
 
 - The differential baseline (`upstream_baseline.json`) is captured from
@@ -636,7 +666,11 @@ Still to do before it is usable: wiring into the service, and the
   `AIPAM_BLUESCRUB_SEMGREP_CONFIG` at the registry.
 - TruffleHog is the one adapter still unvalidated against its tool: its
   `go.mod` carries replace directives, so it needs a release binary.
-- Baselines are implemented but not wired: no service hook, no endpoint. Their argv is a
+- The incremental cache is not started. Its acceptance criterion has two
+  halves — only changed files re-analyzed, **and** the score still reflects
+  findings from unchanged files — and the obvious implementation satisfies the
+  first while silently failing the second, with a score that drifts downward as
+  a project stabilises. Their argv is a
   documented decision a deployment must confirm; their parsers — which is where
   the Semgrep adapter's three defects actually lived — are pure functions tested
   against recorded output. `binstrings` and `build_paths` need no binary and are

@@ -30,7 +30,12 @@ from backend.app.bluescrub.registry import (
     required_for,
     scanners_for,
 )
-from backend.app.bluescrub.scoring import ScannerRun, compatibility_signature, score_job
+from backend.app.bluescrub.scoring import (
+    ScannerRun,
+    digest_payload,
+    score_job,
+    signature_payload,
+)
 from backend.app.bluescrub.severity_table import build_impact_modifiers, build_rule_mapping
 from backend.app.models.bluescrub import BlueScrubJobLineage, BlueScrubScoreHistory
 
@@ -165,7 +170,7 @@ def analyze_and_persist(
         impact_modifiers=build_impact_modifiers(raw, analysis_kind=analysis_kind),
     )
 
-    signature = compatibility_signature(
+    signature_fields = signature_payload(
         profile=profile,
         scanner_manifest_digest=_manifest_digest(runs),
         ruleset_versions_digest=_ruleset_digest(runs),
@@ -175,6 +180,7 @@ def analyze_and_persist(
         pillar_scope=list(scope),
         config_hash=_config_hash(profile),
     )
+    signature = digest_payload(signature_fields)
 
     metrics = score_job(
         result.groups, runs,
@@ -198,7 +204,8 @@ def analyze_and_persist(
         job_id, len(raw), len(result.groups), created, updated,
     )
 
-    _record_lineage(db, job_id, project_id, analysis_kind, signature)
+    _record_lineage(db, job_id, project_id, analysis_kind, signature,
+                    signature_fields)
     if project_id:
         _record_history(db, job_id, project_id, profile, signature, metrics["dacv"])
 
@@ -258,7 +265,13 @@ def _ruleset_digest(runs: list[ScannerRun]) -> str:
 def _record_lineage(
     db: Session, job_id: str, project_id: str | None,
     analysis_kind: str, signature: str,
+    signature_fields: dict[str, Any] | None = None,
 ) -> None:
+    # The fields are stored beside the digest so a later baseline comparison
+    # can name what differs. Recomputing them from the report is not an option:
+    # the report does not carry all of them, and guessing at a comparability
+    # decision is worse than declining to explain one.
+    fields_json = json.dumps(signature_fields) if signature_fields else None
     row = db.scalar(
         select(BlueScrubJobLineage).where(BlueScrubJobLineage.job_id == job_id)
     )
@@ -266,10 +279,12 @@ def _record_lineage(
         db.add(BlueScrubJobLineage(
             job_id=job_id, project_id=project_id,
             analysis_kind=analysis_kind, compatibility_signature=signature,
+            signature_fields_json=fields_json,
         ))
     else:
         row.compatibility_signature = signature
         row.analysis_kind = analysis_kind
+        row.signature_fields_json = fields_json
     db.commit()
 
 

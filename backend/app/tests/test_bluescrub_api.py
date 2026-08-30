@@ -157,3 +157,182 @@ def test_report_returns_metrics_and_lineage(client):
     body = client.get("/api/v1/bluescrub/report/job-a").json()
     assert body["dacv"]["scoped"]["grade"] == "B"
     assert body["lineage"]["analysis_kind"] == "source_audit"
+
+
+# ── baselines ─────────────────────────────────────────────────────────────
+
+import json as _json  # noqa: E402
+
+from backend.app.bluescrub.pillars import Pillar  # noqa: E402
+from backend.app.bluescrub.scoring import (  # noqa: E402
+    digest_payload,
+    signature_payload,
+)
+from backend.app.models.finding import Finding  # noqa: E402
+
+AUTH: dict = {}
+
+
+def _fields(**overrides):
+    base = dict(profile="deep", scanner_manifest_digest="sha256:aa",
+                ruleset_versions_digest="sha256:bb",
+                required_scanners=["semgrep"],
+                pillar_scope=[Pillar.attribution], config_hash="sha256:cc")
+    base.update(overrides)
+    return signature_payload(**base)
+
+
+def _scanned_job(client, job_id, *, project_id, findings, fields=None):
+    """A completed, project-bound job with persisted findings."""
+    fields = fields or _fields()
+    s = client.session_factory()
+    s.add(Job(job_id=job_id, status="completed", execution_profile="deep",
+              priority="normal", source_type="code_artifact",
+              created_at="2026-08-09T00:00:00Z",
+              completed_at="2026-08-09T00:01:00Z",
+              metrics_json=_json.dumps({"dacv": {
+                  "schema": "bluescrub/2",
+                  "compatibility_signature": digest_payload(fields),
+              }})))
+    s.add(BlueScrubJobLineage(
+        job_id=job_id, project_id=project_id, analysis_kind="source_audit",
+        compatibility_signature=digest_payload(fields),
+        signature_fields_json=_json.dumps(fields),
+    ))
+    for finding_id, severity in findings:
+        s.add(Finding(job_id=job_id, finding_id=finding_id, sensor="dirty_word",
+                      severity=severity, category="Attribution",
+                      title="t", summary="s",
+                      evidence_json=_json.dumps({"rule_id": "dirty_word.codename"})))
+    s.commit()
+    s.close()
+
+
+def _project(client, name="loader"):
+    return client.post("/api/v1/bluescrub/projects",
+                       json={"display_name": name}).json()["project_id"]
+
+
+def test_setting_a_baseline_records_what_was_frozen(client):
+    project = _project(client)
+    _scanned_job(client, "job-1", project_id=project,
+                 findings=[("bs-a", "high"), ("bs-b", "medium")])
+
+    res = client.put("/api/v1/bluescrub/jobs/job-1/baseline",
+                     json={"label": "accepted-v1", "actor": "operator-1"})
+
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["findings"] == 2 and body["label"] == "accepted-v1"
+    assert "incomparable" in body["note"]
+
+
+def test_a_later_scan_diffs_against_the_baseline(client):
+    project = _project(client)
+    _scanned_job(client, "job-1", project_id=project,
+                 findings=[("bs-keep", "high"), ("bs-gone", "medium"),
+                           ("bs-worse", "low")])
+    client.put("/api/v1/bluescrub/jobs/job-1/baseline", json={})
+
+    _scanned_job(client, "job-2", project_id=project,
+                 findings=[("bs-keep", "high"), ("bs-worse", "critical"),
+                           ("bs-new", "high")])
+    body = client.get("/api/v1/bluescrub/jobs/job-2/baseline-diff").json()
+
+    assert body["status"] == "comparable"
+    assert [f["finding_id"] for f in body["new"]] == ["bs-new"]
+    assert [f["finding_id"] for f in body["fixed"]] == ["bs-gone"]
+    assert [f["finding_id"] for f in body["regressed"]] == ["bs-worse"]
+    assert body["regressed"][0]["was"] == "low"
+    assert body["counts"]["unchanged"] == 1
+
+
+def test_an_incomparable_scan_names_the_field_over_the_api(client):
+    """"Incomparable" without a reason is an error message users cannot act
+    on, and the API is where a user actually reads it."""
+    project = _project(client)
+    _scanned_job(client, "job-1", project_id=project, findings=[("bs-a", "high")])
+    client.put("/api/v1/bluescrub/jobs/job-1/baseline", json={})
+
+    _scanned_job(client, "job-2", project_id=project, findings=[("bs-a", "high")],
+                 fields=_fields(profile="triage"))
+    body = client.get("/api/v1/bluescrub/jobs/job-2/baseline-diff").json()
+
+    assert body["status"] == "incomparable"
+    assert "profile" in body["reason"]
+    assert body["differing_fields"][0]["baseline"] == "deep"
+    assert body["differing_fields"][0]["current"] == "triage"
+    assert "new" not in body, "a refusal must not carry a diff"
+
+
+def test_an_unbound_job_cannot_be_a_baseline(client):
+    """A baseline is a property of a project. An ad-hoc scan has no project to
+    be the reference for, and inferring one would bind it by side effect.
+
+    The job is otherwise complete, so this reaches the binding check rather
+    than tripping the earlier "analysis has not completed" one."""
+    _scanned_job(client, "job-x", project_id=None, findings=[("bs-a", "high")])
+
+    res = client.put("/api/v1/bluescrub/jobs/job-x/baseline", json={})
+    assert res.status_code == 409
+    # The app wraps HTTPException detail under `error`.
+    assert "not bound to a project" in res.json()["error"]
+
+
+def test_an_unbound_job_cannot_be_diffed_either(client):
+    _scanned_job(client, "job-y", project_id=None, findings=[("bs-a", "high")])
+    assert client.get(
+        "/api/v1/bluescrub/jobs/job-y/baseline-diff").status_code == 409
+
+
+def test_an_incomplete_job_cannot_be_a_baseline(client):
+    project = _project(client)
+    s = client.session_factory()
+    s.add(Job(job_id="job-r", status="running", execution_profile="deep",
+              priority="normal", source_type="code_artifact",
+              created_at="2026-08-09T00:00:00Z"))
+    s.add(BlueScrubJobLineage(job_id="job-r", project_id=project,
+                              analysis_kind="source_audit",
+                              compatibility_signature="sha256:" + "0" * 64))
+    s.commit()
+    s.close()
+
+    assert client.put("/api/v1/bluescrub/jobs/job-r/baseline",
+                      json={}).status_code == 409
+
+
+def test_setting_a_baseline_is_audited(client):
+    project = _project(client)
+    _scanned_job(client, "job-1", project_id=project, findings=[("bs-a", "high")])
+    client.put("/api/v1/bluescrub/jobs/job-1/baseline",
+               json={"label": "v1", "actor": "operator-1"})
+
+    s = client.session_factory()
+    rows = s.scalars(select(BlueScrubAudit).where(
+        BlueScrubAudit.action == "baseline.set")).all()
+    assert len(rows) == 1 and rows[0].actor == "operator-1"
+    s.close()
+
+
+def test_replacing_a_baseline_records_the_one_it_superseded(client):
+    project = _project(client)
+    _scanned_job(client, "job-1", project_id=project, findings=[("bs-a", "high")])
+    client.put("/api/v1/bluescrub/jobs/job-1/baseline", json={"label": "v1"})
+    _scanned_job(client, "job-2", project_id=project, findings=[("bs-b", "high")])
+    client.put("/api/v1/bluescrub/jobs/job-2/baseline", json={"label": "v2"})
+
+    s = client.session_factory()
+    rows = sorted(s.scalars(select(BlueScrubAudit).where(
+        BlueScrubAudit.action == "baseline.set")).all(), key=lambda r: r.id)
+    superseded = _json.loads(rows[-1].old_json)
+    assert superseded["label"] == "v1" and superseded["job_id"] == "job-1"
+    s.close()
+
+
+def test_a_diff_with_no_baseline_says_so(client):
+    project = _project(client)
+    _scanned_job(client, "job-1", project_id=project, findings=[("bs-a", "high")])
+
+    body = client.get("/api/v1/bluescrub/jobs/job-1/baseline-diff").json()
+    assert body["status"] == "incomparable"
+    assert "no active baseline" in body["reason"]

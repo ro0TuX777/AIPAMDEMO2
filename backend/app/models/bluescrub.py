@@ -58,6 +58,10 @@ class BlueScrubJobLineage(Base):
     )
     project_id = Column(String, nullable=True, index=True)
     lineage_parent_job_id = Column(String, nullable=True)
+    #: The fields the comparability signature was computed from. Stored beside
+    #: the digest because a digest cannot name the field that differs, and the
+    #: contract requires a rejected comparison to name it.
+    signature_fields_json = Column(Text, nullable=True)
     derived_from_job_id = Column(String, nullable=True)     # PCAP parent, re_assessment
     derived_from_file_id = Column(String, nullable=True)
     artifact_sha256 = Column(String, nullable=True)
