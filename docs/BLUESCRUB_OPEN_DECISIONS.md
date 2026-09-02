@@ -121,6 +121,62 @@ discovering in Sprint 9 that it cannot be finished.
 
 ---
 
+## 5. The overall grade is unreachable in a default deployment
+
+**Discovered** building RE-Feasibility signals, Sprint 6.
+
+RE-Feasibility now measures seven of its eight signals. The eighth,
+`decompilation` (weight 0.15), needs Ghidra headless, which is Sprint 9. The
+scoring model deliberately does not redistribute an unmeasured signal's weight,
+so coverage reads 0.85 and the pillar is `degraded`.
+
+`COVERAGE_THRESHOLD` is 0.9, and the overall grade requires *every* pillar at or
+above it. So `overall` is `{"status": "incomplete", "score": None, "grade":
+None}` on every scan.
+
+Ghidra was not the only thing holding it there. On first measurement
+Detectability also read `degraded` at 0.83 with `reason: "missing: yara"`. That
+turned out to be a defect rather than a decision: `aipam_yara_rules_dir`
+defaults to `/opt/aipam/rules/yara`, a deployment path nobody has until they
+provision it, so every fresh install declined to run the five signatures
+already shipped in the source tree. `yara_scan.rules_dir()` now falls back to
+the bundled ruleset and Detectability reads `assessed` at 1.0. **Fixed, not a
+decision.**
+
+What remains is one cause: **Ghidra headless** — Sprint 9, a ~1 GB Java
+toolchain that many environments will decline to install at all. So the grade
+stays absent in any deployment without it, permanently for some of them.
+
+This is the design working as specified. It is recorded here because the
+consequence — a product that scores five pillars and shows no grade — is a
+product decision, not an engineering one, and three answers are defensible:
+
+**Leave it.** A grade that omits a pillar is a grade that misleads. Refusing to
+emit one is the honest reading of the coverage rule, and it is what the spec
+says today.
+
+**Lower the threshold to 0.85.** Cheap, and makes the grade reachable now. But
+0.9 was chosen to mean "essentially complete", and 0.85 is exactly the value
+that makes the current gap pass — a threshold fitted to the gap it is meant to
+catch, which is how thresholds stop meaning anything.
+
+**Grade on measured weight, and say what was measured.** Emit the grade from
+the pillars that were assessed, labelled with its coverage, so a reader sees
+`D (87% coverage, decompilation not assessed)` rather than nothing. More work,
+and it needs the UI to carry the qualifier everywhere the grade appears — but it
+is the only option that neither hides the gap nor withholds the answer.
+
+My recommendation is the third. The second is the one to avoid: it changes a
+number that encodes a judgement in order to get a result, which is the failure
+mode the whole coverage mechanism exists to prevent.
+
+**Cost of delay.** Every scan until Sprint 9 produces pillar scores and no
+grade. Users will read that as the product being broken rather than honest,
+because nothing currently tells them why. With the YARA gap closed the
+explanation is at least a single sentence.
+
+---
+
 ## Summary
 
 | # | Decision | Cost of delay | Who can settle it |
@@ -129,6 +185,7 @@ discovering in Sprint 9 that it cannot be finished.
 | 2 | Retention consequence | Grows with every scan | Product owner |
 | 3 | Gate: review or convert | Reputational, compounding | Reviewer |
 | 4 | Real artifact review | Blocks Sprint 9 entirely | An OPSEC analyst |
+| 5 | Unreachable overall grade | Every scan, indefinitely | Product owner |
 
 Nothing here is a blocker for the current sprint. All four are blockers for
 believing the results.

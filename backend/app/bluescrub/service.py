@@ -20,7 +20,14 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.bluescrub import SCORING_MODEL
-from backend.app.bluescrub import binstrings, fpfilter, redaction, validation, wordlists
+from backend.app.bluescrub import (
+    binstrings,
+    fpfilter,
+    re_signals,
+    redaction,
+    validation,
+    wordlists,
+)
 from backend.app.bluescrub.scanners import dirty_word as dirty_word_scanner
 from backend.app.bluescrub.canonicalize import canonicalize
 from backend.app.bluescrub.persistence import persist_groups
@@ -182,12 +189,21 @@ def analyze_and_persist(
     )
     signature = digest_payload(signature_fields)
 
+    # RE-Feasibility is measured after canonicalization because two of its
+    # signals — whether the artifact resists analysis, and whether its config
+    # sits in plain sight — are read off the findings rather than the bytes.
+    try:
+        measured_signals = re_signals.compute(source_root, result.groups)
+    except Exception as exc:  # a signal failure must not lose the scan
+        logger.warning("RE signal measurement raised: %s", exc, exc_info=True)
+        measured_signals = []
+
     metrics = score_job(
         result.groups, runs,
         profile=profile,
         analysis_kind=analysis_kind,
         project_id=project_id,
-        re_signals=[],
+        re_signals=measured_signals,
         files_scanned=_count_files(source_root),
         unmapped=result.unmapped,
         collisions=result.collisions,

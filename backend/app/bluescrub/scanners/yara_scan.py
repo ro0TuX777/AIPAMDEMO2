@@ -62,7 +62,19 @@ _FAMILY_KEYS = ("family", "malware_family", "malware", "actor", "threat_name")
 
 
 def rules_dir() -> Path | None:
-    """Where the signatures live, or None if none are configured."""
+    """Where the signatures live, or None if there are none anywhere.
+
+    Three sources, most specific first: the environment override, the
+    configured platform directory, then the rules bundled with the product.
+
+    The bundled fallback exists because without it a default install reported
+    Detectability as `degraded` with `missing: yara` while a ruleset sat
+    unused in the source tree. `aipam_yara_rules_dir` defaults to
+    ``/opt/aipam/rules/yara``, a deployment path that does not exist until
+    someone provisions it, so every developer machine and every fresh install
+    silently declined to run the signatures it already had. Reporting
+    `unavailable` was correct given no rules; having no rules was not.
+    """
     configured = os.getenv(RULES_ENV)
     if configured:
         path = Path(configured)
@@ -71,10 +83,19 @@ def rules_dir() -> Path | None:
         from backend.app.config_v2 import get_settings
 
         path = Path(get_settings().aipam_yara_rules_dir)
+        if path.is_dir():
+            return path
     except Exception as exc:  # pragma: no cover - settings always load in tests
         logger.info("could not read the configured YARA rules dir: %s", exc)
+
+    try:
+        from backend.app.binalysis.service import default_rules_dir
+
+        bundled = default_rules_dir()
+    except Exception as exc:  # pragma: no cover - binalysis always imports
+        logger.info("could not locate the bundled YARA rules: %s", exc)
         return None
-    return path if path.is_dir() else None
+    return bundled if bundled.is_dir() else None
 
 
 def family_of(meta: dict) -> str | None:

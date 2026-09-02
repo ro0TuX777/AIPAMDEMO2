@@ -12,6 +12,8 @@ bytes rather than stubbing the engine.
 
 import json
 
+from types import SimpleNamespace
+
 import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
@@ -221,6 +223,52 @@ def test_it_does_not_compile_its_own_rules():
         for alias in node.names
     }
     assert "yara" not in imported, "compile through binalysis.engine, not directly"
+
+
+def test_bundled_rules_are_used_when_nothing_is_configured(monkeypatch, tmp_path):
+    """A default install shipped rules and declined to run them.
+
+    `aipam_yara_rules_dir` defaults to /opt/aipam/rules/yara, a path nobody has
+    until they provision it, so every developer machine and fresh install
+    reported Detectability `degraded` with `missing: yara` while a ruleset sat
+    unused in the source tree.
+    """
+    from backend.app.binalysis.service import default_rules_dir
+
+    monkeypatch.delenv(yara_scan.RULES_ENV, raising=False)
+    monkeypatch.setattr(
+        "backend.app.config_v2.get_settings",
+        lambda: SimpleNamespace(aipam_yara_rules_dir=tmp_path / "unprovisioned"),
+    )
+    assert yara_scan.rules_dir() == default_rules_dir()
+
+
+def test_the_configured_directory_still_wins_over_the_bundled_one(
+    monkeypatch, tmp_path
+):
+    provisioned = tmp_path / "provisioned"
+    provisioned.mkdir()
+    monkeypatch.delenv(yara_scan.RULES_ENV, raising=False)
+    monkeypatch.setattr(
+        "backend.app.config_v2.get_settings",
+        lambda: SimpleNamespace(aipam_yara_rules_dir=provisioned),
+    )
+    assert yara_scan.rules_dir() == provisioned
+
+
+def test_an_explicit_empty_override_is_still_unavailable(monkeypatch, tmp_path):
+    """The fallback must not override someone deliberately running no rules."""
+    monkeypatch.setenv(yara_scan.RULES_ENV, str(tmp_path / "missing"))
+    assert yara_scan.rules_dir() is None
+
+
+def test_the_bundled_rules_actually_compile():
+    """A fallback pointing at rules that do not compile is worse than none."""
+    from backend.app.binalysis.engine import compile_yara_rules, yara_available
+
+    if not yara_available():
+        pytest.skip("yara-python is not installed")
+    assert compile_yara_rules(yara_scan.rules_dir()) is not None
 
 
 def test_the_configured_rules_path_is_the_platform_setting(monkeypatch):

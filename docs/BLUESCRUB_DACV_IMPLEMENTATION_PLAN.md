@@ -507,6 +507,33 @@ reverse = bad OPSEC*. The gauge is labelled explicitly.
 | Import table | 0.05 | Rich named imports | Dynamic resolution, API hashing, ordinal-only | vendored `binary_analyzer` |
 | Config / IOC exposure | 0.05 | Plaintext C2 config, keys, mutexes | Encrypted config, per-build key | dirty-word + string recovery |
 
+#### 4.1.1 Where the numeric anchors came from
+
+The table above is qualitative — "high strings-per-KiB" is not a number. The
+constants in `re_signals.py` were measured rather than guessed, on this bench:
+
+| Artifact | Entropy | Symbols | Imports | Substantial strings/KiB |
+|---|---|---|---|---|
+| debug build (`-g -O0`) | 4.4 | 42 | 5 | 3.83 |
+| stripped build (`-O2 -s`) | 5.2 | 0 | 5 | 1.79 |
+| `ls` / `bash` / `curl` / `python3.12` | 5.6–6.1 | 128–2286 | 81–479 | 4.19–5.09 |
+| `grep` / `tar` / `sed` / `gzip` | 5.4–6.0 | — | — | 2.53–3.46 |
+| 60 KiB of random bytes | 8.0 | 0 | 0 | 0.32 |
+
+Ordinary binaries hold 2.5–5.1 substantial strings per KiB, so 4.0 anchors
+"yields plenty" and 0.5 anchors "yields nothing" — the packed case sits below it.
+
+**"Substantial" means eight characters or more, and that floor is load-bearing.**
+Counting four-character runs, the block of random bytes yielded 12.9 per KiB —
+more than any real binary measured — because noise throws off short accidental
+ASCII runs prolifically. A packed artifact therefore scored as the *most*
+readable thing on the bench, which inverts the signal exactly where it matters
+most. At eight characters accidental runs die out (0.32/KiB) and deliberate text
+survives. This was caught by comparing artifact shapes, not by reading the code.
+
+Effort bands on that bench: debug **Trivial** (80), stripped **Days** (46),
+random-bytes **Weeks** (21).
+
 ### 4.2 Score and coverage
 
 ```
