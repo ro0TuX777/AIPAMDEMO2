@@ -213,20 +213,28 @@ def test_the_internal_hostname_is_reported(scanned):
     assert spec["planted"]["hostname"] in {e["code"] for e in hosts}
 
 
-def test_known_gap_the_mutex_is_found_only_because_it_holds_a_declared_term(scanned):
-    """A mutex name is a `forensic_artifact` — a defender detects the implant
-    by it — and nothing looks for mutex patterns in binaries. This one surfaces
-    only because the operator happened to declare `NIGHTFALL`, which the mutex
-    contains. Rename the mutex and it vanishes."""
+def test_the_hardcoded_user_agent_is_reported(scanned):
+    """This was a tripwire and it fired, which is what tripwires are for.
+
+    A fixed User-Agent is among the most reliable network detections there is,
+    and an OPSEC review of a realistic implant found the report named it
+    nowhere. Kept as a positive assertion."""
+    _dacv, _rows, evidence, spec = scanned
+
+    agents = [e for e in evidence
+              if e.get("rule_id") == "binary_indicators.hardcoded_user_agent"]
+    assert agents, "the compiled-in User-Agent was missed"
+    assert spec["planted"]["user_agent"].startswith(agents[0]["code"][:20])
+
+
+def test_the_mutex_is_found_on_its_own_merits(scanned):
+    """It used to surface only because it happened to contain a declared
+    codename — rename it and it vanished, while staying exactly as useful to a
+    defender fingerprinting a running instance."""
     _dacv, _rows, evidence, _spec = scanned
 
-    assert not [e for e in evidence if e.get("issue_family") == "forensic-artifact"]
-
-
-def test_known_gap_the_hardcoded_user_agent_is_not_reported(scanned):
-    """A fixed User-Agent is a signature a defender writes a rule against."""
-    _dacv, _rows, evidence, spec = scanned
-    assert spec["planted"]["user_agent"] not in json.dumps(evidence)
+    assert [e for e in evidence
+            if e.get("rule_id") == "binary_indicators.mutex_name"]
 
 
 def test_missing_tooling_is_reported_as_missing_not_scored_zero(scanned):

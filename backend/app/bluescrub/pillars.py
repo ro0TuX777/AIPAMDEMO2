@@ -186,8 +186,18 @@ FAMILY_PILLAR: dict[IssueFamily, Pillar] = {
     IssueFamily.weak_crypto: Pillar.vulnerability,
     IssueFamily.insecure_random: Pillar.vulnerability,
     IssueFamily.authz_bypass: Pillar.vulnerability,
-    IssueFamily.hardcoded_secret: Pillar.attribution,
-    IssueFamily.credential_exposure: Pillar.attribution,
+    # Co-Optability, not Attribution. The pillar is defined as "could an
+    # adversary turn this against us", and the severity table's own rationale
+    # for a hardcoded C2 — "whoever takes that address inherits every implant
+    # pointing at it" — reads identically with "credential" substituted.
+    #
+    # Moved after an OPSEC review of a realistic implant, where a hardcoded AWS
+    # key was filed under Attribution. A credential does not say who wrote the
+    # artifact; it says what someone else can do with it. Where a credential
+    # *does* identify — an address inside a token, an account name — the
+    # identity detectors report that separately and under Attribution.
+    IssueFamily.hardcoded_secret: Pillar.co_optability,
+    IssueFamily.credential_exposure: Pillar.co_optability,
     IssueFamily.attribution_marking: Pillar.attribution,
     IssueFamily.attribution_identity: Pillar.attribution,
     IssueFamily.attribution_infrastructure: Pillar.attribution,

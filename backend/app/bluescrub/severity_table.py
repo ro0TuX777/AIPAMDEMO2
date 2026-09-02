@@ -29,8 +29,6 @@ SEVERITY_BY_FAMILY: dict[IssueFamily, str] = {
     IssueFamily.attribution_identity: "critical",
     IssueFamily.attribution_infrastructure: "high",
     IssueFamily.build_path_leak: "high",
-    IssueFamily.hardcoded_secret: "high",
-    IssueFamily.credential_exposure: "high",
     IssueFamily.metadata_leak: "medium",
     IssueFamily.forensic_artifact: "medium",
 
@@ -38,6 +36,11 @@ SEVERITY_BY_FAMILY: dict[IssueFamily, str] = {
     # A hardcoded C2 address is not a "hardcoded configuration" smell. Whoever
     # takes that address inherits every implant pointing at it.
     IssueFamily.hardcoded_c2: "critical",
+    # The same sentence with "credential" substituted, which is why these two
+    # live here rather than under Attribution: a key does not say who wrote the
+    # artifact, it says what someone else can do with it.
+    IssueFamily.hardcoded_secret: "high",
+    IssueFamily.credential_exposure: "high",
     IssueFamily.kill_switch: "critical",
     IssueFamily.unauth_control_channel: "critical",
     IssueFamily.dependency_vulnerable: "high",

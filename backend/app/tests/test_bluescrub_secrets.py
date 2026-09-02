@@ -60,7 +60,9 @@ def test_gitleaks_parses_a_bare_array():
     assert first.rule_id == "gitleaks.github-pat"
     assert first.location.file == "config/settings.py"
     assert first.location.start_line == 12
-    assert first.pillar_hint is Pillar.attribution
+    # Co-Optability, not Attribution: a leaked token is what an adversary can
+    # use, not a statement about who wrote the artifact.
+    assert first.pillar_hint is Pillar.co_optability
 
 
 def test_a_history_finding_says_it_is_in_every_clone():

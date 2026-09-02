@@ -71,9 +71,11 @@ SCANNERS: dict[str, ScannerSpec] = {
     "binary_indicators": ScannerSpec(
         name="binary_indicators",
         run=binary_indicators.run,
-        # Co-Optability is the point — a hardcoded address is what that pillar
-        # exists for — and internal hostnames land in Attribution.
-        pillars=(Pillar.co_optability, Pillar.attribution),
+        # A hardcoded address is what Co-Optability exists for; internal
+        # hostnames land in Attribution; and the detection signals — user
+        # agent, mutex, named pipe — are Detectability, because a fixed string
+        # is what a defender writes one rule against.
+        pillars=(Pillar.co_optability, Pillar.attribution, Pillar.detectability),
         risk_class=RiskClass.parse_only,
         profiles=("standard", "deep"),
         # Nothing else extracts network indicators from a compiled artifact on

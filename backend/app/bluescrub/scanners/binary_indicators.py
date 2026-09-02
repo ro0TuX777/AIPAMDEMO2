@@ -27,11 +27,19 @@ both genuine IP literals from CPython's own documentation. The rules that were
   bug-tracker boilerplate: gnu.org, python.org, mitre.org, launchpad.net. An
   allowlist to separate those from a real one would be endless and brittle.
   Only internal namespaces are reported, where there is nothing to separate.
-- **Mutex names, registry paths, user-agents.** These are Windows-shaped and
-  there is no Windows corpus here to calibrate against. Shipping them would be
-  guessing at a threshold, which is the failure this project keeps finding.
-  They stay as tripwire assertions in `test_bluescrub_corpus.py` until somebody
-  has a corpus.
+**Detection signals were added after a review, and measured first.** Reading a
+realistic implant's report showed it named none of the things a defender would
+actually key on: a hardcoded User-Agent, a distinctive mutex. The mutex
+surfaced only because it happened to contain an operator-declared codename — so
+renaming it would have made it vanish while staying exactly as useful to a
+defender. Detectability was resting on the wordlist.
+
+Measured across ten binaries before shipping — ls, bash, git, gcc, libc,
+python, curl, wget, and two PEs. Mutex, named pipe and persistence key produced
+zero hits; User-Agent produced one, on `curl`, which legitimately carries its
+own. A bare `HKEY_...` reference is *not* shipped: it produced two hits in
+CPython's `winreg` strings, which is a library naming the API rather than an
+artifact installing itself, so only autostart keys are reported.
 
 **On reading the binaries a third time.** Dirty-word and build-paths already
 do their own extraction, and this makes three passes. That is a regex sweep
@@ -101,12 +109,66 @@ _NEVER_C2 = (
 )
 
 
+#: Detection signals: fixed strings a defender writes one rule against.
+#:
+#: Added after reviewing a realistic implant and finding the report named none
+#: of them. The artifact carried a hardcoded User-Agent and a distinctive
+#: mutex; the mutex surfaced only because it happened to contain an
+#: operator-declared codename, so renaming it would have made it vanish while
+#: remaining exactly as useful to a defender. Detectability was resting on the
+#: wordlist.
+#:
+#: Measured across ten binaries — ls, bash, git, gcc, libc, python, curl, wget
+#: and two PEs — before shipping. Mutex, named pipe and persistence key: zero
+#: hits. User-Agent: one, on `curl`, which legitimately carries its own.
+_USER_AGENT = re.compile(
+    r"(?:Mozilla/\d|curl/\d|python-requests/\d|Wget/\d|Go-http-client/\d)"
+    r"[^\x00\n]{0,120}"
+)
+#: `Global\` and `Local\` are the Windows mutex namespaces. A unique name
+#: fingerprints a *running* instance, which no file-based rule can.
+_MUTEX = re.compile(r"(?:Global|Local)\\[A-Za-z0-9_.\-{}]{3,64}")
+_NAMED_PIPE = re.compile(r"\\\\\.\\pipe\\[A-Za-z0-9_.\-{}]{2,64}")
+#: Persistence keys only. A bare `HKEY_...` reference is not persistence — it
+#: produced two hits in CPython's `winreg` strings, which is a library naming
+#: the API rather than an artifact installing itself.
+_PERSISTENCE_KEY = re.compile(
+    r"(?:SOFTWARE\\)?Microsoft\\Windows\\CurrentVersion\\"
+    r"(?:Run|RunOnce|RunServices|Explorer\\Shell Folders)[^\x00\n\"']{0,80}",
+    re.IGNORECASE,
+)
+
+#: kind -> (pattern, rule id, family, title, why it matters)
+_SIGNAL_RULES = (
+    ("user_agent", _USER_AGENT, "binary_indicators.hardcoded_user_agent",
+     IssueFamily.signature_trivial, "Hardcoded User-Agent",
+     "A fixed User-Agent is among the most reliable network detections there "
+     "is: one rule matches every beacon carrying it, on every host."),
+    ("mutex", _MUTEX, "binary_indicators.mutex_name",
+     IssueFamily.signature_trivial, "Distinctive mutex name",
+     "A unique mutex is how a defender fingerprints a running instance. It "
+     "identifies the artifact while it executes, which no file rule can."),
+    ("named_pipe", _NAMED_PIPE, "binary_indicators.named_pipe",
+     IssueFamily.signature_trivial, "Hardcoded named pipe",
+     "A fixed pipe name is a host-based signature and, unlike a file hash, it "
+     "survives a rebuild."),
+    ("persistence_key", _PERSISTENCE_KEY, "binary_indicators.persistence_key",
+     IssueFamily.forensic_artifact, "Persistence registry key",
+     "A hardcoded autostart location is a trace left on the host and one of "
+     "the most heavily monitored places on Windows."),
+)
+
+_SIGNAL_BY_KIND = {kind: (rule, family, title, why)
+                   for kind, _p, rule, family, title, why in _SIGNAL_RULES}
+
+
 @dataclass(frozen=True)
 class Indicator:
     """One indicator found in one artifact."""
 
     value: str
-    kind: str            # "ipv4" | "internal_host"
+    #: "ipv4" | "internal_host" | a detection-signal kind from _SIGNAL_RULES
+    kind: str
     offset: int | None
 
 
@@ -162,11 +224,45 @@ def extract_indicators(text: str, base_offset: int | None = None,
                     if base_offset is not None else None),
         ))
 
+    for kind, pattern, _rule, _family, _title, _why in _SIGNAL_RULES:
+        for match in pattern.finditer(text):
+            value = match.group(0).strip()
+            if not value or value in seen:
+                continue
+            seen.add(value)
+            found.append(Indicator(
+                value=value, kind=kind,
+                offset=(base_offset + match.start() * width
+                        if base_offset is not None else None),
+            ))
+
     return found
 
 
 def _finding(indicator: Indicator, rel: str,
              recovery: binstrings.Recovery) -> RawFinding:
+    signal = _SIGNAL_BY_KIND.get(indicator.kind)
+    if signal is not None:
+        rule, family, title, detail = signal
+        return RawFinding(
+            sensor=SENSOR, sensor_version="builtin", rule_namespace=RULE_NAMESPACE,
+            rule_id=rule, issue_family=family, pillar_hint=FAMILY_PILLAR[family],
+            detector_class=DetectorClass.regex_pattern,
+            raw_severity="HIGH", confidence=0.85, source_facet="binary",
+            title=title,
+            description=f"{rel} contains {indicator.value!r}. {detail}"[:4096],
+            matched_tokens=indicator.value[:4096],
+            location=Location(
+                kind="binary", file=rel, artifact_sha256=recovery.sha256,
+                format=recovery.binary_format, offset=indicator.offset,
+            ),
+            recommendation=(
+                "Generate it per build, or derive it from something a defender "
+                "cannot enumerate. A value constant across deployments is one "
+                "rule away from catching all of them."
+            ),
+        )
+
     if indicator.kind == "ipv4":
         private = ipaddress.IPv4Address(indicator.value).is_private
         family = IssueFamily.hardcoded_c2

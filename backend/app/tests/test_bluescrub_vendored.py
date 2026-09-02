@@ -138,7 +138,7 @@ def test_three_analyzers_one_secret_collapses_to_one_finding():
 
     OpsecAnalyzer, SecretsAnalyzer, and CryptoVulnerabilityAnalyzer all report
     the same hardcoded key. Scored raw, it would count three times and the
-    Attribution pillar would triple for a single leak.
+    pillar would triple for a single leak.
     """
     root = Path("/tmp")
     raw = []
@@ -156,7 +156,9 @@ def test_three_analyzers_one_secret_collapses_to_one_finding():
 
     assert len(result.groups) == 1, "three reports of one secret must be one finding"
     group = result.groups[0]
-    assert group.pillar is Pillar.attribution
+    # Co-Optability: a credential says what someone else can do, not who wrote
+    # the artifact. See FAMILY_PILLAR.
+    assert group.pillar is Pillar.co_optability
     assert len(group.members) == 3
     assert len(group.corroborating) == 2
 

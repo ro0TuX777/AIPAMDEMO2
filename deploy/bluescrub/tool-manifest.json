@@ -317,7 +317,8 @@
       "risk_class": "parse_only",
       "pillars": [
         "Co-Optability",
-        "Attribution"
+        "Attribution",
+        "Detectability"
       ],
       "licence": "proprietary",
       "redistribution": "restricted",
@@ -325,7 +326,7 @@
         "amd64",
         "arm64"
       ],
-      "licence_notes": "AIPAM's own detector, no third-party component. Extracts network indicators from strings recovered out of compiled artifacts. The vendored binary analyzer can do the same thing with no dependency, but is gated behind pefile/pyelftools and so goes dark on a host without them \u2014 which left a hardcoded C2 unreported on the one artifact class this product exists to grade. Only rules measured against a real binary corpus are shipped; mutex, registry and user-agent extraction await a Windows corpus.",
+      "licence_notes": "AIPAM's own detector, no third-party component. Extracts network indicators from strings recovered out of compiled artifacts. The vendored binary analyzer can do the same thing with no dependency, but is gated behind pefile/pyelftools and so goes dark on a host without them \u2014 which left a hardcoded C2 unreported on the one artifact class this product exists to grade. Only rules measured against a real binary corpus are shipped; detection signals \u2014 hardcoded User-Agent, mutex name, named pipe and autostart registry key \u2014 were added after an OPSEC review of a realistic implant found the report named none of them, and were measured across ten binaries first: zero false positives except one User-Agent on curl, which legitimately carries its own.",
       "limits": {
         "timeout_seconds": 300,
         "mem_limit": "2g",

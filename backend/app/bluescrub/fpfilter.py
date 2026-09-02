@@ -5,10 +5,17 @@ placeholder values that no scanner should have flagged, and third-party code
 vendored into the tree. Two of the five email-address hits were
 ``user@example.com`` inside a bundled swagger-ui build.
 
-Two rules, deliberately narrow.
+Three rules, deliberately narrow.
 
 **Value filters** apply everywhere. ``password = "changeme"`` is a placeholder
 in any domain, and ``user@example.com`` is documentation.
+
+**Broken-rule filters** name individual vendored rules whose regex cannot do
+what the rule claims — not noisy ones, wrong ones. `SupplyChainAnalyzer`'s
+typosquat pattern lists real package names alongside typosquats, and its
+unpinned-version pattern makes the version optional so it matches pinned
+dependencies too. The vendored tree is read-only by policy, so the correction
+lives here where it is counted.
 
 **Third-party attribution filters** apply to the Attribution pillar only. An
 email address inside a vendored dependency is somebody else's identity, not the
@@ -43,7 +50,7 @@ from collections import Counter
 from dataclasses import dataclass, field
 
 from backend.app.bluescrub.models import RawFinding
-from backend.app.bluescrub.pillars import FAMILY_PILLAR, Pillar
+from backend.app.bluescrub.pillars import FAMILY_PILLAR, IssueFamily, Pillar
 
 logger = logging.getLogger(__name__)
 
@@ -55,6 +62,18 @@ THIRD_PARTY_SEGMENTS: frozenset[str] = frozenset({
     "external", "externals", ".venv", "venv", "virtualenv",
 })
 
+#: Secret families follow the same rule as identity, and are named explicitly
+#: because they no longer sit under Attribution. A test fixture's fake API key
+#: inside a vendored dependency is somebody else's credential in somebody
+#: else's code — not a key anyone can use against this operator. The families
+#: moved to Co-Optability on the merits; the suppression that already covered
+#: them had to move with them, or re-pillaring would have silently unmuted
+#: every vendored test key.
+_THIRD_PARTY_SECRET_FAMILIES: frozenset = frozenset({
+    IssueFamily.hardcoded_secret,
+    IssueFamily.credential_exposure,
+})
+
 #: Generated or tool-owned output that is not part of the artifact at all.
 NON_ARTIFACT_SEGMENTS: frozenset[str] = frozenset({
     "__pycache__", ".git", ".mypy_cache", ".pytest_cache", ".ruff_cache",
@@ -62,6 +81,30 @@ NON_ARTIFACT_SEGMENTS: frozenset[str] = frozenset({
 })
 
 _SEG = re.compile(r"[\\/]+")
+
+#: Vendored rules whose regex cannot do what the rule name claims. Not "noisy"
+#: — wrong, in a way no severity adjustment repairs.
+#:
+#: Found by reading a report on a realistic artifact and asking why a plain
+#: `flask==0.12` was a high-severity typosquat. `VENDOR.md` keeps the vendored
+#: tree read-only so upstream re-syncs stay a reviewable diff, so the
+#: correction belongs here, where it is counted and reported rather than
+#: silently dropped.
+BROKEN_VENDORED_RULES: dict[str, str] = {
+    # (?i)(reqeusts|urlib|numpy|scipy|pandas|flask|django) — the alternation
+    # mixes two genuine typosquats with five *legitimate* package names, so it
+    # fires on every project that depends on flask or numpy and calls the real
+    # package a typosquat. At HIGH.
+    "SupplyChainAnalyzer.typosquatting":
+        "the rule's alternation lists real package names alongside typosquats, "
+        "so it flags the genuine dependency",
+    # ([a-zA-Z0-9_-]+)(?:\s*[><=!]+\s*[\d.]+)?\s*$ — the version group is
+    # optional, so the pattern matches any package line whether pinned or not.
+    # `requests==2.6.0` is reported as unpinned.
+    "SupplyChainAnalyzer.unpinned_versions":
+        "the version group in the rule's pattern is optional, so it matches "
+        "pinned dependencies as readily as unpinned ones",
+}
 
 
 @dataclass
@@ -157,12 +200,21 @@ def apply(findings: list[RawFinding]) -> SuppressionResult:
         path = finding.location.file or finding.location.subject
         reason: str | None = None
 
-        if _is_non_artifact(path):
+        broken = BROKEN_VENDORED_RULES.get(finding.rule_id)
+        if broken:
+            # Recorded against the rule, not the finding: every hit from a
+            # rule that cannot work is suppressed, and the count says how many.
+            reason = "broken_rule"
+            logger.debug("suppressing %s — %s", finding.rule_id, broken)
+        elif _is_non_artifact(path):
             reason = "non_artifact_path"
         elif (
             third_party_enabled
             and _is_third_party(path)
-            and FAMILY_PILLAR.get(finding.issue_family) is Pillar.attribution
+            and (
+                FAMILY_PILLAR.get(finding.issue_family) is Pillar.attribution
+                or finding.issue_family in _THIRD_PARTY_SECRET_FAMILIES
+            )
         ):
             # Someone else's identity in someone else's code.
             reason = "third_party_attribution"
