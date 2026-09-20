@@ -45,6 +45,13 @@ class Settings(BaseSettings):
     aipam_ollama_url: str = "http://127.0.0.1:11434"
     aipam_redis_url: str = "redis://redis:6379/0"
 
+    # --- MNEMOS forensic memory (optional during staged rollout) ---
+    # Docker uses the service hostname, never the host's MNEMOS port, so this
+    # AIPAM deployment remains isolated from other local MNEMOS instances.
+    mnemos_enabled: bool = False
+    mnemos_base_url: str = "http://mnemos-service:8700"
+    mnemos_token: str | None = None
+
     # --- Local adapter runtime (optional) ---
     llm_local_adapter_path: str | None = None
     llm_local_adapter_model_name: str | None = None
@@ -93,4 +100,3 @@ class Settings(BaseSettings):
 def get_settings() -> Settings:
     """Cached settings singleton. Call once at startup."""
     return Settings()
-

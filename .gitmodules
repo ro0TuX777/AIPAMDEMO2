@@ -1,0 +1,3 @@
+[submodule "mnemos-service"]
+	path = mnemos-service
+	url = http://localhost:3000/rootux/MNEMOSv2.git

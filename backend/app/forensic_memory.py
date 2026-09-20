@@ -81,10 +81,6 @@ def store_findings(
     Returns:
         Number of findings indexed
     """
-    collection = get_memory_collection()
-    if collection is None:
-        return 0
-
     # HITL gate: only index findings with analyst_status == "confirmed"
     confirmed_findings = [
         f for f in findings
@@ -95,6 +91,42 @@ def store_findings(
             "Forensic memory: %d findings skipped (none confirmed by analyst)",
             len(findings),
         )
+
+    # During MNEMOS rollout, write confirmed findings to both backends.  The
+    # local collection remains the recovery path if the service is warming or
+    # unavailable, so a remote outage cannot discard analyst-confirmed memory.
+    mnemos_indexed: int | None = None
+    if confirmed_findings:
+        try:
+            from backend.app.mnemos_boundary import get_mnemos_client
+
+            client = get_mnemos_client()
+            if client is not None:
+                mnemos_documents = [
+                    {
+                        "id": f"{job_id}-{i}",
+                        "content": _finding_to_text(finding),
+                        "source": "aipam.forensic_memory",
+                        "neuro_tags": ["forensic_finding", "confirmed"],
+                        "metadata": {
+                            "collection": DEFAULT_COLLECTION,
+                            "job_id": job_id,
+                            "project_id": project_id,
+                            "mitre_technique_id": finding.get("mitre_technique_id", ""),
+                            "severity": finding.get("severity", ""),
+                            "confidence_score": float(finding.get("confidence_score", 0)),
+                            "classification": finding.get("classification", ""),
+                        },
+                    }
+                    for i, finding in enumerate(confirmed_findings)
+                ]
+                mnemos_indexed = client.index(mnemos_documents)
+        except Exception as exc:
+            logger.warning("MNEMOS forensic-memory write failed; retaining local write: %s", exc)
+
+    collection = get_memory_collection()
+    if collection is None:
+        return mnemos_indexed or 0
 
     indexed = 0
     for i, finding in enumerate(confirmed_findings):
@@ -141,6 +173,20 @@ def query_memory(
     Returns:
         List of dicts with keys: document, metadata, distance
     """
+    # MNEMOS is the promoted read path only while it can produce a complete
+    # response.  ``None`` means unavailable; an empty list is a valid remote
+    # result and must not be replaced with potentially stale local matches.
+    try:
+        from backend.app.mnemos_boundary import get_mnemos_client
+
+        client = get_mnemos_client()
+        if client is not None:
+            remote_hits = client.search(query, top_k=top_k, filters=where_filter)
+            if remote_hits is not None:
+                return remote_hits
+    except Exception as exc:
+        logger.warning("MNEMOS forensic-memory read failed; using local memory: %s", exc)
+
     collection = get_memory_collection()
     if collection is None:
         return []

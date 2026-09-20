@@ -81,7 +81,7 @@ Context-aware AI chat available on **every page** — Alerts, Hosts, IOCs, Findi
   2. **Sensor context** — live-queried host stats, alerts, and connection summaries from the analysis DB
   3. **Structured DB retrieval** — exact-match entity lookups (hosts, alerts, findings, IOCs, DNS, connections)
   4. **Knowledge Base** — analyst-uploaded documents (asset inventories, network maps, SOC playbooks, threat intel, policies, baseline profiles, reference manuals)
-  5. **Forensic memory** — global ChromaDB of confirmed findings across all past investigations
+  5. **Forensic memory** — AIPAM-owned MNEMOS vector memory with a local ChromaDB recovery path for confirmed findings across past investigations
   6. **Cross-job correlations** — campaign matches and shared IOCs/hosts/MITRE techniques from historical jobs
 - **KB document boost** — user-uploaded docs get relevance priority over auto-indexed host profiles
 - **Confidence-tiered citations** — findings grouped as high (≥70%), medium (40–70%), or low (<40%) confidence
@@ -502,9 +502,10 @@ We tested AIPAM on malware samples it had never seen during training:
 # 1. Clone the repository
 git clone https://github.com/your-org/AIPAM.git
 cd AIPAM
+git submodule update --init --recursive
 
 # 2. Configure environment
-cp deploy/.env.example deploy/.env
+cp .env.example .env
 # Edit deploy/.env — set AIPAM_API_TOKEN to a secure value
 
 # 3. Start the full stack
@@ -529,6 +530,7 @@ docker compose ps
 # aipam-worker     Running
 # aipam-frontend   Running
 # aipam-redis      Running (healthy)
+# aipam-mnemos-service  Running (healthy)
 
 # Verify the model is loaded
 ollama list | grep aipam
@@ -536,6 +538,18 @@ ollama list | grep aipam
 # Run the smoke test
 AIPAM_API_TOKEN=your-token python -m backend.app.cli smoke-test
 ```
+
+### AIPAM-owned MNEMOS
+
+AIPAM starts a dedicated MNEMOS service with its own Qdrant, Postgres, and
+audit volumes. It does not use any other MNEMOS process on the host. AIPAM
+containers reach it at `http://mnemos-service:8700`; operators can inspect the
+same instance at `http://localhost:1888/health`.
+
+MNEMOS is pinned as the `mnemos-service` submodule at
+`27a4c96308156e468ff5272f5afd843ed9ea172d`. The AIPAM memory integration
+dual-writes confirmed findings to ChromaDB and MNEMOS. Reads use MNEMOS only
+after it returns a healthy response, otherwise they remain on ChromaDB.
 
 ### Starting the Training System (Optional)
 
@@ -740,7 +754,7 @@ AIPAM: "Yes — the alert correlates with beaconing to 206.123.152.51
        on port 2404, a known Remcos C2 endpoint..."
 ```
 
-The chat uses a **6-source hybrid RAG pipeline**: scoped page context, live sensor data, structured DB lookups, analyst-uploaded knowledge base documents, global forensic memory (ChromaDB), and cross-job campaign correlations. A dual-path retrieval router combines exact entity matching (Route A) with semantic vector search (Route B) to maximize recall.
+The chat uses a **6-source hybrid RAG pipeline**: scoped page context, live sensor data, structured DB lookups, analyst-uploaded knowledge base documents, global forensic memory (MNEMOS with ChromaDB recovery), and cross-job campaign correlations. A dual-path retrieval router combines exact entity matching (Route A) with semantic vector search (Route B) to maximize recall.
 
 ### Using the Evidence Graph & Proof Builder
 
