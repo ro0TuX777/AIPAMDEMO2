@@ -18,6 +18,7 @@ redis>=5.0
 
 # --- HTTP client ---
 httpx>=0.27
+requests>=2.31
 
 # --- Network analysis ---
 scapy>=2.5

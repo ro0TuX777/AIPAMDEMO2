@@ -58,6 +58,9 @@ services:
       LLM_MODEL_NAME: ${LLM_MODEL_NAME:-aipam-trafficllm-v10}
       LLM_ENDPOINT: ${LLM_ENDPOINT:-http://ollama:11434/v1/chat/completions}
       VECTOR_STORE_PATH: /data/vector_store
+      MNEMOS_ENABLED: ${MNEMOS_ENABLED:-true}
+      MNEMOS_BASE_URL: http://mnemos-service:8700
+      MNEMOS_TOKEN: ${MNEMOS_TOKEN:-}
     volumes:
       - aipam-data:/data
       - aipam-jobs:/jobs
@@ -71,6 +74,8 @@ services:
       - "host.docker.internal:host-gateway"
     depends_on:
       redis:
+        condition: service_healthy
+      mnemos-service:
         condition: service_healthy
     restart: unless-stopped
     networks:
@@ -107,6 +112,9 @@ services:
       LLM_ENDPOINT: ${LLM_ENDPOINT:-http://ollama:11434/v1/chat/completions}
       AIPAM_SENSOR_CONFIG_DIR: /opt/aipam/sensor-config
       C_FORCE_ROOT: "true"
+      MNEMOS_ENABLED: ${MNEMOS_ENABLED:-true}
+      MNEMOS_BASE_URL: http://mnemos-service:8700
+      MNEMOS_TOKEN: ${MNEMOS_TOKEN:-}
     volumes:
       - aipam-data:/data
       - aipam-jobs:/jobs
@@ -122,6 +130,8 @@ services:
       - "host.docker.internal:host-gateway"
     depends_on:
       redis:
+        condition: service_healthy
+      mnemos-service:
         condition: service_healthy
     restart: unless-stopped
     networks:
@@ -178,6 +188,74 @@ services:
       timeout: 5s
       retries: 5
       start_period: 5s
+
+  # ============================================
+  # MNEMOS forensic vector memory (AIPAM-owned)
+  # ============================================
+  mnemos-qdrant:
+    image: qdrant/qdrant:v1.17.1
+    container_name: aipam-mnemos-qdrant
+    volumes:
+      - mnemos-qdrant-data:/qdrant/storage
+    restart: unless-stopped
+    networks:
+      - aipam-net
+
+  mnemos-postgres:
+    image: postgres:16-alpine
+    container_name: aipam-mnemos-postgres
+    environment:
+      POSTGRES_DB: mnemos
+      POSTGRES_USER: mnemos
+      POSTGRES_PASSWORD: ${MNEMOS_POSTGRES_PASSWORD:-mnemos}
+    volumes:
+      - mnemos-postgres-data:/var/lib/postgresql/data
+    restart: unless-stopped
+    networks:
+      - aipam-net
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U mnemos -d mnemos"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  mnemos-service:
+    build:
+      context: ./mnemos-service
+    image: aipam-mnemos-service:27a4c963
+    container_name: aipam-mnemos-service
+    ports:
+      - "1888:8700"
+    environment:
+      MNEMOS_PORT: 8700
+      MNEMOS_TOKEN: ${MNEMOS_TOKEN:-}
+      MNEMOS_TIERS: qdrant
+      MNEMOS_QDRANT_URL: http://mnemos-qdrant:6333
+      MNEMOS_QDRANT_COLLECTION: aipam_forensic_memory
+      MNEMOS_POSTGRES_DSN: postgresql://mnemos:${MNEMOS_POSTGRES_PASSWORD:-mnemos}@mnemos-postgres:5432/mnemos
+      MNEMOS_AUDIT_ENABLED: "true"
+      MNEMOS_GPU_DEVICE: ${MNEMOS_GPU_DEVICE:-cpu}
+      MNEMOS_TIMESFM_ENABLED: "false"
+      MNEMOS_PULSE_ACTIONS: off
+      MNEMOS_GOVERNANCE_MODE: advisory
+      MNEMOS_SERVICE_REVISION: 27a4c96308156e468ff5272f5afd843ed9ea172d
+    volumes:
+      - mnemos-data:/app/data
+      - mnemos-model-cache:/root/.cache/huggingface
+    depends_on:
+      mnemos-qdrant:
+        condition: service_started
+      mnemos-postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - aipam-net
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8700/health')"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 120s
 
   # ============================================
   # Ollama (LLM inference — local model serving)
@@ -391,6 +469,14 @@ volumes:
   ollama-models:
     driver: local
   redis-data:
+    driver: local
+  mnemos-data:
+    driver: local
+  mnemos-model-cache:
+    driver: local
+  mnemos-qdrant-data:
+    driver: local
+  mnemos-postgres-data:
     driver: local
   # Arkime volumes (used only when arkime profile is active)
   opensearch-data:
