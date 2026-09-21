@@ -14,9 +14,10 @@ PUT  /integrations/settings     – save SO / Arkime connection settings
 import os
 import logging
 import shutil
+from threading import Lock
 from typing import Optional
 
-from fastapi import APIRouter, Depends, Response
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Response
 from pydantic import BaseModel
 
 from backend.app.api.deps import get_request_id, verify_token
@@ -31,6 +32,12 @@ from backend.app.schemas.common import ExecutionProfile
 from backend.app.schemas.system import (
     AvailableModelsResponse,
     DefaultLimits,
+    EmbeddingModelConfigResponse,
+    EmbeddingModelInfo,
+    EmbeddingModelPullRequest,
+    EmbeddingModelPullStatusResponse,
+    EmbeddingModelsResponse,
+    EmbeddingModelSelectRequest,
     ExplainConfiguration,
     ExplainTelemetryResponse,
     HealthResponse,
@@ -41,6 +48,45 @@ from backend.app.schemas.system import (
 )
 
 router = APIRouter(tags=["System"], dependencies=[Depends(verify_token)])
+
+_embedding_pull_lock = Lock()
+_embedding_pull_states: dict[str, dict[str, object]] = {}
+
+
+def _embedding_response(config) -> EmbeddingModelConfigResponse:
+    if config is None:
+        return EmbeddingModelConfigResponse()
+    return EmbeddingModelConfigResponse(
+        model=config.model,
+        dimension=config.dimension,
+        collection_name=config.collection_name,
+    )
+
+
+def _run_embedding_pull(service, model: str) -> None:
+    """Run in FastAPI's background task executor and retain the latest progress."""
+    def update(progress: dict[str, object]) -> None:
+        with _embedding_pull_lock:
+            _embedding_pull_states[model] = {"model": model, **progress, "error": None}
+
+    try:
+        service.pull(model, update)
+    except Exception as exc:
+        with _embedding_pull_lock:
+            previous = _embedding_pull_states.get(model, {})
+            _embedding_pull_states[model] = {
+                "model": model,
+                "status": "failed",
+                "completed": previous.get("completed", 0),
+                "total": previous.get("total", 0),
+                "error": str(exc),
+            }
+
+
+def _embedding_service(settings: Settings):
+    from backend.app.services.embedding_models import get_embedding_model_service
+
+    return get_embedding_model_service(settings.aipam_ollama_url)
 
 
 def _explain_llm_enabled() -> bool:
@@ -261,6 +307,89 @@ async def get_available_models(
 
     log.warning("Could not reach Ollama at any of: %s", unique_urls)
     return AvailableModelsResponse(models=[])
+
+
+@router.get("/embedding-model", response_model=EmbeddingModelConfigResponse)
+async def get_embedding_model(settings: Settings = Depends(get_settings)):
+    """Return the active embedding model, if one has been selected."""
+    return _embedding_response(_embedding_service(settings).get_active())
+
+
+@router.get("/embedding-models", response_model=EmbeddingModelsResponse)
+async def get_embedding_models(settings: Settings = Depends(get_settings)):
+    """List models installed in Ollama for operator selection."""
+    from backend.app.services.embedding_models import EmbeddingModelUnavailable
+
+    try:
+        models = _embedding_service(settings).list_models()
+    except EmbeddingModelUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return EmbeddingModelsResponse(
+        models=[
+            EmbeddingModelInfo(
+                name=str(model["name"]),
+                size=int(model.get("size") or 0),
+                family=str(model.get("details", {}).get("family") or "Unknown"),
+                parameter_size=str(model.get("details", {}).get("parameter_size") or "N/A"),
+                quantization=str(model.get("details", {}).get("quantization_level") or "Unknown"),
+            )
+            for model in models
+        ]
+    )
+
+
+@router.post("/embedding-model", response_model=EmbeddingModelConfigResponse)
+async def select_embedding_model(
+    body: EmbeddingModelSelectRequest,
+    settings: Settings = Depends(get_settings),
+):
+    """Validate and persist the model used by all vector operations."""
+    from backend.app.services.embedding_models import (
+        EmbeddingModelUnavailable,
+        EmbeddingModelValidationError,
+    )
+
+    try:
+        return _embedding_response(_embedding_service(settings).select(body.model))
+    except EmbeddingModelUnavailable as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except EmbeddingModelValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+
+@router.post("/embedding-models/pull", response_model=EmbeddingModelPullStatusResponse)
+async def pull_embedding_model(
+    body: EmbeddingModelPullRequest,
+    background: BackgroundTasks,
+    settings: Settings = Depends(get_settings),
+):
+    """Start an Ollama download for a model that can later be selected."""
+    model = body.model.strip()
+    if not model or len(model) > 256:
+        raise HTTPException(status_code=422, detail="An embedding model name is required")
+    with _embedding_pull_lock:
+        current = _embedding_pull_states.get(model)
+        if current and current.get("status") in {"starting", "pulling manifest", "downloading", "verifying digest", "writing manifest"}:
+            return EmbeddingModelPullStatusResponse(**current)
+        _embedding_pull_states[model] = {
+            "model": model,
+            "status": "starting",
+            "completed": 0,
+            "total": 0,
+            "error": None,
+        }
+    background.add_task(_run_embedding_pull, _embedding_service(settings), model)
+    return EmbeddingModelPullStatusResponse(**_embedding_pull_states[model])
+
+
+@router.get("/embedding-models/pull/{model:path}", response_model=EmbeddingModelPullStatusResponse)
+async def get_embedding_model_pull(model: str):
+    """Return the latest known download progress for an Ollama model."""
+    with _embedding_pull_lock:
+        state = _embedding_pull_states.get(model)
+    if state is None:
+        raise HTTPException(status_code=404, detail="No model download is tracked for this name")
+    return EmbeddingModelPullStatusResponse(**state)
 
 
 

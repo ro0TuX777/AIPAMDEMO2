@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from hashlib import sha256
+import json
 import os
 from typing import Any, Callable
 
@@ -196,6 +197,51 @@ class EmbeddingModelService:
             )
         # An environment model has no persisted dimension, so probe it before use.
         return self.validate(model)
+
+    def pull(
+        self,
+        model: str,
+        progress_callback: Callable[[dict[str, Any]], None],
+    ) -> None:
+        """Download an Ollama model and surface its streamed progress records."""
+        normalized = model.strip()
+        if not normalized or len(normalized) > 256:
+            raise EmbeddingModelValidationError("An embedding model name is required")
+        try:
+            response = self._request(
+                "POST",
+                f"{self._base_url}/api/pull",
+                json={"name": normalized, "stream": True},
+                timeout=1800,
+                stream=True,
+            )
+        except Exception as exc:
+            raise EmbeddingModelUnavailable("Unable to start Ollama model download") from exc
+        if response.status_code != 200:
+            raise EmbeddingModelValidationError(
+                f"Ollama rejected model download with HTTP {response.status_code}"
+            )
+
+        latest: dict[str, Any] = {"status": "starting", "completed": 0, "total": 0}
+        for raw_line in response.iter_lines():
+            if not raw_line:
+                continue
+            try:
+                payload = json.loads(raw_line)
+            except (TypeError, ValueError):
+                continue
+            if not isinstance(payload, dict):
+                continue
+            if payload.get("error"):
+                raise EmbeddingModelValidationError(str(payload["error"]))
+            latest = {
+                "status": str(payload.get("status", latest["status"])),
+                "completed": int(payload.get("completed", latest["completed"]) or 0),
+                "total": int(payload.get("total", latest["total"]) or 0),
+            }
+            progress_callback(dict(latest))
+        if latest["status"] != "success":
+            raise EmbeddingModelValidationError("Ollama ended the model download without success")
 
 
 def get_embedding_model_service(ollama_url: str) -> EmbeddingModelService:

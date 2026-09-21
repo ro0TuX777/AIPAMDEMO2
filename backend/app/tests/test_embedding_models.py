@@ -14,6 +14,9 @@ class _Response:
     def json(self) -> dict:
         return self._body
 
+    def iter_lines(self):
+        return []
+
 
 def _request(method: str, url: str, **kwargs) -> _Response:
     if method == "GET" and url.endswith("/api/tags"):
@@ -86,3 +89,28 @@ def test_collection_identity_is_stable_and_model_scoped():
 
     assert collection_name_for("nomic-embed-text", 768) == collection_name_for("nomic-embed-text", 768)
     assert collection_name_for("nomic-embed-text", 768) != collection_name_for("mxbai-embed-large", 1024)
+
+
+def test_pull_reports_ollama_progress():
+    from backend.app.services.embedding_models import EmbeddingModelService
+
+    class _PullResponse(_Response):
+        def iter_lines(self):
+            return [
+                b'{"status":"pulling manifest"}',
+                b'{"status":"downloading","completed":50,"total":100}',
+                b'{"status":"success"}',
+            ]
+
+    def pull_request(method: str, url: str, **kwargs) -> _Response:
+        assert method == "POST"
+        assert url.endswith("/api/pull")
+        assert kwargs["json"] == {"name": "new-embed", "stream": True}
+        return _PullResponse(200, {})
+
+    updates: list[dict[str, object]] = []
+    service = EmbeddingModelService("http://ollama:11434", request=pull_request)
+
+    service.pull("new-embed", updates.append)
+
+    assert updates[-1] == {"status": "success", "completed": 50, "total": 100}

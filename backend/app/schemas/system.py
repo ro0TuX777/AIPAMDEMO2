@@ -95,6 +95,45 @@ class AvailableModelsResponse(BaseModel):
     models: list[OllamaModelInfo] = []
 
 
+class EmbeddingModelInfo(BaseModel):
+    """An Ollama model which may be selected after embedding validation."""
+
+    name: str
+    size: int = 0
+    family: str = "Unknown"
+    parameter_size: str = "N/A"
+    quantization: str = "Unknown"
+
+
+class EmbeddingModelsResponse(BaseModel):
+    schema_version: str = SCHEMA_VERSION
+    models: list[EmbeddingModelInfo] = []
+
+
+class EmbeddingModelConfigResponse(BaseModel):
+    schema_version: str = SCHEMA_VERSION
+    model: str | None = None
+    dimension: int | None = None
+    collection_name: str | None = None
+
+
+class EmbeddingModelSelectRequest(BaseModel):
+    model: str
+
+
+class EmbeddingModelPullRequest(BaseModel):
+    model: str
+
+
+class EmbeddingModelPullStatusResponse(BaseModel):
+    schema_version: str = SCHEMA_VERSION
+    model: str
+    status: str
+    completed: int = 0
+    total: int = 0
+    error: str | None = None
+
+
 class LoadedModelInfo(BaseModel):
     """Information about a currently loaded model in Ollama."""
     name: str
@@ -131,4 +170,3 @@ class JobSummaryResponse(BaseModel):
     finding_count: int = 0
     ioc_count: int = 0
     host_count: int = 0
-
