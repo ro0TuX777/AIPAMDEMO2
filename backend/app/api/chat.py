@@ -37,6 +37,7 @@ from backend.app.services.evidence_bundles import build_scoped_bundle, parse_con
 from backend.app.services.kb_service import extract_ips_from_context, retrieve as kb_retrieve
 from backend.app.services.embedding_models import (
     get_embedding_model_service,
+    get_runtime_llm_model,
     get_runtime_ollama_url,
 )
 from backend.app.services.structured_retrieval import retrieve_structured
@@ -1004,7 +1005,7 @@ def _make_llm_client(settings: Settings) -> LLMClient:
     ollama_base = get_runtime_ollama_url(settings.aipam_ollama_url)
     config = LLMConfig(
         endpoint=os.getenv("LLM_ENDPOINT") or f"{ollama_base}/v1/chat/completions",
-        model=os.getenv("LLM_MODEL_NAME", "aipam-trafficllm-v10"),
+        model=get_runtime_llm_model(os.getenv("LLM_MODEL_NAME", "aipam-trafficllm-v10")),
         temperature=0.3,
         max_tokens=int(os.getenv("LLM_MAX_TOKENS", "4096")),
         local_adapter_path=getattr(settings, "llm_local_adapter_path", None) or os.getenv("LLM_LOCAL_ADAPTER_PATH"),

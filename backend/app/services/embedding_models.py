@@ -70,6 +70,12 @@ def get_runtime_ollama_url(default_url: str) -> str:
     return _normalize_ollama_url(candidate)
 
 
+def get_runtime_llm_model(default_model: str) -> str:
+    """Return the model selected by the operator or the deployment default."""
+    saved = _load_settings_values().get("llm_model_name")
+    return saved.strip() if isinstance(saved, str) and saved.strip() else default_model
+
+
 def set_runtime_ollama_url(ollama_url: str) -> str:
     """Persist an Ollama URL and clear any model selected on another endpoint."""
     normalized = _normalize_ollama_url(ollama_url)

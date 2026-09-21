@@ -100,6 +100,12 @@ def _runtime_ollama_url(settings: Settings) -> str:
     return get_runtime_ollama_url(settings.aipam_ollama_url)
 
 
+def _runtime_llm_model() -> str:
+    from backend.app.services.embedding_models import get_runtime_llm_model
+
+    return get_runtime_llm_model(os.getenv("LLM_MODEL_NAME", "aipam-trafficllm-v10"))
+
+
 def _explain_llm_enabled() -> bool:
     return os.getenv("AIPAM_EXPLAIN_FINDING_USE_LLM", "").strip().lower() in {"1", "true", "yes", "on"}
 
@@ -110,7 +116,7 @@ def _build_explain_configuration(settings: Settings) -> ExplainConfiguration:
     return ExplainConfiguration(
         mode="llm" if llm_enabled else "deterministic",
         llm_enabled=llm_enabled,
-        llm_model_name=os.getenv("LLM_MODEL_NAME", "aipam-trafficllm-v10"),
+        llm_model_name=_runtime_llm_model(),
         llm_endpoint=os.getenv("LLM_ENDPOINT") or f"{ollama_base}/v1/chat/completions",
     )
 
