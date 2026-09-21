@@ -43,6 +43,9 @@ class Settings(BaseSettings):
 
     # --- Service URLs ---
     aipam_ollama_url: str = "http://127.0.0.1:11434"
+    # Optional bootstrap selection. A validated SettingsDB selection takes
+    # precedence, allowing operators to switch models without rebuilding.
+    aipam_embedding_model: str | None = None
     aipam_redis_url: str = "redis://redis:6379/0"
 
     # --- MNEMOS forensic memory (optional during staged rollout) ---
