@@ -701,6 +701,16 @@ All settings are loaded from environment variables (or a `.env` file). Defined i
 | `AIPAM_DISK_WARN_PCT` | `80` | Disk usage warning threshold (%) |
 | `AIPAM_DISK_CRITICAL_PCT` | `95` | Disk usage critical threshold (%) |
 | `AIPAM_OLLAMA_URL` | `http://ollama:11434` | Ollama service URL |
+
+When Ollama runs directly on a Windows host with a custom port, start AIPAM,
+then run the bootstrap command below from the repository root. It detects the
+listening `ollama.exe` port, validates `/api/tags`, and saves the container-
+reachable URL in the runtime settings. The Settings page then prepopulates it
+on every future load.
+
+```powershell
+.\scripts\configure-host-ollama.ps1
+```
 | `AIPAM_REDIS_URL` | `redis://redis:6379/0` | Redis URL (Celery broker + SSE) |
 | `AIPAM_JOB_ROOT` | `/jobs` | Filesystem root for job artifacts |
 | `AIPAM_UPLOAD_ROOT` | `/uploads` | Filesystem root for PCAP uploads |
