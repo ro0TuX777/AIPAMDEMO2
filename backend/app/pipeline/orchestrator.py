@@ -919,21 +919,29 @@ def run_pipeline(
     try:
         import asyncio
         from backend.app.config_v2 import get_settings as _get_settings
+        from backend.app.services.embedding_models import get_embedding_model_service
         from backend.app.services.kb_service import auto_index_job
 
         _settings = _get_settings()
         _ollama_url = _settings.aipam_ollama_url.rstrip("/")
         _persist_dir = str(_settings.aipam_db_path).replace("aipam.db", "vector_store")
+        _embedding_config = get_embedding_model_service(_ollama_url).get_active()
+        if _embedding_config is None:
+            logger.info("Skipping job %s vector indexing: no embedding model selected", job_id)
+            _emit(job_id, "stage.status", stage="index", status="completed",
+                  step=step_num, total_steps=total_steps, message="index skipped: select an embedding model")
+        else:
+            index_counts = asyncio.run(auto_index_job(
+                db_session=db,
+                job_id=job_id,
+                ollama_url=_ollama_url,
+                embedding_config=_embedding_config,
+                persist_dir=_persist_dir,
+            ))
+            logger.info("Auto-indexed job %s outputs: %s", job_id, index_counts)
+            _emit(job_id, "stage.status", stage="index", status="completed",
+                  step=step_num, total_steps=total_steps)
 
-        index_counts = asyncio.run(auto_index_job(
-            db_session=db,
-            job_id=job_id,
-            ollama_url=_ollama_url,
-            persist_dir=_persist_dir,
-        ))
-        logger.info("Auto-indexed job %s outputs: %s", job_id, index_counts)
-        _emit(job_id, "stage.status", stage="index", status="completed",
-              step=step_num, total_steps=total_steps)
     except Exception as exc:
         logger.warning("Auto-indexing failed for job %s (non-fatal): %s", job_id, exc)
         _emit(job_id, "stage.status", stage="index", status="completed",

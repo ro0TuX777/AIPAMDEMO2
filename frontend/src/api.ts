@@ -2352,6 +2352,13 @@ export const api = {
   getEffectiveSettings(): Promise<EffectiveSettingsResponse> { return get<EffectiveSettingsResponse>("/admin/effective_settings"); },
   /** @deprecated V1 */
   getAvailableModels(): Promise<OllamaModelInfo[]> { return get<any>("/models/available").then((r: any) => r.models ?? r); },
+  getEmbeddingModel(): Promise<EmbeddingModelConfig> { return get<EmbeddingModelConfig>("/embedding-model"); },
+  getEmbeddingModels(): Promise<OllamaModelInfo[]> { return get<EmbeddingModelsResponse>("/embedding-models").then((r) => r.models); },
+  selectEmbeddingModel(model: string): Promise<EmbeddingModelConfig> { return post<EmbeddingModelConfig>("/embedding-model", { model }); },
+  pullEmbeddingModel(model: string): Promise<EmbeddingModelPullStatus> { return post<EmbeddingModelPullStatus>("/embedding-models/pull", { model }); },
+  getEmbeddingModelPull(model: string): Promise<EmbeddingModelPullStatus> {
+    return get<EmbeddingModelPullStatus>(`/embedding-models/pull/${encodeURIComponent(model)}`);
+  },
   /** @deprecated V1 */
   getSetupStatus(): Promise<SetupStatusResponse> { return get<SetupStatusResponse>("/settings/setup_status"); },
   /** @deprecated V1 */
@@ -2605,6 +2612,10 @@ export const api = {
 export interface SettingsPayload { [key: string]: any }
 export interface EffectiveSettingsResponse { [key: string]: any }
 export interface OllamaModelInfo { name: string; size: number; family: string; parameter_size: string; quantization: string }
+
+export interface EmbeddingModelsResponse { schema_version: string; models: OllamaModelInfo[] }
+export interface EmbeddingModelConfig { schema_version: string; model: string | null; dimension: number | null; collection_name: string | null }
+export interface EmbeddingModelPullStatus { schema_version: string; model: string; status: string; completed: number; total: number; error: string | null }
 export interface SetupStatusResponse { model_configured: boolean; llm_model_name: string | null }
 
 // ─── Telemetry Event Detail ─────────────────────────────────────────────────

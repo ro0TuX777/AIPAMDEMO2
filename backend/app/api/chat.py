@@ -35,6 +35,7 @@ from backend.app.services import chat_citations as _cite_svc  # extracted helper
 from backend.app.services.entity_extractor import extract_entities
 from backend.app.services.evidence_bundles import build_scoped_bundle, parse_context_hint
 from backend.app.services.kb_service import extract_ips_from_context, retrieve as kb_retrieve
+from backend.app.services.embedding_models import get_embedding_model_service
 from backend.app.services.structured_retrieval import retrieve_structured
 
 from backend.app.api.deps import get_db, verify_token
@@ -513,6 +514,9 @@ async def _build_rag_context(
     try:
         ollama_url = settings.aipam_ollama_url.rstrip("/")
         persist_dir = str(settings.aipam_db_path).replace("aipam.db", "vector_store")
+        embedding_config = get_embedding_model_service(ollama_url).get_active()
+        if embedding_config is None:
+            return "", []
 
         all_chunks: list[dict] = []
         seen_ids: set[str] = set()
@@ -524,7 +528,7 @@ async def _build_rag_context(
                 n_results=8,
                 job_id=job_id or None,
                 ollama_url=ollama_url,
-                embedding_model="mxbai-embed-large",
+                embedding_config=embedding_config,
                 persist_dir=persist_dir,
             )
             for c in query_chunks:
@@ -542,7 +546,7 @@ async def _build_rag_context(
                 n_results=5,
                 job_id=job_id or None,
                 ollama_url=ollama_url,
-                embedding_model="mxbai-embed-large",
+                embedding_config=embedding_config,
                 persist_dir=persist_dir,
             )
             for c in ip_chunks:
@@ -568,7 +572,7 @@ async def _build_rag_context(
                     doc_type_filter=udt,
                     job_id=job_id or None,
                     ollama_url=ollama_url,
-                    embedding_model="mxbai-embed-large",
+                    embedding_config=embedding_config,
                     persist_dir=persist_dir,
                 )
                 for c in kb_only_chunks:
@@ -1295,4 +1299,3 @@ async def delete_conversation(
     db.delete(conv)
     db.commit()
     return None
-

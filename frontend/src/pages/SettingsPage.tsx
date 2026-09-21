@@ -6,6 +6,8 @@ import {
   EffectiveSettingsResponse,
   OllamaModelInfo,
   OllamaGpuStatusResponse,
+  EmbeddingModelConfig,
+  EmbeddingModelPullStatus,
   ExplainTelemetryResponse,
   SystemConfigResponse,
 } from "../api";
@@ -45,6 +47,11 @@ export const SettingsPage: React.FC = () => {
   // Ollama models
   const [availableModels, setAvailableModels] = useState<OllamaModelInfo[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
+  const [embeddingConfig, setEmbeddingConfig] = useState<EmbeddingModelConfig | null>(null);
+  const [embeddingModel, setEmbeddingModel] = useState("");
+  const [embeddingDownload, setEmbeddingDownload] = useState("");
+  const [embeddingPull, setEmbeddingPull] = useState<EmbeddingModelPullStatus | null>(null);
+  const [embeddingBusy, setEmbeddingBusy] = useState(false);
   // Ollama GPU status
   const [gpuStatus, setGpuStatus] = useState<OllamaGpuStatusResponse | null>(null);
   const [gpuStatusLoading, setGpuStatusLoading] = useState(false);
@@ -58,7 +65,7 @@ export const SettingsPage: React.FC = () => {
   const fetchModels = useCallback(async () => {
     setModelsLoading(true);
     try {
-      const models = await api.getAvailableModels();
+      const models = await api.getEmbeddingModels();
       setAvailableModels(models);
     } catch (err) {
       console.error("Failed to fetch models:", err);
@@ -66,6 +73,54 @@ export const SettingsPage: React.FC = () => {
       setModelsLoading(false);
     }
   }, []);
+
+  const loadEmbeddingModel = useCallback(async () => {
+    const config = await api.getEmbeddingModel();
+    setEmbeddingConfig(config);
+    setEmbeddingModel(config.model ?? "");
+  }, []);
+
+  const selectEmbeddingModel = useCallback(async (model: string) => {
+    if (!model) return;
+    setEmbeddingBusy(true);
+    setError(null);
+    try {
+      const config = await api.selectEmbeddingModel(model);
+      setEmbeddingConfig(config);
+      setEmbeddingModel(config.model ?? "");
+      setSuccess(`Embedding model ${config.model} validated and selected`);
+    } catch (err) {
+      console.error("Failed to select embedding model:", err);
+      setError("The selected model could not produce a valid embedding");
+    } finally {
+      setEmbeddingBusy(false);
+    }
+  }, []);
+
+  const downloadEmbeddingModel = useCallback(async () => {
+    const model = embeddingDownload.trim();
+    if (!model) return;
+    setEmbeddingBusy(true);
+    setError(null);
+    try {
+      let status = await api.pullEmbeddingModel(model);
+      setEmbeddingPull(status);
+      while (status.status !== "success" && status.status !== "failed") {
+        await new Promise((resolve) => window.setTimeout(resolve, 1000));
+        status = await api.getEmbeddingModelPull(model);
+        setEmbeddingPull(status);
+      }
+      if (status.status === "failed") throw new Error(status.error ?? "Model download failed");
+      await fetchModels();
+      setEmbeddingDownload("");
+      setSuccess(`Downloaded ${model}. Select it below to validate and activate it.`);
+    } catch (err) {
+      console.error("Failed to download embedding model:", err);
+      setError("Embedding model download failed");
+    } finally {
+      setEmbeddingBusy(false);
+    }
+  }, [embeddingDownload, fetchModels]);
 
   const fetchGpuStatus = useCallback(async () => {
     setGpuStatusLoading(true);
@@ -127,7 +182,7 @@ export const SettingsPage: React.FC = () => {
       try {
         const [data, models] = await Promise.all([
           api.getSettings(),
-          api.getAvailableModels(),
+          api.getEmbeddingModels(),
         ]);
         if (!cancelled) {
           setValues(data || {});
@@ -146,6 +201,10 @@ export const SettingsPage: React.FC = () => {
       cancelled = true;
     };
   }, []);
+
+  useEffect(() => {
+    void loadEmbeddingModel().catch((err) => console.error("Failed to load embedding configuration:", err));
+  }, [loadEmbeddingModel]);
 
   useEffect(() => {
     void loadExplainTelemetry();
@@ -427,6 +486,76 @@ export const SettingsPage: React.FC = () => {
                       </option>
                     ))}
                   </select>
+                </div>
+              </div>
+            </div>
+
+            <div className="border border-cyan-800/50 rounded-lg p-3 space-y-3 bg-cyan-950/10" data-testid="embedding-model-settings">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <div className="text-xs font-semibold text-cyan-300 uppercase tracking-wide">Vector Embeddings</div>
+                  <p className="mt-1 text-[11px] text-slate-400">Used for job indexing, knowledge-base search, and chat retrieval. Switching models keeps existing collections intact.</p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { void fetchModels(); void loadEmbeddingModel(); }}
+                  disabled={modelsLoading || embeddingBusy}
+                  className="rounded bg-slate-700 px-2 py-1 text-[10px] font-medium hover:bg-slate-600 disabled:opacity-50"
+                >
+                  Refresh
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-2">
+                <input
+                  type="text"
+                  value={embeddingDownload}
+                  onChange={(e) => setEmbeddingDownload(e.target.value)}
+                  placeholder="Model to download, e.g. nomic-embed-text"
+                  className="bg-slate-900 border border-slate-700 rounded px-2 py-1.5 text-slate-200 text-sm"
+                  data-testid="input-embedding-download"
+                />
+                <button
+                  type="button"
+                  onClick={() => { void downloadEmbeddingModel(); }}
+                  disabled={embeddingBusy || !embeddingDownload.trim()}
+                  className="rounded bg-cyan-700 px-3 py-1.5 text-xs font-medium hover:bg-cyan-600 disabled:opacity-50"
+                  data-testid="btn-download-embedding-model"
+                >
+                  {embeddingBusy && embeddingPull ? "Downloading…" : "Download"}
+                </button>
+              </div>
+
+              {embeddingPull && (
+                <div className="text-[11px] text-slate-400" data-testid="embedding-download-progress">
+                  {embeddingPull.status}
+                  {embeddingPull.total > 0 && ` ${Math.round((embeddingPull.completed / embeddingPull.total) * 100)}%`}
+                  {embeddingPull.error && <span className="text-red-400"> — {embeddingPull.error}</span>}
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-2 items-end">
+                <div>
+                  <label className="block mb-1 text-xs text-slate-300">Active embedding model</label>
+                  <select
+                    className="bg-slate-900 border border-slate-700 rounded px-2 py-1.5 w-full text-slate-200 text-sm"
+                    value={embeddingModel}
+                    onChange={(e) => { setEmbeddingModel(e.target.value); void selectEmbeddingModel(e.target.value); }}
+                    disabled={embeddingBusy}
+                    data-testid="select-embedding-model"
+                  >
+                    <option value="">Select a downloaded embedding model</option>
+                    {availableModels.map((model) => (
+                      <option key={`embedding-${model.name}`} value={model.name}>
+                        {model.name} ({model.parameter_size}, {formatBytes(model.size)})
+                      </option>
+                    ))}
+                  </select>
+                </div>
+                <div className="text-[11px] text-slate-400 pb-1" data-testid="embedding-model-dimension">
+                  {embeddingConfig?.model
+                    ? `${embeddingConfig.dimension} dimensions`
+                    : "No model selected"}
                 </div>
               </div>
             </div>

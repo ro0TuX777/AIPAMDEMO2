@@ -1,7 +1,7 @@
 """
 Knowledge Base RAG service — chunking, embedding, storage, retrieval.
 
-Uses ChromaDB for vector storage and Ollama's embedding API (mxbai-embed-large).
+Uses ChromaDB for vector storage and the operator-selected Ollama embedding API.
 """
 
 from __future__ import annotations
@@ -18,6 +18,8 @@ import io
 
 import httpx
 
+from backend.app.services.embedding_models import EmbeddingModelConfig
+
 logger = logging.getLogger("aipam.kb")
 
 
@@ -25,7 +27,11 @@ logger = logging.getLogger("aipam.kb")
 class IndexResult:
     """Outcome of indexing one document."""
     chunk_count: int
-    degraded: bool = False  # True when any chunk fell back to hash embeddings
+    degraded: bool = False  # Kept for API compatibility; synthetic fallback is disabled.
+
+
+class EmbeddingError(RuntimeError):
+    """Raised when Ollama cannot provide compatible vectors for an operation."""
 
 # ── Chunking parameters ─────────────────────────────────────────────────
 _CHUNK_SIZE = 1024     # chars per chunk
@@ -297,24 +303,12 @@ def chunk_structured(
 _EMBED_BATCH = 64
 
 
-async def _embed_one(client: httpx.AsyncClient, ollama_url: str, model: str, text: str) -> list[float] | None:
-    """Embed a single text; return None on failure (caller falls back)."""
-    try:
-        resp = await client.post(f"{ollama_url}/api/embed", json={"model": model, "input": text})
-        resp.raise_for_status()
-        emb_list = resp.json().get("embeddings", [])
-        if emb_list and emb_list[0]:
-            return emb_list[0]
-    except Exception as exc:
-        logger.warning("Ollama embedding failed for one chunk: %s", exc)
-    return None
-
-
 async def get_embeddings(
     texts: list[str],
-    ollama_url: str = "http://ollama:11434",
-    model: str = "mxbai-embed-large",
-    _stats: dict | None = None,
+    *,
+    ollama_url: str,
+    model: str,
+    expected_dimension: int,
 ) -> list[list[float]]:
     """Get embeddings from Ollama's /api/embed endpoint (Ollama >= 0.4).
 
@@ -326,84 +320,69 @@ async def get_embeddings(
     so callers can flag the document as degraded (embedding model unavailable).
     """
     embeddings: list[list[float]] = []
-    fallback = 0
+    if not texts:
+        return []
     async with httpx.AsyncClient(timeout=120.0) as client:
         for i in range(0, len(texts), _EMBED_BATCH):
             batch = texts[i:i + _EMBED_BATCH]
-            got: list[list[float]] | None = None
             try:
                 resp = await client.post(f"{ollama_url}/api/embed", json={"model": model, "input": batch})
                 resp.raise_for_status()
                 embs = resp.json().get("embeddings", [])
-                if len(embs) == len(batch) and all(embs):
-                    got = embs
+                if not isinstance(embs, list) or len(embs) != len(batch):
+                    size = len(embs) if isinstance(embs, list) else 0
+                    raise EmbeddingError(f"Ollama returned {size} embeddings for {len(batch)} inputs")
+                for vector in embs:
+                    if (
+                        not isinstance(vector, list)
+                        or len(vector) != expected_dimension
+                        or not all(isinstance(value, (int, float)) and not isinstance(value, bool) for value in vector)
+                    ):
+                        size = len(vector) if isinstance(vector, list) else 0
+                        raise EmbeddingError(
+                            f"Embedding model '{model}' returned {size} dimensions; expected {expected_dimension}"
+                        )
+                embeddings.extend(embs)
             except Exception as exc:
+                raise EmbeddingError(f"Ollama embedding request failed for '{model}': {exc}") from exc
                 logger.warning("Ollama batch embed failed (%s) — retrying per-item", exc)
 
-            if got is not None:
-                embeddings.extend(got)
-                continue
-
             # Batch failed or came back incomplete — try each item, then hash.
-            for text in batch:
-                one = await _embed_one(client, ollama_url, model, text)
-                if one is None:
-                    embeddings.append(_fallback_embedding(text))
-                    fallback += 1
-                else:
-                    embeddings.append(one)
-
-    if _stats is not None:
-        _stats["fallback"] = _stats.get("fallback", 0) + fallback
     return embeddings
-
-
-def _fallback_embedding(text: str, dim: int = 1024) -> list[float]:
-    """Deterministic hash-based embedding for fallback (low quality but functional)."""
-    import hashlib
-    h = hashlib.sha256(text.encode()).digest()
-    # Expand hash to fill dimension
-    result = []
-    for i in range(dim):
-        byte_val = h[i % len(h)]
-        result.append((byte_val / 255.0) - 0.5)  # normalize to [-0.5, 0.5]
-    return result
 
 
 # ── ChromaDB Vector Store ────────────────────────────────────────────────
 
-_chroma_client = None
-_collection = None
-_COLLECTION_NAME = "aipam_knowledge_base"
+_chroma_clients: dict[str, Any] = {}
+_collections: dict[tuple[str, str], Any] = {}
 
 
-def _get_collection(persist_dir: str | Path | None = None):
-    """Get or create the ChromaDB collection (lazy singleton)."""
-    global _chroma_client, _collection
-    if _collection is not None:
-        return _collection
-
+def _get_collection(persist_dir: str | Path | None, collection_name: str):
+    """Get a model-scoped Chroma collection without replacing other models."""
     import chromadb
 
-    if persist_dir:
-        persist_dir = str(persist_dir)
-        _chroma_client = chromadb.PersistentClient(path=persist_dir)
-    else:
-        _chroma_client = chromadb.Client()  # in-memory fallback
+    store_key = str(persist_dir) if persist_dir else ":memory:"
+    collection_key = (store_key, collection_name)
+    if collection_key in _collections:
+        return _collections[collection_key]
+    client = _chroma_clients.get(store_key)
+    if client is None:
+        client = chromadb.PersistentClient(path=store_key) if persist_dir else chromadb.Client()
+        _chroma_clients[store_key] = client
 
-    _collection = _chroma_client.get_or_create_collection(
-        name=_COLLECTION_NAME,
+    collection = client.get_or_create_collection(
+        name=collection_name,
         metadata={"hnsw:space": "cosine"},
     )
-    logger.info("ChromaDB collection '%s' ready (%d items)", _COLLECTION_NAME, _collection.count())
-    return _collection
+    _collections[collection_key] = collection
+    logger.info("ChromaDB collection '%s' ready (%d items)", collection_name, collection.count())
+    return collection
 
 
 def reset_collection() -> None:
     """Reset the singleton collection (for testing)."""
-    global _chroma_client, _collection
-    _chroma_client = None
-    _collection = None
+    _chroma_clients.clear()
+    _collections.clear()
 
 
 async def index_document(
@@ -413,7 +392,7 @@ async def index_document(
     doc_type: str,
     job_id: str = "",
     ollama_url: str = "http://ollama:11434",
-    embedding_model: str = "mxbai-embed-large",
+    embedding_config: EmbeddingModelConfig | None = None,
     persist_dir: str | Path | None = None,
 ) -> IndexResult:
     """Chunk a document, embed it, and store in ChromaDB.
@@ -442,10 +421,16 @@ async def index_document(
     # context contributes to the vector (helps retrieval on long manuals).
     embed_inputs = [f"{s}\n{c}" if s else c for c, s in chunk_pairs]
 
-    stats: dict = {"fallback": 0}
-    embeddings = await get_embeddings(embed_inputs, ollama_url=ollama_url, model=embedding_model, _stats=stats)
+    if embedding_config is None:
+        raise EmbeddingError("No embedding model is selected")
+    embeddings = await get_embeddings(
+        embed_inputs,
+        ollama_url=ollama_url,
+        model=embedding_config.model,
+        expected_dimension=embedding_config.dimension,
+    )
 
-    collection = _get_collection(persist_dir)
+    collection = _get_collection(persist_dir, embedding_config.collection_name)
 
     ids = [f"{doc_id}_chunk_{i}" for i in range(len(chunks))]
     metadatas = [
@@ -468,30 +453,94 @@ async def index_document(
             metadatas=metadatas,
         )
     except Exception as exc:
+        raise EmbeddingError(f"Unable to write embeddings to '{embedding_config.collection_name}': {exc}") from exc
         # Handle dimension mismatch (e.g. switching from 768-dim fallback to 1024-dim real embeddings)
         if "dimensionality" in str(exc).lower() or "dimension" in str(exc).lower():
             logger.warning("Embedding dimension mismatch — recreating ChromaDB collection: %s", exc)
-            global _collection
-            if _chroma_client:
-                _chroma_client.delete_collection(_COLLECTION_NAME)
-            _collection = None
-            collection = _get_collection(persist_dir)
-            collection.upsert(
-                ids=ids,
-                embeddings=embeddings,
-                documents=chunks,
-                metadatas=metadatas,
-            )
+            raise
         else:
             raise
 
-    degraded = stats["fallback"] > 0
     logger.info(
-        "Indexed %d chunks for document %s (%s) job=%s%s",
-        len(chunks), doc_name, doc_id, job_id,
-        f" [DEGRADED: {stats['fallback']} hash fallbacks]" if degraded else "",
+        "Indexed %d chunks for document %s (%s) job=%s model=%s",
+        len(chunks), doc_name, doc_id, job_id, embedding_config.model,
     )
-    return IndexResult(chunk_count=len(chunks), degraded=degraded)
+    return IndexResult(chunk_count=len(chunks))
+
+
+async def index_documents(
+    documents: list[dict[str, str]],
+    *,
+    ollama_url: str,
+    embedding_config: EmbeddingModelConfig,
+    persist_dir: str | Path | None = None,
+) -> dict[str, int]:
+    """Index many documents with batched embedding calls and Chroma upserts.
+
+    This is the worker path for high-cardinality job output. It turns thousands
+    of host summaries into batches of 64 Ollama inputs rather than one HTTP
+    request and one Chroma write per host.
+    """
+    prepared: list[tuple[dict[str, str], list[tuple[str, str]]]] = []
+    for document in documents:
+        content = document["content"]
+        doc_name = document["doc_name"]
+        if _looks_like_csv(content):
+            chunk_pairs = [(chunk, "") for chunk in chunk_text(_enrich_csv_to_natural_language(content, doc_name))]
+        else:
+            chunk_pairs = chunk_structured(content)
+        if chunk_pairs:
+            prepared.append((document, chunk_pairs))
+
+    if not prepared:
+        return {document["doc_id"]: 0 for document in documents}
+
+    embed_inputs = [
+        f"{section}\n{chunk}" if section else chunk
+        for _, chunk_pairs in prepared
+        for chunk, section in chunk_pairs
+    ]
+    embeddings = await get_embeddings(
+        embed_inputs,
+        ollama_url=ollama_url,
+        model=embedding_config.model,
+        expected_dimension=embedding_config.dimension,
+    )
+    collection = _get_collection(persist_dir, embedding_config.collection_name)
+    ids: list[str] = []
+    chunks: list[str] = []
+    metadatas: list[dict[str, Any]] = []
+    counts = {document["doc_id"]: 0 for document in documents}
+    for document, chunk_pairs in prepared:
+        doc_id = document["doc_id"]
+        counts[doc_id] = len(chunk_pairs)
+        for chunk_index, (chunk, section) in enumerate(chunk_pairs):
+            ids.append(f"{doc_id}_chunk_{chunk_index}")
+            chunks.append(chunk)
+            metadatas.append(
+                {
+                    "doc_id": doc_id,
+                    "doc_name": document["doc_name"],
+                    "doc_type": document["doc_type"],
+                    "job_id": document.get("job_id", ""),
+                    "chunk_index": chunk_index,
+                    "section": section,
+                }
+            )
+
+    for start in range(0, len(ids), 5000):
+        end = start + 5000
+        collection.upsert(
+            ids=ids[start:end],
+            embeddings=embeddings[start:end],
+            documents=chunks[start:end],
+            metadatas=metadatas[start:end],
+        )
+    logger.info(
+        "Indexed %d documents and %d chunks for job data with model=%s",
+        len(prepared), len(ids), embedding_config.model,
+    )
+    return counts
 
 
 async def retrieve(
@@ -501,7 +550,7 @@ async def retrieve(
     job_id: str | None = None,
     include_global: bool = True,
     ollama_url: str = "http://ollama:11434",
-    embedding_model: str = "mxbai-embed-large",
+    embedding_config: EmbeddingModelConfig | None = None,
     persist_dir: str | Path | None = None,
 ) -> list[dict[str, Any]]:
     """Retrieve the most relevant KB chunks for a query.
@@ -514,11 +563,18 @@ async def retrieve(
 
     Returns a list of dicts with keys: text, doc_name, doc_type, score, doc_id.
     """
-    collection = _get_collection(persist_dir)
+    if embedding_config is None:
+        raise EmbeddingError("No embedding model is selected")
+    collection = _get_collection(persist_dir, embedding_config.collection_name)
     if collection.count() == 0:
         return []
 
-    query_embedding = await get_embeddings([query], ollama_url=ollama_url, model=embedding_model)
+    query_embedding = await get_embeddings(
+        [query],
+        ollama_url=ollama_url,
+        model=embedding_config.model,
+        expected_dimension=embedding_config.dimension,
+    )
     if not query_embedding:
         return []
 
@@ -571,13 +627,14 @@ async def retrieve(
 
 async def delete_document(
     doc_id: str,
+    embedding_config: EmbeddingModelConfig,
     persist_dir: str | Path | None = None,
 ) -> int:
     """Delete all chunks for a document from ChromaDB.
 
     Returns the number of chunks deleted.
     """
-    collection = _get_collection(persist_dir)
+    collection = _get_collection(persist_dir, embedding_config.collection_name)
 
     # Find all chunks for this document
     try:
@@ -680,7 +737,7 @@ async def auto_index_job(
     job_id: str,
     ollama_url: str = "http://ollama:11434",
     persist_dir: str | Path | None = None,
-    embedding_model: str = "mxbai-embed-large",
+    embedding_config: EmbeddingModelConfig | None = None,
 ) -> dict[str, int]:
     """Auto-index all pipeline outputs for a job into the vector store.
 
@@ -691,11 +748,15 @@ async def auto_index_job(
     """
     from sqlalchemy import select
 
+    if embedding_config is None:
+        raise EmbeddingError("No embedding model is selected; skipping job vector indexing")
+
     from backend.app.models.alert import Alert
     from backend.app.models.finding import Finding
     from backend.app.models.host import Host
 
     counts = {"hosts": 0, "alerts": 0, "findings": 0, "total_chunks": 0}
+    documents: list[dict[str, str]] = []
 
     # ── Index host profiles ──────────────────────────────────────────
     hosts = db_session.execute(
@@ -706,18 +767,14 @@ async def auto_index_job(
     for host in hosts:
         content = _format_host_summary(host)
         doc_id = f"job_{job_id}_host_{host.ip}"
-        res = await index_document(
-            doc_id=doc_id,
-            content=content,
-            doc_name=f"Host {host.ip}",
-            doc_type="host_profile",
-            job_id=job_id,
-            ollama_url=ollama_url,
-            embedding_model=embedding_model,
-            persist_dir=persist_dir,
-        )
+        documents.append({
+            "doc_id": doc_id,
+            "content": content,
+            "doc_name": f"Host {host.ip}",
+            "doc_type": "host_profile",
+            "job_id": job_id,
+        })
         counts["hosts"] += 1
-        counts["total_chunks"] += res.chunk_count
 
     # ── Index alerts (high/medium severity prioritized) ──────────────
     alerts = db_session.execute(
@@ -739,18 +796,14 @@ async def auto_index_job(
             parts.append(_format_alert_summary(a))
         content = "\n---\n".join(parts)
         doc_id = f"job_{job_id}_alert_{uuid.uuid4().hex[:12]}"
-        res = await index_document(
-            doc_id=doc_id,
-            content=content,
-            doc_name=f"Alert: {sig[:80]}",
-            doc_type="alert",
-            job_id=job_id,
-            ollama_url=ollama_url,
-            embedding_model=embedding_model,
-            persist_dir=persist_dir,
-        )
+        documents.append({
+            "doc_id": doc_id,
+            "content": content,
+            "doc_name": f"Alert: {sig[:80]}",
+            "doc_type": "alert",
+            "job_id": job_id,
+        })
         counts["alerts"] += len(group)
-        counts["total_chunks"] += res.chunk_count
 
     # ── Index findings ───────────────────────────────────────────────
     findings = db_session.execute(
@@ -760,22 +813,25 @@ async def auto_index_job(
     for finding in findings:
         content = _format_finding_summary(finding)
         doc_id = f"job_{job_id}_finding_{finding.finding_id}"
-        res = await index_document(
-            doc_id=doc_id,
-            content=content,
-            doc_name=f"Finding: {finding.title[:80]}",
-            doc_type="finding",
-            job_id=job_id,
-            ollama_url=ollama_url,
-            embedding_model=embedding_model,
-            persist_dir=persist_dir,
-        )
+        documents.append({
+            "doc_id": doc_id,
+            "content": content,
+            "doc_name": f"Finding: {finding.title[:80]}",
+            "doc_type": "finding",
+            "job_id": job_id,
+        })
         counts["findings"] += 1
-        counts["total_chunks"] += res.chunk_count
+
+    chunk_counts = await index_documents(
+        documents,
+        ollama_url=ollama_url,
+        embedding_config=embedding_config,
+        persist_dir=persist_dir,
+    )
+    counts["total_chunks"] = sum(chunk_counts.values())
 
     logger.info(
         "Auto-indexed job %s: %d hosts, %d alerts, %d findings → %d chunks",
         job_id, counts["hosts"], counts["alerts"], counts["findings"], counts["total_chunks"],
     )
     return counts
-

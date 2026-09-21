@@ -34,18 +34,17 @@ from backend.app.schemas.knowledge_base import (
     KBDocumentOut,
 )
 from backend.app.services.kb_service import (
+    EmbeddingError,
     GLOBAL_JOB_SENTINEL,
     delete_document as kb_delete_document,
     index_document as kb_index_document,
     retrieve as kb_retrieve,
 )
+from backend.app.services.embedding_models import get_embedding_model_service
 
 logger = logging.getLogger("aipam.api.kb")
 
 router = APIRouter(dependencies=[Depends(verify_token)], tags=["knowledge-base"])
-
-_EMBEDDING_MODEL = "mxbai-embed-large"
-
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
@@ -54,6 +53,14 @@ def _now_iso() -> str:
 def _vector_dir(settings: Settings) -> str:
     """Path to the ChromaDB vector store (sibling of the SQLite DB)."""
     return str(settings.aipam_db_path).replace("aipam.db", "vector_store")
+
+
+def _embedding_config(settings: Settings):
+    """Resolve the shared runtime model for this vector operation."""
+    config = get_embedding_model_service(settings.aipam_ollama_url).get_active()
+    if config is None:
+        raise HTTPException(status_code=503, detail="No embedding model is selected")
+    return config
 
 
 def _require_job(db: Session, job_id: str) -> Job:
@@ -158,8 +165,15 @@ async def _index_doc_task(
         if doc is None:
             return
         try:
+            embedding_config = get_embedding_model_service(ollama_url).get_active()
+            if embedding_config is None:
+                raise EmbeddingError("No embedding model is selected")
             if delete_first:
-                await kb_delete_document(doc_id=doc_id, persist_dir=persist_dir)
+                await kb_delete_document(
+                    doc_id=doc_id,
+                    embedding_config=embedding_config,
+                    persist_dir=persist_dir,
+                )
             result = await kb_index_document(
                 doc_id=doc_id,
                 content=doc.content,
@@ -167,16 +181,12 @@ async def _index_doc_task(
                 doc_type=doc.doc_type,
                 job_id=doc.job_id or GLOBAL_JOB_SENTINEL,
                 ollama_url=ollama_url,
-                embedding_model=_EMBEDDING_MODEL,
+                embedding_config=embedding_config,
                 persist_dir=persist_dir,
             )
             doc.chunk_count = result.chunk_count
-            if result.degraded:
-                doc.status = "degraded"
-                doc.error_message = DEGRADED_MSG
-            else:
-                doc.status = "indexed"
-                doc.error_message = None
+            doc.status = "indexed"
+            doc.error_message = None
         except Exception as exc:
             logger.exception("Failed to index KB document %s", doc_id)
             doc.status = "error"
@@ -276,7 +286,11 @@ async def delete_document(
 
     # Delete from ChromaDB
     try:
-        await kb_delete_document(doc_id=doc_id, persist_dir=_vector_dir(settings))
+        await kb_delete_document(
+            doc_id=doc_id,
+            embedding_config=_embedding_config(settings),
+            persist_dir=_vector_dir(settings),
+        )
     except Exception as exc:
         logger.warning("Failed to delete KB embeddings for %s: %s", doc_id, exc)
 
@@ -526,7 +540,7 @@ async def search_kb(
         doc_type_filter=body.doc_type,
         job_id=job_id,
         ollama_url=settings.aipam_ollama_url.rstrip("/"),
-        embedding_model=_EMBEDDING_MODEL,
+        embedding_config=_embedding_config(settings),
         persist_dir=_vector_dir(settings),
     )
 
@@ -648,7 +662,11 @@ async def delete_library_document(
         raise HTTPException(status_code=404, detail="Document not found")
 
     try:
-        await kb_delete_document(doc_id=doc_id, persist_dir=_vector_dir(settings))
+        await kb_delete_document(
+            doc_id=doc_id,
+            embedding_config=_embedding_config(settings),
+            persist_dir=_vector_dir(settings),
+        )
     except Exception as exc:
         logger.warning("Failed to delete KB embeddings for %s: %s", doc_id, exc)
 
@@ -692,7 +710,7 @@ async def search_library(
         job_id=None,
         include_global=True,
         ollama_url=settings.aipam_ollama_url.rstrip("/"),
-        embedding_model=_EMBEDDING_MODEL,
+        embedding_config=_embedding_config(settings),
         persist_dir=_vector_dir(settings),
     )
     return KBSearchResponse(

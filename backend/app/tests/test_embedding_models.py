@@ -88,7 +88,7 @@ def test_collection_identity_is_stable_and_model_scoped():
     from backend.app.services.embedding_models import collection_name_for
 
     assert collection_name_for("nomic-embed-text", 768) == collection_name_for("nomic-embed-text", 768)
-    assert collection_name_for("nomic-embed-text", 768) != collection_name_for("mxbai-embed-large", 1024)
+    assert collection_name_for("nomic-embed-text", 768) != collection_name_for("other-embed", 1024)
 
 
 def test_pull_reports_ollama_progress():
