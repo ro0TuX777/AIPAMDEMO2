@@ -30,6 +30,7 @@ from backend.app.api.deps import get_db, get_request_id, verify_token
 from backend.app.api.pagination import paginate
 from backend.app.config_v2 import Settings, get_settings
 from backend.app.llm_client import LLMClient, LLMConfig
+from backend.app.services.embedding_models import get_runtime_ollama_url
 from backend.app.models.alert import Alert
 from backend.app.models.connection import Connection
 from backend.app.models.finding import Finding
@@ -850,9 +851,9 @@ def _build_llm_prompt(
 
 
 def _make_llm_client(settings: Settings) -> LLMClient:
-    ollama_base = settings.aipam_ollama_url.rstrip("/")
+    ollama_base = get_runtime_ollama_url(settings.aipam_ollama_url)
     config = LLMConfig(
-        endpoint=os.getenv("LLM_ENDPOINT", f"{ollama_base}/v1/chat/completions"),
+        endpoint=os.getenv("LLM_ENDPOINT") or f"{ollama_base}/v1/chat/completions",
         model=os.getenv("LLM_MODEL_NAME", "aipam-trafficllm-v10"),
         temperature=0.2,
         max_tokens=int(os.getenv("LLM_MAX_TOKENS", "1024")),
@@ -1230,9 +1231,9 @@ async def generate_rule(
     from backend.app.llm.providers.ollama import OllamaProvider
     from backend.app.core.exporters import SuricataExporter, SigmaExporter
 
-    ollama_base = settings.aipam_ollama_url.rstrip("/")
+    ollama_base = get_runtime_ollama_url(settings.aipam_ollama_url)
     provider = OllamaProvider(
-        endpoint=os.getenv("LLM_ENDPOINT", f"{ollama_base}/v1/chat/completions"),
+        endpoint=os.getenv("LLM_ENDPOINT") or f"{ollama_base}/v1/chat/completions",
         model=os.getenv("LLM_MODEL_NAME", "aipam-trafficllm-v10"),
         temperature=0.2,
         max_tokens=2000,

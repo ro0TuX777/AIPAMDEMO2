@@ -111,7 +111,7 @@ def _build_explain_configuration(settings: Settings) -> ExplainConfiguration:
         mode="llm" if llm_enabled else "deterministic",
         llm_enabled=llm_enabled,
         llm_model_name=os.getenv("LLM_MODEL_NAME", "aipam-trafficllm-v10"),
-        llm_endpoint=os.getenv("LLM_ENDPOINT", f"{ollama_base}/v1/chat/completions"),
+        llm_endpoint=os.getenv("LLM_ENDPOINT") or f"{ollama_base}/v1/chat/completions",
     )
 
 

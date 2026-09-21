@@ -365,11 +365,12 @@ def _try_llm_narrative(proof: Any, items: list[Any], mode: str) -> str | None:
         import asyncio
         from backend.app.config_v2 import get_settings
         from backend.app.llm_client import LLMClient, LLMConfig
+        from backend.app.services.embedding_models import get_runtime_ollama_url
 
         settings = get_settings()
-        ollama_base = settings.aipam_ollama_url.rstrip("/")
+        ollama_base = get_runtime_ollama_url(settings.aipam_ollama_url)
         config = LLMConfig(
-            endpoint=os.getenv("LLM_ENDPOINT", f"{ollama_base}/v1/chat/completions"),
+            endpoint=os.getenv("LLM_ENDPOINT") or f"{ollama_base}/v1/chat/completions",
             model=os.getenv("LLM_MODEL_NAME", "aipam-trafficllm-v10"),
             temperature=0.3,
             max_tokens=int(os.getenv("LLM_MAX_TOKENS", "4096")),
@@ -534,4 +535,3 @@ def proof_summary(db: Session, job_id: str) -> str:
         if len(items) > 5:
             lines.append(f"      ... and {len(items) - 5} more items")
     return "\n".join(lines)
-
