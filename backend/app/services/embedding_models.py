@@ -13,6 +13,7 @@ from hashlib import sha256
 import json
 import os
 from typing import Any, Callable
+from urllib.parse import urlparse, urlunparse
 
 import requests
 
@@ -42,6 +43,38 @@ def collection_name_for(model: str, dimension: int) -> str:
     """Return a stable, Chroma-safe collection name for a model dimension pair."""
     normalized = f"{model.strip()}:{dimension}".encode("utf-8")
     return f"aipam_kb_{sha256(normalized).hexdigest()[:16]}"
+
+
+def _normalize_ollama_url(value: str) -> str:
+    """Validate and normalize an operator-provided Ollama base URL."""
+    candidate = value.strip()
+    parsed = urlparse(candidate)
+    if (
+        parsed.scheme not in {"http", "https"}
+        or not parsed.netloc
+        or parsed.params
+        or parsed.query
+        or parsed.fragment
+        or parsed.path not in {"", "/"}
+    ):
+        raise EmbeddingModelValidationError(
+            "Ollama URL must be an http(s) base URL, such as http://host:11434"
+        )
+    return urlunparse((parsed.scheme, parsed.netloc, "", "", "", ""))
+
+
+def get_runtime_ollama_url(default_url: str) -> str:
+    """Return the persisted operator override or the deployment default URL."""
+    saved = _load_settings_values().get("ollama_base_url")
+    candidate = saved if isinstance(saved, str) and saved.strip() else default_url
+    return _normalize_ollama_url(candidate)
+
+
+def set_runtime_ollama_url(ollama_url: str) -> str:
+    """Persist a validated Ollama base URL for API and worker processes."""
+    normalized = _normalize_ollama_url(ollama_url)
+    _save_settings_values({"ollama_base_url": normalized})
+    return normalized
 
 
 def _ensure_settings_table() -> None:

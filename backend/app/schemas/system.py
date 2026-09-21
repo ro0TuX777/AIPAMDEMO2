@@ -134,6 +134,15 @@ class EmbeddingModelPullStatusResponse(BaseModel):
     error: str | None = None
 
 
+class OllamaRuntimeConfigRequest(BaseModel):
+    ollama_url: str
+
+
+class OllamaRuntimeConfigResponse(BaseModel):
+    schema_version: str = SCHEMA_VERSION
+    ollama_url: str
+
+
 class LoadedModelInfo(BaseModel):
     """Information about a currently loaded model in Ollama."""
     name: str

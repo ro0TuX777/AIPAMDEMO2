@@ -40,7 +40,10 @@ from backend.app.services.kb_service import (
     index_document as kb_index_document,
     retrieve as kb_retrieve,
 )
-from backend.app.services.embedding_models import get_embedding_model_service
+from backend.app.services.embedding_models import (
+    get_embedding_model_service,
+    get_runtime_ollama_url,
+)
 
 logger = logging.getLogger("aipam.api.kb")
 
@@ -57,7 +60,9 @@ def _vector_dir(settings: Settings) -> str:
 
 def _embedding_config(settings: Settings):
     """Resolve the shared runtime model for this vector operation."""
-    config = get_embedding_model_service(settings.aipam_ollama_url).get_active()
+    config = get_embedding_model_service(
+        get_runtime_ollama_url(settings.aipam_ollama_url)
+    ).get_active()
     if config is None:
         raise HTTPException(status_code=503, detail="No embedding model is selected")
     return config
@@ -165,7 +170,8 @@ async def _index_doc_task(
         if doc is None:
             return
         try:
-            embedding_config = get_embedding_model_service(ollama_url).get_active()
+            effective_ollama_url = get_runtime_ollama_url(ollama_url)
+            embedding_config = get_embedding_model_service(effective_ollama_url).get_active()
             if embedding_config is None:
                 raise EmbeddingError("No embedding model is selected")
             if delete_first:
@@ -180,7 +186,7 @@ async def _index_doc_task(
                 doc_name=doc.name,
                 doc_type=doc.doc_type,
                 job_id=doc.job_id or GLOBAL_JOB_SENTINEL,
-                ollama_url=ollama_url,
+                ollama_url=effective_ollama_url,
                 embedding_config=embedding_config,
                 persist_dir=persist_dir,
             )
@@ -210,7 +216,7 @@ def _schedule_index(
         _index_doc_task,
         doc_id,
         db.get_bind(),
-        settings.aipam_ollama_url.rstrip("/"),
+        get_runtime_ollama_url(settings.aipam_ollama_url),
         _vector_dir(settings),
         delete_first,
     )
@@ -539,7 +545,7 @@ async def search_kb(
         n_results=body.n_results,
         doc_type_filter=body.doc_type,
         job_id=job_id,
-        ollama_url=settings.aipam_ollama_url.rstrip("/"),
+        ollama_url=get_runtime_ollama_url(settings.aipam_ollama_url),
         embedding_config=_embedding_config(settings),
         persist_dir=_vector_dir(settings),
     )
@@ -709,7 +715,7 @@ async def search_library(
         doc_type_filter=body.doc_type,
         job_id=None,
         include_global=True,
-        ollama_url=settings.aipam_ollama_url.rstrip("/"),
+        ollama_url=get_runtime_ollama_url(settings.aipam_ollama_url),
         embedding_config=_embedding_config(settings),
         persist_dir=_vector_dir(settings),
     )

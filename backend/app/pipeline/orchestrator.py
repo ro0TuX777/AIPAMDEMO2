@@ -919,11 +919,14 @@ def run_pipeline(
     try:
         import asyncio
         from backend.app.config_v2 import get_settings as _get_settings
-        from backend.app.services.embedding_models import get_embedding_model_service
+        from backend.app.services.embedding_models import (
+            get_embedding_model_service,
+            get_runtime_ollama_url,
+        )
         from backend.app.services.kb_service import auto_index_job
 
         _settings = _get_settings()
-        _ollama_url = _settings.aipam_ollama_url.rstrip("/")
+        _ollama_url = get_runtime_ollama_url(_settings.aipam_ollama_url)
         _persist_dir = str(_settings.aipam_db_path).replace("aipam.db", "vector_store")
         _embedding_config = get_embedding_model_service(_ollama_url).get_active()
         if _embedding_config is None:

@@ -35,7 +35,10 @@ from backend.app.services import chat_citations as _cite_svc  # extracted helper
 from backend.app.services.entity_extractor import extract_entities
 from backend.app.services.evidence_bundles import build_scoped_bundle, parse_context_hint
 from backend.app.services.kb_service import extract_ips_from_context, retrieve as kb_retrieve
-from backend.app.services.embedding_models import get_embedding_model_service
+from backend.app.services.embedding_models import (
+    get_embedding_model_service,
+    get_runtime_ollama_url,
+)
 from backend.app.services.structured_retrieval import retrieve_structured
 
 from backend.app.api.deps import get_db, verify_token
@@ -512,7 +515,7 @@ async def _build_rag_context(
     Returns a tuple of (formatted context string, KB citations).
     """
     try:
-        ollama_url = settings.aipam_ollama_url.rstrip("/")
+        ollama_url = get_runtime_ollama_url(settings.aipam_ollama_url)
         persist_dir = str(settings.aipam_db_path).replace("aipam.db", "vector_store")
         embedding_config = get_embedding_model_service(ollama_url).get_active()
         if embedding_config is None:
@@ -998,7 +1001,7 @@ async def chat_about_job(
 
 def _make_llm_client(settings: Settings) -> LLMClient:
     """Create an LLMClient from current settings / env vars."""
-    ollama_base = settings.aipam_ollama_url.rstrip("/")
+    ollama_base = get_runtime_ollama_url(settings.aipam_ollama_url)
     config = LLMConfig(
         endpoint=os.getenv("LLM_ENDPOINT", f"{ollama_base}/v1/chat/completions"),
         model=os.getenv("LLM_MODEL_NAME", "aipam-trafficllm-v10"),

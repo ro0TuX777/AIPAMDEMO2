@@ -53,3 +53,21 @@ def test_pull_endpoint_tracks_background_download(monkeypatch):
     assert response.model == "new-embed"
     assert response.status == "starting"
     assert len(background.tasks) == 1
+
+
+def test_embedding_runtime_endpoint_persists_custom_ollama_url(monkeypatch):
+    from backend.app.api import system
+    from backend.app.schemas.system import OllamaRuntimeConfigRequest
+
+    from backend.app.services import embedding_models
+
+    monkeypatch.setattr(embedding_models, "set_runtime_ollama_url", lambda url: url.rstrip("/"))
+
+    response = asyncio.run(
+        system.save_embedding_runtime(
+            OllamaRuntimeConfigRequest(ollama_url="http://ollama-host:12567/"),
+            _settings(),
+        )
+    )
+
+    assert response.ollama_url == "http://ollama-host:12567"

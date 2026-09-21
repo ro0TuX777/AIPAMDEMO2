@@ -91,6 +91,37 @@ def test_collection_identity_is_stable_and_model_scoped():
     assert collection_name_for("nomic-embed-text", 768) != collection_name_for("other-embed", 1024)
 
 
+def test_runtime_ollama_url_is_normalized_and_persisted(monkeypatch):
+    from backend.app.services import embedding_models
+
+    saved: dict[str, object] = {}
+    monkeypatch.setattr(embedding_models, "_load_settings_values", lambda: {})
+    monkeypatch.setattr(
+        embedding_models,
+        "_save_settings_values",
+        lambda values: saved.update(values) or dict(saved),
+    )
+
+    url = embedding_models.set_runtime_ollama_url(" http://ollama-host:12567/ ")
+
+    assert url == "http://ollama-host:12567"
+    assert saved == {"ollama_base_url": "http://ollama-host:12567"}
+
+
+def test_runtime_ollama_url_uses_persisted_override_and_rejects_non_http(monkeypatch):
+    from backend.app.services import embedding_models
+
+    monkeypatch.setattr(
+        embedding_models,
+        "_load_settings_values",
+        lambda: {"ollama_base_url": "https://embedding-host:12400/"},
+    )
+
+    assert embedding_models.get_runtime_ollama_url("http://ollama:11434") == "https://embedding-host:12400"
+    with pytest.raises(embedding_models.EmbeddingModelValidationError):
+        embedding_models.set_runtime_ollama_url("ftp://ollama-host:11434")
+
+
 def test_pull_reports_ollama_progress():
     from backend.app.services.embedding_models import EmbeddingModelService
 

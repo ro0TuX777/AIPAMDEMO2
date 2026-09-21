@@ -44,6 +44,8 @@ from backend.app.schemas.system import (
     LoadedModelInfo,
     OllamaGpuStatusResponse,
     OllamaModelInfo,
+    OllamaRuntimeConfigRequest,
+    OllamaRuntimeConfigResponse,
     SystemConfigResponse,
 )
 
@@ -84,9 +86,18 @@ def _run_embedding_pull(service, model: str) -> None:
 
 
 def _embedding_service(settings: Settings):
-    from backend.app.services.embedding_models import get_embedding_model_service
+    from backend.app.services.embedding_models import (
+        get_embedding_model_service,
+        get_runtime_ollama_url,
+    )
 
-    return get_embedding_model_service(settings.aipam_ollama_url)
+    return get_embedding_model_service(get_runtime_ollama_url(settings.aipam_ollama_url))
+
+
+def _runtime_ollama_url(settings: Settings) -> str:
+    from backend.app.services.embedding_models import get_runtime_ollama_url
+
+    return get_runtime_ollama_url(settings.aipam_ollama_url)
 
 
 def _explain_llm_enabled() -> bool:
@@ -94,7 +105,7 @@ def _explain_llm_enabled() -> bool:
 
 
 def _build_explain_configuration(settings: Settings) -> ExplainConfiguration:
-    ollama_base = settings.aipam_ollama_url.rstrip("/")
+    ollama_base = _runtime_ollama_url(settings)
     llm_enabled = _explain_llm_enabled()
     return ExplainConfiguration(
         mode="llm" if llm_enabled else "deterministic",
@@ -156,7 +167,7 @@ async def health_check(
     ollama_ok = False
     try:
         async with httpx.AsyncClient(timeout=2.0) as client:
-            resp = await client.get(f"{settings.aipam_ollama_url}/api/tags")
+            resp = await client.get(f"{_runtime_ollama_url(settings)}/api/tags")
             ollama_ok = resp.status_code == 200
     except Exception:
         pass
@@ -251,7 +262,7 @@ async def get_available_models(
     candidate_urls: list[str] = []
 
     # 1. From settings
-    ollama_base = settings.aipam_ollama_url.rstrip("/")
+    ollama_base = _runtime_ollama_url(settings)
     if ollama_base:
         candidate_urls.append(ollama_base)
 
@@ -307,6 +318,33 @@ async def get_available_models(
 
     log.warning("Could not reach Ollama at any of: %s", unique_urls)
     return AvailableModelsResponse(models=[])
+
+
+@router.get("/embedding-model/runtime", response_model=OllamaRuntimeConfigResponse)
+async def get_embedding_runtime(settings: Settings = Depends(get_settings)):
+    """Return the Ollama base URL used by embedding API and worker operations."""
+    from backend.app.services.embedding_models import get_runtime_ollama_url
+
+    return OllamaRuntimeConfigResponse(
+        ollama_url=get_runtime_ollama_url(settings.aipam_ollama_url)
+    )
+
+
+@router.put("/embedding-model/runtime", response_model=OllamaRuntimeConfigResponse)
+async def save_embedding_runtime(
+    body: OllamaRuntimeConfigRequest,
+    settings: Settings = Depends(get_settings),
+):
+    """Persist the Ollama URL used for model discovery, download, and vectors."""
+    from backend.app.services.embedding_models import (
+        EmbeddingModelValidationError,
+        set_runtime_ollama_url,
+    )
+
+    try:
+        return OllamaRuntimeConfigResponse(ollama_url=set_runtime_ollama_url(body.ollama_url))
+    except EmbeddingModelValidationError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
 
 
 @router.get("/embedding-model", response_model=EmbeddingModelConfigResponse)
@@ -414,7 +452,7 @@ async def get_ollama_status(
     log = logging.getLogger(__name__)
     response.headers["X-Request-Id"] = request_id
 
-    ollama_base = settings.aipam_ollama_url.rstrip("/")
+    ollama_base = _runtime_ollama_url(settings)
 
     result = OllamaGpuStatusResponse()
 
