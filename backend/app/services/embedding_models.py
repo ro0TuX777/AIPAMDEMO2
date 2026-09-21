@@ -71,16 +71,19 @@ def get_runtime_ollama_url(default_url: str) -> str:
 
 
 def get_runtime_llm_endpoint(default_ollama_url: str, fallback_endpoint: str | None = None) -> str:
-    """Resolve chat endpoint, prioritising the operator's saved Ollama URL.
+    """Resolve chat endpoint, prioritising the operator's saved Settings URL.
 
-    ``LLM_ENDPOINT`` remains a deployment fallback for installations that have
-    not configured an Ollama runtime through Settings.  Once an operator saves
-    a base URL, it is authoritative so changing the port takes effect without
-    editing container environment variables.
+    The LLM Settings endpoint is canonical.  The Ollama base URL is accepted
+    as a compatible Settings value and is used when the dedicated LLM field is
+    absent.  ``LLM_ENDPOINT`` remains a first-boot deployment fallback only.
     """
-    saved = _load_settings_values().get("ollama_base_url")
-    if isinstance(saved, str) and saved.strip():
-        return f"{_normalize_ollama_url(saved)}/v1/chat/completions"
+    values = _load_settings_values()
+    saved_endpoint = values.get("llm_endpoint")
+    if isinstance(saved_endpoint, str) and saved_endpoint.strip():
+        return _normalize_llm_endpoint(saved_endpoint)
+    saved_ollama_url = values.get("ollama_base_url")
+    if isinstance(saved_ollama_url, str) and saved_ollama_url.strip():
+        return f"{_normalize_ollama_url(saved_ollama_url)}/v1/chat/completions"
     if isinstance(fallback_endpoint, str) and fallback_endpoint.strip():
         return fallback_endpoint.strip()
     return f"{_normalize_ollama_url(default_ollama_url)}/v1/chat/completions"
@@ -97,16 +100,30 @@ def get_runtime_llm_model(default_model: str) -> str:
 
 
 def set_runtime_ollama_url(ollama_url: str) -> str:
-    """Persist an Ollama URL and clear any model selected on another endpoint."""
+    """Persist an Ollama URL for embeddings and chat, clearing stale embeddings."""
     normalized = _normalize_ollama_url(ollama_url)
     _save_settings_values(
         {
             "ollama_base_url": normalized,
+            "llm_endpoint": f"{normalized}/v1/chat/completions",
             "embedding_model_name": None,
             "embedding_model_dimension": None,
         }
     )
     return normalized
+
+
+def _normalize_llm_endpoint(value: str) -> str:
+    """Normalise a Settings endpoint, accepting either a base or chat URL."""
+    candidate = value.strip().rstrip("/")
+    parsed = urlparse(candidate)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc or parsed.query or parsed.fragment:
+        raise EmbeddingModelValidationError(
+            "LLM endpoint must be an http(s) URL, such as http://host:11434/v1/chat/completions"
+        )
+    if parsed.path in {"", "/"}:
+        return f"{_normalize_ollama_url(candidate)}/v1/chat/completions"
+    return candidate
 
 
 def _ensure_settings_table() -> None:

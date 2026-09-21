@@ -33,6 +33,20 @@ def test_saved_ollama_url_overrides_legacy_llm_endpoint(monkeypatch):
     ) == "http://host.docker.internal:7777/v1/chat/completions"
 
 
+def test_saved_llm_base_url_is_normalized_to_chat_endpoint(monkeypatch):
+    from backend.app.services import embedding_models
+
+    monkeypatch.setattr(
+        embedding_models,
+        "_load_settings_values",
+        lambda: {"llm_endpoint": "http://host.docker.internal:7777"},
+    )
+
+    assert embedding_models.get_runtime_llm_endpoint("http://ollama:11434") == (
+        "http://host.docker.internal:7777/v1/chat/completions"
+    )
+
+
 def test_chat_uses_model_saved_in_settings(monkeypatch):
     from backend.app.api import chat
     from backend.app.config_v2 import Settings

@@ -107,6 +107,7 @@ def test_runtime_ollama_url_is_normalized_and_persisted(monkeypatch):
     assert url == "http://ollama-host:12567"
     assert saved == {
         "ollama_base_url": "http://ollama-host:12567",
+        "llm_endpoint": "http://ollama-host:12567/v1/chat/completions",
         "embedding_model_name": None,
         "embedding_model_dimension": None,
     }
