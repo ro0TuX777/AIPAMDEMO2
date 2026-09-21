@@ -55,7 +55,6 @@ services:
       AIPAM_UPLOAD_ROOT: /uploads
       AIPAM_REDIS_URL: redis://redis:6379/0
       AIPAM_OLLAMA_URL: ${AIPAM_OLLAMA_URL:-http://ollama:11434}
-      LLM_MODEL_NAME: ${LLM_MODEL_NAME:-aipam-trafficllm-v10}
       VECTOR_STORE_PATH: /data/vector_store
       MNEMOS_ENABLED: ${MNEMOS_ENABLED:-true}
       MNEMOS_BASE_URL: http://mnemos-service:8700
@@ -107,7 +106,6 @@ services:
       AIPAM_UPLOAD_ROOT: /uploads
       AIPAM_REDIS_URL: redis://redis:6379/0
       AIPAM_OLLAMA_URL: ${AIPAM_OLLAMA_URL:-http://ollama:11434}
-      LLM_MODEL_NAME: ${LLM_MODEL_NAME:-aipam-trafficllm-v10}
       AIPAM_SENSOR_CONFIG_DIR: /opt/aipam/sensor-config
       C_FORCE_ROOT: "true"
       MNEMOS_ENABLED: ${MNEMOS_ENABLED:-true}

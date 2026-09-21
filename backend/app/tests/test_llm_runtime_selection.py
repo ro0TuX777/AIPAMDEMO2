@@ -30,3 +30,15 @@ def test_chat_uses_model_saved_in_settings(monkeypatch):
     )
 
     assert client.config.model == "gemma3:12b"
+
+
+def test_llm_model_falls_back_to_forensic_role_selection(monkeypatch):
+    from backend.app.services import embedding_models
+
+    monkeypatch.setattr(
+        embedding_models,
+        "_load_settings_values",
+        lambda: {"forensic_model_name": "qwen3:8b"},
+    )
+
+    assert embedding_models.get_runtime_llm_model("deployment-default") == "qwen3:8b"

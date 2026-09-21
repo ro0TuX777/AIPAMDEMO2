@@ -71,9 +71,13 @@ def get_runtime_ollama_url(default_url: str) -> str:
 
 
 def get_runtime_llm_model(default_model: str) -> str:
-    """Return the model selected by the operator or the deployment default."""
-    saved = _load_settings_values().get("llm_model_name")
-    return saved.strip() if isinstance(saved, str) and saved.strip() else default_model
+    """Return the operator's default or forensic/general model selection."""
+    values = _load_settings_values()
+    for key in ("llm_model_name", "forensic_model_name", "general_model_name"):
+        selected = values.get(key)
+        if isinstance(selected, str) and selected.strip():
+            return selected.strip()
+    return default_model
 
 
 def set_runtime_ollama_url(ollama_url: str) -> str:
