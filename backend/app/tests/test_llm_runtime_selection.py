@@ -5,11 +5,11 @@ def test_chat_uses_saved_ollama_runtime_when_no_external_llm_endpoint(monkeypatc
     from backend.app.api import chat
     from backend.app.config_v2 import Settings
 
-    monkeypatch.delenv("LLM_ENDPOINT", raising=False)
+    monkeypatch.setenv("LLM_ENDPOINT", "http://legacy-ollama:11434/v1/chat/completions")
     monkeypatch.setattr(
         chat,
-        "get_runtime_ollama_url",
-        lambda default_url: "http://host.docker.internal:7777",
+        "get_runtime_llm_endpoint",
+        lambda default_url, fallback_endpoint: "http://host.docker.internal:7777/v1/chat/completions",
     )
 
     client = chat._make_llm_client(
@@ -17,6 +17,20 @@ def test_chat_uses_saved_ollama_runtime_when_no_external_llm_endpoint(monkeypatc
     )
 
     assert client.config.endpoint == "http://host.docker.internal:7777/v1/chat/completions"
+
+
+def test_saved_ollama_url_overrides_legacy_llm_endpoint(monkeypatch):
+    from backend.app.services import embedding_models
+
+    monkeypatch.setattr(
+        embedding_models,
+        "_load_settings_values",
+        lambda: {"ollama_base_url": "http://host.docker.internal:7777"},
+    )
+
+    assert embedding_models.get_runtime_llm_endpoint(
+        "http://ollama:11434", "http://legacy-ollama:11434/v1/chat/completions"
+    ) == "http://host.docker.internal:7777/v1/chat/completions"
 
 
 def test_chat_uses_model_saved_in_settings(monkeypatch):

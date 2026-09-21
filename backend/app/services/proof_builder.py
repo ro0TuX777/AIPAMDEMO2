@@ -365,12 +365,11 @@ def _try_llm_narrative(proof: Any, items: list[Any], mode: str) -> str | None:
         import asyncio
         from backend.app.config_v2 import get_settings
         from backend.app.llm_client import LLMClient, LLMConfig
-        from backend.app.services.embedding_models import get_runtime_llm_model, get_runtime_ollama_url
+        from backend.app.services.embedding_models import get_runtime_llm_endpoint, get_runtime_llm_model
 
         settings = get_settings()
-        ollama_base = get_runtime_ollama_url(settings.aipam_ollama_url)
         config = LLMConfig(
-            endpoint=os.getenv("LLM_ENDPOINT") or f"{ollama_base}/v1/chat/completions",
+            endpoint=get_runtime_llm_endpoint(settings.aipam_ollama_url, os.getenv("LLM_ENDPOINT")),
             model=get_runtime_llm_model(os.getenv("LLM_MODEL_NAME", "aipam-trafficllm-v10")),
             temperature=0.3,
             max_tokens=int(os.getenv("LLM_MAX_TOKENS", "4096")),

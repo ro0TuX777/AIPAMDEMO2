@@ -70,6 +70,22 @@ def get_runtime_ollama_url(default_url: str) -> str:
     return _normalize_ollama_url(candidate)
 
 
+def get_runtime_llm_endpoint(default_ollama_url: str, fallback_endpoint: str | None = None) -> str:
+    """Resolve chat endpoint, prioritising the operator's saved Ollama URL.
+
+    ``LLM_ENDPOINT`` remains a deployment fallback for installations that have
+    not configured an Ollama runtime through Settings.  Once an operator saves
+    a base URL, it is authoritative so changing the port takes effect without
+    editing container environment variables.
+    """
+    saved = _load_settings_values().get("ollama_base_url")
+    if isinstance(saved, str) and saved.strip():
+        return f"{_normalize_ollama_url(saved)}/v1/chat/completions"
+    if isinstance(fallback_endpoint, str) and fallback_endpoint.strip():
+        return fallback_endpoint.strip()
+    return f"{_normalize_ollama_url(default_ollama_url)}/v1/chat/completions"
+
+
 def get_runtime_llm_model(default_model: str) -> str:
     """Return the operator's default or forensic/general model selection."""
     values = _load_settings_values()

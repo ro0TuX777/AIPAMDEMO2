@@ -37,6 +37,7 @@ from backend.app.services.evidence_bundles import build_scoped_bundle, parse_con
 from backend.app.services.kb_service import extract_ips_from_context, retrieve as kb_retrieve
 from backend.app.services.embedding_models import (
     get_embedding_model_service,
+    get_runtime_llm_endpoint,
     get_runtime_llm_model,
     get_runtime_ollama_url,
 )
@@ -1002,9 +1003,8 @@ async def chat_about_job(
 
 def _make_llm_client(settings: Settings) -> LLMClient:
     """Create an LLMClient from current settings / env vars."""
-    ollama_base = get_runtime_ollama_url(settings.aipam_ollama_url)
     config = LLMConfig(
-        endpoint=os.getenv("LLM_ENDPOINT") or f"{ollama_base}/v1/chat/completions",
+        endpoint=get_runtime_llm_endpoint(settings.aipam_ollama_url, os.getenv("LLM_ENDPOINT")),
         model=get_runtime_llm_model(os.getenv("LLM_MODEL_NAME", "aipam-trafficllm-v10")),
         temperature=0.3,
         max_tokens=int(os.getenv("LLM_MAX_TOKENS", "4096")),
