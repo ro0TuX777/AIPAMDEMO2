@@ -105,7 +105,11 @@ def test_runtime_ollama_url_is_normalized_and_persisted(monkeypatch):
     url = embedding_models.set_runtime_ollama_url(" http://ollama-host:12567/ ")
 
     assert url == "http://ollama-host:12567"
-    assert saved == {"ollama_base_url": "http://ollama-host:12567"}
+    assert saved == {
+        "ollama_base_url": "http://ollama-host:12567",
+        "embedding_model_name": None,
+        "embedding_model_dimension": None,
+    }
 
 
 def test_runtime_ollama_url_uses_persisted_override_and_rejects_non_http(monkeypatch):

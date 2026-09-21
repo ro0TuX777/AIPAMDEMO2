@@ -71,9 +71,15 @@ def get_runtime_ollama_url(default_url: str) -> str:
 
 
 def set_runtime_ollama_url(ollama_url: str) -> str:
-    """Persist a validated Ollama base URL for API and worker processes."""
+    """Persist an Ollama URL and clear any model selected on another endpoint."""
     normalized = _normalize_ollama_url(ollama_url)
-    _save_settings_values({"ollama_base_url": normalized})
+    _save_settings_values(
+        {
+            "ollama_base_url": normalized,
+            "embedding_model_name": None,
+            "embedding_model_dimension": None,
+        }
+    )
     return normalized
 
 
