@@ -16,6 +16,7 @@ interface MnemosChatDrawerProps {
   onTurnComplete: (conversationId: string) => void;
   onRetry: (requestId: string) => void;
   returnFocusRef: React.RefObject<HTMLButtonElement>;
+  pendingCopiedSource?: string | null;
 }
 
 const retrievalStatus = (conversation: ChatConversation) => {
@@ -30,7 +31,7 @@ const historicalSources = (conversation: ChatConversation): HistoricalFindingCit
 
 export function MnemosChatDrawer({
   jobId, group, activeBranch, conversation, draft, onDraftChange, onClose, onBranchChange,
-  onBeforeSend, onConversationChanged, onTurnComplete, onRetry, returnFocusRef,
+  onBeforeSend, onConversationChanged, onTurnComplete, onRetry, returnFocusRef, pendingCopiedSource,
 }: MnemosChatDrawerProps) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const [mobile, setMobile] = useState(() => window.matchMedia("(max-width: 767px)").matches);
@@ -51,9 +52,29 @@ export function MnemosChatDrawer({
 
   useEffect(() => {
     if (!mobile) return;
-    const escape = (event: KeyboardEvent) => { if (event.key === "Escape") onClose(); };
-    document.addEventListener("keydown", escape);
-    return () => document.removeEventListener("keydown", escape);
+    const background = document.querySelector<HTMLElement>("[data-testid='main-content']");
+    const previousHidden = background?.getAttribute("aria-hidden");
+    if (background) {
+      background.setAttribute("aria-hidden", "true");
+      background.inert = true;
+    }
+    const keys = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { onClose(); return; }
+      if (event.key !== "Tab") return;
+      const focusable = Array.from(document.querySelectorAll<HTMLElement>("aside[role='dialog'] button, aside[role='dialog'] input, aside[role='dialog'] select, aside[role='dialog'] a[href]"));
+      if (!focusable.length) return;
+      const index = focusable.indexOf(document.activeElement as HTMLElement);
+      if (event.shiftKey && index <= 0) { event.preventDefault(); focusable.at(-1)?.focus(); }
+      else if (!event.shiftKey && index === focusable.length - 1) { event.preventDefault(); focusable[0].focus(); }
+    };
+    document.addEventListener("keydown", keys);
+    return () => {
+      document.removeEventListener("keydown", keys);
+      if (background) {
+        background.inert = false;
+        if (previousHidden === null) background.removeAttribute("aria-hidden"); else background.setAttribute("aria-hidden", previousHidden);
+      }
+    };
   }, [mobile, onClose]);
 
   return (
@@ -73,7 +94,7 @@ export function MnemosChatDrawer({
         </select>
       </div>
 
-      {activeBranch.source_message_id && <p className="mx-4 mt-3 text-xs text-cyan-200">Copied from baseline message {activeBranch.source_message_id}</p>}
+      {(pendingCopiedSource ?? activeBranch.source_message_id) && <p className="mx-4 mt-3 text-xs text-cyan-200">Copied from baseline message {pendingCopiedSource ?? activeBranch.source_message_id}</p>}
       {(activeBranch.inherited_messages?.length ?? 0) > 0 && <section className="mx-4 mt-3 rounded border border-slate-700 bg-slate-900/60 p-3" aria-label="Baseline history">
         <h3 className="text-sm font-medium text-slate-100">Baseline history</h3>
         <div className="mt-2 space-y-2 text-xs text-slate-300">

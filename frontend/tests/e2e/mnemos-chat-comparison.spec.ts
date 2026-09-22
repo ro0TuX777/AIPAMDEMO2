@@ -38,8 +38,9 @@ test("copy opens an editable MNEMOS draft without sending", async ({ page }) => 
   page.on("request", request => { if (request.url().includes("/chat/stream")) chatRequests += 1; });
   await page.goto(`/jobs/${jobId}/chat`);
   await page.getByRole("button", { name: "Copy to MNEMOS" }).click();
-  await expect(page.getByRole("dialog", { name: "MNEMOS comparison" })).toBeVisible();
+  await expect(page.getByLabel("MNEMOS comparison", { exact: true })).toBeVisible();
   await expect(page.getByLabel("MNEMOS message")).toHaveValue("Was this C2 activity?");
+  await expect(page.getByText("Copied from baseline message baseline-question")).toBeVisible();
   await expect(page.getByText("Historical confirmed findings")).toHaveCount(0);
   expect(chatRequests).toBe(0);
   await page.getByRole("button", { name: "Close MNEMOS comparison" }).click();

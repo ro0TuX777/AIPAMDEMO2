@@ -23,6 +23,7 @@ export interface ChatPanelProps {
   /** Creates a copied comparison branch immediately before its first request. */
   onBeforeSend?: (message: string, requestId: string) => Promise<ChatSendTarget | undefined>;
   onTurnComplete?: (conversationId: string) => void;
+  onNewConversation?: () => void;
 }
 
 export interface ChatSendTarget {
@@ -245,7 +246,7 @@ export function ChatPanel(props: ChatPanelInputProps) {
     document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
   };
 
-  const startNewConversation = () => { initialContextHandled.current = false; onConversationChanged(emptyConversation(jobId)); };
+  const startNewConversation = () => { initialContextHandled.current = false; if (controlled) props.onNewConversation?.(); onConversationChanged(emptyConversation(jobId)); };
 
   return <div className="flex flex-col h-full bg-slate-900 rounded-lg border border-slate-700">
     <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700">

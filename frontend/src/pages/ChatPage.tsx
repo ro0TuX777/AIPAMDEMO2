@@ -54,6 +54,7 @@ export const ChatPage: React.FC = () => {
   const mnemosToggleRef = useRef<HTMLButtonElement>(null);
   const draftSequenceRef = useRef(0);
   const hydratedJobRef = useRef<string | null>(null);
+  const pageGenerationRef = useRef(0);
   const [baselineConversation, setBaselineConversation] = useState<ChatConversation>({ job_id: jobId ?? "", messages: [] });
   const [baselineToken, setBaselineToken] = useState("baseline-draft-0");
   const [conversationSummaries, setConversationSummaries] = useState<Array<{ id: string; title?: string }>>([]);
@@ -61,6 +62,14 @@ export const ChatPage: React.FC = () => {
   const [comparisonGroup, setComparisonGroup] = useState<ChatComparisonGroup | null>(null);
   const [mnemosDraft, setMnemosDraft] = useState("");
   const [copiedPrompt, setCopiedPrompt] = useState<{ messageId: string; content: string } | null>(null);
+
+  const selectBaselineToken = useCallback((conversationId?: string) => {
+    if (conversationId) setBaselineToken(`baseline-${conversationId}`);
+    else {
+      draftSequenceRef.current += 1;
+      setBaselineToken(`baseline-draft-${draftSequenceRef.current}`);
+    }
+  }, []);
 
   const refreshConversations = useCallback(async () => {
     if (!jobId) return;
@@ -81,24 +90,36 @@ export const ChatPage: React.FC = () => {
       try {
         const conversations = await api.listConversations(jobId);
         setConversationSummaries(conversations);
-        if (conversations[0]) {
-          const history = await api.getConversation(jobId, conversations[0].id);
+        const requestedId = searchParams.get("conversation");
+        const selected = conversations.find(item => item.id === requestedId) ?? conversations[0];
+        if (selected) {
+          const history = await api.getConversation(jobId, selected.id);
           setBaselineConversation(history);
-          setBaselineToken(`baseline-${history.id}`);
+          selectBaselineToken(history.id);
+          if (requestedId !== history.id) {
+            const next = new URLSearchParams(searchParams);
+            next.set("conversation", history.id);
+            setSearchParams(next, { replace: true });
+          }
         }
       } catch { /* Initial drafts remain usable while history is unavailable. */ }
     })();
-  }, [jobId]);
+  }, [jobId, searchParams, selectBaselineToken, setSearchParams]);
 
   const selectBaselineConversation = useCallback(async (conversationId: string) => {
     if (!jobId || conversationId === baselineConversation.id) return;
+    const generation = ++pageGenerationRef.current;
     const history = await api.getConversation(jobId, conversationId);
+    if (generation !== pageGenerationRef.current) return;
     setBaselineConversation(history);
-    setBaselineToken(`baseline-${history.id}`);
+    selectBaselineToken(history.id);
+    const next = new URLSearchParams(searchParams);
+    next.set("conversation", history.id);
+    setSearchParams(next, { replace: true });
     setComparisonGroup(null);
     setCopiedPrompt(null);
     setMnemosDraft("");
-  }, [baselineConversation.id, jobId]);
+  }, [baselineConversation.id, jobId, searchParams, selectBaselineToken, setSearchParams]);
 
   const activeBranch = useMemo<ChatComparisonBranch | null>(() => {
     if (!comparisonGroup) return null;
@@ -110,7 +131,10 @@ export const ChatPage: React.FC = () => {
   const ensureComparison = useCallback(async () => {
     if (!jobId || !baselineConversation.id) return null;
     if (comparisonGroup?.root_conversation_id === baselineConversation.id) return comparisonGroup;
+    const generation = pageGenerationRef.current;
+    const rootId = baselineConversation.id;
     const group = await api.openComparison(jobId, baselineConversation.id);
+    if (generation !== pageGenerationRef.current || rootId !== baselineConversation.id) return null;
     setComparisonGroup(group);
     return group;
   }, [baselineConversation.id, comparisonGroup, jobId]);
@@ -135,11 +159,30 @@ export const ChatPage: React.FC = () => {
     // fresh controlled-selection identity.
     if (!next.id && baselineConversation.id) {
       draftSequenceRef.current += 1;
-      setBaselineToken(`baseline-draft-${draftSequenceRef.current}`);
+      selectBaselineToken();
     }
     setBaselineConversation(next);
-    if (next.id) void refreshConversations();
-  }, [baselineConversation.id, refreshConversations]);
+    if (next.id) {
+      void refreshConversations();
+      if (!baselineConversation.id) {
+        const params = new URLSearchParams(searchParams);
+        params.set("conversation", next.id);
+        setSearchParams(params, { replace: true });
+      }
+    }
+  }, [baselineConversation.id, refreshConversations, searchParams, selectBaselineToken, setSearchParams]);
+
+  const startNewBaseline = useCallback(() => {
+    pageGenerationRef.current += 1;
+    selectBaselineToken();
+    setComparisonGroup(null);
+    setCopiedPrompt(null);
+    setMnemosDraft("");
+    setMnemosOpen(false);
+    const next = new URLSearchParams(searchParams);
+    next.delete("conversation");
+    setSearchParams(next, { replace: true });
+  }, [searchParams, selectBaselineToken, setSearchParams]);
 
   const onMnemosChanged = useCallback((next: ChatConversation) => {
     setComparisonGroup(current => {
@@ -157,9 +200,15 @@ export const ChatPage: React.FC = () => {
     if (!copiedPrompt) return { conversation: { id: activeBranch.conversation_id, job_id: jobId, messages: activeBranch.messages }, branchId: activeBranch.id, selectionToken: activeBranch.id };
     try {
       const branch = await api.createComparisonBranch(jobId, comparisonGroup.group_id, copiedPrompt.messageId, requestId);
-      const selected = await api.selectComparisonBranch(jobId, comparisonGroup.group_id, branch.id);
-      setComparisonGroup(selected);
+      setComparisonGroup(current => current ? { ...current, active_branch_id: branch.id, branches: [...current.branches.filter(item => item.id !== branch.id), branch] } : current);
       setCopiedPrompt(null);
+      try {
+        const selected = await api.selectComparisonBranch(jobId, comparisonGroup.group_id, branch.id);
+        setComparisonGroup(selected);
+      } catch {
+        // The branch POST is authoritative and idempotent by request ID. Keep
+        // its owner selected locally so this turn can stream and later recover.
+      }
       return { conversation: { id: branch.conversation_id, job_id: jobId, messages: branch.messages }, branchId: branch.id, selectionToken: branch.id };
     } catch {
       return undefined;
@@ -405,6 +454,7 @@ export const ChatPage: React.FC = () => {
                 onConversationChanged={onBaselineChanged}
                 onCopyToMnemos={copyToMnemos}
                 onRetry={() => {}}
+                onNewConversation={startNewBaseline}
               />
             </div>
           </div>
@@ -424,6 +474,7 @@ export const ChatPage: React.FC = () => {
               onTurnComplete={completeMnemosTurn}
               onRetry={() => {}}
               returnFocusRef={mnemosToggleRef}
+              pendingCopiedSource={copiedPrompt?.messageId}
             />
           )}
 
