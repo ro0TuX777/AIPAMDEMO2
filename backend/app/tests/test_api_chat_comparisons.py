@@ -162,6 +162,154 @@ def _unavailable_result() -> MnemosRetrievalResult:
     return MnemosRetrievalResult(status="unavailable", context="", citations=[])
 
 
+def test_first_baseline_turn_replays_without_conversation_id_across_transports(client):
+    body = {"message": "First question", "request_id": str(uuid.uuid4())}
+    streamed = client.post("/jobs/job-1/chat/stream", json=body)
+    assert streamed.status_code == 200
+    replay = client.post("/jobs/job-1/chat", json=body)
+    assert replay.status_code == 200
+    replay2 = client.post("/jobs/job-1/chat", json=body)
+    assert replay.json() == replay2.json()
+    assert client.fake_llm.completion_calls == 0
+    assert client.fake_llm.stream_calls == 1
+    with client.session_factory() as db:
+        assert db.scalar(select(func.count()).select_from(ChatMessage).where(ChatMessage.request_id == body["request_id"])) == 1
+    conflict = client.post("/jobs/job-1/chat", json={**body, "message": "Different question"})
+    assert conflict.status_code == 409
+
+
+def test_request_uuid_cannot_create_a_second_turn_in_another_root(client):
+    body = {"message": "First question", "request_id": str(uuid.uuid4())}
+    first = client.post("/jobs/job-1/chat", json=body)
+    assert first.status_code == 200
+    other = client.post("/jobs/job-1/chat", json={**body, "conversation_id": "root-1"})
+    assert other.status_code == 409
+    assert other.json()["code"] == "REQUEST_ID_CONFLICT"
+    assert client.fake_llm.completion_calls == 1
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_actual_generation_cancellation_terminalizes_admitted_turn(client, monkeypatch, stream):
+    request_id = str(uuid.uuid4())
+    async def exercise():
+        started = asyncio.Event()
+        async def completion(*args, **kwargs):
+            started.set()
+            await asyncio.Event().wait()
+        async def streaming(*args, **kwargs):
+            started.set()
+            await asyncio.Event().wait()
+            yield "never"
+        monkeypatch.setattr(client.fake_llm, "chat_completion", completion)
+        monkeypatch.setattr(client.fake_llm, "chat_completion_stream", streaming)
+        with client.session_factory() as db:
+            body = chat.ChatRequestBody(message="Cancel me", conversation_id="root-1", request_id=request_id)
+            settings = Settings(aipam_api_token="test")
+            if stream:
+                await chat.chat_about_job_stream("job-1", body, db, settings)
+                await started.wait()
+                tasks = list(chat._background_tasks)
+                for task in tasks: task.cancel()
+                await asyncio.gather(*tasks, return_exceptions=True)
+            else:
+                task = asyncio.create_task(chat.chat_about_job("job-1", body, db, settings))
+                await started.wait()
+                task.cancel()
+                with pytest.raises(asyncio.CancelledError): await task
+    asyncio.run(exercise())
+    replay = client.post("/jobs/job-1/chat", json={"message": "Cancel me", "conversation_id": "root-1", "request_id": request_id})
+    assert replay.json()["status"] == "error"
+    with client.session_factory() as db:
+        assert db.scalar(select(func.count()).select_from(ChatMessage).where(ChatMessage.conversation_id == "root-1")) == 4
+
+
+def test_expired_pending_turn_recovers_durably_and_rejects_late_completion(client):
+    request_id = str(uuid.uuid4())
+    with client.session_factory() as db:
+        user = ChatMessage(id="interrupted", conversation_id="root-1", role="user", content="Interrupted", request_id=request_id,
+                           created_at="2000-01-01T00:00:00Z")
+        db.add(user)
+        db.commit()
+    body = {"conversation_id": "root-1", "message": "Interrupted", "request_id": request_id}
+    recovered = client.post("/jobs/job-1/chat", json=body).json()
+    assert recovered["status"] == "error"
+    assert client.post("/jobs/job-1/chat", json=body).json() == recovered
+    assert client.post("/jobs/job-1/chat", json={**body, "message": "New turn", "request_id": str(uuid.uuid4())}).json()["status"] == "completed"
+    with client.session_factory() as db:
+        late = chat._persist_assistant_turn(db, conversation_id="root-1", user_message_id="interrupted", request_id=request_id,
+                                          response_text="LATE SUCCESS", final_citations=[], metadata={"status": "completed"})
+        assert "LATE SUCCESS" not in late.content
+    assert client.post("/jobs/job-1/chat", json=body).json() == recovered
+
+
+@pytest.mark.parametrize("stream", [False, True])
+def test_late_generator_returns_saved_recovery_instead_of_a_success(client, monkeypatch, stream):
+    async def exercise():
+        started, release = asyncio.Event(), asyncio.Event()
+        async def generate(*args, **kwargs):
+            started.set()
+            await release.wait()
+            return "Too late"
+        async def generate_stream(*args, **kwargs):
+            yield await generate()
+        monkeypatch.setattr(client.fake_llm, "chat_completion", generate)
+        monkeypatch.setattr(client.fake_llm, "chat_completion_stream", generate_stream)
+        body = {"message": "Long turn", "request_id": str(uuid.uuid4())}
+        async with AsyncClient(transport=ASGITransport(app=client.app), base_url="http://test") as api:
+            original = asyncio.create_task(api.post("/jobs/job-1/chat" + ("/stream" if stream else ""), json=body))
+            await started.wait()
+            pending = await api.post("/jobs/job-1/chat", json=body)
+            assert pending.json()["status"] == "pending"
+            assert pending.json()["retry_after_seconds"] == 2
+            with client.session_factory() as db:
+                user = db.scalar(select(ChatMessage).where(ChatMessage.request_id == body["request_id"]))
+                user.metadata_json = '{"lease_expires_at":"2000-01-01T00:00:00Z"}'
+                db.commit()
+            recovered = (await api.post("/jobs/job-1/chat", json=body)).json()
+            release.set()
+            result = await original
+            if stream:
+                events = [json.loads(line[6:]) for line in result.text.splitlines() if line.startswith("data: {")]
+                assert [event for event in events if event["type"] == "meta"][-1]["status"] == "error"
+                assert [event for event in events if event["type"] == "replace"][-1]["content"] == recovered["response"]
+            else:
+                assert result.json() == recovered
+    asyncio.run(exercise())
+
+
+@pytest.mark.parametrize("change", ["finding_deleted", "job_deleted", "revoked", "changed"])
+def test_saved_citations_keep_version_and_retrieval_outcome_when_source_changes(client, monkeypatch, change):
+    from backend.app.models.finding import Finding
+    from backend.app.services import mnemos_chat_retrieval as retrieval
+    from backend.app.tests.test_mnemos_chat_retrieval import add_job, add_finding, hit, FakeMnemos
+    from backend.app.forensic_memory import finding_content_sha256
+
+    with client.session_factory() as db:
+        add_job(db, "job-old")
+        finding = add_finding(db, "job-old", "finding-old")
+        db.commit()
+        source_hash = finding_content_sha256(finding)
+    monkeypatch.setattr(retrieval, "get_mnemos_client", lambda: FakeMnemos([hit("x", "job-old", "finding-old")]))
+    group = _open_comparison(client)
+    result = client.post("/jobs/job-1/chat", json={"conversation_id": group["conversation_id"], "mode": "mnemos", "request_id": str(uuid.uuid4()), "message": "What happened?"})
+    assert result.status_code == 200
+    saved = next(c for c in result.json()["citations"] if c["type"] == "historical_finding")
+    assert saved["source_content_sha256"] == source_hash
+    with client.session_factory() as db:
+        finding = db.scalar(select(Finding).where(Finding.job_id == "job-old"))
+        if change == "finding_deleted": db.delete(finding)
+        elif change == "job_deleted": db.get(Job, "job-old").status = "deleted"
+        elif change == "revoked": finding.analyst_status = "false_positive"
+        else: finding.summary = "Edited source"
+        db.commit()
+    history = client.get(f'/jobs/job-1/conversations/{group["conversation_id"]}').json()
+    answer = history["messages"][-1]
+    citation = next(c for c in answer["citations"] if c["type"] == "historical_finding")
+    assert citation["source_content_sha256"] == source_hash
+    assert citation["source_availability"] == ("changed" if change == "changed" else "unavailable")
+    assert answer["metadata"]["retrieval_status"] == "used"
+
+
 def _open_comparison(client) -> dict:
     response = client.post(
         "/jobs/job-1/chat/comparisons",

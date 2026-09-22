@@ -128,6 +128,49 @@ Run these checks against the root `docker-compose.yml`, which owns the AIPAM
 MNEMOS service and its Qdrant and Postgres stores. The offline package compose
 file in this directory does not provide this comparison workflow.
 
+### 0. Back up existing volumes and migrate before serving
+
+Run from the repository root with the same Compose project name and `.env`
+used by the existing installation. Do not start the new API or worker against
+the old schema. `create_all()` at application startup does not upgrade existing
+tables. The root Compose services mount `aipam-data` at `/data`, `aipam-jobs`
+at `/jobs`, and `aipam-uploads` at `/uploads`; the database is `/data/aipam.db`.
+
+The following Bash commands stop database writers and capture all three existing
+volumes, including SQLite WAL files, into a dated archive outside the volumes:
+
+```bash
+set -e
+docker compose stop frontend backend worker
+mkdir -p backups
+docker compose run --rm --no-deps -v "$PWD/backups:/backup" backend python -c "import datetime,pathlib,tarfile; p=pathlib.Path('/backup') / ('aipam-before-chat-' + datetime.datetime.now(datetime.timezone.utc).strftime('%Y%m%dT%H%M%SZ') + '.tar.gz'); t=tarfile.open(p,'w:gz'); [t.add(d,arcname=d.lstrip('/')) for d in ('/data','/jobs','/uploads')]; t.close(); print(p.name)"
+ls -lh backups/aipam-before-chat-*.tar.gz
+
+docker compose build backend worker frontend
+docker compose run --rm --no-deps backend python -m alembic -c /app/alembic.ini current
+docker compose run --rm --no-deps backend python -m alembic -c /app/alembic.ini heads
+docker compose run --rm --no-deps backend python -m alembic -c /app/alembic.ini upgrade head
+docker compose run --rm --no-deps backend python -m alembic -c /app/alembic.ini current
+docker compose run --rm --no-deps backend python -c "import sqlite3; c=sqlite3.connect('/data/aipam.db'); versions={r[0] for r in c.execute('select version_num from alembic_version')}; assert versions == {'7a4d8e2c9b10'}, versions; errors=c.execute('pragma foreign_key_check').fetchall(); assert not errors, errors; print('schema head and foreign keys verified')"
+
+docker compose up -d backend worker frontend
+```
+
+Stop on any failed command. Preserve the printed pre-upgrade revision with the
+archive. The expected single head is `7a4d8e2c9b10`, directly after comparison
+revision `6f3a2b9c1d4e` (whose parent is `d4e5f6a7b8c9`). These commands use the
+image's `/app/alembic.ini`, its `/app/backend/alembic` script directory, and
+Compose's `AIPAM_DB_PATH=/data/aipam.db`. A missing `alembic_version` in an older
+unversioned installation requires matching its existing schema to a revision;
+do not stamp head or run reconciliation to bypass a migration failure.
+
+Downgrading below `6f3a2b9c1d4e` deliberately deletes MNEMOS comparison
+conversations and their answers before removing mode/provenance columns.
+Legacy baseline conversations and their messages remain. This prevents a later
+upgrade from reclassifying historical appendices as baseline answers. Restore
+the saved volumes with the matching application version to recover comparisons;
+take the backup before performing any downgrade.
+
 ### 1. Confirm effective configuration and service health
 
 ```bash
@@ -168,6 +211,23 @@ upserts the same records rather than creating duplicates. Any nonzero `failed`
 count or a nonzero process exit means reconciliation did not complete. A
 nonzero `skipped` count identifies confirmed rows that could not be rendered
 as valid documents and requires investigation before using the run as evidence.
+
+Subsequent analyst confirmations and edits of confirmed findings publish the
+same canonical document after the database commit, with up to three attempts.
+A remote failure leaves the analyst change committed; run the reconciliation
+command again after service recovery or a process interruption. Soft-deleted
+jobs, revoked findings, and missing sources are excluded from reconciliation
+and online recall. Saved answers keep their original source hash and retrieval
+outcome; history separately reports current source availability.
+
+Admitted chat turns carry a fixed lease lasting the configured generation
+timeout plus 60 seconds. Legacy pending turns use 31 minutes from creation.
+Repeating the same job/request UUID returns the same conversation and turn;
+an active turn reports `pending` with `retry_after_seconds=2`. Poll that same
+request instead of submitting another turn. An expired lease is persisted as an
+interrupted error on retry or the next admission; send a new request UUID to
+generate again. Cancellation also saves an error, and late workers cannot replace
+that saved terminal result. No periodic cleanup process is required for recovery.
 
 ### 3. Exercise and persist the paired conversations
 

@@ -379,12 +379,14 @@ def cmd_cleanup_jobs(args):
             job_dir = job_root / job.job_id
             jid = job.job_id
             try:
-                # 1. Delete filesystem directory
-                if job_dir.exists():
-                    shutil.rmtree(job_dir)
-                # 2. Delete DB row (ON DELETE CASCADE handles children)
+                job_dir = job_dir.resolve()
+                if not job_dir.is_relative_to(job_root.resolve()) or job_dir == job_root.resolve():
+                    raise ValueError("job directory is outside the configured job root")
+                # Commit the cascade before removing evidence files.
                 db.delete(job)
                 db.commit()
+                if job_dir.exists():
+                    shutil.rmtree(job_dir)
                 deleted += 1
                 logger.info("job_cleaned job_id=%s", jid)
                 print(f"  [DELETED] {jid[:12]}…")
@@ -979,6 +981,7 @@ def reconcile_mnemos_findings(
     from backend.app.forensic_memory import mnemos_document_for_finding
     from backend.app.models.bluescrub import BlueScrubJobLineage
     from backend.app.models.finding import Finding
+    from backend.app.models.job import Job
 
     counts = {
         "discovered": 0,
@@ -992,12 +995,14 @@ def reconcile_mnemos_findings(
     while True:
         rows = db.execute(
             select(Finding, BlueScrubJobLineage.project_id)
+            .join(Job, Job.job_id == Finding.job_id)
             .outerjoin(
                 BlueScrubJobLineage,
                 BlueScrubJobLineage.job_id == Finding.job_id,
             )
             .where(
                 Finding.analyst_status == "confirmed",
+                Job.status != "deleted",
                 Finding.id > last_finding_row_id,
             )
             .order_by(Finding.id)

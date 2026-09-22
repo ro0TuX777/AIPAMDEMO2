@@ -51,7 +51,7 @@ class ChatConversation(Base):
     )
     source_message_id = Column(
         String,
-        ForeignKey("chat_messages.id", ondelete="RESTRICT"),
+        ForeignKey("chat_messages.id", ondelete="NO ACTION", deferrable=True, initially="DEFERRED"),
         nullable=True,
     )
     history_cutoff_sequence = Column(Integer, nullable=True)
@@ -133,7 +133,7 @@ class ChatComparisonBranch(Base):
     label = Column(Text, nullable=False)
     source_message_id = Column(
         String,
-        ForeignKey("chat_messages.id", ondelete="RESTRICT"),
+        ForeignKey("chat_messages.id", ondelete="NO ACTION", deferrable=True, initially="DEFERRED"),
         nullable=True,
     )
     history_cutoff_sequence = Column(Integer, nullable=False)

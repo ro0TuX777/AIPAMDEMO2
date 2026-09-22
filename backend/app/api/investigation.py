@@ -225,6 +225,8 @@ async def update_item_status(
     obj.reviewed_at = now
     obj.reviewer_id = body.reviewer_id
     db.commit()
+    from backend.app.services.mnemos_indexing import finish_committed_indexing
+    await finish_committed_indexing(db)
 
     return StatusUpdateResponse(
         item_id=item_id,
@@ -267,8 +269,9 @@ async def bulk_update_status(
 
     db.commit()
 
+    from backend.app.services.mnemos_indexing import finish_committed_indexing
+    await finish_committed_indexing(db)
     return BulkStatusUpdateResponse(
         updated=updated,
         failed=failed,
     )
-

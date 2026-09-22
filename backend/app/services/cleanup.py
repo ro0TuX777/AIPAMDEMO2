@@ -31,13 +31,20 @@ def cleanup_old_jobs(db: Session, settings: Optional[Settings] = None) -> int:
     if not jobs_to_delete:
         return 0
 
-    deleted_count = 0
+    job_directories: list[Path] = []
     for job in jobs_to_delete:
         job_id = job.job_id
         _logger.info("Cleaning up job %s (created %s)", job_id, job.created_at)
 
-        # 1. Delete job directory
-        job_dir: Path = settings.aipam_job_root / job_id
+        job_dir = (settings.aipam_job_root / job_id).resolve()
+        if not job_dir.is_relative_to(settings.aipam_job_root.resolve()) or job_dir == settings.aipam_job_root.resolve():
+            raise ValueError("job directory is outside the configured job root")
+        job_directories.append(job_dir)
+        db.delete(job)
+
+    # Evidence stays intact if any constraint or commit fails.
+    db.commit()
+    for job_dir in job_directories:
         try:
             if job_dir.exists():
                 shutil.rmtree(job_dir)
@@ -45,13 +52,6 @@ def cleanup_old_jobs(db: Session, settings: Optional[Settings] = None) -> int:
         except Exception as exc:
             _logger.error("Failed to delete job directory %s: %s", job_dir, exc)
 
-        # 2. Delete DB record (Cascades automatically if configured)
-        try:
-            db.delete(job)
-            deleted_count += 1
-        except Exception as exc:
-            _logger.error("Failed to delete job record %s: %s", job_id, exc)
-
-    db.commit()
+    deleted_count = len(job_directories)
     _logger.info("Auto-cleanup complete. Deleted %d jobs.", deleted_count)
     return deleted_count

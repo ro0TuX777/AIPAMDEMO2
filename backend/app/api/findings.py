@@ -1132,6 +1132,9 @@ async def update_finding_feedback(
     db.commit()
     db.refresh(finding)
 
+    from backend.app.services.mnemos_indexing import finish_committed_indexing
+    await finish_committed_indexing(db)
+
     return _finding_to_item(finding)
 
 

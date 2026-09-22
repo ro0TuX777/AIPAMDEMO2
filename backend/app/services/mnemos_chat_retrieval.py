@@ -10,7 +10,7 @@ from typing import Literal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from backend.app.forensic_memory import finding_to_text
+from backend.app.forensic_memory import finding_to_text, finding_content_sha256
 from backend.app.mnemos_boundary import get_mnemos_client
 from backend.app.models.bluescrub import BlueScrubJobLineage
 from backend.app.models.finding import Finding
@@ -31,6 +31,7 @@ class HistoricalFindingCitation:
     source_job_id: str
     source_project_id: str | None
     href: str
+    source_content_sha256: str | None = None
 
 
 @dataclass(frozen=True)
@@ -57,7 +58,7 @@ async def retrieve_historical_findings(
     try:
         client = get_mnemos_client()
     except Exception:
-        logger.exception("MNEMOS historical-finding client configuration failed")
+        logger.warning("MNEMOS historical-finding client configuration failed")
         return _empty_result("error")
     if client is None:
         return _empty_result("error")
@@ -71,7 +72,7 @@ async def retrieve_historical_findings(
             filters=None,
         )
     except Exception:
-        logger.exception("MNEMOS historical-finding search failed")
+        logger.warning("MNEMOS historical-finding search failed")
         return _empty_result("error")
 
     if hits is None:
@@ -100,7 +101,8 @@ async def retrieve_historical_findings(
             continue
         seen.add(source_key)
 
-        if db.get(Job, job_id) is None:
+        source_job = db.get(Job, job_id)
+        if source_job is None or source_job.status == "deleted":
             continue
         finding = db.scalar(
             select(Finding).where(
@@ -138,6 +140,7 @@ async def retrieve_historical_findings(
                 source_job_id=job_id,
                 source_project_id=project_id,
                 href=f"/jobs/{job_id}/findings/{finding_id}",
+                source_content_sha256=finding_content_sha256(finding),
             )
         )
         if len(citations) >= top_k:

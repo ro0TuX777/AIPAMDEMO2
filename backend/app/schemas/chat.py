@@ -46,6 +46,9 @@ class HistoricalChatCitationOut(BaseModel):
     source_job_id: SourceId
     source_project_id: str | None
     href: str
+    source_content_sha256: str | None = None
+    # Live availability never replaces the saved retrieval outcome or excerpt.
+    source_availability: Literal["available", "changed", "unavailable", "unknown"] = "unknown"
 
     @model_validator(mode="after")
     def validate_finding_href(self) -> "HistoricalChatCitationOut":
@@ -106,6 +109,7 @@ class ChatResponseBody(BaseModel):
     branch_id: str | None = None
     request_id: str | None = None
     status: Literal["pending", "completed", "error"] = "completed"
+    retry_after_seconds: int | None = None
 
 
 class ChatMessageOut(BaseModel):

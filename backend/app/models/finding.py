@@ -5,6 +5,7 @@ import json
 from sqlalchemy import Column, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 
 from backend.app.database_v2 import Base
+from backend.app.services import mnemos_indexing  # noqa: F401; post-commit change hooks
 
 
 class Finding(Base):
@@ -67,4 +68,3 @@ class Finding(Base):
 
     def __repr__(self) -> str:
         return f"<Finding {self.finding_id} severity={self.severity} evidence={self.evidence_status}>"
-

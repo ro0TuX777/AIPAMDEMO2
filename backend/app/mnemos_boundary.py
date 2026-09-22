@@ -115,7 +115,7 @@ class MnemosBoundaryClient:
         except MnemosBoundaryError:
             raise
         except Exception as exc:
-            logger.warning("MNEMOS request %s %s failed: %s", method, path, exc)
+            logger.warning("MNEMOS request %s %s failed", method, path)
             raise MnemosBoundaryError("MNEMOS request failed") from exc
 
 

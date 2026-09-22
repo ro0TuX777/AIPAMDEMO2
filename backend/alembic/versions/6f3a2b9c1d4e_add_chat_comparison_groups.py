@@ -257,6 +257,12 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    # Older applications cannot distinguish MNEMOS answers from baseline data.
+    # Remove comparisons before dropping that distinction; restore the backup
+    # to recover comparisons, never relabel historical content as baseline.
+    op.execute("DELETE FROM chat_comparison_branches")
+    op.execute("DELETE FROM chat_messages WHERE conversation_id IN (SELECT id FROM chat_conversations WHERE mode = 'mnemos')")
+    op.execute("DELETE FROM chat_conversations WHERE mode = 'mnemos'")
     op.execute("DROP TRIGGER IF EXISTS chat_comparison_branch_provenance_immutable")
     op.execute("DROP TRIGGER IF EXISTS chat_conversation_provenance_immutable")
 

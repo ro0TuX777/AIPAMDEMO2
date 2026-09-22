@@ -94,6 +94,35 @@ class FakeMnemos:
         return self.results
 
 
+def test_soft_deleted_job_is_excluded_from_search_and_reconciliation(session, monkeypatch):
+    from backend.app.services import mnemos_chat_retrieval as retrieval
+    from backend.app.cli import reconcile_mnemos_findings
+
+    add_job(session, "deleted-job")
+    add_finding(session, "deleted-job", "F-1")
+    session.get(Job, "deleted-job").status = "deleted"
+    session.commit()
+    mnemos = FakeMnemos([hit("stale vector", "deleted-job", "F-1")])
+    mnemos.index = lambda documents: len(documents)
+    monkeypatch.setattr(retrieval, "get_mnemos_client", lambda: mnemos)
+    result = asyncio.run(retrieval.retrieve_historical_findings(session, current_job_id="current", query="C2"))
+    assert result.status == "no_matches"
+    assert result.citations == []
+    assert reconcile_mnemos_findings(session, client=mnemos)["discovered"] == 0
+
+
+def test_retrieved_citation_records_exact_canonical_source_hash(session, monkeypatch):
+    from backend.app.services import mnemos_chat_retrieval as retrieval
+    from backend.app.forensic_memory import finding_content_sha256
+
+    add_job(session, "source")
+    finding = add_finding(session, "source", "F-1")
+    session.commit()
+    monkeypatch.setattr(retrieval, "get_mnemos_client", lambda: FakeMnemos([hit("vector", "source", "F-1")]))
+    result = asyncio.run(retrieval.retrieve_historical_findings(session, current_job_id="current", query="C2"))
+    assert result.citations[0].source_content_sha256 == finding_content_sha256(finding)
+
+
 def test_stable_document_uses_finding_identity_project_and_content_hash(session) -> None:
     from backend.app.forensic_memory import mnemos_document_for_finding
 

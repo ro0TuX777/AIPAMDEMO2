@@ -14,6 +14,7 @@ import json
 import logging
 import os
 import uuid
+from datetime import datetime, timedelta, timezone
 from typing import AsyncGenerator
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -1054,6 +1055,8 @@ def _historical_citation_out(citation) -> HistoricalChatCitationOut:
         source_job_id=citation.source_job_id,
         source_project_id=citation.source_project_id,
         href=citation.href,
+        source_content_sha256=citation.source_content_sha256,
+        source_availability="available",
     )
 
 
@@ -1145,11 +1148,25 @@ def _json_object(raw: str | None) -> dict:
     return parsed if isinstance(parsed, dict) else {}
 
 
-def _message_out(message: ChatMessage) -> ChatMessageOut:
+def _message_out(message: ChatMessage, db: Session) -> ChatMessageOut:
     citation_payload = _json_object(message.citations_json)
     citations = citation_payload.get("items", [])
     if not isinstance(citations, list):
         citations = []
+    from backend.app.forensic_memory import finding_content_sha256
+    for citation in citations:
+        if citation.get("type") != "historical_finding":
+            continue
+        job = db.get(Job, citation.get("source_job_id"))
+        finding = db.scalar(select(Finding).where(
+            Finding.job_id == citation.get("source_job_id"), Finding.finding_id == citation.get("id"),
+        ))
+        if job is None or job.status == "deleted" or finding is None or finding.analyst_status != "confirmed":
+            citation["source_availability"] = "unavailable"
+        elif not citation.get("source_content_sha256"):
+            citation["source_availability"] = "unknown"
+        else:
+            citation["source_availability"] = "available" if finding_content_sha256(finding) == citation["source_content_sha256"] else "changed"
     metadata = _json_object(message.metadata_json) or None
     return ChatMessageOut(
         id=message.id,
@@ -1182,10 +1199,10 @@ def _branch_out(db: Session, branch: ChatComparisonBranch) -> ChatComparisonBran
         history_cutoff_sequence=branch.history_cutoff_sequence,
         created_at=branch.created_at,
         updated_at=branch.updated_at,
-        messages=[_message_out(message) for message in messages],
+        messages=[_message_out(message, db) for message in messages],
         inherited_root_conversation_id=prefix_conversation.parent_branch_id,
         inherited_cutoff_sequence=prefix_conversation.history_cutoff_sequence,
-        inherited_messages=[_message_out(message) for message in inherited_messages],
+        inherited_messages=[_message_out(message, db) for message in inherited_messages],
     )
 
 
@@ -1418,12 +1435,13 @@ def _find_existing_user_turn(
     *,
     conversation_id: str | None,
     request_id: str | None,
+    job_id: str | None = None,
 ) -> ChatMessage | None:
-    if not conversation_id or not request_id:
+    if not request_id or not (conversation_id or job_id):
         return None
     return db.scalar(
-        select(ChatMessage).where(
-            ChatMessage.conversation_id == conversation_id,
+        select(ChatMessage).join(ChatConversation, ChatConversation.id == ChatMessage.conversation_id).where(
+            ChatConversation.job_id == job_id if job_id else ChatMessage.conversation_id == conversation_id,
             ChatMessage.request_id == request_id,
             ChatMessage.role == "user",
         )
@@ -1449,7 +1467,7 @@ def _validate_turn_conversation(
     return conversation
 
 
-def _reject_parallel_turn(db: Session, conversation_id: str | None) -> None:
+def _reject_parallel_turn(db: Session, conversation_id: str | None, *, recover_expired: bool = True) -> None:
     if conversation_id is None:
         return
     latest = db.scalar(
@@ -1459,11 +1477,14 @@ def _reject_parallel_turn(db: Session, conversation_id: str | None) -> None:
         .limit(1)
     )
     if latest is not None and latest.role == "user":
+        if recover_expired and _recover_expired_turn(db, latest):
+            return
         raise HTTPException(
             status_code=409,
             detail={
                 "code": "TURN_IN_PROGRESS",
                 "error": "the conversation already has a pending turn",
+                "retry_after_seconds": 2,
             },
         )
 
@@ -1473,15 +1494,17 @@ def _response_for_existing_turn(
     *,
     user_message: ChatMessage,
     requested_content: str,
+    requested_conversation_id: str | None = None,
 ) -> ChatResponseBody:
-    if user_message.content != requested_content:
+    if user_message.content != requested_content or (requested_conversation_id and requested_conversation_id != user_message.conversation_id):
         raise HTTPException(
             status_code=409,
             detail={
                 "code": "REQUEST_ID_CONFLICT",
-                "error": "request_id is already associated with another message",
+                "error": "request_id is already associated with another message or conversation",
             },
         )
+    _recover_expired_turn(db, user_message)
     assistant = _find_assistant_for_user_turn(db, user_message=user_message)
     branch_id = _conversation_branch_id(db, user_message.conversation_id)
     if assistant is None:
@@ -1491,6 +1514,7 @@ def _response_for_existing_turn(
             branch_id=branch_id,
             request_id=user_message.request_id,
             status="pending",
+            retry_after_seconds=2,
         )
     metadata = _json_object(assistant.metadata_json)
     citation_payload = _json_object(assistant.citations_json)
@@ -1534,6 +1558,30 @@ def _find_assistant_for_user_turn(
     return None
 
 
+def _recover_expired_turn(db: Session, user_message: ChatMessage) -> bool:
+    """End interrupted turns on access after their durable, fixed lease expires.
+
+    A live generator has its configured timeout plus a 60-second commit grace.
+    Legacy pending rows get a 31-minute lease. Completion insertion is serialized
+    with recovery, so a late worker cannot overwrite the saved terminal error.
+    """
+    if _find_assistant_for_user_turn(db, user_message=user_message) is not None:
+        return False
+    metadata = _json_object(user_message.metadata_json)
+    try:
+        expiry = datetime.fromisoformat(metadata.get("lease_expires_at") or user_message.created_at.replace("Z", "+00:00"))
+        if expiry.tzinfo is None: expiry = expiry.replace(tzinfo=timezone.utc)
+        if not metadata.get("lease_expires_at"): expiry += timedelta(seconds=1860)
+    except (TypeError, ValueError):
+        expiry = datetime.min.replace(tzinfo=timezone.utc)
+    if datetime.now(timezone.utc) < expiry:
+        return False
+    _persist_assistant_turn(db, conversation_id=str(user_message.conversation_id), user_message_id=str(user_message.id),
+                            request_id=user_message.request_id, response_text="This turn was interrupted. Send a new message to try again.",
+                            final_citations=[], metadata={"status": "error", "error_code": "TURN_INTERRUPTED"})
+    return True
+
+
 def _resolve_turn_conversation(
     db: Session,
     *,
@@ -1555,8 +1603,12 @@ def _resolve_turn_conversation(
                 "error": "MNEMOS turns require a comparison conversation",
             },
         )
+    conversation_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"aipam:baseline:{job_id}:{body.request_id}")) if body.request_id else str(uuid.uuid4())
+    existing = db.get(ChatConversation, conversation_id)
+    if existing is not None:
+        return _validate_turn_conversation(existing, job_id=job_id, mode=body.mode)
     conversation = ChatConversation(
-        id=str(uuid.uuid4()),
+        id=conversation_id,
         job_id=job_id,
         mode="baseline",
         created_at=now,
@@ -1572,6 +1624,7 @@ def _admit_user_turn(
     *,
     job_id: str,
     body: ChatRequestBody,
+    lease_seconds: float = 1860,
 ) -> tuple[ChatConversation, ChatMessage, bool]:
     # End preparation's read transaction, then serialize admission on the
     # conversation. SQLite's BEGIN IMMEDIATE takes the database write lock;
@@ -1580,8 +1633,15 @@ def _admit_user_turn(
     dialect_name = db.get_bind().dialect.name
     if dialect_name == "sqlite":
         db.connection().exec_driver_sql("BEGIN IMMEDIATE")
+    else:
+        db.scalar(select(Job).where(Job.job_id == job_id).with_for_update())
 
     try:
+        existing = _find_existing_user_turn(db, conversation_id=None, request_id=body.request_id, job_id=job_id)
+        if existing is not None:
+            conversation = _validate_turn_conversation(db.get(ChatConversation, existing.conversation_id), job_id=job_id, mode=body.mode)
+            db.commit()
+            return conversation, existing, False
         if body.conversation_id and dialect_name != "sqlite":
             conversation = _validate_turn_conversation(
                 db.scalar(
@@ -1608,7 +1668,7 @@ def _admit_user_turn(
             db.commit()
             return conversation, existing, False
 
-        _reject_parallel_turn(db, conversation.id)
+        _reject_parallel_turn(db, conversation.id, recover_expired=False)
     except Exception:
         db.rollback()
         raise
@@ -1619,6 +1679,7 @@ def _admit_user_turn(
         role="user",
         content=body.message,
         request_id=body.request_id,
+        metadata_json=json.dumps({"lease_expires_at": (datetime.now(timezone.utc) + timedelta(seconds=lease_seconds)).isoformat()}),
         created_at=_now_iso(),
     )
     db.add(user_message)
@@ -1712,7 +1773,11 @@ def _persist_assistant_turn(
     final_citations: list[ChatCitation],
     metadata: dict,
 ) -> ChatMessage:
-    origin = db.get(ChatMessage, user_message_id)
+    # Completion and expired-lease recovery must select the same terminal row.
+    db.rollback()
+    if db.get_bind().dialect.name == "sqlite":
+        db.connection().exec_driver_sql("BEGIN IMMEDIATE")
+    origin = db.scalar(select(ChatMessage).where(ChatMessage.id == user_message_id).with_for_update())
     if (
         origin is None
         or origin.conversation_id != conversation_id
@@ -1720,6 +1785,10 @@ def _persist_assistant_turn(
         or origin.request_id != request_id
     ):
         raise RuntimeError("assistant origin user does not match the persisted turn")
+    existing = _find_assistant_for_user_turn(db, user_message=origin)
+    if existing is not None:
+        db.commit()
+        return existing
     metadata = {
         **metadata,
         "request_id": request_id,
@@ -1857,6 +1926,7 @@ def _persisted_turn_sse_events(persisted: ChatResponseBody) -> list[str]:
         "branch_id": persisted.branch_id,
         "request_id": persisted.request_id,
         "status": persisted.status,
+        "retry_after_seconds": persisted.retry_after_seconds,
         "retrieval_status": persisted.retrieval_status,
         "citations": [citation.model_dump() for citation in persisted.citations],
         "model_id": persisted.model_id,
@@ -1895,10 +1965,13 @@ async def chat_about_job(
     if db.get(Job, job_id) is None:
         raise HTTPException(status_code=404, detail="job not found")
     _require_turn_request_id(body)
+    if body.conversation_id:
+        _validate_turn_conversation(db.get(ChatConversation, body.conversation_id), job_id=job_id, mode=body.mode)
     existing = _find_existing_user_turn(
         db,
         conversation_id=body.conversation_id,
         request_id=body.request_id,
+        job_id=job_id,
     )
     if existing is not None:
         _validate_turn_conversation(
@@ -1910,6 +1983,7 @@ async def chat_about_job(
             db,
             user_message=existing,
             requested_content=body.message,
+            requested_conversation_id=body.conversation_id,
         )
     _reject_parallel_turn(db, body.conversation_id)
 
@@ -1932,12 +2006,14 @@ async def chat_about_job(
         db,
         job_id=job_id,
         body=body,
+        lease_seconds=_make_llm_config(settings).timeout_seconds + 60,
     )
     if not created:
         return _response_for_existing_turn(
             db,
             user_message=user_message,
             requested_content=body.message,
+            requested_conversation_id=body.conversation_id,
         )
 
     conversation_id = str(conversation.id)
@@ -1976,6 +2052,9 @@ async def chat_about_job(
             final_citations=final_citations,
             metadata=metadata,
         )
+    except asyncio.CancelledError:
+        _terminalize_failed_turn(db, user_message_id=user_message_id, request_id=request_id, prepared=prepared)
+        raise
     except Exception:
         logger.exception("Failed to complete chat turn for job %s", job_id)
         return _terminalize_failed_turn(
@@ -1984,17 +2063,7 @@ async def chat_about_job(
             request_id=request_id,
             prepared=prepared,
         )
-    return _chat_response(
-        conversation_id=conversation_id,
-        branch_id=_conversation_branch_id(db, conversation_id),
-        request_id=request_id,
-        response_text=response_text,
-        final_citations=final_citations,
-        prepared=prepared,
-        evidence_refs=evidence_refs,
-        suggested_followups=suggested_followups,
-        status="completed",
-    )
+    return _response_for_existing_turn(db, user_message=db.get(ChatMessage, user_message_id), requested_content=body.message)
 
 
 def _make_llm_config(settings: Settings) -> LLMConfig:
@@ -2026,10 +2095,13 @@ async def chat_about_job_stream(
     if db.get(Job, job_id) is None:
         raise HTTPException(status_code=404, detail="job not found")
     _require_turn_request_id(body)
+    if body.conversation_id:
+        _validate_turn_conversation(db.get(ChatConversation, body.conversation_id), job_id=job_id, mode=body.mode)
     existing = _find_existing_user_turn(
         db,
         conversation_id=body.conversation_id,
         request_id=body.request_id,
+        job_id=job_id,
     )
     if existing is not None:
         _validate_turn_conversation(
@@ -2041,6 +2113,7 @@ async def chat_about_job_stream(
             db,
             user_message=existing,
             requested_content=body.message,
+            requested_conversation_id=body.conversation_id,
         )
         return _stream_persisted_turn(persisted)
     _reject_parallel_turn(db, body.conversation_id)
@@ -2064,12 +2137,14 @@ async def chat_about_job_stream(
         db,
         job_id=job_id,
         body=body,
+        lease_seconds=_make_llm_config(settings).timeout_seconds + 60,
     )
     if not created:
         persisted = _response_for_existing_turn(
             db,
             user_message=user_message,
             requested_content=body.message,
+            requested_conversation_id=body.conversation_id,
         )
         return _stream_persisted_turn(persisted)
     conv_id = str(conversation.id)
@@ -2127,7 +2202,7 @@ async def chat_about_job_stream(
                         )
             except Exception as exc:
                 logger.exception("LLM streaming failed for job %s", job_id)
-                error_text = f"Error: {str(exc)[:200]}"
+                error_text = "Error: generation interrupted. Send a new message to try again."
 
             streamed_text = "".join(streamed_parts)
             status = "completed"
@@ -2189,13 +2264,18 @@ async def chat_about_job_stream(
                     final_citations=final_citations,
                     metadata=metadata,
                 )
+                persisted = _response_for_existing_turn(background_db, user_message=background_db.get(ChatMessage, user_message_id), requested_content=body.message)
+            if persisted.status != status:
+                for event in _persisted_turn_sse_events(persisted):
+                    await event_queue.put(event)
+                return
             await event_queue.put(
                 f"data: {json.dumps({'type': 'meta', 'conversation_id': conv_id, 'branch_id': branch_id, 'request_id': request_id, 'status': status, 'retrieval_status': prepared.retrieval_status, 'citations': [citation.model_dump() for citation in final_citations], 'model_id': prepared.model_id, 'generation': prepared.generation.model_dump(), 'confidence': metadata['confidence'], 'evidence_refs': [reference.model_dump() for reference in evidence_refs], 'suggested_followups': suggested_followups})}\n\n"
             )
 
             await event_queue.put("data: [DONE]\n\n")
-        except Exception:
-            logger.exception("Failed to complete streamed chat turn for conv %s", conv_id)
+        except (Exception, asyncio.CancelledError):
+            logger.warning("Failed to complete streamed chat turn for conv %s", conv_id)
             try:
                 session_factory = get_session_factory()
                 with session_factory() as recovery_db:
@@ -2300,7 +2380,7 @@ async def get_conversation(
 
     return ConversationHistoryOut(
         id=conv.id, job_id=conv.job_id,
-        messages=[_message_out(message).model_dump() for message in rows],
+        messages=[_message_out(message, db).model_dump() for message in rows],
         created_at=conv.created_at, updated_at=conv.updated_at,
     )
 
