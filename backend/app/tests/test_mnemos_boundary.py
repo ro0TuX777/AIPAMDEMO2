@@ -309,7 +309,7 @@ def test_settings_default_to_aipam_owned_mnemos_endpoint(monkeypatch) -> None:
 
     monkeypatch.delenv("MNEMOS_ENABLED", raising=False)
     monkeypatch.delenv("MNEMOS_BASE_URL", raising=False)
-    settings = Settings(aipam_api_token="test-token")
+    settings = Settings(_env_file=None, aipam_api_token="test-token")
 
     assert settings.mnemos_enabled is False
     assert settings.mnemos_base_url == "http://mnemos-service:8700"
