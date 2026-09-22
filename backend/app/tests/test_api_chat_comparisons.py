@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import uuid
 
@@ -7,6 +8,7 @@ import pytest
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import create_engine, event, func, select
 from sqlalchemy.orm import sessionmaker
 
@@ -403,6 +405,244 @@ def test_json_turn_persists_provenance_and_duplicate_returns_same_turn(
     restored_message = restored["branches"][0]["messages"][1]
     assert restored_message["metadata"]["retrieval_status"] == "used"
     assert restored_message["citations"][0]["source_job_id"] == "job-old"
+
+
+def test_stream_replay_revalidates_job_and_immutable_mode(
+    client, monkeypatch
+) -> None:
+    opened = _open_comparison(client)
+    monkeypatch.setattr(
+        chat,
+        "retrieve_historical_findings",
+        lambda **_kwargs: MnemosRetrievalResult(
+            status="no_matches",
+            context="",
+            citations=[],
+        ),
+    )
+    request_id = str(uuid.uuid4())
+    payload = {
+        "message": "private persisted answer",
+        "mode": "mnemos",
+        "conversation_id": opened["conversation_id"],
+        "request_id": request_id,
+    }
+    created = client.post("/jobs/job-1/chat", json=payload)
+    assert created.status_code == 200
+
+    with client.session_factory() as session:
+        session.add(
+            Job(
+                job_id="job-2",
+                status="completed",
+                execution_profile="standard",
+                priority="normal",
+                source_type="pcap",
+                created_at="2026-09-22T00:00:00Z",
+            )
+        )
+        session.commit()
+
+    cross_job = client.post("/jobs/job-2/chat/stream", json=payload)
+    wrong_mode = client.post(
+        "/jobs/job-1/chat/stream",
+        json={**payload, "mode": "baseline"},
+    )
+
+    assert cross_job.status_code == 404
+    assert wrong_mode.status_code == 400
+    for response in (cross_job, wrong_mode):
+        assert "Current-job answer" not in response.text
+        assert "private persisted answer" not in response.text
+
+
+def test_concurrent_json_and_sse_turns_admit_one_and_persist_one_explicit_pair(
+    client, monkeypatch
+) -> None:
+    opened = _open_comparison(client)
+
+    async def scenario() -> tuple[list, list[str]]:
+        retrieval_arrivals = 0
+        retrieval_release = asyncio.Event()
+        llm_entered = asyncio.Event()
+        llm_release = asyncio.Event()
+
+        async def synchronized_retrieval(**_kwargs):
+            nonlocal retrieval_arrivals
+            retrieval_arrivals += 1
+            if retrieval_arrivals == 2:
+                retrieval_release.set()
+            await retrieval_release.wait()
+            return MnemosRetrievalResult(
+                status="no_matches",
+                context="",
+                citations=[],
+            )
+
+        async def blocked_completion(messages, temperature=0.3):
+            client.fake_llm.completion_calls += 1
+            client.fake_llm.completion_inputs.append(messages)
+            llm_entered.set()
+            await llm_release.wait()
+            return "Concurrent winner answer."
+
+        async def blocked_stream(messages, temperature=0.3):
+            client.fake_llm.stream_calls += 1
+            llm_entered.set()
+            await llm_release.wait()
+            yield "Concurrent winner answer."
+
+        monkeypatch.setattr(
+            chat,
+            "retrieve_historical_findings",
+            synchronized_retrieval,
+        )
+        client.fake_llm.chat_completion = blocked_completion
+        client.fake_llm.chat_completion_stream = blocked_stream
+
+        request_ids = [str(uuid.uuid4()), str(uuid.uuid4())]
+        transport = ASGITransport(app=client.app)
+        async with AsyncClient(transport=transport, base_url="http://test") as api:
+            tasks = [
+                asyncio.create_task(
+                    api.post(
+                        f"/jobs/job-1/{route}",
+                        json={
+                            "message": f"Concurrent prompt {index}",
+                            "mode": "mnemos",
+                            "conversation_id": opened["conversation_id"],
+                            "request_id": request_id,
+                        },
+                    )
+                )
+                for index, (route, request_id) in enumerate(
+                    zip(("chat", "chat/stream"), request_ids, strict=True)
+                )
+            ]
+            await asyncio.wait_for(llm_entered.wait(), timeout=2)
+            done, _pending = await asyncio.wait(
+                tasks,
+                timeout=2,
+                return_when=asyncio.FIRST_COMPLETED,
+            )
+            assert len(done) == 1, "the distinct pending turn must be rejected"
+            llm_release.set()
+            responses = await asyncio.gather(*tasks)
+        return responses, request_ids
+
+    responses, request_ids = asyncio.run(scenario())
+
+    assert sorted(response.status_code for response in responses) == [200, 409]
+    assert client.fake_llm.completion_calls + client.fake_llm.stream_calls == 1
+    winner = next(response for response in responses if response.status_code == 200)
+    if winner.headers["content-type"].startswith("application/json"):
+        assert winner.json()["status"] == "completed"
+    else:
+        assert '"status": "completed"' in winner.text
+        assert "data: [DONE]" in winner.text
+
+    with client.session_factory() as session:
+        messages = list(
+            session.scalars(
+                select(ChatMessage)
+                .where(ChatMessage.conversation_id == opened["conversation_id"])
+                .order_by(ChatMessage.sequence)
+            )
+        )
+        assert [message.role for message in messages] == ["user", "assistant"]
+        user, assistant = messages
+        assert user.request_id in request_ids
+        metadata = json.loads(assistant.metadata_json)
+        assert metadata["request_id"] == user.request_id
+        assert metadata["user_message_id"] == user.id
+
+    replay = client.post(
+        "/jobs/job-1/chat",
+        json={
+            "message": user.content,
+            "mode": "mnemos",
+            "conversation_id": opened["conversation_id"],
+            "request_id": user.request_id,
+        },
+    )
+    assert replay.status_code == 200
+    assert replay.json()["status"] == "completed"
+    assert "Concurrent winner answer." in replay.json()["response"]
+
+
+def test_replay_uses_explicit_assistant_origin_instead_of_adjacent_sequence(
+    client,
+) -> None:
+    opened = _open_comparison(client)
+    first_request_id = str(uuid.uuid4())
+    second_request_id = str(uuid.uuid4())
+    with client.session_factory() as session:
+        session.add_all(
+            [
+                ChatMessage(
+                    id="interleaved-user-1",
+                    conversation_id=opened["conversation_id"],
+                    sequence=1,
+                    role="user",
+                    content="First interleaved prompt",
+                    request_id=first_request_id,
+                    created_at="2026-09-22T01:00:00Z",
+                ),
+                ChatMessage(
+                    id="interleaved-user-2",
+                    conversation_id=opened["conversation_id"],
+                    sequence=2,
+                    role="user",
+                    content="Second interleaved prompt",
+                    request_id=second_request_id,
+                    created_at="2026-09-22T01:00:01Z",
+                ),
+                ChatMessage(
+                    id="interleaved-answer-1",
+                    conversation_id=opened["conversation_id"],
+                    sequence=3,
+                    role="assistant",
+                    content="Answer associated with first request",
+                    metadata_json=json.dumps(
+                        {
+                            "status": "completed",
+                            "request_id": first_request_id,
+                            "user_message_id": "interleaved-user-1",
+                        }
+                    ),
+                    created_at="2026-09-22T01:00:02Z",
+                ),
+                ChatMessage(
+                    id="interleaved-answer-2",
+                    conversation_id=opened["conversation_id"],
+                    sequence=4,
+                    role="assistant",
+                    content="Answer associated with second request",
+                    metadata_json=json.dumps(
+                        {
+                            "status": "completed",
+                            "request_id": second_request_id,
+                            "user_message_id": "interleaved-user-2",
+                        }
+                    ),
+                    created_at="2026-09-22T01:00:03Z",
+                ),
+            ]
+        )
+        session.commit()
+
+    replay = client.post(
+        "/jobs/job-1/chat",
+        json={
+            "message": "First interleaved prompt",
+            "mode": "mnemos",
+            "conversation_id": opened["conversation_id"],
+            "request_id": first_request_id,
+        },
+    )
+
+    assert replay.status_code == 200
+    assert replay.json()["response"] == "Answer associated with first request"
 
 
 def test_stream_meta_matches_json_provenance_and_completion_is_persisted_first(

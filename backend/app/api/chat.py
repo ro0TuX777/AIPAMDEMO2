@@ -1403,6 +1403,25 @@ def _find_existing_user_turn(
     )
 
 
+def _validate_turn_conversation(
+    conversation: ChatConversation | None,
+    *,
+    job_id: str,
+    mode: str,
+) -> ChatConversation:
+    if conversation is None or conversation.job_id != job_id:
+        raise HTTPException(status_code=404, detail="conversation not found")
+    if conversation.mode != mode:
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "CONVERSATION_MODE_MISMATCH",
+                "error": "conversation mode does not match request mode",
+            },
+        )
+    return conversation
+
+
 def _reject_parallel_turn(db: Session, conversation_id: str | None) -> None:
     if conversation_id is None:
         return
@@ -1436,13 +1455,23 @@ def _response_for_existing_turn(
                 "error": "request_id is already associated with another message",
             },
         )
-    assistant = db.scalar(
-        select(ChatMessage).where(
+    assistant = None
+    assistants = db.scalars(
+        select(ChatMessage)
+        .where(
             ChatMessage.conversation_id == user_message.conversation_id,
-            ChatMessage.sequence == user_message.sequence + 1,
             ChatMessage.role == "assistant",
         )
+        .order_by(ChatMessage.sequence.desc())
     )
+    for candidate in assistants:
+        candidate_metadata = _json_object(candidate.metadata_json)
+        if candidate_metadata.get("request_id") != user_message.request_id:
+            continue
+        associated_user_id = candidate_metadata.get("user_message_id")
+        if associated_user_id is None or associated_user_id == user_message.id:
+            assistant = candidate
+            break
     branch_id = _conversation_branch_id(db, user_message.conversation_id)
     if assistant is None:
         return ChatResponseBody(
@@ -1479,18 +1508,11 @@ def _resolve_turn_conversation(
 ) -> ChatConversation:
     now = _now_iso()
     if body.conversation_id:
-        conversation = db.get(ChatConversation, body.conversation_id)
-        if conversation is None or conversation.job_id != job_id:
-            raise HTTPException(status_code=404, detail="conversation not found")
-        if conversation.mode != body.mode:
-            raise HTTPException(
-                status_code=400,
-                detail={
-                    "code": "CONVERSATION_MODE_MISMATCH",
-                    "error": "conversation mode does not match request mode",
-                },
-            )
-        return conversation
+        return _validate_turn_conversation(
+            db.get(ChatConversation, body.conversation_id),
+            job_id=job_id,
+            mode=body.mode,
+        )
     if body.mode == "mnemos":
         raise HTTPException(
             status_code=400,
@@ -1511,12 +1533,52 @@ def _resolve_turn_conversation(
     return conversation
 
 
-def _persist_user_turn(
+def _admit_user_turn(
     db: Session,
     *,
-    conversation: ChatConversation,
+    job_id: str,
     body: ChatRequestBody,
-) -> tuple[ChatMessage, bool]:
+) -> tuple[ChatConversation, ChatMessage, bool]:
+    # End preparation's read transaction, then serialize admission on the
+    # conversation. SQLite's BEGIN IMMEDIATE takes the database write lock;
+    # other databases lock the selected conversation row.
+    db.rollback()
+    dialect_name = db.get_bind().dialect.name
+    if dialect_name == "sqlite":
+        db.connection().exec_driver_sql("BEGIN IMMEDIATE")
+
+    try:
+        if body.conversation_id and dialect_name != "sqlite":
+            conversation = _validate_turn_conversation(
+                db.scalar(
+                    select(ChatConversation)
+                    .where(ChatConversation.id == body.conversation_id)
+                    .with_for_update()
+                ),
+                job_id=job_id,
+                mode=body.mode,
+            )
+        else:
+            conversation = _resolve_turn_conversation(
+                db,
+                job_id=job_id,
+                body=body,
+            )
+
+        existing = _find_existing_user_turn(
+            db,
+            conversation_id=conversation.id,
+            request_id=body.request_id,
+        )
+        if existing is not None:
+            db.commit()
+            return conversation, existing, False
+
+        _reject_parallel_turn(db, conversation.id)
+    except Exception:
+        db.rollback()
+        raise
+
     user_message = ChatMessage(
         id=str(uuid.uuid4()),
         conversation_id=conversation.id,
@@ -1527,20 +1589,26 @@ def _persist_user_turn(
     )
     db.add(user_message)
     conversation.updated_at = user_message.created_at
+    conversation_id = conversation.id
     try:
         db.commit()
     except IntegrityError:
         db.rollback()
         existing = _find_existing_user_turn(
             db,
-            conversation_id=conversation.id,
+            conversation_id=conversation_id,
             request_id=body.request_id,
         )
         if existing is None:
             raise
-        return existing, False
+        conversation = _validate_turn_conversation(
+            db.get(ChatConversation, conversation_id),
+            job_id=job_id,
+            mode=body.mode,
+        )
+        return conversation, existing, False
     db.refresh(user_message)
-    return user_message, True
+    return conversation, user_message, True
 
 
 def _assistant_metadata(
@@ -1550,6 +1618,7 @@ def _assistant_metadata(
     evidence_refs: list[EvidenceRefOut],
     suggested_followups: list[str],
     request_id: str | None,
+    user_message_id: str,
     settings: Settings,
     status: str,
 ) -> dict:
@@ -1557,6 +1626,7 @@ def _assistant_metadata(
     return {
         "status": status,
         "request_id": request_id,
+        "user_message_id": user_message_id,
         "retrieval_status": prepared.retrieval_status,
         "citations": [citation.model_dump() for citation in final_citations],
         "model_id": prepared.model_id,
@@ -1577,10 +1647,25 @@ def _persist_assistant_turn(
     db: Session,
     *,
     conversation_id: str,
+    user_message_id: str,
+    request_id: str | None,
     response_text: str,
     final_citations: list[ChatCitation],
     metadata: dict,
 ) -> ChatMessage:
+    origin = db.get(ChatMessage, user_message_id)
+    if (
+        origin is None
+        or origin.conversation_id != conversation_id
+        or origin.role != "user"
+        or origin.request_id != request_id
+    ):
+        raise RuntimeError("assistant origin user does not match the persisted turn")
+    metadata = {
+        **metadata,
+        "request_id": request_id,
+        "user_message_id": user_message_id,
+    }
     assistant = ChatMessage(
         id=str(uuid.uuid4()),
         conversation_id=conversation_id,
@@ -1644,11 +1729,11 @@ async def chat_about_job(
         request_id=body.request_id,
     )
     if existing is not None:
-        conversation = db.get(ChatConversation, existing.conversation_id)
-        if conversation is None or conversation.job_id != job_id:
-            raise HTTPException(status_code=404, detail="conversation not found")
-        if conversation.mode != body.mode:
-            raise HTTPException(status_code=400, detail="conversation mode mismatch")
+        _validate_turn_conversation(
+            db.get(ChatConversation, existing.conversation_id),
+            job_id=job_id,
+            mode=body.mode,
+        )
         return _response_for_existing_turn(
             db,
             user_message=existing,
@@ -1671,10 +1756,9 @@ async def chat_about_job(
         _comparison_error(exc)
 
     _validate_new_request_id(body.request_id)
-    conversation = _resolve_turn_conversation(db, job_id=job_id, body=body)
-    user_message, created = _persist_user_turn(
+    conversation, user_message, created = _admit_user_turn(
         db,
-        conversation=conversation,
+        job_id=job_id,
         body=body,
     )
     if not created:
@@ -1713,12 +1797,15 @@ async def chat_about_job(
         evidence_refs=evidence_refs,
         suggested_followups=suggested_followups,
         request_id=body.request_id,
+        user_message_id=user_message.id,
         settings=settings,
         status=status,
     )
     _persist_assistant_turn(
         db,
         conversation_id=conversation.id,
+        user_message_id=user_message.id,
+        request_id=body.request_id,
         response_text=response_text,
         final_citations=final_citations,
         metadata=metadata,
@@ -1771,6 +1858,11 @@ async def chat_about_job_stream(
         request_id=body.request_id,
     )
     if existing is not None:
+        _validate_turn_conversation(
+            db.get(ChatConversation, existing.conversation_id),
+            job_id=job_id,
+            mode=body.mode,
+        )
         persisted = _response_for_existing_turn(
             db,
             user_message=existing,
@@ -1817,10 +1909,9 @@ async def chat_about_job_stream(
         _comparison_error(exc)
 
     _validate_new_request_id(body.request_id)
-    conversation = _resolve_turn_conversation(db, job_id=job_id, body=body)
-    user_message, created = _persist_user_turn(
+    conversation, user_message, created = _admit_user_turn(
         db,
-        conversation=conversation,
+        job_id=job_id,
         body=body,
     )
     if not created:
@@ -1928,6 +2019,7 @@ async def chat_about_job_stream(
                 evidence_refs=evidence_refs,
                 suggested_followups=suggested_followups,
                 request_id=body.request_id,
+                user_message_id=user_message.id,
                 settings=settings,
                 status=status,
             )
@@ -1936,6 +2028,8 @@ async def chat_about_job_stream(
                 _persist_assistant_turn(
                     background_db,
                     conversation_id=conv_id,
+                    user_message_id=user_message.id,
+                    request_id=body.request_id,
                     response_text=response_text,
                     final_citations=final_citations,
                     metadata=metadata,
