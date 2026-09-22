@@ -6,9 +6,11 @@ import { ChatPanel } from "../components/ChatPanel";
 import type { ChatSendTarget } from "../components/ChatPanel";
 import type { ChatAttempt } from "../components/ChatPanel";
 import { MnemosChatDrawer } from "../components/MnemosChatDrawer";
-import type { ChatComparisonBranch, ChatComparisonGroup, ChatConversation } from "../components/chatTypes";
+import type { ChatConversation } from "../components/chatTypes";
 import {
   api,
+  type ChatComparisonBranch,
+  type ChatComparisonGroup,
   type JobDetail,
   type KBDocumentOut,
   type KBDocType,
@@ -64,6 +66,28 @@ export const ChatPage: React.FC = () => {
   const [mnemosDraft, setMnemosDraft] = useState("");
   const [copiedPrompt, setCopiedPrompt] = useState<{ messageId: string; content: string } | null>(null);
   const [activeAttempt, setActiveAttempt] = useState<ChatAttempt | null>(null);
+  const activeAttemptRef = useRef<ChatAttempt | null>(null);
+  const branchSelectionRef = useRef(0);
+  const pageOwnerRef = useRef({ jobId, rootId: baselineConversation.id, group: comparisonGroup });
+  pageOwnerRef.current = { jobId, rootId: baselineConversation.id, group: comparisonGroup };
+
+  const storeAttempt = useCallback((next: ChatAttempt | null) => {
+    activeAttemptRef.current = next;
+    setActiveAttempt(next);
+  }, []);
+
+  const isCurrentAttempt = useCallback((owner: ChatAttempt) => {
+    const live = pageOwnerRef.current;
+    const current = activeAttemptRef.current;
+    return Boolean(current && owner.jobId === live.jobId && owner.rootConversationId === live.rootId
+      && owner.groupId === live.group?.group_id && owner.generation === pageGenerationRef.current
+      && owner.requestId === current.requestId && owner.selectionToken === current.selectionToken
+      && owner.branchId === current.branchId && owner.conversationId === current.conversationId);
+  }, []);
+
+  const changeAttempt = useCallback((next: ChatAttempt | null, owner: ChatAttempt) => {
+    if (isCurrentAttempt(owner)) storeAttempt(next);
+  }, [isCurrentAttempt, storeAttempt]);
 
   const selectBaselineToken = useCallback((conversationId?: string) => {
     if (conversationId) setBaselineToken(`baseline-${conversationId}`);
@@ -124,8 +148,8 @@ export const ChatPage: React.FC = () => {
     setCopiedPrompt(null);
     setMnemosDraft("");
     setMnemosOpen(false);
-    setActiveAttempt(null);
-  }, [baselineConversation.id, jobId, searchParams, selectBaselineToken, setSearchParams]);
+    storeAttempt(null);
+  }, [baselineConversation.id, jobId, searchParams, selectBaselineToken, setSearchParams, storeAttempt]);
 
   const activeBranch = useMemo<ChatComparisonBranch | null>(() => {
     if (!comparisonGroup) return null;
@@ -151,6 +175,7 @@ export const ChatPage: React.FC = () => {
   }, [ensureComparison]);
 
   const copyToMnemos = useCallback(async (messageId: string, content: string) => {
+    if (activeAttemptRef.current && activeAttemptRef.current.status !== "error") return;
     const group = await ensureComparison();
     if (!group) return;
     if (mnemosDraft.trim() && mnemosDraft !== content && !window.confirm("Replace the unfinished MNEMOS message with the copied question?")) return;
@@ -178,18 +203,6 @@ export const ChatPage: React.FC = () => {
     }
   }, [baselineConversation.id, refreshConversations, searchParams, selectBaselineToken, setSearchParams]);
 
-  const completeBaselineTurn = useCallback((conversationId: string) => {
-    if (baselineConversation.id) return;
-    void api.getConversation(jobId!, conversationId).then(history => {
-      if (baselineConversation.id || !jobId) return;
-      setBaselineConversation(history);
-      const params = new URLSearchParams(searchParams);
-      params.set("conversation", conversationId);
-      setSearchParams(params, { replace: true });
-      void refreshConversations();
-    });
-  }, [baselineConversation.id, jobId, refreshConversations, searchParams, setSearchParams]);
-
   const startNewBaseline = useCallback(() => {
     pageGenerationRef.current += 1;
     selectBaselineToken();
@@ -197,13 +210,14 @@ export const ChatPage: React.FC = () => {
     setCopiedPrompt(null);
     setMnemosDraft("");
     setMnemosOpen(false);
-    setActiveAttempt(null);
+    storeAttempt(null);
     const next = new URLSearchParams(searchParams);
     next.delete("conversation");
     setSearchParams(next, { replace: true });
-  }, [searchParams, selectBaselineToken, setSearchParams]);
+  }, [searchParams, selectBaselineToken, setSearchParams, storeAttempt]);
 
-  const onMnemosChanged = useCallback((next: ChatConversation) => {
+  const onMnemosChanged = useCallback((next: ChatConversation, owner?: ChatAttempt) => {
+    if (!owner || !isCurrentAttempt(owner)) return;
     setComparisonGroup(current => {
       if (!current || !next.id) return current;
       const branchIndex = current.branches.findIndex(branch => branch.conversation_id === next.id);
@@ -212,45 +226,71 @@ export const ChatPage: React.FC = () => {
       branches[branchIndex] = { ...branches[branchIndex], messages: next.messages, updated_at: next.updated_at ?? branches[branchIndex].updated_at };
       return { ...current, branches, updated_at: next.updated_at ?? current.updated_at };
     });
-  }, []);
+  }, [isCurrentAttempt]);
 
-  const prepareMnemosSend = useCallback(async (_message: string, requestId: string): Promise<ChatSendTarget | undefined> => {
+  const prepareMnemosSend = useCallback(async (message: string, requestId: string): Promise<ChatSendTarget | undefined> => {
     if (!jobId || !comparisonGroup || !activeBranch) return undefined;
-    const generation = pageGenerationRef.current;
-    if (!copiedPrompt) return { conversation: { id: activeBranch.conversation_id, job_id: jobId, messages: activeBranch.messages }, branchId: activeBranch.id, selectionToken: activeBranch.id };
+    const live = pageOwnerRef.current;
+    if (live.jobId !== jobId || live.rootId !== baselineConversation.id || live.group?.group_id !== comparisonGroup.group_id) return undefined;
+    const previous = activeAttemptRef.current;
+    if (previous && previous.status !== "error") return undefined;
+    const retry = previous?.requestId === requestId ? previous : null;
+    if (retry && !isCurrentAttempt(retry)) return undefined;
+    let owner: ChatAttempt = retry ? { ...retry, status: "preparing" } : {
+      jobId, rootConversationId: baselineConversation.id, groupId: comparisonGroup.group_id,
+      branchId: copiedPrompt ? undefined : activeBranch.id,
+      conversationId: copiedPrompt ? undefined : activeBranch.conversation_id,
+      sourceMessageId: copiedPrompt?.messageId, prompt: message, requestId,
+      selectionToken: activeBranch.id, generation: pageGenerationRef.current, status: "preparing",
+    };
+    // Admit before the first request so remounts and lost POST responses retain
+    // both the busy state and the idempotency key.
+    branchSelectionRef.current += 1;
+    storeAttempt(owner);
     try {
-      const branch = await api.createComparisonBranch(jobId, comparisonGroup.group_id, copiedPrompt.messageId, requestId);
-      if (generation !== pageGenerationRef.current) return undefined;
-      setComparisonGroup(current => current ? { ...current, active_branch_id: branch.id, branches: [...current.branches.filter(item => item.id !== branch.id), branch] } : current);
-      setCopiedPrompt(null);
-      setActiveAttempt({
-        rootConversationId: baselineConversation.id, groupId: comparisonGroup.group_id,
-        branchId: branch.id, conversationId: branch.conversation_id,
-        sourceMessageId: copiedPrompt.messageId, prompt: copiedPrompt.content,
-        requestId, selectionToken: branch.id, generation: pageGenerationRef.current, status: "preparing",
-      });
-      try {
-        const selected = await api.selectComparisonBranch(jobId, comparisonGroup.group_id, branch.id);
-        if (generation !== pageGenerationRef.current) return undefined;
-        setComparisonGroup(selected);
-      } catch {
-        // The branch POST is authoritative and idempotent by request ID. Keep
-        // its owner selected locally so this turn can stream and later recover.
+      let branch = live.group.branches.find(item => item.id === owner.branchId);
+      if (owner.sourceMessageId && !owner.branchId) {
+        const createdBranch = await api.createComparisonBranch(jobId, comparisonGroup.group_id, owner.sourceMessageId, requestId);
+        if (!isCurrentAttempt(owner)) return undefined;
+        branch = createdBranch;
+        owner = { ...owner, branchId: branch.id, conversationId: branch.conversation_id, selectionToken: branch.id };
+        storeAttempt(owner);
+        setComparisonGroup(current => current ? { ...current, active_branch_id: createdBranch.id, branches: [...current.branches.filter(item => item.id !== createdBranch.id), createdBranch] } : current);
+        setCopiedPrompt(null);
+        try {
+          const selected = await api.selectComparisonBranch(jobId, comparisonGroup.group_id, branch.id);
+          if (!isCurrentAttempt(owner)) return undefined;
+          setComparisonGroup(selected);
+        } catch {
+          // The POST is authoritative. Retain its owner if selection persistence
+          // fails; subsequent retries must not create another branch.
+        }
       }
-      if (generation !== pageGenerationRef.current) return undefined;
-      return { conversation: { id: branch.conversation_id, job_id: jobId, messages: branch.messages }, branchId: branch.id, selectionToken: branch.id };
+      if (!branch || !isCurrentAttempt(owner)) return undefined;
+      return { conversation: { id: branch.conversation_id, job_id: jobId, messages: branch.messages }, branchId: branch.id, selectionToken: branch.id, attempt: owner };
     } catch {
+      changeAttempt({ ...owner, status: "error" }, owner);
       return undefined;
     }
-  }, [activeBranch, comparisonGroup, copiedPrompt, jobId]);
+  }, [activeBranch, baselineConversation.id, changeAttempt, comparisonGroup, copiedPrompt, isCurrentAttempt, jobId, storeAttempt]);
 
-  const completeMnemosTurn = useCallback((conversationId: string) => {
-    setComparisonGroup(current => {
-      const branch = current?.branches.find(item => item.conversation_id === conversationId);
-      if (!current || !branch) return current;
-      return { ...current, active_branch_id: branch.id };
-    });
-  }, []);
+  const selectMnemosBranch = useCallback(async (branchId: string) => {
+    if (!jobId || !comparisonGroup || (activeAttemptRef.current && activeAttemptRef.current.status !== "error")) return;
+    const generation = pageGenerationRef.current;
+    const selection = ++branchSelectionRef.current;
+    const rootId = baselineConversation.id;
+    const groupId = comparisonGroup.group_id;
+    storeAttempt(null);
+    // Keep the controlled selector responsive while persistence is pending.
+    setComparisonGroup(current => current ? { ...current, active_branch_id: branchId } : current);
+    try {
+      const selected = await api.selectComparisonBranch(jobId, groupId, branchId);
+      const live = pageOwnerRef.current;
+      if (generation !== pageGenerationRef.current || selection !== branchSelectionRef.current
+        || jobId !== live.jobId || rootId !== live.rootId || groupId !== live.group?.group_id) return;
+      setComparisonGroup(selected);
+    } catch { /* Keep the user's local selection when persistence is unavailable. */ }
+  }, [baselineConversation.id, comparisonGroup, jobId, storeAttempt]);
 
   // ── KB state ──
   const [kbDocs, setKbDocs] = useState<KBDocumentOut[]>([]);
@@ -484,7 +524,6 @@ export const ChatPage: React.FC = () => {
                 onCopyToMnemos={copyToMnemos}
                 onRetry={() => {}}
                 onNewConversation={startNewBaseline}
-                onTurnComplete={completeBaselineTurn}
               />
             </div>
           </div>
@@ -498,15 +537,15 @@ export const ChatPage: React.FC = () => {
               draft={mnemosDraft}
               onDraftChange={setMnemosDraft}
               onClose={() => setMnemosOpen(false)}
-              onBranchChange={branchId => { if (comparisonGroup) void api.selectComparisonBranch(jobId, comparisonGroup.group_id, branchId).then(setComparisonGroup); }}
+              onBranchChange={branchId => void selectMnemosBranch(branchId)}
               onBeforeSend={prepareMnemosSend}
               onConversationChanged={onMnemosChanged}
-              onTurnComplete={completeMnemosTurn}
               onRetry={() => {}}
               returnFocusRef={mnemosToggleRef}
               pendingCopiedSource={copiedPrompt?.messageId}
               attempt={activeAttempt}
-              onAttemptChange={setActiveAttempt}
+              onAttemptChange={changeAttempt}
+              isCurrentAttempt={isCurrentAttempt}
             />
           )}
 

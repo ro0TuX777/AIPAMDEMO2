@@ -12,7 +12,7 @@ export interface ChatPanelProps {
   mode: ChatMode;
   onCopyToMnemos: (messageId: string, content: string) => void;
   onRetry: (requestId: string) => void;
-  onConversationChanged: (conversation: ChatConversation) => void;
+  onConversationChanged: (conversation: ChatConversation, owner?: ChatAttempt) => void;
   initialMessage?: string;
   contextHint?: string;
   onClose?: () => void;
@@ -20,21 +20,24 @@ export interface ChatPanelProps {
   onInputChange?: (value: string) => void;
   inputLabel?: string;
   sendLabel?: string;
-  /** Creates a copied comparison branch immediately before its first request. */
+  /** Admits a page-owned attempt and prepares copied branches before a request. */
   onBeforeSend?: (message: string, requestId: string) => Promise<ChatSendTarget | undefined>;
   onTurnComplete?: (conversationId: string) => void;
   onNewConversation?: () => void;
   attempt?: ChatAttempt | null;
-  onAttemptChange?: (attempt: ChatAttempt | null) => void;
+  onAttemptChange?: (attempt: ChatAttempt | null, owner: ChatAttempt) => void;
+  isCurrentAttempt?: (owner: ChatAttempt) => boolean;
 }
 
 export interface ChatSendTarget {
   conversation: ChatConversation;
   branchId?: string;
   selectionToken?: string | number;
+  attempt?: ChatAttempt;
 }
 
 export interface ChatAttempt {
+  jobId: string;
   rootConversationId?: string;
   groupId?: string;
   branchId?: string;
@@ -70,6 +73,7 @@ interface RequestOwner {
   prompt: string;
   requestId: string;
   selectionToken: string | number | undefined;
+  attempt: ChatAttempt;
 }
 
 export function ChatPanel(props: ChatPanelInputProps) {
@@ -82,10 +86,13 @@ export function ChatPanel(props: ChatPanelInputProps) {
   const onCopyToMnemos = controlled ? props.onCopyToMnemos : () => {};
   const onRetry = controlled ? props.onRetry : () => {};
   const controlledInput = controlled && props.inputValue !== undefined;
+  const inputValue = controlled ? props.inputValue : undefined;
+  const onInputChange = controlled ? props.onInputChange : undefined;
   const onBeforeSend = controlled ? props.onBeforeSend : undefined;
   const onTurnComplete = controlled ? props.onTurnComplete : undefined;
   const attempt = controlled ? props.attempt : undefined;
   const onAttemptChange = controlled ? props.onAttemptChange : undefined;
+  const isCurrentAttempt = controlled ? props.isCurrentAttempt : undefined;
   const [input, setInput] = useState("");
   const [loadingGeneration, setLoadingGeneration] = useState<number | null>(null);
   const [failure, setFailure] = useState<{ requestId: string; generation: number } | null>(null);
@@ -103,10 +110,12 @@ export function ChatPanel(props: ChatPanelInputProps) {
     messagesRef.current = conversation.messages;
   }
   const selectionGeneration = selectionGenerationRef.current;
-  const isLoading = loadingGeneration === selectionGeneration;
+  const isLoading = onAttemptChange
+    ? Boolean(attempt && attempt.status !== "error")
+    : loadingGeneration === selectionGeneration;
   const activeFailure = attempt?.status === "error" && attempt.selectionToken === selectionToken
     ? { requestId: attempt.requestId, generation: selectionGeneration }
-    : failure?.generation === selectionGeneration ? failure : null;
+    : !onAttemptChange && failure?.generation === selectionGeneration ? failure : null;
   const initialContextHandled = useRef(false);
 
   useEffect(() => {
@@ -122,26 +131,30 @@ export function ChatPanel(props: ChatPanelInputProps) {
     setFailure(null);
   }, [selectionGeneration]);
 
-  const emit = useCallback((originGeneration: number, messages: ChatMessage[], id = selectedConversationRef.current.id) => {
-    const selected = selectedConversationRef.current;
+  const isCurrentSelection = useCallback((originGeneration: number, requestId?: string) => {
     if (controlled && selectionGenerationRef.current !== originGeneration) return false;
-    messagesRef.current = messages;
-    onConversationChanged({ ...selected, ...(id ? { id } : {}), updated_at: new Date().toISOString(), messages });
-    return true;
-  }, [controlled, onConversationChanged]);
+    const owner = requestId ? requestOwnersRef.current.get(requestId)?.attempt : undefined;
+    return !isCurrentAttempt || Boolean(owner && isCurrentAttempt(owner));
+  }, [controlled, isCurrentAttempt]);
 
-  const isCurrentSelection = useCallback((originGeneration: number) => (
-    !controlled || selectionGenerationRef.current === originGeneration
-  ), [controlled]);
+  const emit = useCallback((originGeneration: number, messages: ChatMessage[], id = selectedConversationRef.current.id, requestId?: string) => {
+    const selected = selectedConversationRef.current;
+    if (!isCurrentSelection(originGeneration, requestId)) return false;
+    messagesRef.current = messages;
+    onConversationChanged({ ...selected, ...(id ? { id } : {}), updated_at: new Date().toISOString(), messages }, requestId ? requestOwnersRef.current.get(requestId)?.attempt : undefined);
+    return true;
+  }, [isCurrentSelection, onConversationChanged]);
 
   const updateAssistant = useCallback((originGeneration: number, requestId: string, update: (message: ChatMessage) => ChatMessage) => {
-    emit(originGeneration, messagesRef.current.map(message => message.request_id === requestId && message.role === "assistant" ? update(message) : message));
+    emit(originGeneration, messagesRef.current.map(message => message.request_id === requestId && message.role === "assistant" ? update(message) : message), undefined, requestId);
   }, [emit]);
 
   const complete = useCallback(async (originGeneration: number, requestId: string, terminal: ChatStreamTerminalMetadata, content: string) => {
     const owner = requestOwnersRef.current.get(requestId);
-    if (!owner || !isCurrentSelection(originGeneration)) return;
+    if (!owner || !isCurrentSelection(originGeneration, requestId)) return;
     if (owner.conversationId && owner.conversationId !== terminal.conversation_id) return;
+    if (terminal.request_id && terminal.request_id !== requestId) return;
+    if (owner.branchId && terminal.branch_id && owner.branchId !== terminal.branch_id) return;
     // An id-less draft acquires its server identity only while its original
     // controlled selection still owns this response.
     owner.conversationId = terminal.conversation_id;
@@ -151,30 +164,43 @@ export function ChatPanel(props: ChatPanelInputProps) {
       confidence: terminal.confidence ?? null, evidence_refs: terminal.evidence_refs ?? [],
       suggested_followups: terminal.suggested_followups ?? [],
     };
+    let finishedAttempt = { ...owner.attempt, conversationId: terminal.conversation_id };
     try {
       const history = await api.getConversation(jobId, terminal.conversation_id);
-      emit(originGeneration, history.messages.map(message => ({ ...message, saved: true })), terminal.conversation_id);
+      if (!emit(originGeneration, history.messages.map(message => ({ ...message, saved: true })), terminal.conversation_id, requestId)) return;
+      finishedAttempt = {
+        ...finishedAttempt,
+        userMessageId: history.messages.find(message => message.request_id === requestId && message.role === "user")?.id ?? finishedAttempt.userMessageId,
+        assistantMessageId: history.messages.find(message => message.request_id === requestId && message.role === "assistant")?.id ?? finishedAttempt.assistantMessageId,
+      };
     } catch {
       emit(originGeneration, messagesRef.current.map(message => message.request_id === requestId && message.role === "assistant"
-        ? { ...message, content, citations: terminal.citations, metadata } : message), terminal.conversation_id);
+        ? { ...message, content, citations: terminal.citations, metadata } : message), terminal.conversation_id, requestId);
     }
-    if (isCurrentSelection(originGeneration)) onTurnComplete?.(terminal.conversation_id);
-  }, [emit, isCurrentSelection, jobId, onTurnComplete]);
+    if (!isCurrentSelection(originGeneration, requestId)) return;
+    if (terminal.status === "error") {
+      setFailure({ requestId, generation: originGeneration });
+      onAttemptChange?.({ ...finishedAttempt, status: "error" }, owner.attempt);
+    } else onAttemptChange?.(null, owner.attempt);
+    onTurnComplete?.(terminal.conversation_id);
+  }, [emit, isCurrentSelection, jobId, onAttemptChange, onTurnComplete]);
 
   const handleSend = useCallback(async (messageText?: string, retryRequestId?: string) => {
-    const text = messageText || (controlledInput ? props.inputValue ?? "" : input).trim();
+    const text = messageText || (controlledInput ? inputValue ?? "" : input).trim();
     if (!text || isLoading || preparingRef.current) return;
     const requestId = retryRequestId ?? newId();
     let originGeneration = selectionGeneration;
     let targetConversation = conversation;
     let targetBranchId: string | undefined;
-    if (onBeforeSend && !retryRequestId) {
+    let admittedAttempt = retryRequestId && attempt?.requestId === retryRequestId ? attempt : undefined;
+    if (onBeforeSend) {
       preparingRef.current = true;
       try {
         const prepared = await onBeforeSend(text, requestId);
         if (!prepared) return;
         targetConversation = prepared.conversation;
         targetBranchId = prepared.branchId;
+        admittedAttempt = prepared.attempt;
         messagesRef.current = targetConversation.messages;
         selectedConversationRef.current = targetConversation;
         if (prepared.selectionToken !== undefined && selectionTokenRef.current !== prepared.selectionToken) {
@@ -188,26 +214,24 @@ export function ChatPanel(props: ChatPanelInputProps) {
       }
     }
     const timestamp = new Date().toISOString();
-    requestOwnersRef.current.set(requestId, {
-      conversationId: targetConversation.id,
-      branchId: targetBranchId,
-      prompt: text,
-      requestId,
-      selectionToken: selectionTokenRef.current,
-    });
-    const existingAttempt = retryRequestId && attempt?.requestId === retryRequestId ? attempt : null;
+    const existingAttempt = retryRequestId && admittedAttempt?.userMessageId && admittedAttempt.assistantMessageId ? admittedAttempt : null;
     const nextSequence = targetConversation.messages.reduce((highest, message) => Math.max(highest, message.sequence), 0) + 1;
     const userMessage: ChatMessage = { id: existingAttempt?.userMessageId ?? newId(), sequence: nextSequence, role: "user", content: text, citations: [], metadata: null, request_id: requestId, timestamp, saved: false };
     const assistantMessage: ChatMessage = { id: existingAttempt?.assistantMessageId ?? newId(), sequence: nextSequence + 1, role: "assistant", content: "", citations: [], metadata: { status: "pending" }, request_id: requestId, timestamp, saved: false };
-    if (!existingAttempt) emit(originGeneration, [...targetConversation.messages, userMessage, assistantMessage], targetConversation.id);
     const currentAttempt: ChatAttempt = {
-      ...(attempt ?? { prompt: text, requestId, selectionToken: selectionToken ?? "legacy", generation: originGeneration, status: "preparing" }),
-      conversationId: targetConversation.id, branchId: targetBranchId ?? attempt?.branchId, prompt: text, requestId,
-      selectionToken: selectionTokenRef.current ?? "legacy", generation: originGeneration,
+      ...(admittedAttempt ?? { jobId, prompt: text, requestId, selectionToken: selectionToken ?? "legacy", generation: originGeneration, status: "preparing" }),
+      conversationId: targetConversation.id, branchId: targetBranchId ?? admittedAttempt?.branchId, prompt: text, requestId,
+      selectionToken: selectionTokenRef.current ?? "legacy",
       userMessageId: userMessage.id, assistantMessageId: assistantMessage.id, status: "streaming",
     };
-    onAttemptChange?.(currentAttempt);
-    if (controlledInput) props.onInputChange?.(""); else setInput("");
+    requestOwnersRef.current.set(requestId, {
+      conversationId: targetConversation.id, branchId: currentAttempt.branchId, prompt: text,
+      requestId, selectionToken: selectionTokenRef.current, attempt: currentAttempt,
+    });
+    if (!isCurrentSelection(originGeneration, requestId)) return;
+    onAttemptChange?.(currentAttempt, admittedAttempt ?? currentAttempt);
+    if (!existingAttempt) emit(originGeneration, [...targetConversation.messages, userMessage, assistantMessage], targetConversation.id, requestId);
+    if (controlledInput) onInputChange?.(""); else setInput("");
     setFailure(null);
     setLoadingGeneration(originGeneration);
     const body = { message: text, conversation_id: targetConversation.id, context_hint: contextHint, mode, request_id: requestId };
@@ -228,17 +252,13 @@ export function ChatPanel(props: ChatPanelInputProps) {
         if (event.type === "replace") content = event.content;
         if (event.type === "error") {
           content = `Error: ${event.content || event.error || "Failed to get response"}`;
-          if (isCurrentSelection(originGeneration)) {
+          if (isCurrentSelection(originGeneration, requestId)) {
             setFailure({ requestId, generation: originGeneration });
           }
         }
-        if (event.type !== "error") updateAssistant(originGeneration, requestId, message => ({ ...message, content }));
+        updateAssistant(originGeneration, requestId, message => ({ ...message, content }));
       });
       await complete(originGeneration, requestId, terminal, content);
-      if (isCurrentSelection(originGeneration)) onAttemptChange?.(null);
-      if (terminal.status === "error" && isCurrentSelection(originGeneration)) {
-        setFailure({ requestId, generation: originGeneration });
-      }
     } catch (error) {
       if (mode === "baseline" && error instanceof ChatStreamError && !error.responseReceived) {
         try {
@@ -246,24 +266,24 @@ export function ChatPanel(props: ChatPanelInputProps) {
         } catch (fallbackError) {
           const message = `Error: ${errorMessage(fallbackError)}`;
           updateAssistant(originGeneration, requestId, assistant => ({ ...assistant, content: message, metadata: { status: "error" } }));
-          if (isCurrentSelection(originGeneration)) {
+          if (isCurrentSelection(originGeneration, requestId)) {
             setFailure({ requestId, generation: originGeneration });
-            onAttemptChange?.({ ...currentAttempt, status: "error" });
+            onAttemptChange?.({ ...currentAttempt, status: "error" }, currentAttempt);
           }
         }
       } else {
         const message = `Error: ${errorMessage(error)}`;
         const unavailable = mode === "mnemos" && error instanceof ChatStreamError && error.code === "MNEMOS_UNAVAILABLE";
         updateAssistant(originGeneration, requestId, assistant => ({ ...assistant, content: message, metadata: { status: "error", ...(unavailable ? { retrieval_status: "unavailable" } : {}) } }));
-        if (isCurrentSelection(originGeneration)) {
+        if (isCurrentSelection(originGeneration, requestId)) {
           setFailure({ requestId, generation: originGeneration });
-          onAttemptChange?.({ ...currentAttempt, status: "error" });
+          onAttemptChange?.({ ...currentAttempt, status: "error" }, currentAttempt);
         }
       }
     } finally {
-      if (isCurrentSelection(originGeneration)) setLoadingGeneration(null);
+      if (!controlled || selectionGenerationRef.current === originGeneration) setLoadingGeneration(null);
     }
-  }, [attempt, complete, contextHint, controlledInput, conversation, emit, input, isCurrentSelection, isLoading, jobId, mode, onAttemptChange, onBeforeSend, props.inputValue, props.onInputChange, selectionGeneration, updateAssistant]);
+  }, [attempt, complete, contextHint, controlledInput, conversation, emit, input, isCurrentSelection, isLoading, jobId, mode, onAttemptChange, onBeforeSend, inputValue, onInputChange, selectionGeneration, updateAssistant]);
 
   useEffect(() => {
     if (initialMessage && controlled && !initialContextHandled.current) {
@@ -284,15 +304,15 @@ export function ChatPanel(props: ChatPanelInputProps) {
 
   const startNewConversation = () => { initialContextHandled.current = false; if (controlled) props.onNewConversation?.(); onConversationChanged(emptyConversation(jobId)); };
 
-  return <div className="flex flex-col h-full bg-slate-900 rounded-lg border border-slate-700">
-    <div className="flex items-center justify-between px-4 py-3 border-b border-slate-700">
+  return <div className="flex min-h-0 flex-col h-full overflow-hidden bg-slate-900 rounded-lg border border-slate-700">
+    <div className="flex shrink-0 items-center justify-between px-4 py-3 border-b border-slate-700">
       <span className="text-slate-100 font-semibold">{mode === "mnemos" ? "MNEMOS comparison" : "AI Chat"}</span>
       <div className="flex items-center gap-2">
         {conversation.messages.length > 0 && <><button onClick={startNewConversation} className="text-slate-400 hover:text-slate-50 transition-colors text-sm px-2 py-1 rounded hover:bg-slate-700">+ New</button><button onClick={exportToMarkdown} className="text-slate-400 hover:text-slate-50 transition-colors text-sm px-2 py-1 rounded hover:bg-slate-700">Export</button></>}
         {onClose && <button onClick={onClose} className="text-slate-400 hover:text-slate-50 transition-colors">×</button>}
       </div>
     </div>
-    <div className="flex-1 overflow-y-auto p-4 space-y-4">
+    <div className="min-h-0 flex-1 overflow-y-auto p-4 space-y-4">
       {conversation.messages.length === 0 && <div className="text-slate-500 text-center py-8"><p className="text-base mb-4">Ask questions about this PCAP analysis</p><div className="grid grid-cols-1 sm:grid-cols-2 gap-2 max-w-xl mx-auto text-left">{["Summarize the key findings and their severity", "What are the highest-severity alerts and which hosts triggered them?", "Check for signs of lateral movement between internal hosts", "Identify any command-and-control (C2) communication patterns", "Is there evidence of data exfiltration?", "Which hosts have the most suspicious activity?"].map(question => <button key={question} onClick={() => void handleSend(question)} disabled={isLoading} className="px-3 py-2 rounded-lg border border-slate-700 bg-slate-800/50 hover:bg-slate-700/60 text-slate-300 text-xs text-left disabled:opacity-50">{question}</button>)}</div></div>}
       {conversation.messages.map(message => <div key={message.id} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}><div className={`max-w-[80%] rounded-lg px-4 py-2 ${message.role === "user" ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-100"}`}>
         <p className="whitespace-pre-wrap">{message.content}</p>
@@ -304,6 +324,6 @@ export function ChatPanel(props: ChatPanelInputProps) {
       {mode === "mnemos" && activeFailure && <button type="button" onClick={() => { const owner = requestOwnersRef.current.get(activeFailure.requestId); setFailure(null); onRetry(activeFailure.requestId); void handleSend(owner?.prompt ?? attempt?.prompt, activeFailure.requestId); }} className="text-sm text-amber-300 underline underline-offset-2">Retry MNEMOS</button>}
       <div ref={messagesEndRef} />
     </div>
-    <div className="p-4 border-t border-slate-700"><div className="flex gap-2"><input type="text" aria-label={controlled ? props.inputLabel : undefined} value={controlledInput ? props.inputValue : input} onChange={event => controlledInput ? props.onInputChange?.(event.target.value) : setInput(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void handleSend(); } }} placeholder="Ask about the findings..." className="flex-1 bg-slate-800 text-slate-100 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" disabled={isLoading} /><button onClick={() => void handleSend()} disabled={isLoading || !(controlledInput ? props.inputValue : input)?.trim()} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50">{controlled ? props.sendLabel ?? "Send" : "Send"}</button></div></div>
+    <div className="shrink-0 p-4 border-t border-slate-700"><div className="flex gap-2"><input type="text" aria-label={controlled ? props.inputLabel : undefined} value={controlledInput ? props.inputValue : input} onChange={event => controlledInput ? props.onInputChange?.(event.target.value) : setInput(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void handleSend(); } }} placeholder="Ask about the findings..." className="min-w-0 flex-1 bg-slate-800 text-slate-100 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" disabled={isLoading} /><button onClick={() => void handleSend()} disabled={isLoading || !(controlledInput ? props.inputValue : input)?.trim()} className="shrink-0 bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50">{controlled ? props.sendLabel ?? "Send" : "Send"}</button></div></div>
   </div>;
 }
