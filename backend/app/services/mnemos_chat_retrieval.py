@@ -60,7 +60,7 @@ async def retrieve_historical_findings(
         logger.exception("MNEMOS historical-finding client configuration failed")
         return _empty_result("error")
     if client is None:
-        return _empty_result("unavailable")
+        return _empty_result("error")
 
     search_limit = min(max(top_k * 4, top_k), _MAX_SEARCH_HITS)
     try:
@@ -75,7 +75,7 @@ async def retrieve_historical_findings(
         return _empty_result("error")
 
     if hits is None:
-        return _empty_result("unavailable")
+        return _empty_result("error")
     if not hits or top_k <= 0:
         return _empty_result("no_matches")
 

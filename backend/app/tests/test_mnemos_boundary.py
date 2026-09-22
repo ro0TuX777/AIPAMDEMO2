@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+import hashlib
+
+import pytest
+
 
 class _Response:
     def __init__(self, payload: dict, status_code: int = 200) -> None:
@@ -53,28 +57,110 @@ def test_search_returns_evidence_hits_from_a_healthy_mnemos_service() -> None:
     }
 
 
-def test_search_returns_none_when_mnemos_is_unavailable() -> None:
-    """AIPAM must distinguish an unavailable MNEMOS service from an empty result set."""
-    from backend.app.mnemos_boundary import MnemosBoundaryClient
+def test_search_raises_when_mnemos_is_unavailable() -> None:
+    """Transport failure must be a protocol error, not an empty search."""
+    from backend.app.mnemos_boundary import MnemosBoundaryClient, MnemosBoundaryError
 
     def request(method: str, url: str, **kwargs):
         raise ConnectionError("service unavailable")
 
     client = MnemosBoundaryClient("http://mnemos-service:8700", request=request)
 
-    assert client.search("recent findings") is None
+    with pytest.raises(MnemosBoundaryError):
+        client.search("recent findings")
 
 
 def test_search_rejects_healthy_payload_without_a_results_list() -> None:
     """A malformed success must not be mistaken for a valid empty search."""
-    from backend.app.mnemos_boundary import MnemosBoundaryClient
+    from backend.app.mnemos_boundary import MnemosBoundaryClient, MnemosBoundaryError
 
     client = MnemosBoundaryClient(
         "http://mnemos",
         request=lambda *args, **kwargs: _Response({"status": "healthy"}),
     )
 
-    assert client.search("confirmed C2") is None
+    with pytest.raises(MnemosBoundaryError):
+        client.search("confirmed C2")
+
+
+def test_search_returns_empty_only_for_a_healthy_empty_results_list() -> None:
+    from backend.app.mnemos_boundary import MnemosBoundaryClient
+
+    client = MnemosBoundaryClient(
+        "http://mnemos",
+        request=lambda *args, **kwargs: _Response(
+            {"status": "healthy", "results": []}
+        ),
+    )
+
+    assert client.search("confirmed C2") == []
+
+
+@pytest.mark.parametrize(
+    "response",
+    [
+        _Response({"status": "degraded", "error": "warming"}),
+        _Response({"detail": "unauthorized"}, status_code=401),
+    ],
+)
+def test_search_raises_for_unhealthy_or_http_error_responses(response) -> None:
+    from backend.app.mnemos_boundary import MnemosBoundaryClient, MnemosBoundaryError
+
+    client = MnemosBoundaryClient(
+        "http://mnemos",
+        request=lambda *args, **kwargs: response,
+    )
+
+    with pytest.raises(MnemosBoundaryError):
+        client.search("confirmed C2")
+
+
+@pytest.mark.parametrize("failure", [TimeoutError("timed out"), ConnectionError("refused")])
+def test_search_wraps_transport_failures_in_boundary_error(failure) -> None:
+    from backend.app.mnemos_boundary import MnemosBoundaryClient, MnemosBoundaryError
+
+    def request(*args, **kwargs):
+        raise failure
+
+    client = MnemosBoundaryClient("http://mnemos", request=request)
+
+    with pytest.raises(MnemosBoundaryError):
+        client.search("confirmed C2")
+
+
+def test_search_wraps_non_object_json_as_boundary_error() -> None:
+    from backend.app.mnemos_boundary import MnemosBoundaryClient, MnemosBoundaryError
+
+    client = MnemosBoundaryClient(
+        "http://mnemos",
+        request=lambda *args, **kwargs: _Response(["not", "an", "object"]),
+    )
+
+    with pytest.raises(MnemosBoundaryError):
+        client.search("confirmed C2")
+
+
+@pytest.mark.parametrize(
+    "raw_hit",
+    [
+        "not an object",
+        {"score": 0.9},
+        {"engram": {"content": "missing metadata"}, "score": 0.9},
+        {"engram": {"content": "bad score", "metadata": {}}, "score": "high"},
+    ],
+)
+def test_search_rejects_malformed_items_in_nonempty_results(raw_hit) -> None:
+    from backend.app.mnemos_boundary import MnemosBoundaryClient, MnemosBoundaryError
+
+    client = MnemosBoundaryClient(
+        "http://mnemos",
+        request=lambda *args, **kwargs: _Response(
+            {"status": "healthy", "results": [raw_hit]}
+        ),
+    )
+
+    with pytest.raises(MnemosBoundaryError):
+        client.search("confirmed C2")
 
 
 def test_index_returns_the_service_count_only_after_a_healthy_response() -> None:
@@ -129,8 +215,12 @@ def test_confirmed_findings_dual_write_to_mnemos_without_removing_local_memory(m
             {
                 "finding_id": "F-1",
                 "analyst_status": "confirmed",
-                "classification": "C2",
+                "title": "C2 callback",
                 "severity": "high",
+                "category": "command_and_control",
+                "sensor": "c2_fusion",
+                "summary": "Beacon every 60 seconds",
+                "evidence_json": '{"dest_ip":"203.0.113.10","interval":60}',
             },
             {
                 "finding_id": "F-2",
@@ -143,10 +233,18 @@ def test_confirmed_findings_dual_write_to_mnemos_without_removing_local_memory(m
 
     assert indexed == 1
     assert len(local.documents) == 1
+    expected_content = (
+        "Title: C2 callback\n"
+        "Severity: high\n"
+        "Category: command_and_control\n"
+        "Sensor: c2_fusion\n"
+        "Summary: Beacon every 60 seconds\n"
+        'Evidence: {"dest_ip":"203.0.113.10","interval":60}'
+    )
     assert mnemos.documents == [
         {
             "id": "finding:job-1:F-1",
-            "content": "Classification: C2\nSeverity: high",
+            "content": expected_content,
             "source": "aipam.forensic_memory",
             "neuro_tags": ["forensic_finding", "confirmed"],
             "metadata": {
@@ -154,7 +252,9 @@ def test_confirmed_findings_dual_write_to_mnemos_without_removing_local_memory(m
                 "job_id": "job-1",
                 "finding_id": "F-1",
                 "project_id": "project-1",
-                "content_sha256": "4c79e73570ca632cbf2f19832943930741eb1ecc19d161210eb1c69f7b0b1390",
+                "content_sha256": hashlib.sha256(
+                    expected_content.encode("utf-8")
+                ).hexdigest(),
             },
         }
     ]

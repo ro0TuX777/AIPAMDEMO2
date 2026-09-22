@@ -126,14 +126,63 @@ def test_stable_document_uses_finding_identity_project_and_content_hash(session)
     }
 
 
-def test_stable_document_preserves_missing_project_as_empty_metadata(session) -> None:
+def test_stable_document_preserves_missing_project_as_null_metadata(session) -> None:
     from backend.app.forensic_memory import mnemos_document_for_finding
 
     add_job(session, "job-old")
     finding = add_finding(session, "job-old", "F-2")
     session.flush()
 
-    assert mnemos_document_for_finding(finding, project_id=None)["metadata"]["project_id"] == ""
+    assert mnemos_document_for_finding(finding, project_id=None)["metadata"]["project_id"] is None
+
+
+def test_dual_write_and_reconciliation_use_the_same_canonical_document(
+    session, monkeypatch
+) -> None:
+    from backend.app import forensic_memory
+
+    add_job(session, "job-old")
+    finding = add_finding(session, "job-old", "F-2")
+    session.flush()
+    expected = forensic_memory.mnemos_document_for_finding(
+        finding,
+        project_id=None,
+    )
+
+    class LocalCollection:
+        def upsert(self, **kwargs) -> None:
+            pass
+
+    class Mnemos:
+        def __init__(self) -> None:
+            self.documents: list[dict] = []
+
+        def index(self, documents: list[dict]) -> int:
+            self.documents.extend(documents)
+            return len(documents)
+
+    mnemos = Mnemos()
+    monkeypatch.setattr(forensic_memory, "get_memory_collection", LocalCollection)
+    monkeypatch.setattr("backend.app.mnemos_boundary.get_mnemos_client", lambda: mnemos)
+
+    forensic_memory.store_findings(
+        "job-old",
+        None,
+        [
+            {
+                "finding_id": "F-2",
+                "title": "C2 callback",
+                "severity": "high",
+                "category": "command_and_control",
+                "sensor": "c2_fusion",
+                "summary": "Beacon every 60 seconds",
+                "evidence_json": '{"dest_ip":"203.0.113.10","interval":60}',
+                "analyst_status": "confirmed",
+            }
+        ],
+    )
+
+    assert mnemos.documents == [expected]
 
 
 def test_retrieval_excludes_current_or_unconfirmed_or_missing_sources(session, monkeypatch) -> None:
@@ -210,8 +259,8 @@ def test_retrieval_uses_no_project_assigned_without_fabricating_project(session,
 @pytest.mark.parametrize(
     ("client", "expected_status"),
     [
-        (None, "unavailable"),
-        (FakeMnemos(None), "unavailable"),
+        (None, "error"),
+        (FakeMnemos(None), "error"),
         (FakeMnemos([]), "no_matches"),
         (FakeMnemos(RuntimeError("boom")), "error"),
     ],
@@ -331,7 +380,7 @@ def test_reconciliation_batches_confirmed_findings_with_repeatable_ids(session) 
         "finding:job-2:F-2",
     ]
     assert first.batches[0][0]["metadata"]["project_id"] == "project-7"
-    assert first.batches[0][1]["metadata"]["project_id"] == ""
+    assert first.batches[0][1]["metadata"]["project_id"] is None
 
 
 def test_reconciliation_counts_failed_batch_and_returns_failure(session) -> None:
@@ -350,6 +399,39 @@ def test_reconciliation_counts_failed_batch_and_returns_failure(session) -> None
     )
 
     assert counts == {"discovered": 3, "indexed": 2, "skipped": 0, "failed": 1}
+
+
+def test_reconciliation_does_not_materialize_more_than_one_batch(session) -> None:
+    from backend.app.cli import reconcile_mnemos_findings
+
+    for index in range(7):
+        job_id = f"job-{index}"
+        add_job(session, job_id)
+        add_finding(session, job_id, f"F-{index}")
+    session.commit()
+    session.expunge_all()
+
+    class BoundedMemoryIndexer(RecordingIndexer):
+        def __init__(self) -> None:
+            super().__init__()
+            self.loaded_finding_counts: list[int] = []
+
+        def index(self, documents: list[dict]) -> int:
+            self.loaded_finding_counts.append(
+                sum(
+                    isinstance(instance, Finding)
+                    for instance in session.identity_map.values()
+                )
+            )
+            return super().index(documents) or 0
+
+    indexer = BoundedMemoryIndexer()
+
+    counts = reconcile_mnemos_findings(session, client=indexer, batch_size=2)
+
+    assert counts == {"discovered": 7, "indexed": 7, "skipped": 0, "failed": 0}
+    assert [len(batch) for batch in indexer.batches] == [2, 2, 2, 1]
+    assert max(indexer.loaded_finding_counts) <= 2
 
 
 def test_reconciliation_command_prints_only_counts_and_exits_nonzero_when_unavailable(

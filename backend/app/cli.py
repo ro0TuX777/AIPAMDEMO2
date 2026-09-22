@@ -980,50 +980,68 @@ def reconcile_mnemos_findings(
     from backend.app.models.bluescrub import BlueScrubJobLineage
     from backend.app.models.finding import Finding
 
-    rows = db.execute(
-        select(Finding, BlueScrubJobLineage.project_id)
-        .outerjoin(
-            BlueScrubJobLineage,
-            BlueScrubJobLineage.job_id == Finding.job_id,
-        )
-        .where(Finding.analyst_status == "confirmed")
-        .order_by(Finding.job_id, Finding.finding_id)
-    ).all()
     counts = {
-        "discovered": len(rows),
+        "discovered": 0,
         "indexed": 0,
         "skipped": 0,
         "failed": 0,
     }
-    if client is None:
-        counts["failed"] = counts["discovered"]
-        return counts
+    bounded_batch_size = min(max(1, batch_size), 100)
+    last_finding_row_id = 0
 
-    documents: list[dict[str, Any]] = []
-    for finding, project_id in rows:
-        try:
-            documents.append(
-                mnemos_document_for_finding(finding, project_id=project_id)
+    while True:
+        rows = db.execute(
+            select(Finding, BlueScrubJobLineage.project_id)
+            .outerjoin(
+                BlueScrubJobLineage,
+                BlueScrubJobLineage.job_id == Finding.job_id,
             )
-        except Exception:
-            counts["skipped"] += 1
+            .where(
+                Finding.analyst_status == "confirmed",
+                Finding.id > last_finding_row_id,
+            )
+            .order_by(Finding.id)
+            .limit(bounded_batch_size)
+        ).all()
+        if not rows:
+            break
 
-    bounded_batch_size = max(1, batch_size)
-    for start in range(0, len(documents), bounded_batch_size):
-        batch = documents[start:start + bounded_batch_size]
+        counts["discovered"] += len(rows)
+        last_finding_row_id = rows[-1][0].id
+        if client is None:
+            counts["failed"] += len(rows)
+            for finding, _ in rows:
+                db.expunge(finding)
+            continue
+
+        documents: list[dict[str, Any]] = []
+        for finding, project_id in rows:
+            try:
+                documents.append(
+                    mnemos_document_for_finding(finding, project_id=project_id)
+                )
+            except Exception:
+                counts["skipped"] += 1
+        if not documents:
+            for finding, _ in rows:
+                db.expunge(finding)
+            continue
+
         try:
-            indexed = client.index(batch)
+            indexed = client.index(documents)
         except Exception:
             indexed = None
         if indexed is None:
-            counts["failed"] += len(batch)
-        elif indexed == len(batch):
+            counts["failed"] += len(documents)
+        elif indexed == len(documents):
             counts["indexed"] += indexed
-        elif isinstance(indexed, int) and 0 <= indexed < len(batch):
+        elif isinstance(indexed, int) and 0 <= indexed < len(documents):
             counts["indexed"] += indexed
-            counts["failed"] += len(batch) - indexed
+            counts["failed"] += len(documents) - indexed
         else:
-            counts["failed"] += len(batch)
+            counts["failed"] += len(documents)
+        for finding, _ in rows:
+            db.expunge(finding)
     return counts
 
 

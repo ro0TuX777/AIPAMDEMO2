@@ -11,8 +11,10 @@ Designed to coexist with the per-job LanceDB RAG in ``rag_index.py``.
 from __future__ import annotations
 
 import hashlib
+import json
 import logging
 import os
+from collections.abc import Mapping
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Dict, List, Optional
 
@@ -29,44 +31,83 @@ DEFAULT_CHROMADB_PATH = os.path.expanduser("~/.aipam/forensic_memory")
 DEFAULT_COLLECTION = "aipam_forensic_findings"
 
 
-def finding_to_text(finding: Finding) -> str:
+def _finding_value(finding: Finding | Mapping[str, Any], name: str) -> Any:
+    if isinstance(finding, Mapping):
+        return finding.get(name)
+    return getattr(finding, name, None)
+
+
+def _finding_evidence_text(finding: Finding | Mapping[str, Any]) -> str | None:
+    evidence = (
+        _finding_value(finding, "evidence_json")
+        or _finding_value(finding, "raw_evidence_snippet")
+        or _finding_value(finding, "evidence_snippet")
+    )
+    if evidence is None:
+        return None
+    if isinstance(evidence, str):
+        return evidence
+    return json.dumps(evidence, sort_keys=True, separators=(",", ":"))
+
+
+def finding_to_text(finding: Finding | Mapping[str, Any]) -> str:
     """Render a persisted finding as human-readable index content."""
-    parts = [
-        f"Title: {finding.title}",
-        f"Severity: {finding.severity}",
-    ]
-    if finding.category:
-        parts.append(f"Category: {finding.category}")
-    parts.append(f"Sensor: {finding.sensor}")
-    if finding.summary:
-        parts.append(f"Summary: {finding.summary}")
-    if finding.evidence_json:
-        parts.append(f"Evidence: {finding.evidence_json}")
+    parts: list[str] = []
+    title = _finding_value(finding, "title") or _finding_value(finding, "classification")
+    severity = _finding_value(finding, "severity")
+    category = _finding_value(finding, "category")
+    sensor = _finding_value(finding, "sensor")
+    summary = (
+        _finding_value(finding, "summary")
+        or _finding_value(finding, "rationale")
+        or _finding_value(finding, "description")
+    )
+    evidence = _finding_evidence_text(finding)
+    if title:
+        parts.append(f"Title: {title}")
+    if severity:
+        parts.append(f"Severity: {severity}")
+    if category:
+        parts.append(f"Category: {category}")
+    if sensor:
+        parts.append(f"Sensor: {sensor}")
+    if summary:
+        parts.append(f"Summary: {summary}")
+    if evidence:
+        parts.append(f"Evidence: {evidence}")
     return "\n".join(parts)
 
 
-def finding_content_sha256(finding: Finding) -> str:
+def finding_content_sha256(finding: Finding | Mapping[str, Any]) -> str:
     """Return the revision hash for the exact text sent to MNEMOS."""
     return hashlib.sha256(finding_to_text(finding).encode("utf-8")).hexdigest()
 
 
 def mnemos_document_for_finding(
-    finding: Finding,
+    finding: Finding | Mapping[str, Any],
     *,
     project_id: str | None,
+    job_id: str | None = None,
 ) -> dict[str, Any]:
     """Build the stable MNEMOS representation of a persisted finding."""
+    source_job_id = _finding_value(finding, "job_id") or job_id
+    finding_id = _finding_value(finding, "finding_id")
+    if not isinstance(source_job_id, str) or not source_job_id:
+        raise ValueError("finding is missing job_id")
+    if not isinstance(finding_id, str) or not finding_id:
+        raise ValueError("finding is missing finding_id")
+    content = finding_to_text(finding)
     return {
-        "id": f"finding:{finding.job_id}:{finding.finding_id}",
-        "content": finding_to_text(finding),
+        "id": f"finding:{source_job_id}:{finding_id}",
+        "content": content,
         "source": "aipam.forensic_memory",
         "neuro_tags": ["forensic_finding", "confirmed"],
         "metadata": {
             "collection": DEFAULT_COLLECTION,
-            "job_id": finding.job_id,
-            "finding_id": finding.finding_id,
-            "project_id": project_id or "",
-            "content_sha256": finding_content_sha256(finding),
+            "job_id": source_job_id,
+            "finding_id": finding_id,
+            "project_id": project_id,
+            "content_sha256": hashlib.sha256(content.encode("utf-8")).hexdigest(),
         },
     }
 
@@ -112,7 +153,7 @@ def get_memory_collection(
 
 def store_findings(
     job_id: str,
-    project_id: str,
+    project_id: str | None,
     findings: List[Dict[str, Any]],
     embeddings: Optional[List[List[float]]] = None,
 ) -> int:
@@ -148,25 +189,20 @@ def store_findings(
 
             client = get_mnemos_client()
             if client is not None:
-                mnemos_documents = [
-                    {
-                        "id": f"finding:{job_id}:{finding['finding_id']}",
-                        "content": _finding_to_text(finding),
-                        "source": "aipam.forensic_memory",
-                        "neuro_tags": ["forensic_finding", "confirmed"],
-                        "metadata": {
-                            "collection": DEFAULT_COLLECTION,
-                            "job_id": job_id,
-                            "finding_id": finding["finding_id"],
-                            "project_id": project_id,
-                            "content_sha256": hashlib.sha256(
-                                _finding_to_text(finding).encode("utf-8")
-                            ).hexdigest(),
-                        },
-                    }
-                    for finding in confirmed_findings
-                ]
-                mnemos_indexed = client.index(mnemos_documents)
+                mnemos_documents = []
+                for finding in confirmed_findings:
+                    try:
+                        mnemos_documents.append(
+                            mnemos_document_for_finding(
+                                finding,
+                                project_id=project_id,
+                                job_id=job_id,
+                            )
+                        )
+                    except (TypeError, ValueError) as exc:
+                        logger.warning("MNEMOS finding skipped: %s", exc)
+                if mnemos_documents:
+                    mnemos_indexed = client.index(mnemos_documents)
         except Exception as exc:
             logger.warning("MNEMOS forensic-memory write failed; retaining local write: %s", exc)
 
@@ -180,7 +216,7 @@ def store_findings(
         doc_id = f"{job_id}-{i}"
         metadata = {
             "job_id": job_id,
-            "project_id": project_id,
+            "project_id": project_id or "",
             "mitre_technique_id": finding.get("mitre_technique_id", ""),
             "severity": finding.get("severity", ""),
             "confidence_score": float(finding.get("confidence_score", 0)),
