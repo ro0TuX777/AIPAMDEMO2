@@ -19,9 +19,9 @@ from backend.app.models.chat import (
     ChatMessage,
 )
 from backend.app.schemas.chat import (
-    ChatCitation,
     ChatCitationOut,
     ChatGenerationMetadata,
+    HistoricalChatCitationOut,
 )
 from backend.app.services.mnemos_chat_retrieval import MnemosRetrievalResult
 
@@ -37,8 +37,11 @@ class PreparedChatTurn:
     mode: Literal["baseline", "mnemos"]
     history: list[dict[str, str]]
     messages: list[dict[str, str]]
-    citations: list[ChatCitation]
+    # The model-authored answer's source set is always current-job-only.
+    citations: list[ChatCitationOut]
     current_job_citations: list[ChatCitationOut]
+    # Historical sources are rendered only by the deterministic appendix.
+    historical_citations: list[HistoricalChatCitationOut]
     current_job_context: str
     retrieval_result: MnemosRetrievalResult | None
     model_id: str

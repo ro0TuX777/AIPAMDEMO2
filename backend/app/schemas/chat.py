@@ -9,7 +9,11 @@ from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_vali
 
 SourceId = Annotated[
     str,
-    StringConstraints(strip_whitespace=True, min_length=1, pattern=r"^[^/]+$"),
+    StringConstraints(
+        strip_whitespace=True,
+        min_length=1,
+        pattern=r"^[A-Za-z0-9._:-]+$",
+    ),
 ]
 
 

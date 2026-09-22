@@ -19,6 +19,8 @@ from backend.app.schemas.chat import (
 
 logger = logging.getLogger("aipam.chat")
 
+HISTORICAL_COMPARISON_HEADING = "=== Historical comparison ==="
+
 # ── Compiled regexes ──────────────────────────────────────────────────────
 
 _IPV4_RE = re.compile(r"\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b")
@@ -35,17 +37,6 @@ _REFUSAL_RE = re.compile(
     re.IGNORECASE,
 )
 _QUOTED_DETAIL_RE = re.compile(r"['\"]([^'\"\n]{5,120})['\"]")
-_CURRENT_JOB_REFERENCE_RE = re.compile(
-    r"\b(?:(?:the\s+)?current[- ]job|this\s+job)\b",
-    re.IGNORECASE,
-)
-_CURRENT_JOB_LIMIT_RE = re.compile(
-    r"\b(?:does\s+not|doesn't|cannot|can't|is\s+not|isn't|was\s+not|wasn't)\b"
-    r"[^.!?]{0,80}\b(?:prove|confirm|establish|show|support|occurred|available)\b"
-    r"|\bno\s+(?:(?:current|this)[- ]job)\s+evidence\b",
-    re.IGNORECASE,
-)
-
 _IP_IN_RESPONSE_RE = re.compile(r"\b(?:(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\.){3}(?:25[0-5]|2[0-4]\d|[01]?\d\d?)\b")
 _FINDING_IN_RESPONSE_RE = re.compile(r"\bF-[0-9a-fA-F-]{1,36}\b", re.IGNORECASE)
 _MITRE_IN_RESPONSE_RE = re.compile(r"\bT\d{4}(?:\.\d{3})?\b")
@@ -146,32 +137,6 @@ def select_relevant_citations(
 
     scored.sort(reverse=True)
     return [citation for _, _, citation in scored[:limit]]
-
-
-def select_final_citation_pools(
-    citations: list[ChatCitation],
-    user_message: str | None,
-    *,
-    limit: int = 8,
-) -> tuple[list[ChatCitationOut], list[HistoricalChatCitationOut]]:
-    """Select current and historical sources independently before either cap."""
-    current = [
-        citation for citation in citations if isinstance(citation, ChatCitationOut)
-    ]
-    historical = [
-        citation
-        for citation in citations
-        if isinstance(citation, HistoricalChatCitationOut)
-    ]
-    relevant_current = select_relevant_citations(current, user_message, limit=limit)
-    relevant_historical = select_relevant_citations(
-        historical, user_message, limit=limit
-    )
-    selected_current = relevant_current or dedupe_citations(current, limit=limit)
-    selected_historical = relevant_historical or dedupe_citations(
-        historical, limit=limit
-    )
-    return selected_current, selected_historical
 
 
 def build_primary_supporting_evidence_block(
@@ -412,42 +377,25 @@ def build_grounded_direct_answer_from_citations(
 
 def build_sources_block(citations: list[ChatCitation]) -> str:
     lines = ["Sources used:"]
-    current_citations, historical_citations = select_final_citation_pools(
-        citations,
-        None,
-    )
-    safe_citations = [*current_citations, *historical_citations]
+    current_citations = [
+        citation for citation in citations if isinstance(citation, ChatCitationOut)
+    ]
+    safe_citations = dedupe_citations(current_citations, limit=8)
     if not safe_citations:
         lines.append("- No source snippets were available from the current job data.")
         return "\n".join(lines)
 
     for citation in safe_citations:
         clean_snippet = " ".join((citation.snippet or "").split())
-        if citation.type == "historical_finding":
-            project = citation.source_project_id or "No project assigned"
-            lines.append(
-                f"- [historical_finding] project={project} "
-                f"job={citation.source_job_id or 'unknown'} "
-                f"finding={citation.id or 'unknown'} "
-                f"link={citation.href or 'unavailable'}: {clean_snippet}"
-            )
-        else:
-            lines.append(f"- [{citation.type}] {clean_snippet}")
+        lines.append(f"- [{citation.type}] {clean_snippet}")
     return "\n".join(lines)
 
 
 def append_sources_and_limits(response_text: str, citations: list[ChatCitation]) -> str:
-    if any(citation.type == "historical_finding" for citation in citations):
-        limits = (
-            "Limits: Historical sources describe earlier jobs and do not establish facts "
-            "about this job. Current-job details require current-job evidence; any other "
-            "detail is not available in the collected data for this job."
-        )
-    else:
-        limits = (
-            "Limits: Any detail not shown in the sources above is not available in the "
-            "collected data for this job."
-        )
+    limits = (
+        "Limits: Any detail not shown in the sources above is not available in the "
+        "collected data for this job."
+    )
     return (
         f"{response_text.rstrip()}\n\n"
         f"{build_sources_block(citations)}\n\n"
@@ -487,56 +435,6 @@ def unsupported_response_details(
             unsupported_quoted_details.append(candidate)
 
     return unsupported_ips, unsupported_credentials, unsupported_quoted_details
-
-
-def has_substantive_current_job_evidence(combined_context: str) -> bool:
-    evidence = combined_context
-    for marker in (
-        "=== CURRENT JOB EVIDENCE ONLY ===",
-        "=== END CURRENT JOB EVIDENCE ===",
-        "No analysis data available yet.",
-    ):
-        evidence = evidence.replace(marker, "")
-    return bool(evidence.strip())
-
-
-def has_historical_only_current_job_claim(
-    response_text: str,
-    combined_context: str,
-    current_citations: list[ChatCitationOut],
-    historical_citations: list[HistoricalChatCitationOut],
-) -> bool:
-    """Detect current-job assertions whose only possible source is history."""
-    if not historical_citations:
-        return False
-    referenced_sentences = [
-        sentence
-        for sentence in re.split(r"(?<=[.!?])\s+|\n+", response_text)
-        if _CURRENT_JOB_REFERENCE_RE.search(sentence)
-    ]
-    claim_sentences = [
-        sentence
-        for sentence in referenced_sentences
-        if not _CURRENT_JOB_LIMIT_RE.search(sentence)
-    ]
-    if not claim_sentences:
-        return False
-    if not current_citations and not has_substantive_current_job_evidence(
-        combined_context
-    ):
-        return True
-
-    current_text = combined_context.lower()
-    historical_only_terms = set()
-    for citation in historical_citations:
-        historical_only_terms.update(extract_query_terms(citation.snippet))
-    historical_only_terms = {
-        term for term in historical_only_terms if term not in current_text
-    }
-    return any(
-        historical_only_terms.intersection(extract_query_terms(sentence))
-        for sentence in claim_sentences
-    )
 
 
 def build_unsupported_claims_response(
@@ -583,12 +481,18 @@ def finalize_grounded_response_payload(
     combined_context: str,
     user_message: str | None = None,
 ) -> tuple[str, list[ChatCitation]]:
-    current_job_citations, historical_citations = select_final_citation_pools(
-        citations,
+    current_input = [
+        citation for citation in citations if isinstance(citation, ChatCitationOut)
+    ]
+    relevant_current = select_relevant_citations(
+        current_input,
         user_message,
         limit=8,
     )
-    safe_citations = [*current_job_citations, *historical_citations]
+    current_job_citations = relevant_current or dedupe_citations(
+        current_input,
+        limit=8,
+    )
     synthesized = build_grounded_direct_answer_from_citations(
         current_job_citations, user_message
     )
@@ -598,54 +502,106 @@ def finalize_grounded_response_payload(
             synthesized_citations or current_job_citations,
             limit=8,
         )
-        final_citations = [*final_current, *historical_citations]
-        return append_sources_and_limits(synthesized_response, final_citations), final_citations
+        return append_sources_and_limits(synthesized_response, final_current), final_current
     if not response_text.strip():
         response_text = "That specific information is not available in the analysis data I have access to."
     if _REFUSAL_RE.search(response_text):
         logger.warning("Blocked generic refusal in V2 chat response")
-        return build_unsupported_claims_payload(safe_citations, user_message)
+        return build_unsupported_claims_payload(current_job_citations, user_message)
     unsupported_ips, unsupported_credentials, unsupported_quoted_details = unsupported_response_details(
         response_text,
         combined_context,
     )
-    historical_text = "\n".join(
-        citation.snippet
-        for citation in citations
-        if citation.type == "historical_finding"
-    ).lower()
-    historical_only_quoted_details = [
-        detail
-        for detail in unsupported_quoted_details
-        if detail.lower() in historical_text
-    ]
-    historical_only_current_claim = has_historical_only_current_job_claim(
-        response_text,
-        combined_context,
-        current_job_citations,
-        historical_citations,
-    )
-    if (
-        unsupported_ips
-        or unsupported_credentials
-        or historical_only_quoted_details
-        or historical_only_current_claim
-    ):
+    if unsupported_ips or unsupported_credentials:
         logger.warning(
-            "Blocked unsupported V2 chat claims (ips=%s, credentials=%s, "
-            "historical_only_quoted_details=%s, historical_only_current_claim=%s)",
+            "Blocked unsupported V2 chat claims (ips=%s, credentials=%s)",
             unsupported_ips,
             unsupported_credentials,
-            historical_only_quoted_details,
-            historical_only_current_claim,
         )
-        return build_unsupported_claims_payload(safe_citations, user_message)
+        return build_unsupported_claims_payload(current_job_citations, user_message)
     if unsupported_quoted_details:
         logger.info(
             "Allowing response with minor quoted detail mismatches: %s",
             unsupported_quoted_details,
         )
-    return append_sources_and_limits(response_text, safe_citations), safe_citations
+    return (
+        append_sources_and_limits(response_text, current_job_citations),
+        current_job_citations,
+    )
+
+
+def build_historical_comparison_section(
+    citations: list[HistoricalChatCitationOut],
+    retrieval_status: str | None,
+    user_message: str | None = None,
+) -> tuple[str, list[HistoricalChatCitationOut]]:
+    """Render history outside the model-authored, current-job answer."""
+    if retrieval_status == "no_matches":
+        return (
+            f"{HISTORICAL_COMPARISON_HEADING}\n\n"
+            "No relevant historical confirmed findings were found.",
+            [],
+        )
+    if retrieval_status != "used":
+        return "", []
+
+    relevant_citations = select_relevant_citations(
+        citations,
+        user_message,
+        limit=8,
+    )
+    safe_citations = relevant_citations or dedupe_citations(citations, limit=8)
+    lines = [
+        HISTORICAL_COMPARISON_HEADING,
+        "",
+        "Historical confirmed findings are supporting context and are not evidence "
+        "of the current job.",
+    ]
+    for citation in safe_citations:
+        snippet = " ".join(citation.snippet.split())
+        project = citation.source_project_id or "No project assigned"
+        lines.append(
+            f"- [historical_finding] project={project} "
+            f"job={citation.source_job_id} finding={citation.id} "
+            f"link={citation.href}: {snippet}"
+        )
+    return "\n".join(lines), safe_citations
+
+
+def strip_historical_comparison_section(response_text: str) -> str:
+    """Remove the deterministic history appendix before reusing chat history."""
+    marker = f"\n\n{HISTORICAL_COMPARISON_HEADING}"
+    if marker in response_text:
+        return response_text.split(marker, 1)[0].rstrip()
+    if response_text.startswith(HISTORICAL_COMPARISON_HEADING):
+        return ""
+    return response_text
+
+
+def finalize_mode_aware_response_payload(
+    response_text: str,
+    *,
+    current_job_citations: list[ChatCitationOut],
+    historical_citations: list[HistoricalChatCitationOut],
+    current_job_context: str,
+    user_message: str | None,
+    retrieval_status: str | None,
+) -> tuple[str, list[ChatCitation]]:
+    """Finalize current evidence first, then append server-rendered history."""
+    grounded_text, final_current = finalize_grounded_response_payload(
+        response_text,
+        current_job_citations,
+        current_job_context,
+        user_message,
+    )
+    historical_section, final_historical = build_historical_comparison_section(
+        historical_citations,
+        retrieval_status,
+        user_message,
+    )
+    if historical_section:
+        grounded_text = f"{grounded_text.rstrip()}\n\n{historical_section}"
+    return grounded_text, [*final_current, *final_historical]
 
 
 def finalize_grounded_response(
