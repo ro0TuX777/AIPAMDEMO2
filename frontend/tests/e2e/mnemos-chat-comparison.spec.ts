@@ -12,10 +12,11 @@ function gate() { let release!: () => void; const promise = new Promise<void>(re
 // Only HTTP is replaced: rendering, selection, fetch/SSE parsing and attempt ownership are real.
 async function fixture(page: Page, options: {
   fresh?: boolean; unavailable?: boolean; used?: boolean; terminalError?: boolean; lostBranchResponse?: boolean;
-  withCopy?: boolean; longHistory?: boolean;
+  withCopy?: boolean; longHistory?: boolean; failedRootHistory?: boolean;
   hydration?: ReturnType<typeof gate>; preparation?: ReturnType<typeof gate>; selection?: ReturnType<typeof gate>;
   retryResponse?: ReturnType<typeof gate>; streamResponse?: ReturnType<typeof gate>; redundantHistory?: ReturnType<typeof gate>;
   selectionResponses?: Array<ReturnType<typeof gate> | undefined>;
+  selectionMutations?: Array<ReturnType<typeof gate> | undefined>;
 } = {}) {
   const calls = { opens: [] as any[], branches: [] as any[], selections: [] as any[], streams: [] as any[], history: [] as string[], fallback: 0 };
   const groups = new Map(["root-1", "root-2"].map(root => [root, group(root)]));
@@ -35,6 +36,7 @@ async function fixture(page: Page, options: {
     if (path.startsWith("/conversations/")) {
       const id = path.split("/").at(-1)!;
       calls.history.push(id);
+      if (id === "root-2" && options.failedRootHistory) return route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "History unavailable" }) });
       if (id === "root-1" && options.hydration) await options.hydration.promise;
       if (id === "saved-root" && calls.history.filter(item => item === id).length > 1 && options.redundantHistory) await options.redundantHistory.promise;
       const persisted = histories.get(id) ?? [...groups.values()].flatMap(g => g.branches).find(b => b.conversation_id === id);
@@ -57,10 +59,13 @@ async function fixture(page: Page, options: {
     }
     if (path.startsWith("/chat/comparisons/") && request.method() === "PATCH") {
       calls.selections.push({ group: path.split("/").at(-1), ...body });
+      const selectionNumber = calls.selections.length;
+      const mutation = options.selectionMutations?.[selectionNumber - 1];
+      if (mutation) await mutation.promise;
       const owner = [...groups.values()].find(g => path.endsWith(g.group_id))!;
       owner.active_branch_id = body.active_branch_id;
       const response = structuredClone(owner);
-      const pending = options.selectionResponses?.[calls.selections.length - 1] ?? (path.endsWith("root-1-group") ? options.selection : undefined);
+      const pending = options.selectionResponses?.[selectionNumber - 1] ?? (path.endsWith("root-1-group") ? options.selection : undefined);
       if (pending) await pending.promise;
       return json(route, response);
     }
@@ -72,14 +77,20 @@ async function fixture(page: Page, options: {
       if (unavailable) { unavailable = false; return route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: { code: "MNEMOS_UNAVAILABLE", error: "Historical retrieval is unavailable" } }) }); }
       const id = body.conversation_id ?? "saved-root";
       const citations = options.used ? [{ type: "historical_finding", id: "finding-42", snippet: "Confirmed historical beacon", source_job_id: "prior-job", source_project_id: null, href: "/jobs/prior-job/findings/finding-42" }] : [];
-      const user = { ...message("server-user", 1, "user", body.message), request_id: body.request_id };
-      const failed = options.terminalError && streamNumber === 1;
-      const assistant = { ...message("server-assistant", 2, "assistant", failed ? "Error: Historical retrieval is unavailable" : "Server answer"), request_id: body.request_id, metadata: { status: failed ? "error" : "completed", retrieval_status: failed ? "unavailable" : body.mode === "mnemos" ? options.used ? "used" : "no_matches" : null }, citations };
+      const stored = histories.get(id)?.messages;
+      const existingUser = stored?.find(item => item.role === "user" && item.request_id === body.request_id);
+      const existingAssistant = stored?.find(item => item.role === "assistant" && item.metadata?.request_id === body.request_id);
+      const user = existingUser ?? { ...message("server-user", 1, "user", body.message), request_id: body.request_id };
+      const failed = existingAssistant ? existingAssistant.metadata.status === "error" : options.terminalError && streamNumber === 1;
+      const assistant = existingAssistant ?? { ...message("server-assistant", 2, "assistant", failed ? "Error: Historical retrieval is unavailable" : "Server answer"), metadata: { request_id: body.request_id, user_message_id: user.id, status: failed ? "error" : "completed", retrieval_status: failed ? "unavailable" : body.mode === "mnemos" ? options.used ? "used" : "no_matches" : null }, citations };
       histories.set(id, history(id, [user, assistant]));
       const owner = [...groups.values()].flatMap(g => g.branches).find(b => b.conversation_id === id);
       if (owner) owner.messages = [user, assistant];
       if (!body.conversation_id) summaries.push(id);
-      const events = [{ type: failed ? "error" : "token", content: failed ? "Historical retrieval is unavailable" : "Server answer" }, { type: "meta", conversation_id: id, request_id: body.request_id, branch_id: owner?.id, status: failed ? "error" : "completed", retrieval_status: assistant.metadata.retrieval_status, citations }];
+      const terminal = { type: "meta", conversation_id: id, request_id: body.request_id, branch_id: owner?.id, status: failed ? "error" : "completed", retrieval_status: assistant.metadata.retrieval_status, citations };
+      const events = existingAssistant
+        ? [terminal, { type: "replace", content: assistant.content }]
+        : [{ type: failed ? "error" : "token", content: failed ? "Historical retrieval is unavailable" : "Server answer" }, terminal];
       return route.fulfill({ contentType: "text/event-stream", body: events.map(event => `data: ${JSON.stringify(event)}\n\n`).join("") + "data: [DONE]\n\n" });
     }
     if (path === "/chat") { calls.fallback++; return route.fulfill({ status: 500 }); }
@@ -289,15 +300,75 @@ test("latest manual branch choice wins over an older PATCH response", async ({ p
   await visit(page); await toggle(page).click();
   await page.getByLabel("Comparison branch").selectOption("root-1-copy");
   await expect.poll(() => calls.selections.length).toBe(1);
+  const latest = page.waitForResponse(response => response.request().method() === "PATCH" && response.request().postDataJSON().active_branch_id === "root-1-snapshot");
   await page.getByLabel("Comparison branch").selectOption("root-1-snapshot");
-  await expect.poll(() => calls.selections.length).toBe(2);
   await expect(page.getByLabel("Comparison branch")).toHaveValue("root-1-snapshot");
   const late = page.waitForResponse(response => response.request().method() === "PATCH" && response.request().postDataJSON().active_branch_id === "root-1-copy");
-  first.release(); await (await late).finished(); await settle(page);
+  first.release(); await (await late).finished(); await (await latest).finished(); await settle(page);
   await expect(page.getByLabel("Comparison branch")).toHaveValue("root-1-snapshot");
   await expect(pane(page).getByRole("region", { name: "Baseline history" }).locator("p")).toHaveCount(4);
   expect(calls.selections).toEqual([{ group: "root-1-group", active_branch_id: "root-1-copy" }, { group: "root-1-group", active_branch_id: "root-1-snapshot" }]);
   expect(calls.streams).toHaveLength(0); expect(calls.branches).toHaveLength(0);
+});
+
+test("latest branch choice persists when the first PATCH is delayed before mutation", async ({ page }) => {
+  const first = gate(); const { calls } = await fixture(page, { withCopy: true, selectionMutations: [first] });
+  await visit(page); await toggle(page).click();
+  await page.getByLabel("Comparison branch").selectOption("root-1-copy");
+  await expect.poll(() => calls.selections.length).toBe(1);
+  const latest = page.waitForResponse(response => response.request().method() === "PATCH" && response.request().postDataJSON().active_branch_id === "root-1-snapshot");
+  await page.getByLabel("Comparison branch").selectOption("root-1-snapshot");
+  await expect(page.getByLabel("Comparison branch")).toHaveValue("root-1-snapshot");
+  // Let a concurrent second write reach the fixture before releasing the first.
+  await settle(page);
+  const older = page.waitForResponse(response => response.request().method() === "PATCH" && response.request().postDataJSON().active_branch_id === "root-1-copy");
+  first.release(); await (await older).finished(); await (await latest).finished(); await settle(page);
+  await page.reload(); await expect(toggle(page)).toBeEnabled(); await toggle(page).click();
+  await expect(page.getByLabel("Comparison branch")).toHaveValue("root-1-snapshot");
+  expect(calls.selections).toEqual([{ group: "root-1-group", active_branch_id: "root-1-copy" }, { group: "root-1-group", active_branch_id: "root-1-snapshot" }]);
+});
+
+test("failed root history keeps the active stream valid and releases busy state on completion", async ({ page }) => {
+  const streamResponse = gate(); const { calls } = await fixture(page, { streamResponse, failedRootHistory: true });
+  const pageErrors: string[] = []; page.on("pageerror", error => pageErrors.push(error.message));
+  await visit(page); await toggle(page).click(); await submit(page, "Keep the selected root usable");
+  await expect.poll(() => calls.streams.length).toBe(1);
+  const failedHistory = page.waitForResponse(response => response.url().endsWith("/conversations/root-2"));
+  await page.getByLabel("Baseline conversation").selectOption("root-2"); await (await failedHistory).finished(); await settle(page);
+  await expect(page.getByLabel("Baseline conversation")).toHaveValue("root-1");
+  await expect(page).toHaveURL(/conversation=root-1/);
+  streamResponse.release();
+  await expect(pane(page).getByText("Server answer", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("MNEMOS message")).toBeEnabled();
+  await expect(page.getByLabel("Comparison branch")).toBeEnabled();
+  await expect(pane(page).getByText("Thinking...", { exact: true })).toHaveCount(0);
+  await page.getByRole("button", { name: "Close MNEMOS comparison" }).click(); await toggle(page).click();
+  await expect(page.getByLabel("MNEMOS message")).toBeEnabled();
+  expect(pageErrors).toEqual([]);
+  expect(calls.streams[0]).toMatchObject({ conversation_id: "root-1-snapshot-chat", mode: "mnemos" });
+});
+
+test("copy branch selection persists after an earlier manual PATCH delayed before mutation", async ({ page }) => {
+  const first = gate(); const { calls, groups } = await fixture(page, { withCopy: true, selectionMutations: [first] });
+  const owner = groups.get("root-1")!;
+  owner.branches[1].id = "root-1-prior-copy";
+  owner.branches[1].conversation_id = "root-1-prior-copy-chat";
+  owner.active_branch_id = "root-1-prior-copy";
+  await visit(page); await toggle(page).click();
+  await page.getByLabel("Comparison branch").selectOption("root-1-snapshot");
+  await expect.poll(() => calls.selections.length).toBe(1);
+  const latest = page.waitForResponse(response => response.request().method() === "PATCH" && response.request().postDataJSON().active_branch_id === "root-1-copy");
+  await copy(page); await submit(page, "Persist the copied branch owner");
+  await expect.poll(() => calls.branches.length).toBe(1); await settle(page);
+  const older = page.waitForResponse(response => response.request().method() === "PATCH" && response.request().postDataJSON().active_branch_id === "root-1-snapshot");
+  first.release(); await (await older).finished(); await (await latest).finished();
+  await expect(pane(page).getByText("Server answer", { exact: true })).toBeVisible();
+  await page.reload(); await expect(toggle(page)).toBeEnabled(); await toggle(page).click();
+  await expect(page.getByLabel("Comparison branch")).toHaveValue("root-1-copy");
+  await expect(pane(page).getByText("Persist the copied branch owner", { exact: true })).toHaveCount(1);
+  expect(calls.selections).toEqual([{ group: "root-1-group", active_branch_id: "root-1-snapshot" }, { group: "root-1-group", active_branch_id: "root-1-copy" }]);
+  expect(calls.streams).toHaveLength(1);
+  expect(calls.streams[0]).toMatchObject({ conversation_id: "root-1-copy-chat", mode: "mnemos" });
 });
 
 for (const stage of ["copy POST", "copy PATCH", "stream"]) test(`page attempt locks survive drawer remount during ${stage}`, async ({ page }) => {
@@ -356,19 +427,24 @@ for (const next of ["new draft", "another root"]) test(`fresh baseline completio
   expect(calls.streams[0].conversation_id).toBeUndefined();
 });
 
-test("terminal SSE error retains persisted pair and retry identity across drawer remount", async ({ page }) => {
+test("persisted terminal error replays the same request and pair across drawer remount", async ({ page }) => {
   const retryResponse = gate(); const { calls } = await fixture(page, { terminalError: true, retryResponse });
   await visit(page); await copy(page); await submit(page, "Retry the terminal failure");
   await expect(pane(page).getByText("Error: Historical retrieval is unavailable", { exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Retry MNEMOS" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Replay MNEMOS" })).toBeVisible();
   await page.getByRole("button", { name: "Close MNEMOS comparison" }).click(); await toggle(page).click();
-  await expect(page.getByRole("button", { name: "Retry MNEMOS" })).toBeVisible();
-  await page.getByRole("button", { name: "Retry MNEMOS" }).click();
+  await expect(page.getByRole("button", { name: "Replay MNEMOS" })).toBeVisible();
+  await page.getByRole("button", { name: "Replay MNEMOS" }).click();
   await expect.poll(() => calls.streams.length).toBe(2);
   expect(calls.streams[1]).toEqual(calls.streams[0]); expect(calls.branches).toHaveLength(1); expect(calls.selections).toHaveLength(1); expect(calls.fallback).toBe(0);
   await expect(pane(page).getByText("Retry the terminal failure", { exact: true })).toHaveCount(1);
   await expect(pane(page).getByText("Error: Historical retrieval is unavailable", { exact: true })).toHaveCount(1);
-  retryResponse.release(); await expect(pane(page).getByText("Server answer", { exact: true })).toHaveCount(1);
+  retryResponse.release(); await expect(page.getByRole("button", { name: "Replay MNEMOS" })).toBeVisible();
+  await expect(pane(page).getByText("Server answer", { exact: true })).toHaveCount(0);
+  await expect(pane(page).getByText("Error: Historical retrieval is unavailable", { exact: true })).toHaveCount(1);
+  await expect(pane(page).getByText("Retry the terminal failure", { exact: true })).toHaveCount(1);
+  await expect(page.getByLabel("MNEMOS message")).toBeEnabled();
+  await expect(page.getByLabel("Comparison branch")).toHaveValue("root-1-copy");
   await expect(page.getByRole("button", { name: "Retry MNEMOS" })).toHaveCount(0);
 });
 

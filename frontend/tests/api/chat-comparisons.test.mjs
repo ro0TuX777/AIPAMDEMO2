@@ -176,7 +176,7 @@ test("Copy to MNEMOS uses the persisted user message id after a baseline send", 
               id: "root-1", job_id: "job-1", created_at: "2026-09-22T00:00:00Z", updated_at: "2026-09-22T00:00:01Z",
               messages: [
                 { id: "persisted-user-1", sequence: 1, role: "user", content: "New question", citations: [], metadata: null, request_id: window.__requestId, timestamp: "2026-09-22T00:00:00Z" },
-                { id: "persisted-assistant-1", sequence: 2, role: "assistant", content: "Answer", citations: [], metadata: { status: "completed" }, request_id: window.__requestId, timestamp: "2026-09-22T00:00:01Z" },
+                { id: "persisted-assistant-1", sequence: 2, role: "assistant", content: "Answer", citations: [], metadata: { status: "completed", request_id: window.__requestId, user_message_id: "persisted-user-1" }, request_id: null, timestamp: "2026-09-22T00:00:01Z" },
               ],
             });
             throw new Error("Unexpected request: " + path);
@@ -402,11 +402,7 @@ test("changing MNEMOS selection hides an older retry ownership", async () => {
             if (path.endsWith("/chat/stream")) {
               const request = JSON.parse(init.body);
               window.__failedRequestId = request.request_id;
-              return new Response([
-                "data: " + JSON.stringify({ type: "error", content: "MNEMOS unavailable" }), "",
-                "data: " + JSON.stringify({ type: "meta", conversation_id: "mnemos-a", request_id: request.request_id, status: "error", citations: [] }), "",
-                "data: [DONE]", "",
-              ].join("\\n"), { headers: { "Content-Type": "text/event-stream" } });
+              return Response.json({ detail: { code: "MNEMOS_UNAVAILABLE", error: "MNEMOS unavailable" } }, { status: 503 });
             }
             if (path.endsWith("/conversations/mnemos-a")) return Response.json({ id: "mnemos-a", job_id: "job-1", messages: [] });
             throw new Error("Unexpected request: " + path);
@@ -471,11 +467,7 @@ test("Retry MNEMOS carries the failed request id", async () => {
           window.fetch = async (url, init = {}) => {
             const request = JSON.parse(init.body);
             window.__failedRequestId = request.request_id;
-            return new Response([
-              "data: " + JSON.stringify({ type: "error", content: "MNEMOS unavailable" }), "",
-              "data: " + JSON.stringify({ type: "meta", conversation_id: "mnemos-1", request_id: request.request_id, status: "error", citations: [] }), "",
-              "data: [DONE]", "",
-            ].join("\\n"), { headers: { "Content-Type": "text/event-stream" } });
+            return Response.json({ detail: { code: "MNEMOS_UNAVAILABLE", error: "MNEMOS unavailable" } }, { status: 503 });
           };
           function Harness() {
             const [conversation, setConversation] = useState({ id: "mnemos-1", job_id: "job-1", messages: [] });
@@ -504,6 +496,112 @@ test("Retry MNEMOS carries the failed request id", async () => {
     await page.getByRole("button", { name: "Send" }).click();
     await page.getByRole("button", { name: "Retry MNEMOS" }).click();
     assert.deepEqual(await page.evaluate(() => window.__retryCalls), [await page.evaluate(() => window.__failedRequestId)]);
+  } finally {
+    await browser?.close();
+    await harnessServer.close();
+  }
+});
+
+for (const pageOwned of [true, false]) test(`terminal replay callbacks retain persisted metadata request identity and one message pair (${pageOwned ? "page" : "panel"} owned)`, async () => {
+  const harnessId = "virtual:chat-panel-terminal-replay-harness";
+  const resolvedHarnessId = `\0${harnessId}`;
+  const harnessServer = await createServer({
+    root, configFile: false, envFile: false,
+    define: { "import.meta.env.VITE_API_BASE_URL": JSON.stringify(`${apiBase}/`), "import.meta.env.VITE_AIPAM_DEMO_MODE": JSON.stringify("false") },
+    plugins: [{
+      name: "chat-panel-terminal-replay-harness",
+      resolveId(id) { if (id === harnessId) return resolvedHarnessId; },
+      load(id) {
+        if (id !== resolvedHarnessId) return;
+        return `
+          import React, { useState } from "react";
+          import { createRoot } from "react-dom/client";
+          import { ChatPanel } from "/src/components/ChatPanel.tsx";
+          window.__attemptChanges = []; window.__retryCalls = []; window.__streams = [];
+          let persisted;
+          window.fetch = async (url, init = {}) => {
+            const path = new URL(String(url)).pathname;
+            if (path.endsWith("/chat/stream")) {
+              const request = JSON.parse(init.body);
+              window.__streams.push(request);
+              if (!persisted) persisted = {
+                id: "mnemos-1", job_id: "job-1", created_at: "2026-09-22T00:00:00Z", updated_at: "2026-09-22T00:00:01Z",
+                messages: [
+                  { id: "persisted-user", sequence: 1, role: "user", content: request.message, citations: [], metadata: null, request_id: request.request_id, timestamp: "2026-09-22T00:00:00Z" },
+                  { id: "persisted-error", sequence: 2, role: "assistant", content: "Error: Terminal failure", citations: [], metadata: { status: "error", request_id: request.request_id, user_message_id: "persisted-user", retrieval_status: "unavailable" }, request_id: null, timestamp: "2026-09-22T00:00:01Z" },
+                ],
+              };
+              else await new Promise(resolve => { window.__releaseReplay = resolve; });
+              if (window.__interruptReplay) return Response.json({ detail: "Replay temporarily unavailable" }, { status: 503 });
+              const terminal = { type: "meta", conversation_id: "mnemos-1", request_id: request.request_id, status: "error", citations: [], retrieval_status: "unavailable" };
+              const events = window.__streams.length > 1 ? [terminal, { type: "replace", content: "Error: Terminal failure" }]
+                : [{ type: "error", content: "Terminal failure" }, terminal];
+              return new Response(events.map(event => "data: " + JSON.stringify(event) + "\\n\\n").join("") + "data: [DONE]\\n\\n", { headers: { "Content-Type": "text/event-stream" } });
+            }
+            if (path.endsWith("/conversations/mnemos-1")) return Response.json(persisted);
+            throw new Error("Unexpected request: " + path);
+          };
+          function Harness() {
+            const [conversation, setConversation] = useState({ id: "mnemos-1", job_id: "job-1", messages: [] });
+            const [attempt, setAttempt] = useState(null);
+            window.__conversation = conversation;
+            return React.createElement(ChatPanel, {
+              jobId: "job-1", conversation, selectionToken: "branch-1", mode: "mnemos", attempt,
+              onAttemptChange: ${pageOwned} ? next => { window.__attemptChanges.push(next); setAttempt(next); } : undefined,
+              onRetry: requestId => window.__retryCalls.push(requestId), onCopyToMnemos: () => {}, onConversationChanged: setConversation,
+            });
+          }
+          createRoot(document.getElementById("root")).render(React.createElement(Harness));
+        `;
+      },
+      configureServer(server) {
+        server.middlewares.use("/__chat-panel-terminal-replay", (_request, response) => {
+          response.statusCode = 200; response.setHeader("Content-Type", "text/html");
+          response.end(`<div id="root"></div><script type="module" src="/@id/__x00__${harnessId}"></script>`);
+        });
+      },
+    }], server: { host: "127.0.0.1", port: 0 }, appType: "custom",
+  });
+  let browser;
+  try {
+    await harnessServer.listen();
+    const address = harnessServer.httpServer.address();
+    assert.ok(address && typeof address !== "string");
+    browser = await chromium.launch({ headless: true });
+    const page = await browser.newPage();
+    await page.goto(`http://127.0.0.1:${address.port}/__chat-panel-terminal-replay`);
+    await page.getByPlaceholder("Ask about the findings...").fill("Replay this failure");
+    await page.getByRole("button", { name: "Send", exact: true }).click();
+    await page.getByRole("button", { name: "Replay MNEMOS" }).waitFor();
+    const requestId = await page.evaluate(() => window.__streams[0].request_id);
+    if (pageOwned) {
+      const failed = await page.evaluate(() => window.__attemptChanges.at(-1));
+      assert.equal(failed.userMessageId, "persisted-user");
+      assert.equal(failed.assistantMessageId, "persisted-error");
+      assert.equal(failed.conversationId, "mnemos-1");
+    }
+    await page.getByRole("button", { name: "Replay MNEMOS" }).click();
+    await page.waitForFunction(() => window.__streams.length === 2);
+    assert.deepEqual(await page.evaluate(() => window.__conversation.messages.map(message => message.id)), ["persisted-user", "persisted-error"]);
+    assert.deepEqual(await page.evaluate(() => window.__retryCalls), [requestId]);
+    const streams = await page.evaluate(() => window.__streams);
+    assert.deepEqual(streams[1], streams[0]);
+    assert.deepEqual(streams[1], { message: "Replay this failure", conversation_id: "mnemos-1", mode: "mnemos", request_id: requestId });
+    await page.evaluate(() => window.__releaseReplay());
+    await page.getByRole("button", { name: "Replay MNEMOS" }).waitFor();
+    assert.equal(await page.getByText("Error: Terminal failure", { exact: true }).count(), 1);
+    assert.equal(await page.getByText("Replay this failure", { exact: true }).count(), 1);
+    assert.equal(await page.getByPlaceholder("Ask about the findings...").isEnabled(), true);
+    if (pageOwned) assert.equal(await page.evaluate(() => window.__attemptChanges.at(-1).assistantMessageId), "persisted-error");
+    await page.evaluate(() => { window.__interruptReplay = true; });
+    await page.getByRole("button", { name: "Replay MNEMOS" }).click();
+    await page.waitForFunction(() => window.__streams.length === 3);
+    await page.evaluate(() => window.__releaseReplay());
+    await page.getByRole("button", { name: "Replay MNEMOS" }).waitFor();
+    assert.equal(await page.evaluate(() => window.__conversation.messages[1].metadata.request_id), requestId);
+    assert.deepEqual(await page.evaluate(() => window.__conversation.messages.map(message => message.id)), ["persisted-user", "persisted-error"]);
+    assert.equal(await page.evaluate(() => window.__conversation.messages[1].metadata.status), "error");
+    assert.deepEqual(await page.evaluate(() => window.__streams[2]), streams[0]);
   } finally {
     await browser?.close();
     await harnessServer.close();
