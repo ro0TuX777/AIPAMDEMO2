@@ -70,8 +70,17 @@ class ChatRequestBody(BaseModel):
     conversation_id: str | None = None
     context_hint: str | None = None
     mode: Literal["baseline", "mnemos"] = "baseline"
-    request_id: str | None = None
+    request_id: str | None = Field(default=None, min_length=1, max_length=128)
     comparison_source_message_id: str | None = None
+
+
+class ChatComparisonCreateRequest(BaseModel):
+    root_conversation_id: str = Field(..., min_length=1)
+
+
+class ChatComparisonBranchCreateRequest(BaseModel):
+    source_message_id: str = Field(..., min_length=1)
+    request_id: str = Field(..., min_length=1, max_length=128)
 
 
 class EvidenceRefOut(BaseModel):
@@ -90,6 +99,45 @@ class ChatResponseBody(BaseModel):
     retrieval_status: Literal["used", "no_matches", "unavailable", "error"] | None = None
     model_id: str | None = None
     generation: ChatGenerationMetadata | None = None
+    branch_id: str | None = None
+    request_id: str | None = None
+    status: Literal["pending", "completed", "error"] = "completed"
+
+
+class ChatMessageOut(BaseModel):
+    id: str
+    sequence: int
+    role: Literal["user", "assistant"]
+    content: str
+    citations: list[ChatCitation] = Field(default_factory=list)
+    metadata: dict | None = None
+    request_id: str | None = None
+    timestamp: str
+
+
+class ChatComparisonBranchOut(BaseModel):
+    id: str
+    conversation_id: str
+    label: str
+    source_message_id: str | None = None
+    request_id: str | None = None
+    history_cutoff_sequence: int
+    created_at: str
+    updated_at: str
+    messages: list[ChatMessageOut] = Field(default_factory=list)
+
+
+class ChatComparisonGroupOut(BaseModel):
+    group_id: str
+    job_id: str
+    root_conversation_id: str
+    title: str | None = None
+    snapshot_branch_id: str
+    active_branch_id: str
+    conversation_id: str
+    created_at: str
+    updated_at: str
+    branches: list[ChatComparisonBranchOut] = Field(default_factory=list)
 
 
 class ConversationSummaryOut(BaseModel):

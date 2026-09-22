@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import json
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Literal
 
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
@@ -58,6 +59,20 @@ class PreparedChatTurn:
 
 def _now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
+
+
+def _is_completed_assistant(message: ChatMessage) -> bool:
+    if message.role != "assistant":
+        return False
+    if not message.metadata_json:
+        return True
+    try:
+        metadata = json.loads(message.metadata_json)
+    except (TypeError, ValueError):
+        return True
+    if not isinstance(metadata, dict):
+        return True
+    return metadata.get("status", "completed") == "completed"
 
 
 def _root_conversation(db: Session, root_conversation_id: str) -> ChatConversation:
@@ -121,6 +136,57 @@ def _comparison_group(
     return group
 
 
+def get_comparison_group(
+    db: Session,
+    *,
+    job_id: str,
+    group_id: str,
+) -> ChatComparisonGroup:
+    """Return one persisted comparison group after validating job ownership."""
+    group = db.get(ChatComparisonGroup, group_id)
+    if group is None or group.job_id != job_id:
+        raise ComparisonValidationError(
+            "comparison group was not found for the selected job"
+        )
+    root = db.get(ChatConversation, group.root_conversation_id)
+    if (
+        root is None
+        or root.job_id != job_id
+        or root.mode != "baseline"
+        or root.parent_branch_id is not None
+    ):
+        raise ComparisonValidationError(
+            "comparison group root does not belong to the selected job"
+        )
+    return group
+
+
+def get_comparison_branches(
+    db: Session,
+    *,
+    group_id: str,
+) -> list[ChatComparisonBranch]:
+    return list(
+        db.scalars(
+            select(ChatComparisonBranch)
+            .where(ChatComparisonBranch.group_id == group_id)
+            .order_by(ChatComparisonBranch.created_at, ChatComparisonBranch.id)
+        )
+    )
+
+
+def get_conversation_branch(
+    db: Session,
+    *,
+    conversation_id: str,
+) -> ChatComparisonBranch | None:
+    return db.scalar(
+        select(ChatComparisonBranch).where(
+            ChatComparisonBranch.conversation_id == conversation_id
+        )
+    )
+
+
 def _new_branch(
     db: Session,
     *,
@@ -129,6 +195,7 @@ def _new_branch(
     label: str,
     source_message_id: str | None,
     history_cutoff_sequence: int,
+    request_id: str | None = None,
 ) -> ChatComparisonBranch:
     now = _now_iso()
     conversation = ChatConversation(
@@ -139,6 +206,7 @@ def _new_branch(
         parent_branch_id=root.id,
         source_message_id=source_message_id,
         history_cutoff_sequence=history_cutoff_sequence,
+        request_id=request_id,
         title=root.title,
         created_at=now,
         updated_at=now,
@@ -180,11 +248,12 @@ def create_mnemos_snapshot(
     if existing is not None:
         return existing
 
-    cutoff = db.scalar(
-        select(func.max(ChatMessage.sequence)).where(
-            ChatMessage.conversation_id == root.id,
-            ChatMessage.role == "assistant",
-        )
+    completed_root_messages = _completed_messages(
+        db,
+        conversation_id=root.id,
+    )
+    cutoff = (
+        completed_root_messages[-1].sequence if completed_root_messages else 0
     )
     if db.get_bind().dialect.name == "sqlite":
         now = _now_iso()
@@ -201,7 +270,7 @@ def create_mnemos_snapshot(
                 mode="mnemos",
                 parent_branch_id=root.id,
                 source_message_id=None,
-                history_cutoff_sequence=cutoff or 0,
+                history_cutoff_sequence=cutoff,
                 title=root.title,
                 created_at=now,
                 updated_at=now,
@@ -216,7 +285,7 @@ def create_mnemos_snapshot(
                 conversation_id=conversation_id,
                 label="MNEMOS snapshot",
                 source_message_id=None,
-                history_cutoff_sequence=cutoff or 0,
+                history_cutoff_sequence=cutoff,
                 created_at=now,
                 updated_at=now,
             )
@@ -266,6 +335,7 @@ def create_mnemos_copy_branch(
     *,
     root_conversation_id: str,
     source_message_id: str,
+    request_id: str | None = None,
 ) -> ChatComparisonBranch:
     """Create a comparison branch immediately before a completed root question."""
     root = _root_conversation(db, root_conversation_id)
@@ -278,13 +348,13 @@ def create_mnemos_copy_branch(
         raise ComparisonValidationError("comparison source must be a user message")
 
     completed_answer = db.scalar(
-        select(ChatMessage.id).where(
+        select(ChatMessage).where(
             ChatMessage.conversation_id == root.id,
             ChatMessage.sequence == source.sequence + 1,
             ChatMessage.role == "assistant",
         )
     )
-    if completed_answer is None:
+    if completed_answer is None or not _is_completed_assistant(completed_answer):
         raise ComparisonValidationError(
             "comparison source must have a completed assistant answer"
         )
@@ -297,6 +367,7 @@ def create_mnemos_copy_branch(
         label=f"Comparison from message {source.sequence}",
         source_message_id=source.id,
         history_cutoff_sequence=source.sequence - 1,
+        request_id=request_id,
     )
 
 
@@ -306,29 +377,33 @@ def _completed_messages(
     conversation_id: str,
     maximum_sequence: int | None = None,
 ) -> list[ChatMessage]:
-    completed_sequence = db.scalar(
-        select(func.max(ChatMessage.sequence)).where(
-            ChatMessage.conversation_id == conversation_id,
-            ChatMessage.role == "assistant",
-            *(
-                (ChatMessage.sequence <= maximum_sequence,)
-                if maximum_sequence is not None
-                else ()
-            ),
-        )
-    )
-    if completed_sequence is None:
-        return []
-    return list(
+    messages = list(
         db.scalars(
             select(ChatMessage)
             .where(
                 ChatMessage.conversation_id == conversation_id,
-                ChatMessage.sequence <= completed_sequence,
+                *(
+                    (ChatMessage.sequence <= maximum_sequence,)
+                    if maximum_sequence is not None
+                    else ()
+                ),
             )
             .order_by(ChatMessage.sequence.asc())
         )
     )
+    completed: list[ChatMessage] = []
+    pending_users: list[ChatMessage] = []
+    for message in messages:
+        if message.role == "user":
+            pending_users.append(message)
+            continue
+        if not _is_completed_assistant(message):
+            pending_users.clear()
+            continue
+        completed.extend(pending_users)
+        pending_users.clear()
+        completed.append(message)
+    return completed
 
 
 def prompt_history_for_branch(

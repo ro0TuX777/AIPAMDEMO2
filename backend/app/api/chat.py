@@ -18,7 +18,8 @@ from typing import AsyncGenerator
 
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import StreamingResponse
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.app.database_v2 import get_session_factory
@@ -26,7 +27,12 @@ from backend.app.llm_client import LLMClient, LLMConfig
 from backend.app.schemas.chat import (                       # shared Pydantic models
     ChatCitation,
     ChatCitationOut,
+    ChatComparisonBranchCreateRequest,
+    ChatComparisonBranchOut,
+    ChatComparisonCreateRequest,
+    ChatComparisonGroupOut,
     ChatGenerationMetadata,
+    ChatMessageOut,
     ChatRequestBody,
     ChatResponseBody,
     ConversationHistoryOut,
@@ -50,6 +56,11 @@ from backend.app.services.structured_retrieval import retrieve_structured
 from backend.app.services.chat_comparisons import (
     ComparisonValidationError,
     PreparedChatTurn,
+    create_mnemos_copy_branch,
+    create_mnemos_snapshot,
+    get_comparison_branches,
+    get_comparison_group,
+    get_conversation_branch,
     prompt_history_for_mnemos_conversation,
 )
 from backend.app.services.mnemos_chat_retrieval import (
@@ -60,7 +71,12 @@ from backend.app.services.mnemos_chat_retrieval import (
 from backend.app.api.deps import get_db, verify_token
 from backend.app.config_v2 import Settings, get_settings
 from backend.app.models.alert import Alert
-from backend.app.models.chat import ChatConversation, ChatMessage
+from backend.app.models.chat import (
+    ChatComparisonBranch,
+    ChatComparisonGroup,
+    ChatConversation,
+    ChatMessage,
+)
 from backend.app.models.connection import Connection
 from backend.app.models.finding import Finding
 from backend.app.models.host import Host
@@ -80,6 +96,8 @@ router = APIRouter(dependencies=[Depends(verify_token)], tags=["chat"])
 # continues to work across the codebase and tests.
 __all__ = [
     "ChatCitationOut",
+    "ChatComparisonBranchOut",
+    "ChatComparisonGroupOut",
     "ChatRequestBody",
     "ChatResponseBody",
     "ConversationHistoryOut",
@@ -206,7 +224,7 @@ def _chunk_text(text: str, chunk_size: int = 350) -> list[str]:
     return [text[i:i + chunk_size] for i in range(0, len(text), chunk_size)]
 
 
-def _serialize_citations(citations: list[ChatCitationOut]) -> str:
+def _serialize_citations(citations: list[ChatCitation]) -> str:
     return json.dumps({"items": [c.model_dump() for c in citations]})
 
 
@@ -727,14 +745,36 @@ def _summarize_older_messages(msgs: list[dict]) -> str:
 
 
 def _get_conversation_history_msgs(db: Session, conv_id: str, limit: int = 10) -> list[dict]:
-    """Return last N messages for LLM context."""
+    """Return completed turns only, excluding pending or failed generation."""
     rows = db.execute(
         select(ChatMessage)
         .where(ChatMessage.conversation_id == conv_id)
-        .order_by(ChatMessage.created_at.desc())
-        .limit(limit)
+        .order_by(ChatMessage.sequence.desc())
+        .limit(max(limit * 2, 20))
     ).scalars().all()
-    return [{"role": r.role, "content": r.content} for r in reversed(rows)]
+    completed: list[ChatMessage] = []
+    pending_users: list[ChatMessage] = []
+    for message in reversed(rows):
+        if message.role == "user":
+            pending_users.append(message)
+            continue
+        metadata: dict = {}
+        if message.metadata_json:
+            try:
+                parsed = json.loads(message.metadata_json)
+                metadata = parsed if isinstance(parsed, dict) else {}
+            except (TypeError, ValueError):
+                metadata = {}
+        if metadata.get("status", "completed") != "completed":
+            pending_users.clear()
+            continue
+        completed.extend(pending_users)
+        pending_users.clear()
+        completed.append(message)
+    return [
+        {"role": message.role, "content": message.content}
+        for message in completed[-limit:]
+    ]
 
 
 async def _build_chat_messages(
@@ -1028,14 +1068,21 @@ async def prepare_chat_turn(
     historical_citations: list[HistoricalChatCitationOut] = []
 
     if body.mode == "mnemos":
-        pending_result = retrieve_historical_findings(
-            db,
-            current_job_id=job_id,
-            query=body.message,
-        )
-        retrieval_result = (
-            await pending_result if inspect.isawaitable(pending_result) else pending_result
-        )
+        try:
+            pending_result = retrieve_historical_findings(
+                db=db,
+                current_job_id=job_id,
+                query=body.message,
+            )
+            retrieval_result = (
+                await pending_result
+                if inspect.isawaitable(pending_result)
+                else pending_result
+            )
+        except Exception as exc:
+            raise MnemosUnavailableError(
+                "MNEMOS historical retrieval is unavailable"
+            ) from exc
         if retrieval_result.status in {"unavailable", "error"}:
             raise MnemosUnavailableError("MNEMOS historical retrieval is unavailable")
         if retrieval_result.status == "used":
@@ -1085,6 +1132,501 @@ async def prepare_chat_turn(
     )
 
 
+def _json_object(raw: str | None) -> dict:
+    if not raw:
+        return {}
+    try:
+        parsed = json.loads(raw)
+    except (TypeError, ValueError):
+        return {}
+    return parsed if isinstance(parsed, dict) else {}
+
+
+def _message_out(message: ChatMessage) -> ChatMessageOut:
+    citation_payload = _json_object(message.citations_json)
+    citations = citation_payload.get("items", [])
+    if not isinstance(citations, list):
+        citations = []
+    metadata = _json_object(message.metadata_json) or None
+    return ChatMessageOut(
+        id=message.id,
+        sequence=message.sequence,
+        role=message.role,
+        content=message.content,
+        citations=citations,
+        metadata=metadata,
+        request_id=message.request_id,
+        timestamp=message.created_at,
+    )
+
+
+def _branch_out(db: Session, branch: ChatComparisonBranch) -> ChatComparisonBranchOut:
+    conversation = db.get(ChatConversation, branch.conversation_id)
+    messages = list(
+        db.scalars(
+            select(ChatMessage)
+            .where(ChatMessage.conversation_id == branch.conversation_id)
+            .order_by(ChatMessage.sequence)
+        )
+    )
+    return ChatComparisonBranchOut(
+        id=branch.id,
+        conversation_id=branch.conversation_id,
+        label=branch.label,
+        source_message_id=branch.source_message_id,
+        request_id=conversation.request_id if conversation is not None else None,
+        history_cutoff_sequence=branch.history_cutoff_sequence,
+        created_at=branch.created_at,
+        updated_at=branch.updated_at,
+        messages=[_message_out(message) for message in messages],
+    )
+
+
+def _comparison_group_out(
+    db: Session,
+    group: ChatComparisonGroup,
+) -> ChatComparisonGroupOut:
+    branches = get_comparison_branches(db, group_id=group.id)
+    snapshot = next(
+        (branch for branch in branches if branch.source_message_id is None),
+        None,
+    )
+    if snapshot is None:
+        raise RuntimeError("comparison group has no snapshot branch")
+    active_branch_id = group.active_branch_id or snapshot.id
+    active = next(
+        (branch for branch in branches if branch.id == active_branch_id),
+        snapshot,
+    )
+    return ChatComparisonGroupOut(
+        group_id=group.id,
+        job_id=group.job_id,
+        root_conversation_id=group.root_conversation_id,
+        title=group.title,
+        snapshot_branch_id=snapshot.id,
+        active_branch_id=active.id,
+        conversation_id=active.conversation_id,
+        created_at=group.created_at,
+        updated_at=group.updated_at,
+        branches=[_branch_out(db, branch) for branch in branches],
+    )
+
+
+def _comparison_error(exc: ComparisonValidationError, *, status_code: int = 400):
+    raise HTTPException(
+        status_code=status_code,
+        detail={"code": "INVALID_COMPARISON", "error": str(exc)},
+    ) from exc
+
+
+@router.post(
+    "/jobs/{job_id}/chat/comparisons",
+    response_model=ChatComparisonGroupOut,
+)
+async def open_chat_comparison(
+    job_id: str,
+    body: ChatComparisonCreateRequest,
+    db: Session = Depends(get_db),
+):
+    if db.get(Job, job_id) is None:
+        raise HTTPException(status_code=404, detail="job not found")
+    root = db.get(ChatConversation, body.root_conversation_id)
+    if root is None or root.job_id != job_id:
+        raise HTTPException(status_code=404, detail="conversation not found")
+    try:
+        branch = create_mnemos_snapshot(
+            db,
+            root_conversation_id=body.root_conversation_id,
+        )
+        group = get_comparison_group(
+            db,
+            job_id=job_id,
+            group_id=branch.group_id,
+        )
+        db.commit()
+        return _comparison_group_out(db, group)
+    except ComparisonValidationError as exc:
+        db.rollback()
+        _comparison_error(exc)
+
+
+@router.get(
+    "/jobs/{job_id}/chat/comparisons/{group_id}",
+    response_model=ChatComparisonGroupOut,
+)
+async def restore_chat_comparison(
+    job_id: str,
+    group_id: str,
+    db: Session = Depends(get_db),
+):
+    try:
+        group = get_comparison_group(db, job_id=job_id, group_id=group_id)
+        return _comparison_group_out(db, group)
+    except ComparisonValidationError as exc:
+        _comparison_error(exc, status_code=404)
+
+
+@router.post(
+    "/jobs/{job_id}/chat/comparisons/{group_id}/branches",
+    response_model=ChatComparisonBranchOut,
+    status_code=201,
+)
+async def create_chat_comparison_branch(
+    job_id: str,
+    group_id: str,
+    body: ChatComparisonBranchCreateRequest,
+    db: Session = Depends(get_db),
+):
+    _validate_new_request_id(body.request_id)
+    try:
+        group = get_comparison_group(db, job_id=job_id, group_id=group_id)
+        existing_conversation = db.scalar(
+            select(ChatConversation).where(
+                ChatConversation.comparison_group_id == group.id,
+                ChatConversation.request_id == body.request_id,
+            )
+        )
+        if existing_conversation is not None:
+            existing_branch = get_conversation_branch(
+                db,
+                conversation_id=existing_conversation.id,
+            )
+            if existing_branch is None:
+                raise ComparisonValidationError(
+                    "request_id belongs to an invalid comparison branch"
+                )
+            if existing_branch.source_message_id != body.source_message_id:
+                raise HTTPException(
+                    status_code=409,
+                    detail={
+                        "code": "REQUEST_ID_CONFLICT",
+                        "error": "request_id is already associated with another source message",
+                    },
+                )
+            return _branch_out(db, existing_branch)
+        branch = create_mnemos_copy_branch(
+            db,
+            root_conversation_id=group.root_conversation_id,
+            source_message_id=body.source_message_id,
+            request_id=body.request_id,
+        )
+        db.commit()
+        return _branch_out(db, branch)
+    except IntegrityError:
+        db.rollback()
+        group = get_comparison_group(db, job_id=job_id, group_id=group_id)
+        existing_conversation = db.scalar(
+            select(ChatConversation).where(
+                ChatConversation.comparison_group_id == group.id,
+                ChatConversation.request_id == body.request_id,
+            )
+        )
+        if existing_conversation is None:
+            raise
+        existing_branch = get_conversation_branch(
+            db,
+            conversation_id=existing_conversation.id,
+        )
+        if (
+            existing_branch is None
+            or existing_branch.source_message_id != body.source_message_id
+        ):
+            raise HTTPException(
+                status_code=409,
+                detail={
+                    "code": "REQUEST_ID_CONFLICT",
+                    "error": "request_id is already associated with another source message",
+                },
+            )
+        return _branch_out(db, existing_branch)
+    except ComparisonValidationError as exc:
+        db.rollback()
+        _comparison_error(exc)
+
+
+def _mnemos_unavailable(exc: MnemosUnavailableError):
+    raise HTTPException(
+        status_code=503,
+        detail={
+            "code": "MNEMOS_UNAVAILABLE",
+            "error": "MNEMOS historical retrieval is unavailable",
+            "retryable": True,
+        },
+    ) from exc
+
+
+def _require_turn_request_id(body: ChatRequestBody) -> None:
+    if body.mode == "mnemos" and not body.request_id:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "REQUEST_ID_REQUIRED",
+                "error": "request_id is required for MNEMOS turns",
+            },
+        )
+
+
+def _validate_new_request_id(request_id: str | None) -> None:
+    if request_id is None:
+        return
+    try:
+        uuid.UUID(request_id)
+    except (ValueError, AttributeError) as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "code": "INVALID_REQUEST_ID",
+                "error": "request_id must be a UUID",
+            },
+        ) from exc
+
+
+def _conversation_branch_id(db: Session, conversation_id: str) -> str | None:
+    branch = get_conversation_branch(db, conversation_id=conversation_id)
+    return branch.id if branch is not None else None
+
+
+def _find_existing_user_turn(
+    db: Session,
+    *,
+    conversation_id: str | None,
+    request_id: str | None,
+) -> ChatMessage | None:
+    if not conversation_id or not request_id:
+        return None
+    return db.scalar(
+        select(ChatMessage).where(
+            ChatMessage.conversation_id == conversation_id,
+            ChatMessage.request_id == request_id,
+            ChatMessage.role == "user",
+        )
+    )
+
+
+def _reject_parallel_turn(db: Session, conversation_id: str | None) -> None:
+    if conversation_id is None:
+        return
+    latest = db.scalar(
+        select(ChatMessage)
+        .where(ChatMessage.conversation_id == conversation_id)
+        .order_by(ChatMessage.sequence.desc())
+        .limit(1)
+    )
+    if latest is not None and latest.role == "user":
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "TURN_IN_PROGRESS",
+                "error": "the conversation already has a pending turn",
+            },
+        )
+
+
+def _response_for_existing_turn(
+    db: Session,
+    *,
+    user_message: ChatMessage,
+    requested_content: str,
+) -> ChatResponseBody:
+    if user_message.content != requested_content:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "code": "REQUEST_ID_CONFLICT",
+                "error": "request_id is already associated with another message",
+            },
+        )
+    assistant = db.scalar(
+        select(ChatMessage).where(
+            ChatMessage.conversation_id == user_message.conversation_id,
+            ChatMessage.sequence == user_message.sequence + 1,
+            ChatMessage.role == "assistant",
+        )
+    )
+    branch_id = _conversation_branch_id(db, user_message.conversation_id)
+    if assistant is None:
+        return ChatResponseBody(
+            response="",
+            conversation_id=user_message.conversation_id,
+            branch_id=branch_id,
+            request_id=user_message.request_id,
+            status="pending",
+        )
+    metadata = _json_object(assistant.metadata_json)
+    citation_payload = _json_object(assistant.citations_json)
+    citations = citation_payload.get("items", [])
+    return ChatResponseBody(
+        response=assistant.content,
+        citations=citations if isinstance(citations, list) else [],
+        conversation_id=user_message.conversation_id,
+        confidence=metadata.get("confidence"),
+        evidence_refs=metadata.get("evidence_refs", []),
+        suggested_followups=metadata.get("suggested_followups", []),
+        retrieval_status=metadata.get("retrieval_status"),
+        model_id=metadata.get("model_id"),
+        generation=metadata.get("generation"),
+        branch_id=branch_id,
+        request_id=user_message.request_id,
+        status=metadata.get("status", "completed"),
+    )
+
+
+def _resolve_turn_conversation(
+    db: Session,
+    *,
+    job_id: str,
+    body: ChatRequestBody,
+) -> ChatConversation:
+    now = _now_iso()
+    if body.conversation_id:
+        conversation = db.get(ChatConversation, body.conversation_id)
+        if conversation is None or conversation.job_id != job_id:
+            raise HTTPException(status_code=404, detail="conversation not found")
+        if conversation.mode != body.mode:
+            raise HTTPException(
+                status_code=400,
+                detail={
+                    "code": "CONVERSATION_MODE_MISMATCH",
+                    "error": "conversation mode does not match request mode",
+                },
+            )
+        return conversation
+    if body.mode == "mnemos":
+        raise HTTPException(
+            status_code=400,
+            detail={
+                "code": "MNEMOS_CONVERSATION_REQUIRED",
+                "error": "MNEMOS turns require a comparison conversation",
+            },
+        )
+    conversation = ChatConversation(
+        id=str(uuid.uuid4()),
+        job_id=job_id,
+        mode="baseline",
+        created_at=now,
+        updated_at=now,
+    )
+    db.add(conversation)
+    db.flush()
+    return conversation
+
+
+def _persist_user_turn(
+    db: Session,
+    *,
+    conversation: ChatConversation,
+    body: ChatRequestBody,
+) -> tuple[ChatMessage, bool]:
+    user_message = ChatMessage(
+        id=str(uuid.uuid4()),
+        conversation_id=conversation.id,
+        role="user",
+        content=body.message,
+        request_id=body.request_id,
+        created_at=_now_iso(),
+    )
+    db.add(user_message)
+    conversation.updated_at = user_message.created_at
+    try:
+        db.commit()
+    except IntegrityError:
+        db.rollback()
+        existing = _find_existing_user_turn(
+            db,
+            conversation_id=conversation.id,
+            request_id=body.request_id,
+        )
+        if existing is None:
+            raise
+        return existing, False
+    db.refresh(user_message)
+    return user_message, True
+
+
+def _assistant_metadata(
+    *,
+    prepared: PreparedChatTurn,
+    final_citations: list[ChatCitation],
+    evidence_refs: list[EvidenceRefOut],
+    suggested_followups: list[str],
+    request_id: str | None,
+    settings: Settings,
+    status: str,
+) -> dict:
+    config = _make_llm_config(settings)
+    return {
+        "status": status,
+        "request_id": request_id,
+        "retrieval_status": prepared.retrieval_status,
+        "citations": [citation.model_dump() for citation in final_citations],
+        "model_id": prepared.model_id,
+        "generation": prepared.generation.model_dump(),
+        "runtime": {
+            "provider": config.provider.value,
+            "timeout_seconds": config.timeout_seconds,
+            "local_adapter_model_name": config.local_adapter_model_name,
+            "local_adapter_quantization": config.local_adapter_quantization,
+        },
+        "evidence_refs": [reference.model_dump() for reference in evidence_refs],
+        "suggested_followups": suggested_followups,
+        "confidence": 0.85 if status == "completed" else None,
+    }
+
+
+def _persist_assistant_turn(
+    db: Session,
+    *,
+    conversation_id: str,
+    response_text: str,
+    final_citations: list[ChatCitation],
+    metadata: dict,
+) -> ChatMessage:
+    assistant = ChatMessage(
+        id=str(uuid.uuid4()),
+        conversation_id=conversation_id,
+        role="assistant",
+        content=response_text,
+        citations_json=_serialize_citations(final_citations),
+        metadata_json=json.dumps(metadata),
+        created_at=_now_iso(),
+    )
+    db.add(assistant)
+    conversation = db.get(ChatConversation, conversation_id)
+    if conversation is not None:
+        conversation.updated_at = assistant.created_at
+    db.commit()
+    db.refresh(assistant)
+    return assistant
+
+
+def _chat_response(
+    *,
+    conversation_id: str,
+    branch_id: str | None,
+    request_id: str | None,
+    response_text: str,
+    final_citations: list[ChatCitation],
+    prepared: PreparedChatTurn,
+    evidence_refs: list[EvidenceRefOut],
+    suggested_followups: list[str],
+    status: str,
+) -> ChatResponseBody:
+    return ChatResponseBody(
+        response=response_text,
+        citations=final_citations,
+        conversation_id=conversation_id,
+        confidence=0.85 if status == "completed" else None,
+        evidence_refs=evidence_refs,
+        suggested_followups=suggested_followups,
+        retrieval_status=prepared.retrieval_status,
+        model_id=prepared.model_id,
+        generation=prepared.generation,
+        branch_id=branch_id,
+        request_id=request_id,
+        status=status,
+    )
+
+
 @router.post("/jobs/{job_id}/chat", response_model=ChatResponseBody)
 async def chat_about_job(
     job_id: str,
@@ -1093,81 +1635,104 @@ async def chat_about_job(
     settings: Settings = Depends(get_settings),
 ):
     """Send a chat message about a job and get an AI response."""
-    # Verify job exists
-    job = db.get(Job, job_id)
-    if not job:
+    if db.get(Job, job_id) is None:
         raise HTTPException(status_code=404, detail="job not found")
-
-    # Get or create conversation
-    now = _now_iso()
-    if body.conversation_id:
-        conv = db.get(ChatConversation, body.conversation_id)
-        if not conv or conv.job_id != job_id:
-            raise HTTPException(status_code=404, detail="conversation not found")
-        conv_id = conv.id
-    else:
-        conv_id = str(uuid.uuid4())
-        conv = ChatConversation(id=conv_id, job_id=job_id, created_at=now, updated_at=now)
-        db.add(conv)
-
-    # Save user message
-    user_msg_id = str(uuid.uuid4())
-    db.add(ChatMessage(
-        id=user_msg_id, conversation_id=conv_id, role="user",
-        content=body.message, created_at=now,
-    ))
-
-    messages, citations, combined_context = await _build_chat_messages(
-        db, job_id, settings, conv_id, body.message, context_hint=body.context_hint
+    _require_turn_request_id(body)
+    existing = _find_existing_user_turn(
+        db,
+        conversation_id=body.conversation_id,
+        request_id=body.request_id,
     )
-
-    # COMMIT user message + conversation BEFORE the LLM call to release the
-    # SQLite write lock.  The LLM call can take 30+ seconds; holding a write
-    # transaction that long causes "database is locked" for other requests.
-    db.commit()
-
-    # Call LLM
-    client = _make_llm_client(settings)
+    if existing is not None:
+        conversation = db.get(ChatConversation, existing.conversation_id)
+        if conversation is None or conversation.job_id != job_id:
+            raise HTTPException(status_code=404, detail="conversation not found")
+        if conversation.mode != body.mode:
+            raise HTTPException(status_code=400, detail="conversation mode mismatch")
+        return _response_for_existing_turn(
+            db,
+            user_message=existing,
+            requested_content=body.message,
+        )
+    _reject_parallel_turn(db, body.conversation_id)
 
     try:
-        response_text = await client.chat_completion(messages, temperature=0.3)
-        response_text, final_citations = _finalize_grounded_response_payload(
+        prepared = await prepare_chat_turn(
+            db,
+            job_id=job_id,
+            body=body,
+            settings=settings,
+        )
+    except MnemosUnavailableError as exc:
+        db.rollback()
+        _mnemos_unavailable(exc)
+    except ComparisonValidationError as exc:
+        db.rollback()
+        _comparison_error(exc)
+
+    _validate_new_request_id(body.request_id)
+    conversation = _resolve_turn_conversation(db, job_id=job_id, body=body)
+    user_message, created = _persist_user_turn(
+        db,
+        conversation=conversation,
+        body=body,
+    )
+    if not created:
+        return _response_for_existing_turn(
+            db,
+            user_message=user_message,
+            requested_content=body.message,
+        )
+
+    client = _make_llm_client(settings)
+    status = "completed"
+    try:
+        response_text = await client.chat_completion(
+            prepared.messages,
+            temperature=prepared.generation.temperature,
+        )
+        response_text, final_citations = _finalize_prepared_chat_response_payload(
             response_text,
-            citations,
-            combined_context,
+            prepared,
             body.message,
         )
     except Exception as exc:
         logger.exception("LLM call failed for job %s", job_id)
-        final_citations = _dedupe_citations(citations, limit=8)
+        status = "error"
+        final_citations = list(prepared.current_job_citations)
         response_text = _append_sources_and_limits(
             f"I'm sorry, I couldn't generate a response. Error: {str(exc)[:200]}",
-            final_citations,
+            prepared.current_job_citations,
         )
-
-    # Save assistant message in a NEW transaction (write lock held only briefly)
-    asst_msg_id = str(uuid.uuid4())
-    db.add(ChatMessage(
-        id=asst_msg_id, conversation_id=conv_id, role="assistant",
-        content=response_text, citations_json=_serialize_citations(final_citations), created_at=_now_iso(),
-    ))
-
-    # Re-fetch conversation to update timestamp (it was committed above)
-    conv = db.get(ChatConversation, conv_id)
-    if conv:
-        conv.updated_at = _now_iso()
-    db.commit()
-
     evidence_refs, suggested_followups = _post_process_response(
         response_text, body.message, final_citations,
     )
-
-    return ChatResponseBody(
-        response=response_text,
-        citations=final_citations,
-        conversation_id=conv_id,
+    metadata = _assistant_metadata(
+        prepared=prepared,
+        final_citations=final_citations,
         evidence_refs=evidence_refs,
         suggested_followups=suggested_followups,
+        request_id=body.request_id,
+        settings=settings,
+        status=status,
+    )
+    _persist_assistant_turn(
+        db,
+        conversation_id=conversation.id,
+        response_text=response_text,
+        final_citations=final_citations,
+        metadata=metadata,
+    )
+    return _chat_response(
+        conversation_id=conversation.id,
+        branch_id=_conversation_branch_id(db, conversation.id),
+        request_id=body.request_id,
+        response_text=response_text,
+        final_citations=final_citations,
+        prepared=prepared,
+        evidence_refs=evidence_refs,
+        suggested_followups=suggested_followups,
+        status=status,
     )
 
 
@@ -1197,37 +1762,84 @@ async def chat_about_job_stream(
     settings: Settings = Depends(get_settings),
 ):
     """Stream chat response tokens via SSE for real-time display."""
-    # Verify job exists
-    job = db.get(Job, job_id)
-    if not job:
+    if db.get(Job, job_id) is None:
         raise HTTPException(status_code=404, detail="job not found")
-
-    # Get or create conversation
-    now = _now_iso()
-    if body.conversation_id:
-        conv = db.get(ChatConversation, body.conversation_id)
-        if not conv or conv.job_id != job_id:
-            raise HTTPException(status_code=404, detail="conversation not found")
-        conv_id = conv.id
-    else:
-        conv_id = str(uuid.uuid4())
-        conv = ChatConversation(id=conv_id, job_id=job_id, created_at=now, updated_at=now)
-        db.add(conv)
-
-    # Save user message
-    user_msg_id = str(uuid.uuid4())
-    db.add(ChatMessage(
-        id=user_msg_id, conversation_id=conv_id, role="user",
-        content=body.message, created_at=now,
-    ))
-
-    messages, citations, combined_context = await _build_chat_messages(
-        db, job_id, settings, conv_id, body.message, context_hint=body.context_hint
+    _require_turn_request_id(body)
+    existing = _find_existing_user_turn(
+        db,
+        conversation_id=body.conversation_id,
+        request_id=body.request_id,
     )
+    if existing is not None:
+        persisted = _response_for_existing_turn(
+            db,
+            user_message=existing,
+            requested_content=body.message,
+        )
 
-    # Commit user message before long LLM call
-    db.commit()
+        async def replay_existing() -> AsyncGenerator[str, None]:
+            meta = {
+                "type": "meta",
+                "conversation_id": persisted.conversation_id,
+                "branch_id": persisted.branch_id,
+                "request_id": persisted.request_id,
+                "status": persisted.status,
+                "retrieval_status": persisted.retrieval_status,
+                "citations": [citation.model_dump() for citation in persisted.citations],
+                "model_id": persisted.model_id,
+                "generation": (
+                    persisted.generation.model_dump()
+                    if persisted.generation is not None
+                    else None
+                ),
+            }
+            yield f"data: {json.dumps(meta)}\n\n"
+            if persisted.response:
+                yield f"data: {json.dumps({'type': 'replace', 'content': persisted.response})}\n\n"
+            if persisted.status != "pending":
+                yield "data: [DONE]\n\n"
 
+        return StreamingResponse(replay_existing(), media_type="text/event-stream")
+    _reject_parallel_turn(db, body.conversation_id)
+
+    try:
+        prepared = await prepare_chat_turn(
+            db,
+            job_id=job_id,
+            body=body,
+            settings=settings,
+        )
+    except MnemosUnavailableError as exc:
+        db.rollback()
+        _mnemos_unavailable(exc)
+    except ComparisonValidationError as exc:
+        db.rollback()
+        _comparison_error(exc)
+
+    _validate_new_request_id(body.request_id)
+    conversation = _resolve_turn_conversation(db, job_id=job_id, body=body)
+    user_message, created = _persist_user_turn(
+        db,
+        conversation=conversation,
+        body=body,
+    )
+    if not created:
+        persisted = _response_for_existing_turn(
+            db,
+            user_message=user_message,
+            requested_content=body.message,
+        )
+
+        async def replay_raced_turn() -> AsyncGenerator[str, None]:
+            yield f"data: {json.dumps({'type': 'meta', 'conversation_id': persisted.conversation_id, 'branch_id': persisted.branch_id, 'request_id': persisted.request_id, 'status': persisted.status, 'retrieval_status': persisted.retrieval_status, 'citations': [citation.model_dump() for citation in persisted.citations], 'model_id': persisted.model_id, 'generation': persisted.generation.model_dump() if persisted.generation else None})}\n\n"
+            if persisted.response:
+                yield f"data: {json.dumps({'type': 'replace', 'content': persisted.response})}\n\n"
+            if persisted.status != "pending":
+                yield "data: [DONE]\n\n"
+
+        return StreamingResponse(replay_raced_turn(), media_type="text/event-stream")
+    conv_id = conversation.id
+    branch_id = _conversation_branch_id(db, conv_id)
     client = _make_llm_client(settings)
 
     # Queue between the detached producer (LLM call + persistence) and the
@@ -1247,18 +1859,21 @@ async def chat_about_job_stream(
         """
         streamed_parts: list[str] = []
         error_text: str | None = None
-        response_text: str = ""
-        final_citations: list[ChatCitationOut] = []
+        response_text = ""
+        final_citations: list[ChatCitation] = []
         try:
             # Tell the frontend which conversation this stream belongs to as
             # early as possible — useful so the UI can save/resume even if
             # the user closes the tab mid-stream.
             await event_queue.put(
-                f"data: {json.dumps({'type': 'meta', 'conversation_id': conv_id})}\n\n"
+                f"data: {json.dumps({'type': 'meta', 'conversation_id': conv_id, 'branch_id': branch_id, 'request_id': body.request_id, 'status': 'pending', 'retrieval_status': prepared.retrieval_status, 'citations': [citation.model_dump() for citation in [*prepared.current_job_citations, *prepared.historical_citations]], 'model_id': prepared.model_id, 'generation': prepared.generation.model_dump()})}\n\n"
             )
 
             try:
-                async for token in client.chat_completion_stream(messages, temperature=0.3):
+                async for token in client.chat_completion_stream(
+                    prepared.messages,
+                    temperature=prepared.generation.temperature,
+                ):
                     if token:
                         streamed_parts.append(token)
                         await event_queue.put(
@@ -1269,10 +1884,12 @@ async def chat_about_job_stream(
                 error_text = f"Error: {str(exc)[:200]}"
 
             streamed_text = "".join(streamed_parts)
-
+            status = "completed"
             if error_text is None:
-                response_text, final_citations = _finalize_grounded_response_payload(
-                    streamed_text, citations, combined_context, body.message,
+                response_text, final_citations = _finalize_prepared_chat_response_payload(
+                    streamed_text,
+                    prepared,
+                    body.message,
                 )
                 # If finalize appended content (e.g. the "Sources used:" block),
                 # emit the delta so the on-screen text matches what we persist.
@@ -1290,46 +1907,50 @@ async def chat_about_job_stream(
                             f"data: {json.dumps({'type': 'replace', 'content': response_text})}\n\n"
                         )
             else:
-                final_citations = _dedupe_citations(citations, limit=8)
-                response_text = _append_sources_and_limits(error_text, final_citations)
+                status = "error"
+                final_citations = list(prepared.current_job_citations)
+                response_text = _append_sources_and_limits(
+                    error_text,
+                    prepared.current_job_citations,
+                )
                 # No live tokens were streamed (error before first chunk);
                 # emit as one block.
                 await event_queue.put(
-                    f"data: {json.dumps({'type': 'token', 'content': response_text})}\n\n"
+                    f"data: {json.dumps({'type': 'replace', 'content': response_text})}\n\n"
                 )
 
             evidence_refs, suggested_followups = _post_process_response(
                 response_text, body.message, final_citations,
             )
+            metadata = _assistant_metadata(
+                prepared=prepared,
+                final_citations=final_citations,
+                evidence_refs=evidence_refs,
+                suggested_followups=suggested_followups,
+                request_id=body.request_id,
+                settings=settings,
+                status=status,
+            )
+            session_factory = get_session_factory()
+            with session_factory() as background_db:
+                _persist_assistant_turn(
+                    background_db,
+                    conversation_id=conv_id,
+                    response_text=response_text,
+                    final_citations=final_citations,
+                    metadata=metadata,
+                )
             await event_queue.put(
-                f"data: {json.dumps({'type': 'meta', 'conversation_id': conv_id, 'citations': [c.model_dump() for c in final_citations], 'confidence': 0.85, 'evidence_refs': [r.model_dump() for r in evidence_refs], 'suggested_followups': suggested_followups})}\n\n"
+                f"data: {json.dumps({'type': 'meta', 'conversation_id': conv_id, 'branch_id': branch_id, 'request_id': body.request_id, 'status': status, 'retrieval_status': prepared.retrieval_status, 'citations': [citation.model_dump() for citation in final_citations], 'model_id': prepared.model_id, 'generation': prepared.generation.model_dump(), 'confidence': metadata['confidence'], 'evidence_refs': [reference.model_dump() for reference in evidence_refs], 'suggested_followups': suggested_followups})}\n\n"
             )
 
             await event_queue.put("data: [DONE]\n\n")
+        except Exception:
+            logger.exception("Failed to complete streamed chat turn for conv %s", conv_id)
+            await event_queue.put(
+                f"data: {json.dumps({'type': 'error', 'code': 'CHAT_TURN_FAILED', 'retryable': True})}\n\n"
+            )
         finally:
-            # Always persist the assistant message — even if the client
-            # disconnected, the LLM raised, or this task was cancelled at
-            # shutdown.  Use a fresh DB session because the request-scoped
-            # ``db`` is already closed by the time we get here.
-            if response_text:
-                try:
-                    session_factory = get_session_factory()
-                    with session_factory() as bg_db:
-                        asst_msg_id = str(uuid.uuid4())
-                        bg_db.add(ChatMessage(
-                            id=asst_msg_id, conversation_id=conv_id, role="assistant",
-                            content=response_text,
-                            citations_json=_serialize_citations(final_citations),
-                            created_at=_now_iso(),
-                        ))
-                        conv_obj = bg_db.get(ChatConversation, conv_id)
-                        if conv_obj:
-                            conv_obj.updated_at = _now_iso()
-                        bg_db.commit()
-                except Exception:
-                    logger.exception(
-                        "Failed to persist assistant message for conv %s", conv_id
-                    )
             # Wake the consumer so it can exit cleanly.
             await event_queue.put(None)
 
@@ -1374,7 +1995,11 @@ async def list_conversations(
 
     convs = db.execute(
         select(ChatConversation)
-        .where(ChatConversation.job_id == job_id)
+        .where(
+            ChatConversation.job_id == job_id,
+            ChatConversation.mode == "baseline",
+            ChatConversation.parent_branch_id.is_(None),
+        )
         .order_by(ChatConversation.updated_at.desc())
     ).scalars().all()
 
@@ -1405,28 +2030,12 @@ async def get_conversation(
     rows = db.execute(
         select(ChatMessage)
         .where(ChatMessage.conversation_id == conversation_id)
-        .order_by(ChatMessage.created_at.asc())
+        .order_by(ChatMessage.sequence.asc())
     ).scalars().all()
-
-    messages = []
-    for m in rows:
-        citations = []
-        if m.citations_json:
-            try:
-                parsed = json.loads(m.citations_json)
-                citations = parsed.get("items", []) if isinstance(parsed, dict) else parsed
-            except Exception:
-                pass
-        messages.append({
-            "role": m.role,
-            "content": m.content,
-            "citations": citations,
-            "timestamp": m.created_at,
-        })
 
     return ConversationHistoryOut(
         id=conv.id, job_id=conv.job_id,
-        messages=messages,
+        messages=[_message_out(message).model_dump() for message in rows],
         created_at=conv.created_at, updated_at=conv.updated_at,
     )
 
@@ -1445,6 +2054,11 @@ async def rename_conversation(
 
     conv.title = body.title
     conv.updated_at = _now_iso()
+    if conv.comparison_group_id:
+        group = db.get(ChatComparisonGroup, conv.comparison_group_id)
+        if group is not None and group.root_conversation_id == conv.id:
+            group.title = body.title
+            group.updated_at = conv.updated_at
     db.commit()
     db.refresh(conv)
 
@@ -1470,10 +2084,50 @@ async def delete_conversation(
     if not conv or conv.job_id != job_id:
         raise HTTPException(status_code=404, detail="conversation not found")
 
-    # Delete all associated messages first
-    db.execute(
-        ChatMessage.__table__.delete().where(ChatMessage.conversation_id == conversation_id)
-    )
-    db.delete(conv)
+    if conv.mode != "baseline" or conv.parent_branch_id is not None:
+        raise HTTPException(
+            status_code=400,
+            detail="delete the comparison root rather than an individual branch",
+        )
+    if conv.comparison_group_id:
+        try:
+            group = get_comparison_group(
+                db,
+                job_id=job_id,
+                group_id=conv.comparison_group_id,
+            )
+        except ComparisonValidationError as exc:
+            _comparison_error(exc)
+        branches = get_comparison_branches(db, group_id=group.id)
+        branch_conversation_ids = [branch.conversation_id for branch in branches]
+        group.active_branch_id = None
+        db.flush()
+        if branch_conversation_ids:
+            db.execute(
+                delete(ChatMessage).where(
+                    ChatMessage.conversation_id.in_(branch_conversation_ids)
+                )
+            )
+        db.execute(
+            delete(ChatComparisonBranch).where(
+                ChatComparisonBranch.group_id == group.id
+            )
+        )
+        if branch_conversation_ids:
+            db.execute(
+                delete(ChatConversation).where(
+                    ChatConversation.id.in_(branch_conversation_ids)
+                )
+            )
+        db.execute(delete(ChatComparisonGroup).where(ChatComparisonGroup.id == group.id))
+        db.execute(
+            delete(ChatMessage).where(ChatMessage.conversation_id == conversation_id)
+        )
+        db.execute(delete(ChatConversation).where(ChatConversation.id == conversation_id))
+    else:
+        db.execute(
+            delete(ChatMessage).where(ChatMessage.conversation_id == conversation_id)
+        )
+        db.delete(conv)
     db.commit()
     return None
