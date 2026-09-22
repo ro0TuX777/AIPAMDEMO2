@@ -12,7 +12,8 @@
     "build:demo:pages:nhan": "npm run build:demo:nhan && cp dist/index.html dist/404.html",
     "preview": "vite preview",
     "preview:demo": "vite preview --host",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:api": "node --test tests/api/client.test.mjs"
   },
   "dependencies": {
     "@tanstack/react-query": "^5.90.21",
