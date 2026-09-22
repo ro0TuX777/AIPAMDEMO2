@@ -427,13 +427,17 @@ def test_snapshot_recovers_when_a_concurrent_creator_wins(
 
     winner_branch_id: str | None = None
     with Session(engine) as loser:
-        original_flush = loser.flush
+        original_execute = loser.execute
         conflict_injected = False
 
-        def flush_after_competitor(objects=None):
+        def execute_after_competitor(statement, *args, **kwargs):
             nonlocal conflict_injected, winner_branch_id
-            if not conflict_injected and any(
-                isinstance(instance, ChatComparisonGroup) for instance in loser.new
+            target_table = getattr(statement, "table", None)
+            if (
+                not conflict_injected
+                and getattr(statement, "is_insert", False)
+                and target_table is not None
+                and target_table.name == ChatComparisonGroup.__tablename__
             ):
                 conflict_injected = True
                 with Session(engine) as winner:
@@ -443,9 +447,9 @@ def test_snapshot_recovers_when_a_concurrent_creator_wins(
                     )
                     winner.commit()
                     winner_branch_id = winner_branch.id
-            return original_flush(objects)
+            return original_execute(statement, *args, **kwargs)
 
-        monkeypatch.setattr(loser, "flush", flush_after_competitor)
+        monkeypatch.setattr(loser, "execute", execute_after_competitor)
 
         recovered = create_mnemos_snapshot(loser, root_conversation_id=root_id)
         loser.commit()
@@ -511,15 +515,17 @@ def test_snapshot_recovers_when_branch_uniqueness_loses_after_group_exists(
 
     winner_branch_id: str | None = None
     with Session(engine) as loser:
-        original_flush = loser.flush
+        original_execute = loser.execute
         conflict_injected = False
 
-        def flush_after_competitor(objects=None):
+        def execute_after_competitor(statement, *args, **kwargs):
             nonlocal conflict_injected, winner_branch_id
-            if not conflict_injected and any(
-                isinstance(instance, ChatConversation)
-                and instance.mode == "mnemos"
-                for instance in loser.new
+            target_table = getattr(statement, "table", None)
+            if (
+                not conflict_injected
+                and getattr(statement, "is_insert", False)
+                and target_table is not None
+                and target_table.name == ChatConversation.__tablename__
             ):
                 conflict_injected = True
                 with Session(engine) as winner:
@@ -529,9 +535,9 @@ def test_snapshot_recovers_when_branch_uniqueness_loses_after_group_exists(
                     )
                     winner.commit()
                     winner_branch_id = winner_branch.id
-            return original_flush(objects)
+            return original_execute(statement, *args, **kwargs)
 
-        monkeypatch.setattr(loser, "flush", flush_after_competitor)
+        monkeypatch.setattr(loser, "execute", execute_after_competitor)
 
         recovered = create_mnemos_snapshot(loser, root_conversation_id=root_id)
         loser.commit()
@@ -549,6 +555,88 @@ def test_snapshot_recovers_when_branch_uniqueness_loses_after_group_exists(
             == 1
         )
     engine.dispose()
+
+
+def test_snapshot_creation_rolls_back_group_branch_and_conversation(tmp_path) -> None:
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'snapshot-rollback.db'}",
+        connect_args={"check_same_thread": False},
+    )
+    event.listen(engine, "connect", _set_sqlite_pragmas)
+    Base.metadata.create_all(bind=engine)
+    with Session(engine) as seed:
+        root = _add_root(seed)
+        _add_message(
+            seed,
+            root.id,
+            message_id="rollback-question",
+            sequence=1,
+            role="user",
+            content="Question",
+            created_at="2026-09-22T00:00:00Z",
+        )
+        _add_message(
+            seed,
+            root.id,
+            message_id="rollback-answer",
+            sequence=2,
+            role="assistant",
+            content="Answer",
+            created_at="2026-09-22T00:00:01Z",
+        )
+        seed.commit()
+        root_id = root.id
+
+    with Session(engine) as creating:
+        create_mnemos_snapshot(creating, root_conversation_id=root_id)
+        creating.rollback()
+
+    with Session(engine) as check:
+        assert check.scalar(select(func.count(ChatComparisonGroup.id))) == 0
+        assert check.scalar(select(func.count(ChatComparisonBranch.id))) == 0
+        assert (
+            check.scalar(
+                select(func.count(ChatConversation.id)).where(
+                    ChatConversation.mode == "mnemos"
+                )
+            )
+            == 0
+        )
+        root = check.get(ChatConversation, root_id)
+        assert root.comparison_group_id is None
+    engine.dispose()
+
+
+def test_snapshot_creation_rolls_back_when_group_already_exists(session) -> None:
+    root, _question, _answer, _later = seed_baseline_turns(session)
+    group = ChatComparisonGroup(
+        id="preexisting-group",
+        job_id=root.job_id,
+        root_conversation_id=root.id,
+        title=root.title,
+        created_at="2026-09-22T00:00:00Z",
+        updated_at="2026-09-22T00:00:00Z",
+    )
+    session.add(group)
+    session.flush()
+    root.comparison_group_id = group.id
+    session.commit()
+
+    create_mnemos_snapshot(session, root_conversation_id=root.id)
+    session.rollback()
+
+    assert session.scalar(select(func.count(ChatComparisonGroup.id))) == 1
+    assert session.scalar(select(func.count(ChatComparisonBranch.id))) == 0
+    assert (
+        session.scalar(
+            select(func.count(ChatConversation.id)).where(
+                ChatConversation.mode == "mnemos"
+            )
+        )
+        == 0
+    )
+    persisted_group = session.get(ChatComparisonGroup, group.id)
+    assert persisted_group.active_branch_id is None
 
 
 def test_duplicate_request_identity_is_rejected_within_one_conversation(session) -> None:

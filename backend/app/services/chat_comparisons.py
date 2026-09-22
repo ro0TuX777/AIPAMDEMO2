@@ -5,7 +5,8 @@ from __future__ import annotations
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -57,27 +58,30 @@ def _comparison_group(
         return group
 
     now = _now_iso()
-    candidate = ChatComparisonGroup(
-        id=str(uuid.uuid4()),
-        job_id=root.job_id,
-        root_conversation_id=root.id,
-        title=root.title,
-        created_at=now,
-        updated_at=now,
-    )
-    try:
-        with db.begin_nested():
-            db.add(candidate)
-            db.flush()
-        group = candidate
-    except IntegrityError:
-        group = db.scalar(
-            select(ChatComparisonGroup).where(
-                ChatComparisonGroup.root_conversation_id == root.id
-            )
+    values = {
+        "id": str(uuid.uuid4()),
+        "job_id": root.job_id,
+        "root_conversation_id": root.id,
+        "title": root.title,
+        "created_at": now,
+        "updated_at": now,
+    }
+    if db.get_bind().dialect.name == "sqlite":
+        db.execute(
+            sqlite_insert(ChatComparisonGroup)
+            .values(**values)
+            .on_conflict_do_nothing(index_elements=["root_conversation_id"])
         )
-        if group is None:
-            raise
+    else:
+        db.add(ChatComparisonGroup(**values))
+        db.flush()
+    group = db.scalar(
+        select(ChatComparisonGroup).where(
+            ChatComparisonGroup.root_conversation_id == root.id
+        )
+    )
+    if group is None:
+        raise RuntimeError("comparison group insertion did not persist a winner")
     root.comparison_group_id = group.id
     db.flush()
     return group
@@ -148,9 +152,62 @@ def create_mnemos_snapshot(
             ChatMessage.role == "assistant",
         )
     )
+    if db.get_bind().dialect.name == "sqlite":
+        now = _now_iso()
+        conversation_id = str(
+            uuid.uuid5(uuid.NAMESPACE_URL, f"aipam:snapshot-conversation:{group.id}")
+        )
+        branch_id = str(uuid.uuid5(uuid.NAMESPACE_URL, f"aipam:snapshot-branch:{group.id}"))
+        db.execute(
+            sqlite_insert(ChatConversation)
+            .values(
+                id=conversation_id,
+                job_id=root.job_id,
+                comparison_group_id=group.id,
+                mode="mnemos",
+                parent_branch_id=root.id,
+                source_message_id=None,
+                history_cutoff_sequence=cutoff or 0,
+                title=root.title,
+                created_at=now,
+                updated_at=now,
+            )
+            .on_conflict_do_nothing(index_elements=["id"])
+        )
+        db.execute(
+            sqlite_insert(ChatComparisonBranch)
+            .values(
+                id=branch_id,
+                group_id=group.id,
+                conversation_id=conversation_id,
+                label="MNEMOS snapshot",
+                source_message_id=None,
+                history_cutoff_sequence=cutoff or 0,
+                created_at=now,
+                updated_at=now,
+            )
+            .on_conflict_do_nothing()
+        )
+        branch = db.scalar(
+            select(ChatComparisonBranch).where(
+                ChatComparisonBranch.group_id == group.id,
+                ChatComparisonBranch.source_message_id.is_(None),
+            )
+        )
+        if branch is None:
+            raise RuntimeError("snapshot insertion did not persist a winner")
+        if branch.conversation_id != conversation_id:
+            db.execute(
+                delete(ChatConversation).where(ChatConversation.id == conversation_id)
+            )
+        group.active_branch_id = branch.id
+        group.updated_at = now
+        db.flush()
+        return branch
+
     try:
         with db.begin_nested():
-            branch = _new_branch(
+            return _new_branch(
                 db,
                 root=root,
                 group=group,
@@ -158,7 +215,6 @@ def create_mnemos_snapshot(
                 source_message_id=None,
                 history_cutoff_sequence=cutoff or 0,
             )
-        return branch
     except IntegrityError:
         existing = db.scalar(
             select(ChatComparisonBranch).where(
