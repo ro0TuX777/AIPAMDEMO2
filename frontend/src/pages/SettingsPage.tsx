@@ -382,7 +382,7 @@ export const SettingsPage: React.FC = () => {
           {/* LLM Settings */}
           <section className="space-y-3">
             <h2 className="font-semibold text-slate-100">LLM Settings</h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <div>
                 <label
                   className={`block mb-1 ${labelHint("llm_endpoint", activeHelpField)}`}
@@ -413,6 +413,19 @@ export const SettingsPage: React.FC = () => {
                   data-testid="input-llm-model-name"
                 />
                 <span className="text-[10px] text-slate-500 mt-0.5 block">Fallback if role models are not set</span>
+              </div>
+              <div>
+                <label className="block mb-1 text-slate-300">Response timeout (seconds)</label>
+                <input
+                  type="number"
+                  min="60"
+                  step="60"
+                  className="bg-slate-900 border border-slate-700 rounded px-2 py-1 w-full text-slate-200 text-sm"
+                  value={values.llm_timeout_seconds ?? "1800"}
+                  onChange={(e) => handleChange("llm_timeout_seconds", e.target.value)}
+                  data-testid="input-llm-timeout-seconds"
+                />
+                <span className="text-[10px] text-slate-500 mt-0.5 block">Maximum wait for a local-model response</span>
               </div>
             </div>
 

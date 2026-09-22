@@ -39,6 +39,7 @@ from backend.app.services.embedding_models import (
     get_embedding_model_service,
     get_runtime_llm_endpoint,
     get_runtime_llm_model,
+    get_runtime_llm_timeout,
     get_runtime_ollama_url,
 )
 from backend.app.services.structured_retrieval import retrieve_structured
@@ -1008,6 +1009,7 @@ def _make_llm_client(settings: Settings) -> LLMClient:
         model=get_runtime_llm_model(os.getenv("LLM_MODEL_NAME", "aipam-trafficllm-v10")),
         temperature=0.3,
         max_tokens=int(os.getenv("LLM_MAX_TOKENS", "4096")),
+        timeout_seconds=get_runtime_llm_timeout(float(os.getenv("LLM_TIMEOUT_SECONDS", "1800"))),
         local_adapter_path=getattr(settings, "llm_local_adapter_path", None) or os.getenv("LLM_LOCAL_ADAPTER_PATH"),
         local_adapter_model_name=getattr(settings, "llm_local_adapter_model_name", None) or os.getenv("LLM_LOCAL_ADAPTER_MODEL_NAME"),
         local_adapter_quantization=getattr(settings, "llm_local_adapter_quantization", None) or os.getenv("LLM_LOCAL_ADAPTER_QUANTIZATION"),

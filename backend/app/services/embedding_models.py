@@ -99,6 +99,16 @@ def get_runtime_llm_model(default_model: str) -> str:
     return default_model
 
 
+def get_runtime_llm_timeout(default_seconds: float) -> float:
+    """Return a positive Settings timeout, falling back to deployment default."""
+    configured = _load_settings_values().get("llm_timeout_seconds")
+    try:
+        timeout = float(configured)
+    except (TypeError, ValueError):
+        return default_seconds
+    return timeout if timeout > 0 else default_seconds
+
+
 def set_runtime_ollama_url(ollama_url: str) -> str:
     """Persist an Ollama URL for embeddings and chat, clearing stale embeddings."""
     normalized = _normalize_ollama_url(ollama_url)

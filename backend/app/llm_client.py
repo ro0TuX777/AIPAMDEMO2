@@ -22,7 +22,7 @@ class LLMConfig:
     model: str
     temperature: float = 0.1
     max_tokens: int = 4096
-    timeout_seconds: float = 600.0  # 10 minutes; local LLMs can be slow
+    timeout_seconds: float = 1800.0  # 30 minutes; forensic local LLMs can be slow
     provider: LLMProvider = LLMProvider.OLLAMA
     local_adapter_path: Optional[str] = None
     local_adapter_model_name: Optional[str] = None
@@ -68,7 +68,7 @@ class LLMClient:
             model = os.getenv("LLM_MODEL_NAME", "aipam-trafficllm-v10")
             temperature = float(os.getenv("LLM_TEMPERATURE", "0.1"))
             max_tokens = int(os.getenv("LLM_MAX_TOKENS", "4096"))
-            timeout_seconds = float(os.getenv("LLM_TIMEOUT_SECONDS", "600"))
+            timeout_seconds = float(os.getenv("LLM_TIMEOUT_SECONDS", "1800"))
             provider_str = os.getenv("LLM_PROVIDER", "ollama").lower()
             provider = LLMProvider.TRAFFICLLM if provider_str == "trafficllm" else LLMProvider.OLLAMA
 
@@ -1698,4 +1698,3 @@ def create_dual_llm_client(
     )
 
     return LLMClient(config=ollama_config, dual_config=dual_config)
-

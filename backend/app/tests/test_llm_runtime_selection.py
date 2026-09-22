@@ -70,3 +70,15 @@ def test_llm_model_falls_back_to_forensic_role_selection(monkeypatch):
     )
 
     assert embedding_models.get_runtime_llm_model("deployment-default") == "qwen3:8b"
+
+
+def test_llm_timeout_uses_saved_settings_value(monkeypatch):
+    from backend.app.services import embedding_models
+
+    monkeypatch.setattr(
+        embedding_models,
+        "_load_settings_values",
+        lambda: {"llm_timeout_seconds": "1800"},
+    )
+
+    assert embedding_models.get_runtime_llm_timeout(600) == 1800

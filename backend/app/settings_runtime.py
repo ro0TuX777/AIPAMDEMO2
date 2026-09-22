@@ -101,7 +101,7 @@ def get_effective_settings() -> EffectiveSettings:
         raw.get("llm_temperature") or os.getenv("LLM_TEMPERATURE", "0.1")
     )
     llm_timeout_seconds = float(
-        raw.get("llm_timeout_seconds") or os.getenv("LLM_TIMEOUT_SECONDS", "600")
+        raw.get("llm_timeout_seconds") or os.getenv("LLM_TIMEOUT_SECONDS", "1800")
     )
 
     # Storage
@@ -197,4 +197,3 @@ def get_effective_settings() -> EffectiveSettings:
         embedding_model_path=embedding_model_path,
         vector_store_path=vector_store_path,
     )
-
