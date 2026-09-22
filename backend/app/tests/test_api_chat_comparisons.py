@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import sqlite3
 import uuid
 
 import pytest
@@ -10,6 +11,7 @@ from fastapi.responses import JSONResponse
 from fastapi.testclient import TestClient
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import create_engine, event, func, select
+from sqlalchemy.exc import OperationalError
 from sqlalchemy.orm import sessionmaker
 
 from backend.app.api import chat
@@ -58,7 +60,7 @@ def client(tmp_path, monkeypatch):
     )
     event.listen(engine, "connect", _set_sqlite_pragmas)
     Base.metadata.create_all(engine)
-    session_factory = sessionmaker(bind=engine, expire_on_commit=False)
+    session_factory = sessionmaker(bind=engine, expire_on_commit=True)
 
     app = FastAPI()
     app.include_router(chat.router)
@@ -1053,6 +1055,142 @@ def test_one_shot_terminal_error_persistence_failure_is_retried(
         failed_request_id=request_id,
         failed_message=message,
     )
+
+
+def test_json_assistant_insert_operational_error_rolls_back_and_terminalizes(
+    client, monkeypatch
+) -> None:
+    opened = _open_comparison(client)
+    client.session_factory.configure(expire_on_commit=True)
+    monkeypatch.setattr(
+        chat,
+        "retrieve_historical_findings",
+        lambda **_kwargs: MnemosRetrievalResult(
+            status="no_matches",
+            context="",
+            citations=[],
+        ),
+    )
+    engine = client.session_factory.kw["bind"]
+    insert_failed = False
+
+    def fail_first_assistant_insert(cursor, statement, parameters, context):
+        nonlocal insert_failed
+        if (
+            not insert_failed
+            and statement.lstrip().upper().startswith("INSERT INTO CHAT_MESSAGES")
+            and isinstance(parameters, (tuple, list))
+            and "assistant" in parameters
+        ):
+            insert_failed = True
+            raise sqlite3.OperationalError("one-shot assistant INSERT failure")
+
+    event.listen(engine, "do_execute", fail_first_assistant_insert)
+    request_id = str(uuid.uuid4())
+    message = "A real database flush failure"
+    try:
+        failed = client.post(
+            "/jobs/job-1/chat",
+            json={
+                "message": message,
+                "mode": "mnemos",
+                "conversation_id": opened["conversation_id"],
+                "request_id": request_id,
+            },
+        )
+    finally:
+        event.remove(engine, "do_execute", fail_first_assistant_insert)
+
+    assert insert_failed
+    _assert_terminal_error_response(failed, streamed=False)
+    _assert_failed_turn_replays_and_conversation_recovers(
+        client,
+        conversation_id=opened["conversation_id"],
+        failed_request_id=request_id,
+        failed_message=message,
+    )
+
+
+@pytest.mark.parametrize("route", ["chat", "chat/stream"])
+def test_admission_refresh_operational_error_recovers_committed_user_turn(
+    client, monkeypatch, route
+) -> None:
+    opened = _open_comparison(client)
+    client.session_factory.configure(expire_on_commit=True)
+    monkeypatch.setattr(
+        chat,
+        "retrieve_historical_findings",
+        lambda **_kwargs: MnemosRetrievalResult(
+            status="no_matches",
+            context="",
+            citations=[],
+        ),
+    )
+    session_class = client.session_factory.class_
+    original_refresh = session_class.refresh
+    refresh_failed = False
+
+    def fail_first_message_refresh(session, instance, *args, **kwargs):
+        nonlocal refresh_failed
+        if not refresh_failed and isinstance(instance, ChatMessage):
+            refresh_failed = True
+            raise OperationalError(
+                "SELECT chat_messages",
+                {},
+                sqlite3.OperationalError("one-shot refresh failure"),
+            )
+        return original_refresh(session, instance, *args, **kwargs)
+
+    monkeypatch.setattr(session_class, "refresh", fail_first_message_refresh)
+    request_id = str(uuid.uuid4())
+    message = f"Admission refresh failure through {route}"
+    response = client.post(
+        f"/jobs/job-1/{route}",
+        json={
+            "message": message,
+            "mode": "mnemos",
+            "conversation_id": opened["conversation_id"],
+            "request_id": request_id,
+        },
+    )
+
+    assert refresh_failed
+    assert response.status_code == 200, response.text
+    if route == "chat":
+        assert response.json()["status"] == "completed"
+    else:
+        payloads = _sse_payloads(response)
+        assert any(
+            isinstance(payload, dict)
+            and payload.get("type") == "meta"
+            and payload.get("status") == "completed"
+            for payload in payloads
+        )
+        assert payloads[-1] == "[DONE]"
+
+    replay = client.post(
+        "/jobs/job-1/chat",
+        json={
+            "message": message,
+            "mode": "mnemos",
+            "conversation_id": opened["conversation_id"],
+            "request_id": request_id,
+        },
+    )
+    assert replay.status_code == 200, replay.text
+    assert replay.json()["status"] == "completed"
+
+    next_turn = client.post(
+        "/jobs/job-1/chat",
+        json={
+            "message": "A distinct turn after refresh recovery",
+            "mode": "mnemos",
+            "conversation_id": opened["conversation_id"],
+            "request_id": str(uuid.uuid4()),
+        },
+    )
+    assert next_turn.status_code == 200, next_turn.text
+    assert next_turn.json()["status"] == "completed"
 
 
 def test_list_rename_and_delete_operate_on_comparison_root(client) -> None:

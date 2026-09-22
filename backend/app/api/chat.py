@@ -1597,6 +1597,9 @@ def _admit_user_turn(
     db.add(user_message)
     conversation.updated_at = user_message.created_at
     conversation_id = conversation.id
+    user_message_id = user_message.id
+    request_id = body.request_id
+    message_content = body.message
     try:
         db.commit()
     except IntegrityError:
@@ -1604,7 +1607,7 @@ def _admit_user_turn(
         existing = _find_existing_user_turn(
             db,
             conversation_id=conversation_id,
-            request_id=body.request_id,
+            request_id=request_id,
         )
         if existing is None:
             raise
@@ -1614,7 +1617,29 @@ def _admit_user_turn(
             mode=body.mode,
         )
         return conversation, existing, False
-    db.refresh(user_message)
+    try:
+        db.refresh(user_message)
+    except Exception as refresh_error:
+        logger.exception(
+            "Recovering committed user turn %s after refresh failure",
+            user_message_id,
+        )
+        db.rollback()
+        recovered_user = db.get(ChatMessage, user_message_id)
+        if (
+            recovered_user is None
+            or recovered_user.conversation_id != conversation_id
+            or recovered_user.role != "user"
+            or recovered_user.request_id != request_id
+            or recovered_user.content != message_content
+        ):
+            raise RuntimeError("could not recover committed user turn") from refresh_error
+        conversation = _validate_turn_conversation(
+            db.get(ChatConversation, conversation_id),
+            job_id=job_id,
+            mode=body.mode,
+        )
+        return conversation, recovered_user, True
     return conversation, user_message, True
 
 
@@ -1888,6 +1913,9 @@ async def chat_about_job(
             requested_content=body.message,
         )
 
+    conversation_id = str(conversation.id)
+    user_message_id = str(user_message.id)
+    request_id = body.request_id
     try:
         client = _make_llm_client(settings)
         response_text = await client.chat_completion(
@@ -1907,16 +1935,16 @@ async def chat_about_job(
             final_citations=final_citations,
             evidence_refs=evidence_refs,
             suggested_followups=suggested_followups,
-            request_id=body.request_id,
-            user_message_id=user_message.id,
+            request_id=request_id,
+            user_message_id=user_message_id,
             settings=settings,
             status="completed",
         )
         _persist_assistant_turn(
             db,
-            conversation_id=conversation.id,
-            user_message_id=user_message.id,
-            request_id=body.request_id,
+            conversation_id=conversation_id,
+            user_message_id=user_message_id,
+            request_id=request_id,
             response_text=response_text,
             final_citations=final_citations,
             metadata=metadata,
@@ -1925,14 +1953,14 @@ async def chat_about_job(
         logger.exception("Failed to complete chat turn for job %s", job_id)
         return _terminalize_failed_turn(
             db,
-            user_message_id=user_message.id,
-            request_id=body.request_id,
+            user_message_id=user_message_id,
+            request_id=request_id,
             prepared=prepared,
         )
     return _chat_response(
-        conversation_id=conversation.id,
-        branch_id=_conversation_branch_id(db, conversation.id),
-        request_id=body.request_id,
+        conversation_id=conversation_id,
+        branch_id=_conversation_branch_id(db, conversation_id),
+        request_id=request_id,
         response_text=response_text,
         final_citations=final_citations,
         prepared=prepared,
@@ -2017,7 +2045,9 @@ async def chat_about_job_stream(
             requested_content=body.message,
         )
         return _stream_persisted_turn(persisted)
-    conv_id = conversation.id
+    conv_id = str(conversation.id)
+    user_message_id = str(user_message.id)
+    request_id = body.request_id
     try:
         branch_id = _conversation_branch_id(db, conv_id)
         client = _make_llm_client(settings)
@@ -2025,8 +2055,8 @@ async def chat_about_job_stream(
         logger.exception("Failed to create streaming chat client for job %s", job_id)
         persisted = _terminalize_failed_turn(
             db,
-            user_message_id=user_message.id,
-            request_id=body.request_id,
+            user_message_id=user_message_id,
+            request_id=request_id,
             prepared=prepared,
         )
         return _stream_persisted_turn(persisted)
@@ -2055,7 +2085,7 @@ async def chat_about_job_stream(
             # early as possible — useful so the UI can save/resume even if
             # the user closes the tab mid-stream.
             await event_queue.put(
-                f"data: {json.dumps({'type': 'meta', 'conversation_id': conv_id, 'branch_id': branch_id, 'request_id': body.request_id, 'status': 'pending', 'retrieval_status': prepared.retrieval_status, 'citations': [citation.model_dump() for citation in [*prepared.current_job_citations, *prepared.historical_citations]], 'model_id': prepared.model_id, 'generation': prepared.generation.model_dump()})}\n\n"
+                f"data: {json.dumps({'type': 'meta', 'conversation_id': conv_id, 'branch_id': branch_id, 'request_id': request_id, 'status': 'pending', 'retrieval_status': prepared.retrieval_status, 'citations': [citation.model_dump() for citation in [*prepared.current_job_citations, *prepared.historical_citations]], 'model_id': prepared.model_id, 'generation': prepared.generation.model_dump()})}\n\n"
             )
 
             try:
@@ -2116,8 +2146,8 @@ async def chat_about_job_stream(
                 final_citations=final_citations,
                 evidence_refs=evidence_refs,
                 suggested_followups=suggested_followups,
-                request_id=body.request_id,
-                user_message_id=user_message.id,
+                request_id=request_id,
+                user_message_id=user_message_id,
                 settings=settings,
                 status=status,
             )
@@ -2126,14 +2156,14 @@ async def chat_about_job_stream(
                 _persist_assistant_turn(
                     background_db,
                     conversation_id=conv_id,
-                    user_message_id=user_message.id,
-                    request_id=body.request_id,
+                    user_message_id=user_message_id,
+                    request_id=request_id,
                     response_text=response_text,
                     final_citations=final_citations,
                     metadata=metadata,
                 )
             await event_queue.put(
-                f"data: {json.dumps({'type': 'meta', 'conversation_id': conv_id, 'branch_id': branch_id, 'request_id': body.request_id, 'status': status, 'retrieval_status': prepared.retrieval_status, 'citations': [citation.model_dump() for citation in final_citations], 'model_id': prepared.model_id, 'generation': prepared.generation.model_dump(), 'confidence': metadata['confidence'], 'evidence_refs': [reference.model_dump() for reference in evidence_refs], 'suggested_followups': suggested_followups})}\n\n"
+                f"data: {json.dumps({'type': 'meta', 'conversation_id': conv_id, 'branch_id': branch_id, 'request_id': request_id, 'status': status, 'retrieval_status': prepared.retrieval_status, 'citations': [citation.model_dump() for citation in final_citations], 'model_id': prepared.model_id, 'generation': prepared.generation.model_dump(), 'confidence': metadata['confidence'], 'evidence_refs': [reference.model_dump() for reference in evidence_refs], 'suggested_followups': suggested_followups})}\n\n"
             )
 
             await event_queue.put("data: [DONE]\n\n")
@@ -2144,8 +2174,8 @@ async def chat_about_job_stream(
                 with session_factory() as recovery_db:
                     persisted = _terminalize_failed_turn(
                         recovery_db,
-                        user_message_id=user_message.id,
-                        request_id=body.request_id,
+                        user_message_id=user_message_id,
+                        request_id=request_id,
                         prepared=prepared,
                     )
                 for event in _persisted_turn_sse_events(persisted):
@@ -2153,7 +2183,7 @@ async def chat_about_job_stream(
             except Exception:
                 logger.exception(
                     "Failed to persist terminal state for streamed chat turn %s",
-                    user_message.id,
+                    user_message_id,
                 )
                 await event_queue.put(
                     f"data: {json.dumps({'type': 'error', 'code': 'CHAT_TURN_FAILED', 'retryable': True})}\n\n"
