@@ -124,6 +124,235 @@ test("comparison stream returns terminal metadata separately from answer content
   assert.equal(terminal.citations[0].type, "historical_finding");
 });
 
+test("comparison stream rejects an EOF that only reports pending metadata", async () => {
+  mock.method(globalThis, "fetch", async () => new Response([
+    `data: ${JSON.stringify({ type: "meta", conversation_id: "conversation-1", status: "pending", citations: [] })}`,
+    "",
+    "data: [DONE]",
+    "",
+  ].join("\n"), { headers: { "Content-Type": "text/event-stream" } }));
+
+  await assert.rejects(
+    client.chatApi.streamWithJob("job-1", { message: "Still pending", mode: "mnemos", request_id: "request-1" }, () => {}),
+    error => error.name === "ChatStreamError" && error.responseReceived === true && /pending/.test(error.message),
+  );
+});
+
+test("Copy to MNEMOS uses the persisted user message id after a baseline send", async () => {
+  const harnessId = "virtual:chat-panel-persisted-id-harness";
+  const resolvedHarnessId = `\0${harnessId}`;
+  const harnessServer = await createServer({
+    root,
+    configFile: false,
+    envFile: false,
+    define: {
+      "import.meta.env.VITE_API_BASE_URL": JSON.stringify(`${apiBase}/`),
+      "import.meta.env.VITE_AIPAM_DEMO_MODE": JSON.stringify("false"),
+    },
+    plugins: [{
+      name: "chat-panel-persisted-id-harness",
+      resolveId(id) { if (id === harnessId) return resolvedHarnessId; },
+      load(id) {
+        if (id !== resolvedHarnessId) return;
+        return `
+          import React, { useEffect, useState } from "react";
+          import { createRoot } from "react-dom/client";
+          import { ChatPanel } from "/src/components/ChatPanel.tsx";
+
+          window.__copyCalls = [];
+          window.fetch = async (url, init = {}) => {
+            const path = new URL(String(url)).pathname;
+            if (path.endsWith("/chat/stream")) {
+              const request = JSON.parse(init.body);
+              window.__requestId = request.request_id;
+              return new Response([
+                "data: " + JSON.stringify({ type: "meta", conversation_id: "root-1", request_id: request.request_id, status: "pending", citations: [] }), "",
+                "data: " + JSON.stringify({ type: "token", content: "Answer" }), "",
+                "data: " + JSON.stringify({ type: "meta", conversation_id: "root-1", request_id: request.request_id, status: "completed", citations: [], evidence_refs: [], suggested_followups: [] }), "",
+                "data: [DONE]", "",
+              ].join("\\n"), { headers: { "Content-Type": "text/event-stream" } });
+            }
+            if (path.endsWith("/conversations/root-1")) return Response.json({
+              id: "root-1", job_id: "job-1", created_at: "2026-09-22T00:00:00Z", updated_at: "2026-09-22T00:00:01Z",
+              messages: [
+                { id: "persisted-user-1", sequence: 1, role: "user", content: "New question", citations: [], metadata: null, request_id: window.__requestId, timestamp: "2026-09-22T00:00:00Z" },
+                { id: "persisted-assistant-1", sequence: 2, role: "assistant", content: "Answer", citations: [], metadata: { status: "completed" }, request_id: window.__requestId, timestamp: "2026-09-22T00:00:01Z" },
+              ],
+            });
+            throw new Error("Unexpected request: " + path);
+          };
+
+          function Harness() {
+            const [conversation, setConversation] = useState({ id: "root-1", job_id: "job-1", messages: [] });
+            return React.createElement(ChatPanel, {
+              jobId: "job-1", conversation, mode: "baseline",
+              onCopyToMnemos: (messageId, content) => window.__copyCalls.push([messageId, content]),
+              onRetry: () => {}, onConversationChanged: setConversation,
+            });
+          }
+          createRoot(document.getElementById("root")).render(React.createElement(Harness));
+        `;
+      },
+      configureServer(server) {
+        server.middlewares.use("/__chat-panel-persisted-id", (_request, response) => {
+          response.statusCode = 200;
+          response.setHeader("Content-Type", "text/html");
+          response.end(`<div id="root"></div><script type="module" src="/@id/__x00__${harnessId}"></script>`);
+        });
+      },
+    }],
+    server: { host: "127.0.0.1", port: 0 }, appType: "custom",
+  });
+
+  let browser;
+  try {
+    await harnessServer.listen();
+    const address = harnessServer.httpServer.address();
+    assert.ok(address && typeof address !== "string");
+    browser = await chromium.launch({ headless: true });
+    const page = await browser.newPage();
+    await page.goto(`http://127.0.0.1:${address.port}/__chat-panel-persisted-id`);
+    await page.getByPlaceholder("Ask about the findings...").fill("New question");
+    await page.getByRole("button", { name: "Send" }).click();
+    const copy = page.getByRole("button", { name: "Copy to MNEMOS" });
+    await copy.waitFor();
+    await copy.click();
+    assert.deepEqual(await page.evaluate(() => window.__copyCalls), [["persisted-user-1", "New question"]]);
+  } finally {
+    await browser?.close();
+    await harnessServer.close();
+  }
+});
+
+test("a stream from an earlier controlled conversation cannot overwrite a later selection", async () => {
+  const harnessId = "virtual:chat-panel-selection-harness";
+  const resolvedHarnessId = `\0${harnessId}`;
+  const harnessServer = await createServer({
+    root, configFile: false, envFile: false,
+    define: { "import.meta.env.VITE_API_BASE_URL": JSON.stringify(`${apiBase}/`), "import.meta.env.VITE_AIPAM_DEMO_MODE": JSON.stringify("false") },
+    plugins: [{
+      name: "chat-panel-selection-harness",
+      resolveId(id) { if (id === harnessId) return resolvedHarnessId; },
+      load(id) {
+        if (id !== resolvedHarnessId) return;
+        return `
+          import React, { useEffect, useState } from "react";
+          import { createRoot } from "react-dom/client";
+          import { ChatPanel } from "/src/components/ChatPanel.tsx";
+          window.fetch = async (url, init = {}) => {
+            const path = new URL(String(url)).pathname;
+            if (path.endsWith("/chat/stream")) {
+              const request = JSON.parse(init.body);
+              const encoder = new TextEncoder();
+              return new Response(new ReadableStream({ start(controller) {
+                controller.enqueue(encoder.encode("data: " + JSON.stringify({ type: "token", content: "A answer" }) + "\\n\\n"));
+                window.__releaseStream = () => {
+                  controller.enqueue(encoder.encode("data: " + JSON.stringify({ type: "meta", conversation_id: "conversation-a", request_id: request.request_id, status: "completed", citations: [] }) + "\\n\\n"));
+                  controller.enqueue(encoder.encode("data: [DONE]\\n\\n"));
+                  controller.close();
+                };
+              }}), { headers: { "Content-Type": "text/event-stream" } });
+            }
+            if (path.endsWith("/conversations/conversation-a")) return Response.json({ id: "conversation-a", job_id: "job-1", messages: [] });
+            throw new Error("Unexpected request: " + path);
+          };
+          function Harness() {
+            const [conversation, setConversation] = useState({ id: "conversation-a", job_id: "job-1", messages: [] });
+            useEffect(() => { window.__currentConversation = conversation; }, [conversation]);
+            window.__selectConversationB = () => setConversation({ id: "conversation-b", job_id: "job-1", messages: [{ id: "b-user", sequence: 1, role: "user", content: "Conversation B", citations: [], metadata: null, request_id: null, timestamp: "2026-09-22T00:00:00Z" }] });
+            return React.createElement(ChatPanel, { jobId: "job-1", conversation, mode: "baseline", onCopyToMnemos: () => {}, onRetry: () => {}, onConversationChanged: setConversation });
+          }
+          createRoot(document.getElementById("root")).render(React.createElement(Harness));
+        `;
+      },
+      configureServer(server) {
+        server.middlewares.use("/__chat-panel-selection", (_request, response) => {
+          response.statusCode = 200; response.setHeader("Content-Type", "text/html");
+          response.end(`<div id="root"></div><script type="module" src="/@id/__x00__${harnessId}"></script>`);
+        });
+      },
+    }], server: { host: "127.0.0.1", port: 0 }, appType: "custom",
+  });
+  let browser;
+  try {
+    await harnessServer.listen();
+    const address = harnessServer.httpServer.address();
+    assert.ok(address && typeof address !== "string");
+    browser = await chromium.launch({ headless: true });
+    const page = await browser.newPage();
+    await page.goto(`http://127.0.0.1:${address.port}/__chat-panel-selection`);
+    await page.getByPlaceholder("Ask about the findings...").fill("Question for A");
+    await page.getByRole("button", { name: "Send" }).click();
+    await page.waitForFunction(() => typeof window.__releaseStream === "function");
+    await page.evaluate(() => window.__selectConversationB());
+    await page.evaluate(() => window.__releaseStream());
+    await page.getByText("Conversation B").waitFor();
+    await page.waitForFunction(() => window.__currentConversation?.id === "conversation-b");
+    assert.equal(await page.getByText("Question for A").count(), 0);
+  } finally {
+    await browser?.close();
+    await harnessServer.close();
+  }
+});
+
+test("Retry MNEMOS carries the failed request id", async () => {
+  const harnessId = "virtual:chat-panel-retry-harness";
+  const resolvedHarnessId = `\0${harnessId}`;
+  const harnessServer = await createServer({
+    root, configFile: false, envFile: false,
+    define: { "import.meta.env.VITE_API_BASE_URL": JSON.stringify(`${apiBase}/`), "import.meta.env.VITE_AIPAM_DEMO_MODE": JSON.stringify("false") },
+    plugins: [{
+      name: "chat-panel-retry-harness",
+      resolveId(id) { if (id === harnessId) return resolvedHarnessId; },
+      load(id) {
+        if (id !== resolvedHarnessId) return;
+        return `
+          import React, { useState } from "react";
+          import { createRoot } from "react-dom/client";
+          import { ChatPanel } from "/src/components/ChatPanel.tsx";
+          window.__retryCalls = [];
+          window.fetch = async (url, init = {}) => {
+            const request = JSON.parse(init.body);
+            window.__failedRequestId = request.request_id;
+            return new Response([
+              "data: " + JSON.stringify({ type: "error", content: "MNEMOS unavailable" }), "",
+              "data: " + JSON.stringify({ type: "meta", conversation_id: "mnemos-1", request_id: request.request_id, status: "error", citations: [] }), "",
+              "data: [DONE]", "",
+            ].join("\\n"), { headers: { "Content-Type": "text/event-stream" } });
+          };
+          function Harness() {
+            const [conversation, setConversation] = useState({ id: "mnemos-1", job_id: "job-1", messages: [] });
+            return React.createElement(ChatPanel, { jobId: "job-1", conversation, mode: "mnemos", onCopyToMnemos: () => {}, onRetry: requestId => window.__retryCalls.push(requestId), onConversationChanged: setConversation });
+          }
+          createRoot(document.getElementById("root")).render(React.createElement(Harness));
+        `;
+      },
+      configureServer(server) {
+        server.middlewares.use("/__chat-panel-retry", (_request, response) => {
+          response.statusCode = 200; response.setHeader("Content-Type", "text/html");
+          response.end(`<div id="root"></div><script type="module" src="/@id/__x00__${harnessId}"></script>`);
+        });
+      },
+    }], server: { host: "127.0.0.1", port: 0 }, appType: "custom",
+  });
+  let browser;
+  try {
+    await harnessServer.listen();
+    const address = harnessServer.httpServer.address();
+    assert.ok(address && typeof address !== "string");
+    browser = await chromium.launch({ headless: true });
+    const page = await browser.newPage();
+    await page.goto(`http://127.0.0.1:${address.port}/__chat-panel-retry`);
+    await page.getByPlaceholder("Ask about the findings...").fill("Retry this");
+    await page.getByRole("button", { name: "Send" }).click();
+    await page.getByRole("button", { name: "Retry MNEMOS" }).click();
+    assert.deepEqual(await page.evaluate(() => window.__retryCalls), [await page.evaluate(() => window.__failedRequestId)]);
+  } finally {
+    await browser?.close();
+    await harnessServer.close();
+  }
+});
+
 test("baseline comparison copy invokes its callback without posting chat", async () => {
   const harnessId = "virtual:chat-panel-comparison-harness";
   const resolvedHarnessId = `\0${harnessId}`;

@@ -87,7 +87,9 @@ async function streamWithJob(
     events.forEach(consume);
   }
   if (buffer) consume(buffer);
-  if (!terminal) throw new ChatStreamError("Stream ended without terminal metadata", true);
+  if (!terminal || terminal.status === "pending") {
+    throw new ChatStreamError(`Stream ended with ${terminal?.status ?? "no"} terminal metadata`, true);
+  }
   return terminal;
 }
 

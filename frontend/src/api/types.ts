@@ -1770,6 +1770,8 @@ export interface ChatMessage {
   metadata: Record<string, unknown> | null;
   request_id: string | null;
   timestamp: string;
+  /** False only for an optimistic client message awaiting persisted history. */
+  saved?: boolean;
 }
 export interface ChatComparisonBranch {
   id: string;
