@@ -67,7 +67,7 @@ def dedupe_citations(citations: list[ChatCitationOut], limit: int = 8) -> list[C
         if key in seen:
             continue
         seen.add(key)
-        deduped.append(ChatCitationOut(type=citation.type, id=citation.id, snippet=snippet[:200]))
+        deduped.append(citation.model_copy(update={"snippet": snippet[:200]}))
         if len(deduped) >= limit:
             break
 
@@ -375,15 +375,35 @@ def build_sources_block(citations: list[ChatCitationOut]) -> str:
 
     for citation in safe_citations:
         clean_snippet = " ".join((citation.snippet or "").split())
-        lines.append(f"- [{citation.type}] {clean_snippet}")
+        if citation.type == "historical_finding":
+            project = citation.source_project_id or "No project assigned"
+            lines.append(
+                f"- [historical_finding] project={project} "
+                f"job={citation.source_job_id or 'unknown'} "
+                f"finding={citation.id or 'unknown'} "
+                f"link={citation.href or 'unavailable'}: {clean_snippet}"
+            )
+        else:
+            lines.append(f"- [{citation.type}] {clean_snippet}")
     return "\n".join(lines)
 
 
 def append_sources_and_limits(response_text: str, citations: list[ChatCitationOut]) -> str:
+    if any(citation.type == "historical_finding" for citation in citations):
+        limits = (
+            "Limits: Historical sources describe earlier jobs and do not establish facts "
+            "about this job. Current-job details require current-job evidence; any other "
+            "detail is not available in the collected data for this job."
+        )
+    else:
+        limits = (
+            "Limits: Any detail not shown in the sources above is not available in the "
+            "collected data for this job."
+        )
     return (
         f"{response_text.rstrip()}\n\n"
         f"{build_sources_block(citations)}\n\n"
-        "Limits: Any detail not shown in the sources above is not available in the collected data for this job."
+        f"{limits}"
     )
 
 
@@ -440,7 +460,12 @@ def build_unsupported_claims_payload(
         "What the current job data does support:",
     ]
 
-    safe_citations = select_relevant_citations(citations, user_message, limit=6)
+    current_job_citations = [
+        citation for citation in citations if citation.type != "historical_finding"
+    ]
+    safe_citations = select_relevant_citations(
+        current_job_citations, user_message, limit=6
+    )
     if safe_citations:
         for citation in safe_citations:
             lines.append(f"- [{citation.type}] {citation.snippet}")
@@ -461,7 +486,12 @@ def finalize_grounded_response_payload(
     user_message: str | None = None,
 ) -> tuple[str, list[ChatCitationOut]]:
     safe_citations = dedupe_citations(citations, limit=8)
-    synthesized = build_grounded_direct_answer_from_citations(citations, user_message)
+    current_job_citations = [
+        citation for citation in citations if citation.type != "historical_finding"
+    ]
+    synthesized = build_grounded_direct_answer_from_citations(
+        current_job_citations, user_message
+    )
     if synthesized:
         synthesized_response, synthesized_citations = synthesized
         final_citations = dedupe_citations(synthesized_citations or citations, limit=8)
@@ -475,11 +505,23 @@ def finalize_grounded_response_payload(
         response_text,
         combined_context,
     )
-    if unsupported_ips or unsupported_credentials:
+    historical_text = "\n".join(
+        citation.snippet
+        for citation in citations
+        if citation.type == "historical_finding"
+    ).lower()
+    historical_only_quoted_details = [
+        detail
+        for detail in unsupported_quoted_details
+        if detail.lower() in historical_text
+    ]
+    if unsupported_ips or unsupported_credentials or historical_only_quoted_details:
         logger.warning(
-            "Blocked unsupported V2 chat claims (ips=%s, credentials=%s)",
+            "Blocked unsupported V2 chat claims (ips=%s, credentials=%s, "
+            "historical_only_quoted_details=%s)",
             unsupported_ips,
             unsupported_credentials,
+            historical_only_quoted_details,
         )
         return build_unsupported_claims_payload(safe_citations, user_message)
     if unsupported_quoted_details:

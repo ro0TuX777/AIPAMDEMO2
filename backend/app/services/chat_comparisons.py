@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import uuid
+from dataclasses import dataclass
 from datetime import datetime, timezone
+from typing import Any, Literal
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
@@ -16,10 +18,35 @@ from backend.app.models.chat import (
     ChatConversation,
     ChatMessage,
 )
+from backend.app.schemas.chat import ChatCitation, ChatCitationOut
+from backend.app.services.mnemos_chat_retrieval import MnemosRetrievalResult
 
 
 class ComparisonValidationError(ValueError):
     """A comparison request violates persisted ownership or cutoff rules."""
+
+
+@dataclass(frozen=True)
+class PreparedChatTurn:
+    """Shared, route-independent inputs and provenance for one generation."""
+
+    mode: Literal["baseline", "mnemos"]
+    history: list[dict[str, str]]
+    messages: list[dict[str, str]]
+    citations: list[ChatCitation]
+    current_job_citations: list[ChatCitationOut]
+    current_job_context: str
+    retrieval_result: MnemosRetrievalResult | None
+    model_id: str
+    generation: dict[str, Any]
+
+    @property
+    def retrieval_status(
+        self,
+    ) -> Literal["used", "no_matches", "unavailable", "error"] | None:
+        if self.retrieval_result is None:
+            return None
+        return self.retrieval_result.status
 
 
 def _now_iso() -> str:
@@ -343,3 +370,25 @@ def prompt_history_for_branch(
         {"role": message.role, "content": message.content}
         for message in [*root_messages, *branch_messages]
     ]
+
+
+def prompt_history_for_mnemos_conversation(
+    db: Session,
+    *,
+    conversation_id: str,
+    job_id: str,
+) -> list[dict[str, str]]:
+    """Resolve an MNEMOS conversation to its server-owned branch history."""
+    branch = db.scalar(
+        select(ChatComparisonBranch).where(
+            ChatComparisonBranch.conversation_id == conversation_id
+        )
+    )
+    if branch is None:
+        raise ComparisonValidationError("comparison branch was not found")
+    conversation = db.get(ChatConversation, conversation_id)
+    if conversation is None or conversation.job_id != job_id:
+        raise ComparisonValidationError(
+            "comparison conversation does not belong to the selected job"
+        )
+    return prompt_history_for_branch(db, branch.id)

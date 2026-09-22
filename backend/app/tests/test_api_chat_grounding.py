@@ -26,6 +26,51 @@ def test_finalize_grounded_response_blocks_unsupported_ip_and_password_claims() 
     assert "[alert]" in response
 
 
+def test_historical_citation_cannot_support_a_current_job_assertion() -> None:
+    historical = chat.HistoricalChatCitationOut(
+        type="historical_finding",
+        id="F-2",
+        snippet="Historical C2 callback from 203.0.113.10",
+        source_job_id="job-old",
+        source_project_id="project-7",
+        href="/jobs/job-old/findings/F-2",
+    )
+
+    response, final_citations = chat._finalize_grounded_response_payload(
+        "The current job contains a C2 callback from 203.0.113.10.",
+        [historical],
+        "=== CURRENT JOB EVIDENCE ONLY ===\nNo analysis data available yet.\n"
+        "=== END CURRENT JOB EVIDENCE ===",
+        "Is this C2?",
+    )
+
+    assert "203.0.113.10" not in response
+    assert "No supporting source snippets matching this question" in response
+    assert final_citations == []
+
+
+def test_historical_title_cannot_support_a_current_job_quoted_claim() -> None:
+    historical = chat.HistoricalChatCitationOut(
+        type="historical_finding",
+        id="F-2",
+        snippet="Historical C2 callback",
+        source_job_id="job-old",
+        source_project_id="project-7",
+        href="/jobs/job-old/findings/F-2",
+    )
+
+    response, final_citations = chat._finalize_grounded_response_payload(
+        "The current job contains 'Historical C2 callback'.",
+        [historical],
+        "=== CURRENT JOB EVIDENCE ONLY ===\nNo analysis data available yet.\n"
+        "=== END CURRENT JOB EVIDENCE ===",
+        "What happened in this job?",
+    )
+
+    assert "Historical C2 callback" not in response
+    assert final_citations == []
+
+
 def test_finalize_grounded_response_appends_sources_and_limits() -> None:
     citations = [
         chat.ChatCitationOut(
