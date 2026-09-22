@@ -1,8 +1,10 @@
-import React, { useState, useCallback, useEffect } from "react";
+import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
 import { useParams, useSearchParams } from "react-router-dom";
 import { JobSubPageNav } from "../components/JobSubPageNav";
 import { useQuery } from "@tanstack/react-query";
 import { ChatPanel } from "../components/ChatPanel";
+import { MnemosChatDrawer } from "../components/MnemosChatDrawer";
+import type { ChatComparisonBranch, ChatComparisonGroup, ChatConversation } from "../components/chatTypes";
 import {
   api,
   type JobDetail,
@@ -48,6 +50,115 @@ export const ChatPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [kbOpen, setKbOpen] = useState(false);
+  const mnemosToggleRef = useRef<HTMLButtonElement>(null);
+  const draftSequenceRef = useRef(0);
+  const [baselineConversation, setBaselineConversation] = useState<ChatConversation>({ job_id: jobId ?? "", messages: [] });
+  const [baselineToken, setBaselineToken] = useState("baseline-draft-0");
+  const [conversationSummaries, setConversationSummaries] = useState<Array<{ id: string; title?: string }>>([]);
+  const [mnemosOpen, setMnemosOpen] = useState(false);
+  const [comparisonGroup, setComparisonGroup] = useState<ChatComparisonGroup | null>(null);
+  const [mnemosDraft, setMnemosDraft] = useState("");
+  const [copiedPrompt, setCopiedPrompt] = useState<{ messageId: string; content: string } | null>(null);
+
+  const refreshConversations = useCallback(async () => {
+    if (!jobId) return;
+    try {
+      const conversations = await api.listConversations(jobId);
+      setConversationSummaries(conversations);
+      if (!baselineConversation.id && conversations[0]) {
+        const history = await api.getConversation(jobId, conversations[0].id);
+        setBaselineConversation(history);
+        setBaselineToken(`baseline-${history.id}`);
+      }
+    } catch {
+      // The user can still start a draft if conversation history is temporarily unavailable.
+    }
+  }, [baselineConversation.id, jobId]);
+
+  useEffect(() => { void refreshConversations(); }, [refreshConversations]);
+
+  const selectBaselineConversation = useCallback(async (conversationId: string) => {
+    if (!jobId || conversationId === baselineConversation.id) return;
+    const history = await api.getConversation(jobId, conversationId);
+    setBaselineConversation(history);
+    setBaselineToken(`baseline-${history.id}`);
+    setComparisonGroup(null);
+    setCopiedPrompt(null);
+    setMnemosDraft("");
+  }, [baselineConversation.id, jobId]);
+
+  const activeBranch = useMemo<ChatComparisonBranch | null>(() => {
+    if (!comparisonGroup) return null;
+    return comparisonGroup.branches.find(branch => branch.id === comparisonGroup.active_branch_id)
+      ?? comparisonGroup.branches.find(branch => branch.id === comparisonGroup.snapshot_branch_id)
+      ?? null;
+  }, [comparisonGroup]);
+
+  const ensureComparison = useCallback(async () => {
+    if (!jobId || !baselineConversation.id) return null;
+    if (comparisonGroup?.root_conversation_id === baselineConversation.id) return comparisonGroup;
+    const group = await api.openComparison(jobId, baselineConversation.id);
+    setComparisonGroup(group);
+    return group;
+  }, [baselineConversation.id, comparisonGroup, jobId]);
+
+  const openMnemos = useCallback(async () => {
+    const group = await ensureComparison();
+    if (group) setMnemosOpen(true);
+  }, [ensureComparison]);
+
+  const copyToMnemos = useCallback(async (messageId: string, content: string) => {
+    const group = await ensureComparison();
+    if (!group) return;
+    if (mnemosDraft.trim() && mnemosDraft !== content && !window.confirm("Replace the unfinished MNEMOS message with the copied question?")) return;
+    setCopiedPrompt({ messageId, content });
+    setMnemosDraft(content);
+    setMnemosOpen(true);
+  }, [ensureComparison, mnemosDraft]);
+
+  const onBaselineChanged = useCallback((next: ChatConversation) => {
+    // A persisted conversation becoming saved is the same selection; only the
+    // explicit transition from a persisted conversation to a new draft gets a
+    // fresh controlled-selection identity.
+    if (!next.id && baselineConversation.id) {
+      draftSequenceRef.current += 1;
+      setBaselineToken(`baseline-draft-${draftSequenceRef.current}`);
+    }
+    setBaselineConversation(next);
+    if (next.id) void refreshConversations();
+  }, [baselineConversation.id, refreshConversations]);
+
+  const onMnemosChanged = useCallback((next: ChatConversation) => {
+    setComparisonGroup(current => {
+      if (!current || !next.id) return current;
+      const branchIndex = current.branches.findIndex(branch => branch.conversation_id === next.id);
+      if (branchIndex < 0) return current;
+      const branches = [...current.branches];
+      branches[branchIndex] = { ...branches[branchIndex], messages: next.messages, updated_at: next.updated_at ?? branches[branchIndex].updated_at };
+      return { ...current, branches, updated_at: next.updated_at ?? current.updated_at };
+    });
+  }, []);
+
+  const prepareMnemosSend = useCallback(async (_message: string, requestId: string): Promise<ChatConversation | undefined> => {
+    if (!jobId || !comparisonGroup || !activeBranch) return undefined;
+    if (!copiedPrompt) return { id: activeBranch.conversation_id, job_id: jobId, messages: activeBranch.messages };
+    try {
+      const branch = await api.createComparisonBranch(jobId, comparisonGroup.group_id, copiedPrompt.messageId, requestId);
+      setComparisonGroup(current => current ? { ...current, branches: [...current.branches.filter(item => item.id !== branch.id), branch] } : current);
+      setCopiedPrompt(null);
+      return { id: branch.conversation_id, job_id: jobId, messages: branch.messages };
+    } catch {
+      return undefined;
+    }
+  }, [activeBranch, comparisonGroup, copiedPrompt, jobId]);
+
+  const completeMnemosTurn = useCallback((conversationId: string) => {
+    setComparisonGroup(current => {
+      const branch = current?.branches.find(item => item.conversation_id === conversationId);
+      if (!current || !branch) return current;
+      return { ...current, active_branch_id: branch.id };
+    });
+  }, []);
 
   // ── KB state ──
   const [kbDocs, setKbDocs] = useState<KBDocumentOut[]>([]);
@@ -260,9 +371,47 @@ export const ChatPage: React.FC = () => {
       {isTerminal && (
         <div className="flex gap-4 items-start" style={{ height: "calc(100vh - 140px)" }}>
           {/* ── Chat (main area) ── */}
-          <div className={`flex-1 min-w-0 h-full transition-all ${kbOpen ? "" : ""}`}>
-            <ChatPanel jobId={jobId} initialMessage={initialAsk} contextHint={contextHint} />
+          <div className={`flex-1 min-w-0 h-full transition-all ${kbOpen ? "" : ""} flex flex-col gap-2`}>
+            <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-2">
+              <div className="min-w-0">
+                {conversationSummaries.length > 1 && <select aria-label="Baseline conversation" value={baselineConversation.id ?? ""} onChange={event => void selectBaselineConversation(event.target.value)} className="max-w-xs rounded border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-200">
+                  {conversationSummaries.map(conversation => <option key={conversation.id} value={conversation.id}>{conversation.title || conversation.id}</option>)}
+                </select>}
+              </div>
+              <button ref={mnemosToggleRef} type="button" onClick={() => void (mnemosOpen ? Promise.resolve(setMnemosOpen(false)) : openMnemos())} disabled={!baselineConversation.id} className="rounded bg-cyan-700 px-3 py-1.5 text-sm text-white hover:bg-cyan-600 disabled:cursor-not-allowed disabled:opacity-50">MNEMOS comparison</button>
+            </div>
+            <div className="min-h-0 flex-1">
+              <ChatPanel
+                jobId={jobId}
+                conversation={baselineConversation}
+                selectionToken={baselineToken}
+                mode="baseline"
+                initialMessage={initialAsk}
+                contextHint={contextHint}
+                onConversationChanged={onBaselineChanged}
+                onCopyToMnemos={copyToMnemos}
+                onRetry={() => {}}
+              />
+            </div>
           </div>
+
+          {mnemosOpen && comparisonGroup && activeBranch && (
+            <MnemosChatDrawer
+              jobId={jobId}
+              group={comparisonGroup}
+              activeBranch={activeBranch}
+              conversation={{ id: activeBranch.conversation_id, job_id: jobId, messages: activeBranch.messages }}
+              draft={mnemosDraft}
+              onDraftChange={setMnemosDraft}
+              onClose={() => setMnemosOpen(false)}
+              onBranchChange={branchId => setComparisonGroup(current => current ? { ...current, active_branch_id: branchId } : current)}
+              onBeforeSend={prepareMnemosSend}
+              onConversationChanged={onMnemosChanged}
+              onTurnComplete={completeMnemosTurn}
+              onRetry={() => {}}
+              returnFocusRef={mnemosToggleRef}
+            />
+          )}
 
           {/* ── KB Sidebar ── */}
           <div className={`flex-shrink-0 transition-all duration-300 h-full ${kbOpen ? "w-96" : "w-10"}`}>
@@ -469,4 +618,3 @@ export const ChatPage: React.FC = () => {
     </div>
   );
 };
-

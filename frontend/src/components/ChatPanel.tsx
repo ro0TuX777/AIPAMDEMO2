@@ -16,6 +16,13 @@ export interface ChatPanelProps {
   initialMessage?: string;
   contextHint?: string;
   onClose?: () => void;
+  inputValue?: string;
+  onInputChange?: (value: string) => void;
+  inputLabel?: string;
+  sendLabel?: string;
+  /** Creates a copied comparison branch immediately before its first request. */
+  onBeforeSend?: (message: string, requestId: string) => Promise<ChatConversation | undefined>;
+  onTurnComplete?: (conversationId: string) => void;
 }
 
 interface LegacyChatPanelProps {
@@ -43,6 +50,9 @@ export function ChatPanel(props: ChatPanelInputProps) {
   const onConversationChanged = controlled ? props.onConversationChanged : () => {};
   const onCopyToMnemos = controlled ? props.onCopyToMnemos : () => {};
   const onRetry = controlled ? props.onRetry : () => {};
+  const controlledInput = controlled && props.inputValue !== undefined;
+  const onBeforeSend = controlled ? props.onBeforeSend : undefined;
+  const onTurnComplete = controlled ? props.onTurnComplete : undefined;
   const [input, setInput] = useState("");
   const [loadingGeneration, setLoadingGeneration] = useState<number | null>(null);
   const [failure, setFailure] = useState<{ requestId: string; generation: number } | null>(null);
@@ -105,22 +115,30 @@ export function ChatPanel(props: ChatPanelInputProps) {
       emit(originGeneration, messagesRef.current.map(message => message.request_id === requestId && message.role === "assistant"
         ? { ...message, content, citations: terminal.citations, metadata } : message), terminal.conversation_id);
     }
-  }, [emit, jobId]);
+    onTurnComplete?.(terminal.conversation_id);
+  }, [emit, jobId, onTurnComplete]);
 
-  const handleSend = useCallback(async (messageText?: string) => {
-    const text = messageText || input.trim();
+  const handleSend = useCallback(async (messageText?: string, retryRequestId?: string) => {
+    const text = messageText || (controlledInput ? props.inputValue ?? "" : input).trim();
     if (!text || isLoading) return;
-    const requestId = newId();
+    const requestId = retryRequestId ?? newId();
     const originGeneration = selectionGeneration;
+    let targetConversation = conversation;
+    if (onBeforeSend && !retryRequestId) {
+      const prepared = await onBeforeSend(text, requestId);
+      if (!prepared) return;
+      targetConversation = prepared;
+      messagesRef.current = prepared.messages;
+    }
     const timestamp = new Date().toISOString();
-    const nextSequence = conversation.messages.reduce((highest, message) => Math.max(highest, message.sequence), 0) + 1;
+    const nextSequence = targetConversation.messages.reduce((highest, message) => Math.max(highest, message.sequence), 0) + 1;
     const userMessage: ChatMessage = { id: newId(), sequence: nextSequence, role: "user", content: text, citations: [], metadata: null, request_id: requestId, timestamp, saved: false };
     const assistantMessage: ChatMessage = { id: newId(), sequence: nextSequence + 1, role: "assistant", content: "", citations: [], metadata: { status: "pending" }, request_id: requestId, timestamp, saved: false };
-    emit(originGeneration, [...conversation.messages, userMessage, assistantMessage]);
-    setInput("");
+    emit(originGeneration, [...targetConversation.messages, userMessage, assistantMessage], targetConversation.id);
+    if (controlledInput) props.onInputChange?.(""); else setInput("");
     setFailure(null);
     setLoadingGeneration(originGeneration);
-    const body = { message: text, conversation_id: conversation.id, context_hint: contextHint, mode, request_id: requestId };
+    const body = { message: text, conversation_id: targetConversation.id, context_hint: contextHint, mode, request_id: requestId };
     const applyJsonResponse = async (response: Awaited<ReturnType<typeof api.chatWithJob>>) => complete(originGeneration, requestId, {
       type: "meta", conversation_id: response.conversation_id, branch_id: response.branch_id,
       request_id: response.request_id, status: response.status ?? "completed", retrieval_status: response.retrieval_status,
@@ -169,7 +187,7 @@ export function ChatPanel(props: ChatPanelInputProps) {
     } finally {
       if (isCurrentSelection(originGeneration)) setLoadingGeneration(null);
     }
-  }, [complete, contextHint, conversation.id, conversation.messages, emit, input, isCurrentSelection, isLoading, jobId, mode, selectionGeneration, updateAssistant]);
+  }, [complete, contextHint, controlledInput, conversation, emit, input, isCurrentSelection, isLoading, jobId, mode, onBeforeSend, props.inputValue, props.onInputChange, selectionGeneration, updateAssistant]);
 
   useEffect(() => {
     if (initialMessage && controlled && !initialContextHandled.current) {
@@ -207,9 +225,9 @@ export function ChatPanel(props: ChatPanelInputProps) {
         {message.role === "assistant" && message.metadata?.suggested_followups instanceof Array && !isLoading && <div className="mt-3 pt-2 border-t border-slate-700"><p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1.5">Follow-up questions</p><div className="flex flex-wrap gap-1.5">{message.metadata.suggested_followups.filter((item): item is string => typeof item === "string").map(question => <button key={question} onClick={() => void handleSend(question)} className="text-left text-xs px-2 py-1 rounded border border-slate-700 bg-slate-900/60 text-emerald-400/80">{question}</button>)}</div></div>}
       </div></div>)}
       {isLoading && <div className="flex justify-start"><div className="bg-slate-800 rounded-lg px-4 py-2 text-slate-400"><span className="animate-pulse">Thinking...</span></div></div>}
-      {mode === "mnemos" && activeFailure && <button type="button" onClick={() => { setFailure(null); onRetry(activeFailure.requestId); }} className="text-sm text-amber-300 underline underline-offset-2">Retry MNEMOS</button>}
+      {mode === "mnemos" && activeFailure && <button type="button" onClick={() => { const retryText = messagesRef.current.find(message => message.request_id === activeFailure.requestId && message.role === "user")?.content; setFailure(null); onRetry(activeFailure.requestId); void handleSend(retryText, activeFailure.requestId); }} className="text-sm text-amber-300 underline underline-offset-2">Retry MNEMOS</button>}
       <div ref={messagesEndRef} />
     </div>
-    <div className="p-4 border-t border-slate-700"><div className="flex gap-2"><input type="text" value={input} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void handleSend(); } }} placeholder="Ask about the findings..." className="flex-1 bg-slate-800 text-slate-100 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" disabled={isLoading} /><button onClick={() => void handleSend()} disabled={isLoading || !input.trim()} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50">Send</button></div></div>
+    <div className="p-4 border-t border-slate-700"><div className="flex gap-2"><input type="text" aria-label={controlled ? props.inputLabel : undefined} value={controlledInput ? props.inputValue : input} onChange={event => controlledInput ? props.onInputChange?.(event.target.value) : setInput(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void handleSend(); } }} placeholder="Ask about the findings..." className="flex-1 bg-slate-800 text-slate-100 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" disabled={isLoading} /><button onClick={() => void handleSend()} disabled={isLoading || !(controlledInput ? props.inputValue : input)?.trim()} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50">{controlled ? props.sendLabel ?? "Send" : "Send"}</button></div></div>
   </div>;
 }
