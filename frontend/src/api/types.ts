@@ -1728,11 +1728,74 @@ export interface OllamaGpuStatusResponse {
 
 // ─── Chat types ─────────────────────────────────────────────────────────────
 export interface ChatCitation { type: string; id?: string; snippet: string }
+export interface HistoricalFindingCitation extends ChatCitation {
+  type: "historical_finding";
+  id: string;
+  source_job_id: string;
+  source_project_id: string | null;
+  href: string;
+}
 export interface ChatEvidenceRef { type: string; id?: string; label: string }
-export interface ChatRequest { message: string; conversation_id?: string; context_hint?: string }
-export interface ChatResponse { response: string; citations: ChatCitation[]; conversation_id: string; confidence?: number; evidence_refs?: ChatEvidenceRef[]; suggested_followups?: string[] }
+export type ChatMode = "baseline" | "mnemos";
+export type MnemosRetrievalStatus = "used" | "no_matches" | "unavailable" | "error";
+export interface ChatGenerationMetadata { temperature: number; max_tokens: number }
+export interface ChatRequest {
+  message: string;
+  conversation_id?: string;
+  context_hint?: string;
+  mode?: ChatMode;
+  request_id?: string;
+  comparison_source_message_id?: string;
+}
+export interface ChatResponse {
+  response: string;
+  citations: Array<ChatCitation | HistoricalFindingCitation>;
+  conversation_id: string;
+  confidence?: number;
+  evidence_refs?: ChatEvidenceRef[];
+  suggested_followups?: string[];
+  retrieval_status?: MnemosRetrievalStatus | null;
+  model_id?: string | null;
+  generation?: ChatGenerationMetadata | null;
+  branch_id?: string | null;
+  request_id?: string | null;
+  status?: "pending" | "completed" | "error";
+}
+export interface ChatMessage {
+  id: string;
+  sequence: number;
+  role: "user" | "assistant";
+  content: string;
+  citations: Array<ChatCitation | HistoricalFindingCitation>;
+  metadata: Record<string, unknown> | null;
+  request_id: string | null;
+  timestamp: string;
+}
+export interface ChatComparisonBranch {
+  id: string;
+  conversation_id: string;
+  label: string;
+  source_message_id?: string | null;
+  request_id?: string | null;
+  history_cutoff_sequence: number;
+  created_at: string;
+  updated_at: string;
+  messages: ChatMessage[];
+}
+export interface ChatComparisonGroup {
+  group_id: string;
+  job_id: string;
+  root_conversation_id: string;
+  title?: string | null;
+  snapshot_branch_id: string;
+  active_branch_id: string;
+  conversation_id: string;
+  created_at: string;
+  updated_at: string;
+  branches: ChatComparisonBranch[];
+}
 export interface ConversationSummary { id: string; job_id: string; created_at: string; updated_at: string; title?: string; message_count: number }
-export interface ConversationHistoryOut { id: string; job_id: string; messages: any[]; created_at: string; updated_at: string }
+export interface ConversationHistoryOut { id: string; job_id: string; messages: ChatMessage[]; created_at: string; updated_at: string }
 export interface SuricataRuleItem { filename: string; content?: string; size_bytes: number; updated_at: string }
 
 // ─── Parsed Suricata Rule types ─────────────────────────────────────────────
