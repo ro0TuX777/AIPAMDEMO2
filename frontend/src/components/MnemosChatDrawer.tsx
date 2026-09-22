@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { ChatPanel, type ChatSendTarget } from "./ChatPanel";
 import type { ChatComparisonBranch, ChatComparisonGroup, ChatConversation, HistoricalFindingCitation } from "./chatTypes";
 
@@ -77,7 +78,7 @@ export function MnemosChatDrawer({
     };
   }, [mobile, onClose]);
 
-  return (
+  const content = (
     <aside role={mobile ? "dialog" : "complementary"} aria-modal={mobile || undefined} aria-label="MNEMOS comparison" className="fixed inset-y-0 right-0 z-40 flex w-full max-w-lg flex-col border-l border-slate-700 bg-slate-950 shadow-2xl md:static md:h-full md:w-[28rem] md:rounded-lg md:border">
       <div className="flex items-center justify-between border-b border-slate-700 px-4 py-3">
         <div>
@@ -132,4 +133,5 @@ export function MnemosChatDrawer({
       </div>
     </aside>
   );
+  return mobile ? createPortal(content, document.body) : content;
 }
