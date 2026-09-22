@@ -2,10 +2,11 @@ from __future__ import annotations
 
 import pytest
 from pydantic import ValidationError
-from sqlalchemy import create_engine, event, func, select
+from sqlalchemy import create_engine, event, func, select, text
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
+from backend.app.api.chat import _summarize_older_messages
 from backend.app.database_v2 import Base, _set_sqlite_pragmas
 from backend.app.models.chat import (
     ChatComparisonBranch,
@@ -311,13 +312,243 @@ def test_branch_history_ignores_incomplete_branch_turn(session) -> None:
     assert prompt_history_for_branch(session, branch.id) == []
 
 
-def test_root_must_be_a_baseline_conversation(session) -> None:
+def test_history_and_summary_use_conversation_provenance_if_branch_mirror_diverges(
+    session,
+) -> None:
+    root, question, _answer, later = seed_baseline_turns(session)
+    branch = create_mnemos_copy_branch(
+        session,
+        root_conversation_id=root.id,
+        source_message_id=later.id,
+    )
+    branch_id = branch.id
+    session.commit()
+
+    # Simulate legacy/corrupted display metadata. The supported schema protects
+    # this row with a trigger; history must still use the conversation record.
+    session.execute(text("DROP TRIGGER IF EXISTS chat_comparison_branch_provenance_immutable"))
+    session.execute(
+        text(
+            """
+            UPDATE chat_comparison_branches
+            SET source_message_id = :source_message_id,
+                history_cutoff_sequence = 4
+            WHERE id = :branch_id
+            """
+        ),
+        {"source_message_id": question.id, "branch_id": branch_id},
+    )
+    session.commit()
+    session.expire_all()
+
+    history = prompt_history_for_branch(session, branch_id)
+    summary_input = _summarize_older_messages(history)
+
+    assert history == [
+        {"role": "user", "content": "What contacted the host?"},
+        {"role": "assistant", "content": "A periodic HTTPS destination."},
+    ]
+    assert "Was it confirmed malicious?" not in summary_input
+    assert "The current evidence does not confirm that." not in summary_input
+
+
+def test_metadata_created_schema_freezes_conversation_mode(session) -> None:
     root = _add_root(session)
+    session.commit()
+
     root.mode = "mnemos"
+
+    with pytest.raises(IntegrityError, match="provenance is immutable"):
+        session.commit()
+
+
+def test_metadata_created_schema_freezes_branch_provenance(session) -> None:
+    root, question, _answer, _later = seed_baseline_turns(session)
+    branch = create_mnemos_copy_branch(
+        session,
+        root_conversation_id=root.id,
+        source_message_id=question.id,
+    )
+    session.commit()
+
+    branch.history_cutoff_sequence = 4
+
+    with pytest.raises(IntegrityError, match="branch provenance is immutable"):
+        session.commit()
+
+
+def test_root_must_be_a_baseline_conversation(session) -> None:
+    _add_job(session)
+    root = ChatConversation(
+        id="mnemos-root",
+        job_id="job-1",
+        mode="mnemos",
+        created_at="2026-09-22T00:00:00Z",
+        updated_at="2026-09-22T00:00:00Z",
+    )
+    session.add(root)
     session.commit()
 
     with pytest.raises(ComparisonValidationError, match="baseline"):
         create_mnemos_snapshot(session, root_conversation_id=root.id)
+
+
+def test_snapshot_recovers_when_a_concurrent_creator_wins(
+    tmp_path, monkeypatch
+) -> None:
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'concurrent.db'}",
+        connect_args={"check_same_thread": False},
+    )
+    event.listen(engine, "connect", _set_sqlite_pragmas)
+    Base.metadata.create_all(bind=engine)
+    with Session(engine) as seed:
+        root = _add_root(seed)
+        _add_message(
+            seed,
+            root.id,
+            message_id="concurrent-question",
+            sequence=1,
+            role="user",
+            content="Question",
+            created_at="2026-09-22T00:00:00Z",
+        )
+        _add_message(
+            seed,
+            root.id,
+            message_id="concurrent-answer",
+            sequence=2,
+            role="assistant",
+            content="Answer",
+            created_at="2026-09-22T00:00:01Z",
+        )
+        seed.commit()
+        root_id = root.id
+
+    winner_branch_id: str | None = None
+    with Session(engine) as loser:
+        original_flush = loser.flush
+        conflict_injected = False
+
+        def flush_after_competitor(objects=None):
+            nonlocal conflict_injected, winner_branch_id
+            if not conflict_injected and any(
+                isinstance(instance, ChatComparisonGroup) for instance in loser.new
+            ):
+                conflict_injected = True
+                with Session(engine) as winner:
+                    winner_branch = create_mnemos_snapshot(
+                        winner,
+                        root_conversation_id=root_id,
+                    )
+                    winner.commit()
+                    winner_branch_id = winner_branch.id
+            return original_flush(objects)
+
+        monkeypatch.setattr(loser, "flush", flush_after_competitor)
+
+        recovered = create_mnemos_snapshot(loser, root_conversation_id=root_id)
+        loser.commit()
+
+        assert recovered.id == winner_branch_id
+
+    with Session(engine) as check:
+        assert check.scalar(select(func.count(ChatComparisonGroup.id))) == 1
+        assert check.scalar(select(func.count(ChatComparisonBranch.id))) == 1
+        assert (
+            check.scalar(
+                select(func.count(ChatConversation.id)).where(
+                    ChatConversation.mode == "mnemos"
+                )
+            )
+            == 1
+        )
+    engine.dispose()
+
+
+def test_snapshot_recovers_when_branch_uniqueness_loses_after_group_exists(
+    tmp_path, monkeypatch
+) -> None:
+    engine = create_engine(
+        f"sqlite:///{tmp_path / 'snapshot-conflict.db'}",
+        connect_args={"check_same_thread": False},
+    )
+    event.listen(engine, "connect", _set_sqlite_pragmas)
+    Base.metadata.create_all(bind=engine)
+    with Session(engine) as seed:
+        root = _add_root(seed)
+        _add_message(
+            seed,
+            root.id,
+            message_id="snapshot-question",
+            sequence=1,
+            role="user",
+            content="Question",
+            created_at="2026-09-22T00:00:00Z",
+        )
+        _add_message(
+            seed,
+            root.id,
+            message_id="snapshot-answer",
+            sequence=2,
+            role="assistant",
+            content="Answer",
+            created_at="2026-09-22T00:00:01Z",
+        )
+        group = ChatComparisonGroup(
+            id="existing-group",
+            job_id=root.job_id,
+            root_conversation_id=root.id,
+            title=root.title,
+            created_at="2026-09-22T00:00:00Z",
+            updated_at="2026-09-22T00:00:00Z",
+        )
+        seed.add(group)
+        seed.flush()
+        root.comparison_group_id = group.id
+        seed.commit()
+        root_id = root.id
+
+    winner_branch_id: str | None = None
+    with Session(engine) as loser:
+        original_flush = loser.flush
+        conflict_injected = False
+
+        def flush_after_competitor(objects=None):
+            nonlocal conflict_injected, winner_branch_id
+            if not conflict_injected and any(
+                isinstance(instance, ChatConversation)
+                and instance.mode == "mnemos"
+                for instance in loser.new
+            ):
+                conflict_injected = True
+                with Session(engine) as winner:
+                    winner_branch = create_mnemos_snapshot(
+                        winner,
+                        root_conversation_id=root_id,
+                    )
+                    winner.commit()
+                    winner_branch_id = winner_branch.id
+            return original_flush(objects)
+
+        monkeypatch.setattr(loser, "flush", flush_after_competitor)
+
+        recovered = create_mnemos_snapshot(loser, root_conversation_id=root_id)
+        loser.commit()
+
+        assert recovered.id == winner_branch_id
+
+    with Session(engine) as check:
+        assert check.scalar(select(func.count(ChatComparisonBranch.id))) == 1
+        assert (
+            check.scalar(
+                select(func.count(ChatConversation.id)).where(
+                    ChatConversation.mode == "mnemos"
+                )
+            )
+            == 1
+        )
+    engine.dispose()
 
 
 def test_duplicate_request_identity_is_rejected_within_one_conversation(session) -> None:

@@ -1,7 +1,7 @@
 """add chat comparison groups
 
 Revision ID: 6f3a2b9c1d4e
-Revises: f1a2b3c4d5e6
+Revises: d4e5f6a7b8c9
 Create Date: 2026-09-22 00:00:00.000000
 
 """
@@ -13,7 +13,7 @@ from alembic import op
 
 
 revision: str = "6f3a2b9c1d4e"
-down_revision: Union[str, Sequence[str], None] = "f1a2b3c4d5e6"
+down_revision: Union[str, Sequence[str], None] = "d4e5f6a7b8c9"
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -239,9 +239,25 @@ def upgrade() -> None:
         END
         """
     )
+    op.execute(
+        """
+        CREATE TRIGGER chat_comparison_branch_provenance_immutable
+        BEFORE UPDATE OF group_id, conversation_id,
+                         source_message_id, history_cutoff_sequence
+        ON chat_comparison_branches
+        WHEN OLD.group_id IS NOT NEW.group_id
+          OR OLD.conversation_id IS NOT NEW.conversation_id
+          OR OLD.source_message_id IS NOT NEW.source_message_id
+          OR OLD.history_cutoff_sequence IS NOT NEW.history_cutoff_sequence
+        BEGIN
+            SELECT RAISE(ABORT, 'chat comparison branch provenance is immutable');
+        END
+        """
+    )
 
 
 def downgrade() -> None:
+    op.execute("DROP TRIGGER IF EXISTS chat_comparison_branch_provenance_immutable")
     op.execute("DROP TRIGGER IF EXISTS chat_conversation_provenance_immutable")
 
     op.drop_index("uq_chat_msg_conv_request", table_name="chat_messages")

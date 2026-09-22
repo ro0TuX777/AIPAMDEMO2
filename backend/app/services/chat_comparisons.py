@@ -6,6 +6,7 @@ import uuid
 from datetime import datetime, timezone
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from backend.app.models.chat import (
@@ -56,7 +57,7 @@ def _comparison_group(
         return group
 
     now = _now_iso()
-    group = ChatComparisonGroup(
+    candidate = ChatComparisonGroup(
         id=str(uuid.uuid4()),
         job_id=root.job_id,
         root_conversation_id=root.id,
@@ -64,8 +65,19 @@ def _comparison_group(
         created_at=now,
         updated_at=now,
     )
-    db.add(group)
-    db.flush()
+    try:
+        with db.begin_nested():
+            db.add(candidate)
+            db.flush()
+        group = candidate
+    except IntegrityError:
+        group = db.scalar(
+            select(ChatComparisonGroup).where(
+                ChatComparisonGroup.root_conversation_id == root.id
+            )
+        )
+        if group is None:
+            raise
     root.comparison_group_id = group.id
     db.flush()
     return group
@@ -136,14 +148,27 @@ def create_mnemos_snapshot(
             ChatMessage.role == "assistant",
         )
     )
-    return _new_branch(
-        db,
-        root=root,
-        group=group,
-        label="MNEMOS snapshot",
-        source_message_id=None,
-        history_cutoff_sequence=cutoff or 0,
-    )
+    try:
+        with db.begin_nested():
+            branch = _new_branch(
+                db,
+                root=root,
+                group=group,
+                label="MNEMOS snapshot",
+                source_message_id=None,
+                history_cutoff_sequence=cutoff or 0,
+            )
+        return branch
+    except IntegrityError:
+        existing = db.scalar(
+            select(ChatComparisonBranch).where(
+                ChatComparisonBranch.group_id == group.id,
+                ChatComparisonBranch.source_message_id.is_(None),
+            )
+        )
+        if existing is None:
+            raise
+        return existing
 
 
 def create_mnemos_copy_branch(
@@ -233,15 +258,29 @@ def prompt_history_for_branch(
         or conversation.mode != "mnemos"
         or conversation.job_id != group.job_id
         or conversation.comparison_group_id != group.id
+        or conversation.parent_branch_id != group.root_conversation_id
+        or conversation.history_cutoff_sequence is None
     ):
         raise ComparisonValidationError(
             "comparison branch does not belong to its persisted group"
         )
 
+    if conversation.source_message_id is not None:
+        source = db.get(ChatMessage, conversation.source_message_id)
+        if (
+            source is None
+            or source.conversation_id != conversation.parent_branch_id
+            or source.role != "user"
+            or source.sequence - 1 != conversation.history_cutoff_sequence
+        ):
+            raise ComparisonValidationError(
+                "comparison conversation has invalid source provenance"
+            )
+
     root_messages = _completed_messages(
         db,
-        conversation_id=group.root_conversation_id,
-        maximum_sequence=branch.history_cutoff_sequence,
+        conversation_id=conversation.parent_branch_id,
+        maximum_sequence=conversation.history_cutoff_sequence,
     )
     branch_messages = _completed_messages(db, conversation_id=branch.conversation_id)
     return [

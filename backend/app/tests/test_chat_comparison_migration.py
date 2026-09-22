@@ -9,7 +9,7 @@ from alembic.config import Config
 
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-BASE_REVISION = "f1a2b3c4d5e6"
+BASE_REVISION = "d4e5f6a7b8c9"
 COMPARISON_REVISION = "6f3a2b9c1d4e"
 
 
@@ -34,7 +34,7 @@ def _create_legacy_schema(database_path: Path) -> None:
             CREATE TABLE alembic_version (
                 version_num VARCHAR(32) NOT NULL PRIMARY KEY
             );
-            INSERT INTO alembic_version (version_num) VALUES ('f1a2b3c4d5e6');
+            INSERT INTO alembic_version (version_num) VALUES ('d4e5f6a7b8c9');
             CREATE TABLE jobs (
                 job_id VARCHAR NOT NULL PRIMARY KEY,
                 status VARCHAR NOT NULL,
@@ -176,6 +176,45 @@ def test_migration_enforces_immutable_mode_and_has_reversible_schema(
             assert "immutable" in str(exc)
         else:
             raise AssertionError("conversation mode update unexpectedly succeeded")
+
+        group_id = connection.execute(
+            """
+            SELECT id FROM chat_comparison_groups
+            WHERE root_conversation_id = 'legacy-1'
+            """
+        ).fetchone()[0]
+        connection.execute(
+            """
+            INSERT INTO chat_conversations (
+                id, job_id, comparison_group_id, mode, parent_branch_id,
+                history_cutoff_sequence, created_at, updated_at
+            ) VALUES (
+                'mnemos-1', 'job-legacy', ?, 'mnemos', 'legacy-1',
+                0, '2026-09-22', '2026-09-22'
+            )
+            """,
+            (group_id,),
+        )
+        connection.execute(
+            """
+            INSERT INTO chat_comparison_branches (
+                id, group_id, conversation_id, label,
+                history_cutoff_sequence, created_at, updated_at
+            ) VALUES (
+                'branch-1', ?, 'mnemos-1', 'Snapshot',
+                0, '2026-09-22', '2026-09-22'
+            )
+            """,
+            (group_id,),
+        )
+        with pytest.raises(sqlite3.IntegrityError, match="branch provenance is immutable"):
+            connection.execute(
+                """
+                UPDATE chat_comparison_branches
+                SET history_cutoff_sequence = 3
+                WHERE id = 'branch-1'
+                """
+            )
 
     command.downgrade(config, BASE_REVISION)
 

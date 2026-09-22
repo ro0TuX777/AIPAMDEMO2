@@ -2,7 +2,7 @@
 
 from collections import defaultdict
 
-from sqlalchemy import Column, ForeignKey, Index, Integer, String, Text, event, func, select, text
+from sqlalchemy import Column, DDL, ForeignKey, Index, Integer, String, Text, event, func, select, text
 from sqlalchemy.orm import Session
 
 from backend.app.database_v2 import Base
@@ -150,6 +150,49 @@ class ChatComparisonBranch(Base):
             sqlite_where=text("source_message_id IS NULL"),
         ),
     )
+
+
+event.listen(
+    ChatConversation.__table__,
+    "after_create",
+    DDL(
+        """
+        CREATE TRIGGER chat_conversation_provenance_immutable
+        BEFORE UPDATE OF comparison_group_id, mode, parent_branch_id,
+                         source_message_id, history_cutoff_sequence
+        ON chat_conversations
+        WHEN (OLD.comparison_group_id IS NOT NULL
+              AND OLD.comparison_group_id IS NOT NEW.comparison_group_id)
+          OR OLD.mode IS NOT NEW.mode
+          OR OLD.parent_branch_id IS NOT NEW.parent_branch_id
+          OR OLD.source_message_id IS NOT NEW.source_message_id
+          OR OLD.history_cutoff_sequence IS NOT NEW.history_cutoff_sequence
+        BEGIN
+            SELECT RAISE(ABORT, 'chat conversation provenance is immutable');
+        END
+        """
+    ).execute_if(dialect="sqlite"),
+)
+
+event.listen(
+    ChatComparisonBranch.__table__,
+    "after_create",
+    DDL(
+        """
+        CREATE TRIGGER chat_comparison_branch_provenance_immutable
+        BEFORE UPDATE OF group_id, conversation_id,
+                         source_message_id, history_cutoff_sequence
+        ON chat_comparison_branches
+        WHEN OLD.group_id IS NOT NEW.group_id
+          OR OLD.conversation_id IS NOT NEW.conversation_id
+          OR OLD.source_message_id IS NOT NEW.source_message_id
+          OR OLD.history_cutoff_sequence IS NOT NEW.history_cutoff_sequence
+        BEGIN
+            SELECT RAISE(ABORT, 'chat comparison branch provenance is immutable');
+        END
+        """
+    ).execute_if(dialect="sqlite"),
+)
 
 
 @event.listens_for(Session, "before_flush")
