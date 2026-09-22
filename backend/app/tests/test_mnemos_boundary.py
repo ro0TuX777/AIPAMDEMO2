@@ -65,6 +65,18 @@ def test_search_returns_none_when_mnemos_is_unavailable() -> None:
     assert client.search("recent findings") is None
 
 
+def test_search_rejects_healthy_payload_without_a_results_list() -> None:
+    """A malformed success must not be mistaken for a valid empty search."""
+    from backend.app.mnemos_boundary import MnemosBoundaryClient
+
+    client = MnemosBoundaryClient(
+        "http://mnemos",
+        request=lambda *args, **kwargs: _Response({"status": "healthy"}),
+    )
+
+    assert client.search("confirmed C2") is None
+
+
 def test_index_returns_the_service_count_only_after_a_healthy_response() -> None:
     """AIPAM must not treat a degraded write response as a completed MNEMOS write."""
     from backend.app.mnemos_boundary import MnemosBoundaryClient
@@ -114,8 +126,18 @@ def test_confirmed_findings_dual_write_to_mnemos_without_removing_local_memory(m
         "job-1",
         "project-1",
         [
-            {"analyst_status": "confirmed", "classification": "C2", "severity": "high"},
-            {"analyst_status": "dismissed", "classification": "benign", "severity": "low"},
+            {
+                "finding_id": "F-1",
+                "analyst_status": "confirmed",
+                "classification": "C2",
+                "severity": "high",
+            },
+            {
+                "finding_id": "F-2",
+                "analyst_status": "dismissed",
+                "classification": "benign",
+                "severity": "low",
+            },
         ],
     )
 
@@ -123,18 +145,16 @@ def test_confirmed_findings_dual_write_to_mnemos_without_removing_local_memory(m
     assert len(local.documents) == 1
     assert mnemos.documents == [
         {
-            "id": "job-1-0",
+            "id": "finding:job-1:F-1",
             "content": "Classification: C2\nSeverity: high",
             "source": "aipam.forensic_memory",
             "neuro_tags": ["forensic_finding", "confirmed"],
             "metadata": {
                 "collection": "aipam_forensic_findings",
                 "job_id": "job-1",
+                "finding_id": "F-1",
                 "project_id": "project-1",
-                "mitre_technique_id": "",
-                "severity": "high",
-                "confidence_score": 0.0,
-                "classification": "C2",
+                "content_sha256": "4c79e73570ca632cbf2f19832943930741eb1ecc19d161210eb1c69f7b0b1390",
             },
         }
     ]

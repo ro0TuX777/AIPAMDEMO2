@@ -61,7 +61,7 @@ class MnemosBoundaryClient:
 
         raw_hits = response.get("results")
         if not isinstance(raw_hits, list):
-            return []
+            return None
 
         hits: list[dict[str, Any]] = []
         for raw_hit in raw_hits:

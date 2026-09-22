@@ -10,10 +10,14 @@ Designed to coexist with the per-job LanceDB RAG in ``rag_index.py``.
 
 from __future__ import annotations
 
+import hashlib
 import logging
 import os
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import TYPE_CHECKING, Any, Dict, List, Optional
+
+if TYPE_CHECKING:
+    from backend.app.models.finding import Finding
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +27,48 @@ _collection = None
 
 DEFAULT_CHROMADB_PATH = os.path.expanduser("~/.aipam/forensic_memory")
 DEFAULT_COLLECTION = "aipam_forensic_findings"
+
+
+def finding_to_text(finding: Finding) -> str:
+    """Render a persisted finding as human-readable index content."""
+    parts = [
+        f"Title: {finding.title}",
+        f"Severity: {finding.severity}",
+    ]
+    if finding.category:
+        parts.append(f"Category: {finding.category}")
+    parts.append(f"Sensor: {finding.sensor}")
+    if finding.summary:
+        parts.append(f"Summary: {finding.summary}")
+    if finding.evidence_json:
+        parts.append(f"Evidence: {finding.evidence_json}")
+    return "\n".join(parts)
+
+
+def finding_content_sha256(finding: Finding) -> str:
+    """Return the revision hash for the exact text sent to MNEMOS."""
+    return hashlib.sha256(finding_to_text(finding).encode("utf-8")).hexdigest()
+
+
+def mnemos_document_for_finding(
+    finding: Finding,
+    *,
+    project_id: str | None,
+) -> dict[str, Any]:
+    """Build the stable MNEMOS representation of a persisted finding."""
+    return {
+        "id": f"finding:{finding.job_id}:{finding.finding_id}",
+        "content": finding_to_text(finding),
+        "source": "aipam.forensic_memory",
+        "neuro_tags": ["forensic_finding", "confirmed"],
+        "metadata": {
+            "collection": DEFAULT_COLLECTION,
+            "job_id": finding.job_id,
+            "finding_id": finding.finding_id,
+            "project_id": project_id or "",
+            "content_sha256": finding_content_sha256(finding),
+        },
+    }
 
 
 # ── ChromaDB Lifecycle ─────────────────────────────────────────────────
@@ -104,21 +150,21 @@ def store_findings(
             if client is not None:
                 mnemos_documents = [
                     {
-                        "id": f"{job_id}-{i}",
+                        "id": f"finding:{job_id}:{finding['finding_id']}",
                         "content": _finding_to_text(finding),
                         "source": "aipam.forensic_memory",
                         "neuro_tags": ["forensic_finding", "confirmed"],
                         "metadata": {
                             "collection": DEFAULT_COLLECTION,
                             "job_id": job_id,
+                            "finding_id": finding["finding_id"],
                             "project_id": project_id,
-                            "mitre_technique_id": finding.get("mitre_technique_id", ""),
-                            "severity": finding.get("severity", ""),
-                            "confidence_score": float(finding.get("confidence_score", 0)),
-                            "classification": finding.get("classification", ""),
+                            "content_sha256": hashlib.sha256(
+                                _finding_to_text(finding).encode("utf-8")
+                            ).hexdigest(),
                         },
                     }
-                    for i, finding in enumerate(confirmed_findings)
+                    for finding in confirmed_findings
                 ]
                 mnemos_indexed = client.index(mnemos_documents)
         except Exception as exc:

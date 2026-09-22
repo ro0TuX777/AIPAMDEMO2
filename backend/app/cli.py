@@ -29,6 +29,7 @@ import time
 import zipfile
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
+from typing import Any
 
 # Default base URL for local dev
 DEFAULT_BASE_URL = "http://localhost:8000"
@@ -961,6 +962,89 @@ def cmd_benchmark(args):
     sys.exit(0)
 
 
+# ---------------------------------------------------------------------------
+# MNEMOS finding reconciliation
+# ---------------------------------------------------------------------------
+
+
+def reconcile_mnemos_findings(
+    db,
+    *,
+    client: Any,
+    batch_size: int = 100,
+) -> dict[str, int]:
+    """Upsert all confirmed findings into MNEMOS in deterministic batches."""
+    from sqlalchemy import select
+
+    from backend.app.forensic_memory import mnemos_document_for_finding
+    from backend.app.models.bluescrub import BlueScrubJobLineage
+    from backend.app.models.finding import Finding
+
+    rows = db.execute(
+        select(Finding, BlueScrubJobLineage.project_id)
+        .outerjoin(
+            BlueScrubJobLineage,
+            BlueScrubJobLineage.job_id == Finding.job_id,
+        )
+        .where(Finding.analyst_status == "confirmed")
+        .order_by(Finding.job_id, Finding.finding_id)
+    ).all()
+    counts = {
+        "discovered": len(rows),
+        "indexed": 0,
+        "skipped": 0,
+        "failed": 0,
+    }
+    if client is None:
+        counts["failed"] = counts["discovered"]
+        return counts
+
+    documents: list[dict[str, Any]] = []
+    for finding, project_id in rows:
+        try:
+            documents.append(
+                mnemos_document_for_finding(finding, project_id=project_id)
+            )
+        except Exception:
+            counts["skipped"] += 1
+
+    bounded_batch_size = max(1, batch_size)
+    for start in range(0, len(documents), bounded_batch_size):
+        batch = documents[start:start + bounded_batch_size]
+        try:
+            indexed = client.index(batch)
+        except Exception:
+            indexed = None
+        if indexed is None:
+            counts["failed"] += len(batch)
+        elif indexed == len(batch):
+            counts["indexed"] += indexed
+        elif isinstance(indexed, int) and 0 <= indexed < len(batch):
+            counts["indexed"] += indexed
+            counts["failed"] += len(batch) - indexed
+        else:
+            counts["failed"] += len(batch)
+    return counts
+
+
+def cmd_reconcile_mnemos_findings(args) -> int:
+    """Reconcile confirmed database findings to stable MNEMOS documents."""
+    from backend.app.database_v2 import get_session_factory
+    from backend.app.mnemos_boundary import get_mnemos_client
+
+    try:
+        client = get_mnemos_client()
+    except Exception:
+        client = None
+    with get_session_factory()() as db:
+        counts = reconcile_mnemos_findings(db, client=client)
+    print(
+        f"discovered={counts['discovered']} indexed={counts['indexed']} "
+        f"skipped={counts['skipped']} failed={counts['failed']}"
+    )
+    return 1 if client is None or counts["failed"] else 0
+
+
 def main():
     parser = argparse.ArgumentParser(prog="aipam-admin", description="AIPAM V2 Admin CLI")
     sub = parser.add_subparsers(dest="command", help="Available commands")
@@ -1011,6 +1095,11 @@ def main():
     p_bench.add_argument("--set", dest="set", help="Filter by set (benchmark, leakage, etc)")
     p_bench.add_argument("--baseline", help="Path to baseline JSON for regression comparison")
 
+    sub.add_parser(
+        "reconcile-mnemos-findings",
+        help="Reconcile confirmed findings into MNEMOS",
+    )
+
     args = parser.parse_args()
 
     if args.command == "smoke-test":
@@ -1027,6 +1116,10 @@ def main():
         cmd_perf_gate(args)
     elif args.command == "benchmark":
         cmd_benchmark(args)
+    elif args.command == "reconcile-mnemos-findings":
+        exit_code = cmd_reconcile_mnemos_findings(args)
+        if exit_code:
+            sys.exit(exit_code)
     else:
         parser.print_help()
         sys.exit(2)
@@ -1034,4 +1127,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
