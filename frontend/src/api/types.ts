@@ -1783,6 +1783,9 @@ export interface ChatComparisonBranch {
   created_at: string;
   updated_at: string;
   messages: ChatMessage[];
+  inherited_root_conversation_id?: string | null;
+  inherited_cutoff_sequence?: number | null;
+  inherited_messages?: ChatMessage[];
 }
 export interface ChatComparisonGroup {
   group_id: string;

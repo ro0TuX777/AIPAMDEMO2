@@ -3,6 +3,7 @@ import { useParams, useSearchParams } from "react-router-dom";
 import { JobSubPageNav } from "../components/JobSubPageNav";
 import { useQuery } from "@tanstack/react-query";
 import { ChatPanel } from "../components/ChatPanel";
+import type { ChatSendTarget } from "../components/ChatPanel";
 import { MnemosChatDrawer } from "../components/MnemosChatDrawer";
 import type { ChatComparisonBranch, ChatComparisonGroup, ChatConversation } from "../components/chatTypes";
 import {
@@ -52,6 +53,7 @@ export const ChatPage: React.FC = () => {
   const [kbOpen, setKbOpen] = useState(false);
   const mnemosToggleRef = useRef<HTMLButtonElement>(null);
   const draftSequenceRef = useRef(0);
+  const hydratedJobRef = useRef<string | null>(null);
   const [baselineConversation, setBaselineConversation] = useState<ChatConversation>({ job_id: jobId ?? "", messages: [] });
   const [baselineToken, setBaselineToken] = useState("baseline-draft-0");
   const [conversationSummaries, setConversationSummaries] = useState<Array<{ id: string; title?: string }>>([]);
@@ -65,17 +67,28 @@ export const ChatPage: React.FC = () => {
     try {
       const conversations = await api.listConversations(jobId);
       setConversationSummaries(conversations);
-      if (!baselineConversation.id && conversations[0]) {
-        const history = await api.getConversation(jobId, conversations[0].id);
-        setBaselineConversation(history);
-        setBaselineToken(`baseline-${history.id}`);
-      }
     } catch {
       // The user can still start a draft if conversation history is temporarily unavailable.
     }
-  }, [baselineConversation.id, jobId]);
+  }, [jobId]);
 
   useEffect(() => { void refreshConversations(); }, [refreshConversations]);
+
+  useEffect(() => {
+    if (!jobId || hydratedJobRef.current === jobId) return;
+    hydratedJobRef.current = jobId;
+    void (async () => {
+      try {
+        const conversations = await api.listConversations(jobId);
+        setConversationSummaries(conversations);
+        if (conversations[0]) {
+          const history = await api.getConversation(jobId, conversations[0].id);
+          setBaselineConversation(history);
+          setBaselineToken(`baseline-${history.id}`);
+        }
+      } catch { /* Initial drafts remain usable while history is unavailable. */ }
+    })();
+  }, [jobId]);
 
   const selectBaselineConversation = useCallback(async (conversationId: string) => {
     if (!jobId || conversationId === baselineConversation.id) return;
@@ -139,14 +152,15 @@ export const ChatPage: React.FC = () => {
     });
   }, []);
 
-  const prepareMnemosSend = useCallback(async (_message: string, requestId: string): Promise<ChatConversation | undefined> => {
+  const prepareMnemosSend = useCallback(async (_message: string, requestId: string): Promise<ChatSendTarget | undefined> => {
     if (!jobId || !comparisonGroup || !activeBranch) return undefined;
-    if (!copiedPrompt) return { id: activeBranch.conversation_id, job_id: jobId, messages: activeBranch.messages };
+    if (!copiedPrompt) return { conversation: { id: activeBranch.conversation_id, job_id: jobId, messages: activeBranch.messages }, branchId: activeBranch.id, selectionToken: activeBranch.id };
     try {
       const branch = await api.createComparisonBranch(jobId, comparisonGroup.group_id, copiedPrompt.messageId, requestId);
-      setComparisonGroup(current => current ? { ...current, branches: [...current.branches.filter(item => item.id !== branch.id), branch] } : current);
+      const selected = await api.selectComparisonBranch(jobId, comparisonGroup.group_id, branch.id);
+      setComparisonGroup(selected);
       setCopiedPrompt(null);
-      return { id: branch.conversation_id, job_id: jobId, messages: branch.messages };
+      return { conversation: { id: branch.conversation_id, job_id: jobId, messages: branch.messages }, branchId: branch.id, selectionToken: branch.id };
     } catch {
       return undefined;
     }
@@ -404,7 +418,7 @@ export const ChatPage: React.FC = () => {
               draft={mnemosDraft}
               onDraftChange={setMnemosDraft}
               onClose={() => setMnemosOpen(false)}
-              onBranchChange={branchId => setComparisonGroup(current => current ? { ...current, active_branch_id: branchId } : current)}
+              onBranchChange={branchId => { if (comparisonGroup) void api.selectComparisonBranch(jobId, comparisonGroup.group_id, branchId).then(setComparisonGroup); }}
               onBeforeSend={prepareMnemosSend}
               onConversationChanged={onMnemosChanged}
               onTurnComplete={completeMnemosTurn}

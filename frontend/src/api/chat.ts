@@ -39,7 +39,7 @@ export interface ChatStreamTerminalMetadata {
 }
 
 export class ChatStreamError extends Error {
-  constructor(message: string, public readonly responseReceived: boolean) {
+  constructor(message: string, public readonly responseReceived: boolean, public readonly code?: string) {
     super(message);
     this.name = "ChatStreamError";
   }
@@ -61,7 +61,19 @@ async function streamWithJob(
   } catch (error) {
     throw new ChatStreamError(error instanceof Error ? error.message : "Stream transport failed", false);
   }
-  if (!response.ok) throw new ChatStreamError(`HTTP ${response.status}`, true);
+  if (!response.ok) {
+    let message = `HTTP ${response.status}`;
+    let code: string | undefined;
+    try {
+      const payload = await response.json();
+      const detail = payload?.detail ?? payload;
+      if (detail && typeof detail === "object") {
+        if (typeof detail.error === "string") message = detail.error;
+        if (typeof detail.code === "string") code = detail.code;
+      }
+    } catch { /* Preserve the status fallback for non-JSON errors. */ }
+    throw new ChatStreamError(message, true, code);
+  }
   const reader = response.body?.getReader();
   if (!reader) throw new ChatStreamError("No readable stream", true);
 
@@ -104,6 +116,10 @@ export const chatApi = {
 
   getComparison(jobId: string, groupId: string): Promise<ChatComparisonGroup> {
     return get<ChatComparisonGroup>(`/jobs/${jobId}/chat/comparisons/${groupId}`);
+  },
+
+  selectComparisonBranch(jobId: string, groupId: string, branchId: string): Promise<ChatComparisonGroup> {
+    return patch<ChatComparisonGroup>(`/jobs/${jobId}/chat/comparisons/${groupId}`, { active_branch_id: branchId });
   },
 
   createComparisonBranch(
