@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from "react";
 import { api, ChatResponse, ChatCitation, ChatEvidenceRef, ConversationSummary, isDemoMode } from "../api";
+import { API_BASE, getApiToken } from "../api/transport";
 
 interface ChatMessage {
     role: "user" | "assistant";
@@ -176,10 +177,7 @@ export function ChatPanel({ jobId, initialMessage, contextHint, onClose }: ChatP
         }
 
         try {
-            const API_BASE =
-                (import.meta as any).env?.VITE_API_BASE_URL?.replace(/\/$/, "") ||
-                "http://localhost:8000/api/v1";
-            const token = localStorage.getItem("aipam_token") || "";
+            const token = getApiToken() || "";
 
             const resp = await fetch(`${API_BASE}/jobs/${jobId}/chat/stream`, {
                 method: "POST",
@@ -595,4 +593,3 @@ export function ChatPanel({ jobId, initialMessage, contextHint, onClose }: ChatP
         </div>
     );
 }
-
