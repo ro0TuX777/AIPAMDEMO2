@@ -187,6 +187,18 @@ def get_conversation_branch(
     )
 
 
+def set_active_comparison_branch(
+    db: Session, *, group: ChatComparisonGroup, branch_id: str
+) -> ChatComparisonBranch:
+    """Persist an active branch only when it belongs to the selected group."""
+    branch = db.get(ChatComparisonBranch, branch_id)
+    if branch is None or branch.group_id != group.id:
+        raise ComparisonValidationError("active branch does not belong to the comparison group")
+    group.active_branch_id = branch.id
+    group.updated_at = _now_iso()
+    return branch
+
+
 def _new_branch(
     db: Session,
     *,
@@ -452,6 +464,28 @@ def prompt_history_for_branch(
         {"role": message.role, "content": message.content}
         for message in [*root_messages, *branch_messages]
     ]
+
+
+def inherited_display_messages_for_branch(
+    db: Session, branch_id: str
+) -> tuple[ChatConversation, list[ChatMessage]]:
+    """Return the validated immutable root prefix for UI display.
+
+    Calling the prompt-history validator first ensures the response follows the
+    same persisted provenance and cutoff rules as model prompting.
+    """
+    prompt_history_for_branch(db, branch_id)
+    branch = db.get(ChatComparisonBranch, branch_id)
+    if branch is None:
+        raise ComparisonValidationError("comparison branch was not found")
+    conversation = db.get(ChatConversation, branch.conversation_id)
+    if conversation is None or conversation.parent_branch_id is None:
+        raise ComparisonValidationError("comparison branch does not have a root prefix")
+    return conversation, _completed_messages(
+        db,
+        conversation_id=conversation.parent_branch_id,
+        maximum_sequence=conversation.history_cutoff_sequence,
+    )
 
 
 def prompt_history_for_mnemos_conversation(

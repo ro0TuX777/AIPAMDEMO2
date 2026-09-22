@@ -83,6 +83,10 @@ class ChatComparisonBranchCreateRequest(BaseModel):
     request_id: str = Field(..., min_length=1, max_length=128)
 
 
+class ChatComparisonActiveBranchRequest(BaseModel):
+    active_branch_id: str = Field(..., min_length=1)
+
+
 class EvidenceRefOut(BaseModel):
     type: str          # "host", "finding", "alert", "ioc"
     id: str | None = None
@@ -125,6 +129,10 @@ class ChatComparisonBranchOut(BaseModel):
     created_at: str
     updated_at: str
     messages: list[ChatMessageOut] = Field(default_factory=list)
+    # Read-only root prefix selected and validated by the server's cutoff rule.
+    inherited_root_conversation_id: str | None = None
+    inherited_cutoff_sequence: int | None = None
+    inherited_messages: list[ChatMessageOut] = Field(default_factory=list)
 
 
 class ChatComparisonGroupOut(BaseModel):

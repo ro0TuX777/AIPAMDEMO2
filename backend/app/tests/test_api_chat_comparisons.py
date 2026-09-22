@@ -209,6 +209,45 @@ def test_restore_returns_group_branches_active_branch_and_messages(client) -> No
     assert body["branches"][0]["messages"] == []
 
 
+def test_restore_exposes_server_authorized_prefix_and_persists_owned_active_branch(client) -> None:
+    opened = _open_comparison(client)
+    snapshot = opened["branches"][0]
+
+    # The snapshot receives the completed baseline transcript as a display-only
+    # server projection; its own conversation remains empty.
+    assert [message["id"] for message in snapshot["inherited_messages"]] == [
+        "question-1", "answer-1",
+    ]
+    assert snapshot["inherited_root_conversation_id"] == "root-1"
+    assert snapshot["inherited_cutoff_sequence"] == 2
+
+    created = client.post(
+        f"/jobs/job-1/chat/comparisons/{opened['group_id']}/branches",
+        json={"source_message_id": "question-1", "request_id": str(uuid.uuid4())},
+    )
+    assert created.status_code == 201, created.text
+    branch = created.json()
+    assert branch["inherited_cutoff_sequence"] == 0
+    assert branch["inherited_messages"] == []
+
+    selected = client.patch(
+        f"/jobs/job-1/chat/comparisons/{opened['group_id']}",
+        json={"active_branch_id": opened["snapshot_branch_id"]},
+    )
+    assert selected.status_code == 200, selected.text
+    assert selected.json()["active_branch_id"] == opened["snapshot_branch_id"]
+
+    restored = client.get(f"/jobs/job-1/chat/comparisons/{opened['group_id']}")
+    assert restored.status_code == 200
+    assert restored.json()["active_branch_id"] == opened["snapshot_branch_id"]
+
+    rejected = client.patch(
+        f"/jobs/job-1/chat/comparisons/{opened['group_id']}",
+        json={"active_branch_id": "not-owned"},
+    )
+    assert rejected.status_code == 400
+
+
 def test_copy_branch_validates_source_ownership_and_preserves_existing_branch(client) -> None:
     opened = _open_comparison(client)
     branch_request_id = str(uuid.uuid4())

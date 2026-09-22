@@ -29,6 +29,7 @@ from backend.app.schemas.chat import (                       # shared Pydantic m
     ChatCitationOut,
     ChatComparisonBranchCreateRequest,
     ChatComparisonBranchOut,
+    ChatComparisonActiveBranchRequest,
     ChatComparisonCreateRequest,
     ChatComparisonGroupOut,
     ChatGenerationMetadata,
@@ -60,7 +61,9 @@ from backend.app.services.chat_comparisons import (
     create_mnemos_snapshot,
     get_comparison_branches,
     get_comparison_group,
+    inherited_display_messages_for_branch,
     get_conversation_branch,
+    set_active_comparison_branch,
     prompt_history_for_mnemos_conversation,
 )
 from backend.app.services.mnemos_chat_retrieval import (
@@ -1169,6 +1172,7 @@ def _branch_out(db: Session, branch: ChatComparisonBranch) -> ChatComparisonBran
             .order_by(ChatMessage.sequence)
         )
     )
+    prefix_conversation, inherited_messages = inherited_display_messages_for_branch(db, branch.id)
     return ChatComparisonBranchOut(
         id=branch.id,
         conversation_id=branch.conversation_id,
@@ -1179,6 +1183,9 @@ def _branch_out(db: Session, branch: ChatComparisonBranch) -> ChatComparisonBran
         created_at=branch.created_at,
         updated_at=branch.updated_at,
         messages=[_message_out(message) for message in messages],
+        inherited_root_conversation_id=prefix_conversation.parent_branch_id,
+        inherited_cutoff_sequence=prefix_conversation.history_cutoff_sequence,
+        inherited_messages=[_message_out(message) for message in inherited_messages],
     )
 
 
@@ -1264,6 +1271,26 @@ async def restore_chat_comparison(
         return _comparison_group_out(db, group)
     except ComparisonValidationError as exc:
         _comparison_error(exc, status_code=404)
+
+
+@router.patch(
+    "/jobs/{job_id}/chat/comparisons/{group_id}",
+    response_model=ChatComparisonGroupOut,
+)
+async def select_chat_comparison_branch(
+    job_id: str,
+    group_id: str,
+    body: ChatComparisonActiveBranchRequest,
+    db: Session = Depends(get_db),
+):
+    try:
+        group = get_comparison_group(db, job_id=job_id, group_id=group_id)
+        set_active_comparison_branch(db, group=group, branch_id=body.active_branch_id)
+        db.commit()
+        return _comparison_group_out(db, group)
+    except ComparisonValidationError as exc:
+        db.rollback()
+        _comparison_error(exc)
 
 
 @router.post(
