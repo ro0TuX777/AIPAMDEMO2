@@ -4,6 +4,7 @@ import { JobSubPageNav } from "../components/JobSubPageNav";
 import { useQuery } from "@tanstack/react-query";
 import { ChatPanel } from "../components/ChatPanel";
 import type { ChatSendTarget } from "../components/ChatPanel";
+import type { ChatAttempt } from "../components/ChatPanel";
 import { MnemosChatDrawer } from "../components/MnemosChatDrawer";
 import type { ChatComparisonBranch, ChatComparisonGroup, ChatConversation } from "../components/chatTypes";
 import {
@@ -62,6 +63,7 @@ export const ChatPage: React.FC = () => {
   const [comparisonGroup, setComparisonGroup] = useState<ChatComparisonGroup | null>(null);
   const [mnemosDraft, setMnemosDraft] = useState("");
   const [copiedPrompt, setCopiedPrompt] = useState<{ messageId: string; content: string } | null>(null);
+  const [activeAttempt, setActiveAttempt] = useState<ChatAttempt | null>(null);
 
   const selectBaselineToken = useCallback((conversationId?: string) => {
     if (conversationId) setBaselineToken(`baseline-${conversationId}`);
@@ -172,6 +174,18 @@ export const ChatPage: React.FC = () => {
     }
   }, [baselineConversation.id, refreshConversations, searchParams, selectBaselineToken, setSearchParams]);
 
+  const completeBaselineTurn = useCallback((conversationId: string) => {
+    if (baselineConversation.id) return;
+    void api.getConversation(jobId!, conversationId).then(history => {
+      if (baselineConversation.id || !jobId) return;
+      setBaselineConversation(history);
+      const params = new URLSearchParams(searchParams);
+      params.set("conversation", conversationId);
+      setSearchParams(params, { replace: true });
+      void refreshConversations();
+    });
+  }, [baselineConversation.id, jobId, refreshConversations, searchParams, setSearchParams]);
+
   const startNewBaseline = useCallback(() => {
     pageGenerationRef.current += 1;
     selectBaselineToken();
@@ -179,6 +193,7 @@ export const ChatPage: React.FC = () => {
     setCopiedPrompt(null);
     setMnemosDraft("");
     setMnemosOpen(false);
+    setActiveAttempt(null);
     const next = new URLSearchParams(searchParams);
     next.delete("conversation");
     setSearchParams(next, { replace: true });
@@ -202,6 +217,12 @@ export const ChatPage: React.FC = () => {
       const branch = await api.createComparisonBranch(jobId, comparisonGroup.group_id, copiedPrompt.messageId, requestId);
       setComparisonGroup(current => current ? { ...current, active_branch_id: branch.id, branches: [...current.branches.filter(item => item.id !== branch.id), branch] } : current);
       setCopiedPrompt(null);
+      setActiveAttempt({
+        rootConversationId: baselineConversation.id, groupId: comparisonGroup.group_id,
+        branchId: branch.id, conversationId: branch.conversation_id,
+        sourceMessageId: copiedPrompt.messageId, prompt: copiedPrompt.content,
+        requestId, selectionToken: branch.id, generation: pageGenerationRef.current, status: "preparing",
+      });
       try {
         const selected = await api.selectComparisonBranch(jobId, comparisonGroup.group_id, branch.id);
         setComparisonGroup(selected);
@@ -455,6 +476,7 @@ export const ChatPage: React.FC = () => {
                 onCopyToMnemos={copyToMnemos}
                 onRetry={() => {}}
                 onNewConversation={startNewBaseline}
+                onTurnComplete={completeBaselineTurn}
               />
             </div>
           </div>
@@ -475,6 +497,8 @@ export const ChatPage: React.FC = () => {
               onRetry={() => {}}
               returnFocusRef={mnemosToggleRef}
               pendingCopiedSource={copiedPrompt?.messageId}
+              attempt={activeAttempt}
+              onAttemptChange={setActiveAttempt}
             />
           )}
 

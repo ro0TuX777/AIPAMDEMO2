@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { ChatPanel, type ChatSendTarget } from "./ChatPanel";
+import { ChatPanel, type ChatAttempt, type ChatSendTarget } from "./ChatPanel";
 import type { ChatComparisonBranch, ChatComparisonGroup, ChatConversation, HistoricalFindingCitation } from "./chatTypes";
 
 interface MnemosChatDrawerProps {
@@ -18,6 +18,8 @@ interface MnemosChatDrawerProps {
   onRetry: (requestId: string) => void;
   returnFocusRef: React.RefObject<HTMLButtonElement>;
   pendingCopiedSource?: string | null;
+  attempt?: ChatAttempt | null;
+  onAttemptChange?: (attempt: ChatAttempt | null) => void;
 }
 
 const retrievalStatus = (conversation: ChatConversation) => {
@@ -32,7 +34,7 @@ const historicalSources = (conversation: ChatConversation): HistoricalFindingCit
 
 export function MnemosChatDrawer({
   jobId, group, activeBranch, conversation, draft, onDraftChange, onClose, onBranchChange,
-  onBeforeSend, onConversationChanged, onTurnComplete, onRetry, returnFocusRef, pendingCopiedSource,
+  onBeforeSend, onConversationChanged, onTurnComplete, onRetry, returnFocusRef, pendingCopiedSource, attempt, onAttemptChange,
 }: MnemosChatDrawerProps) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
   const [mobile, setMobile] = useState(() => window.matchMedia("(max-width: 767px)").matches);
@@ -41,7 +43,7 @@ export function MnemosChatDrawer({
 
   useEffect(() => {
     closeButtonRef.current?.focus();
-    return () => returnFocusRef.current?.focus();
+    return () => queueMicrotask(() => returnFocusRef.current?.focus());
   }, [returnFocusRef]);
 
   useEffect(() => {
@@ -129,6 +131,8 @@ export function MnemosChatDrawer({
           onTurnComplete={onTurnComplete}
           onCopyToMnemos={() => {}}
           onRetry={onRetry}
+          attempt={attempt}
+          onAttemptChange={onAttemptChange}
         />
       </div>
     </aside>

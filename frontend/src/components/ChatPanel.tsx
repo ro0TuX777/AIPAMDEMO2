@@ -24,12 +24,29 @@ export interface ChatPanelProps {
   onBeforeSend?: (message: string, requestId: string) => Promise<ChatSendTarget | undefined>;
   onTurnComplete?: (conversationId: string) => void;
   onNewConversation?: () => void;
+  attempt?: ChatAttempt | null;
+  onAttemptChange?: (attempt: ChatAttempt | null) => void;
 }
 
 export interface ChatSendTarget {
   conversation: ChatConversation;
   branchId?: string;
   selectionToken?: string | number;
+}
+
+export interface ChatAttempt {
+  rootConversationId?: string;
+  groupId?: string;
+  branchId?: string;
+  conversationId?: string;
+  sourceMessageId?: string;
+  prompt: string;
+  requestId: string;
+  selectionToken: string | number;
+  generation: number;
+  userMessageId?: string;
+  assistantMessageId?: string;
+  status: "preparing" | "streaming" | "error";
 }
 
 interface LegacyChatPanelProps {
@@ -67,6 +84,8 @@ export function ChatPanel(props: ChatPanelInputProps) {
   const controlledInput = controlled && props.inputValue !== undefined;
   const onBeforeSend = controlled ? props.onBeforeSend : undefined;
   const onTurnComplete = controlled ? props.onTurnComplete : undefined;
+  const attempt = controlled ? props.attempt : undefined;
+  const onAttemptChange = controlled ? props.onAttemptChange : undefined;
   const [input, setInput] = useState("");
   const [loadingGeneration, setLoadingGeneration] = useState<number | null>(null);
   const [failure, setFailure] = useState<{ requestId: string; generation: number } | null>(null);
@@ -85,7 +104,9 @@ export function ChatPanel(props: ChatPanelInputProps) {
   }
   const selectionGeneration = selectionGenerationRef.current;
   const isLoading = loadingGeneration === selectionGeneration;
-  const activeFailure = failure?.generation === selectionGeneration ? failure : null;
+  const activeFailure = attempt?.status === "error" && attempt.generation === selectionGeneration
+    ? { requestId: attempt.requestId, generation: attempt.generation }
+    : failure?.generation === selectionGeneration ? failure : null;
   const initialContextHandled = useRef(false);
 
   useEffect(() => {
@@ -170,10 +191,17 @@ export function ChatPanel(props: ChatPanelInputProps) {
       requestId,
       selectionToken: selectionTokenRef.current,
     });
+    const existingAttempt = retryRequestId && attempt?.requestId === retryRequestId ? attempt : null;
     const nextSequence = targetConversation.messages.reduce((highest, message) => Math.max(highest, message.sequence), 0) + 1;
-    const userMessage: ChatMessage = { id: newId(), sequence: nextSequence, role: "user", content: text, citations: [], metadata: null, request_id: requestId, timestamp, saved: false };
-    const assistantMessage: ChatMessage = { id: newId(), sequence: nextSequence + 1, role: "assistant", content: "", citations: [], metadata: { status: "pending" }, request_id: requestId, timestamp, saved: false };
-    emit(originGeneration, [...targetConversation.messages, userMessage, assistantMessage], targetConversation.id);
+    const userMessage: ChatMessage = { id: existingAttempt?.userMessageId ?? newId(), sequence: nextSequence, role: "user", content: text, citations: [], metadata: null, request_id: requestId, timestamp, saved: false };
+    const assistantMessage: ChatMessage = { id: existingAttempt?.assistantMessageId ?? newId(), sequence: nextSequence + 1, role: "assistant", content: "", citations: [], metadata: { status: "pending" }, request_id: requestId, timestamp, saved: false };
+    if (!existingAttempt) emit(originGeneration, [...targetConversation.messages, userMessage, assistantMessage], targetConversation.id);
+    onAttemptChange?.({
+      ...(attempt ?? { prompt: text, requestId, selectionToken: selectionToken ?? "legacy", generation: originGeneration, status: "preparing" }),
+      conversationId: targetConversation.id, branchId: targetBranchId ?? attempt?.branchId, prompt: text, requestId,
+      selectionToken: selectionTokenRef.current ?? "legacy", generation: originGeneration,
+      userMessageId: userMessage.id, assistantMessageId: assistantMessage.id, status: "streaming",
+    });
     if (controlledInput) props.onInputChange?.(""); else setInput("");
     setFailure(null);
     setLoadingGeneration(originGeneration);
@@ -202,6 +230,7 @@ export function ChatPanel(props: ChatPanelInputProps) {
         if (event.type !== "error") updateAssistant(originGeneration, requestId, message => ({ ...message, content }));
       });
       await complete(originGeneration, requestId, terminal, content);
+      if (isCurrentSelection(originGeneration)) onAttemptChange?.(null);
       if (terminal.status === "error" && isCurrentSelection(originGeneration)) {
         setFailure({ requestId, generation: originGeneration });
       }
@@ -214,6 +243,7 @@ export function ChatPanel(props: ChatPanelInputProps) {
           updateAssistant(originGeneration, requestId, assistant => ({ ...assistant, content: message, metadata: { status: "error" } }));
           if (isCurrentSelection(originGeneration)) {
             setFailure({ requestId, generation: originGeneration });
+            onAttemptChange?.(attempt ? { ...attempt, status: "error" } : null);
           }
         }
       } else {
@@ -222,12 +252,13 @@ export function ChatPanel(props: ChatPanelInputProps) {
         updateAssistant(originGeneration, requestId, assistant => ({ ...assistant, content: message, metadata: { status: "error", ...(unavailable ? { retrieval_status: "unavailable" } : {}) } }));
         if (isCurrentSelection(originGeneration)) {
           setFailure({ requestId, generation: originGeneration });
+          onAttemptChange?.(attempt ? { ...attempt, status: "error" } : null);
         }
       }
     } finally {
       if (isCurrentSelection(originGeneration)) setLoadingGeneration(null);
     }
-  }, [complete, contextHint, controlledInput, conversation, emit, input, isCurrentSelection, isLoading, jobId, mode, onBeforeSend, props.inputValue, props.onInputChange, selectionGeneration, updateAssistant]);
+  }, [attempt, complete, contextHint, controlledInput, conversation, emit, input, isCurrentSelection, isLoading, jobId, mode, onAttemptChange, onBeforeSend, props.inputValue, props.onInputChange, selectionGeneration, updateAssistant]);
 
   useEffect(() => {
     if (initialMessage && controlled && !initialContextHandled.current) {
