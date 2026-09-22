@@ -18,7 +18,12 @@ from backend.app.models.ioc import Ioc
 from backend.app.models.timeline import TimelineEvent
 from backend.app.models.artifact import Artifact
 from backend.app.models.upload import Upload
-from backend.app.models.chat import ChatConversation, ChatMessage
+from backend.app.models.chat import (
+    ChatComparisonBranch,
+    ChatComparisonGroup,
+    ChatConversation,
+    ChatMessage,
+)
 from backend.app.models.knowledge_base import KBDocument
 from backend.app.models.job_pcap import JobPcap
 from backend.app.models.job_log_source import JobLogSource
@@ -65,6 +70,8 @@ __all__ = [
     "TimelineEvent",
     "Artifact",
     "Upload",
+    "ChatComparisonBranch",
+    "ChatComparisonGroup",
     "ChatConversation",
     "ChatMessage",
     "KBDocument",
@@ -77,4 +84,3 @@ __all__ = [
     "NormalizedEvent",
     "TemporalCorrelation",
 ]
-

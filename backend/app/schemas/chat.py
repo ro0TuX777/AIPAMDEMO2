@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -15,6 +17,9 @@ class ChatRequestBody(BaseModel):
     message: str = Field(..., min_length=1, max_length=4000)
     conversation_id: str | None = None
     context_hint: str | None = None
+    mode: Literal["baseline", "mnemos"] = "baseline"
+    request_id: str | None = None
+    comparison_source_message_id: str | None = None
 
 
 class EvidenceRefOut(BaseModel):
@@ -51,4 +56,3 @@ class ConversationHistoryOut(BaseModel):
 
 class ConversationRenameRequest(BaseModel):
     title: str = Field(..., min_length=1, max_length=200)
-
