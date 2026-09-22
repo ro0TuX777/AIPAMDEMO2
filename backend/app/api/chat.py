@@ -1455,23 +1455,7 @@ def _response_for_existing_turn(
                 "error": "request_id is already associated with another message",
             },
         )
-    assistant = None
-    assistants = db.scalars(
-        select(ChatMessage)
-        .where(
-            ChatMessage.conversation_id == user_message.conversation_id,
-            ChatMessage.role == "assistant",
-        )
-        .order_by(ChatMessage.sequence.desc())
-    )
-    for candidate in assistants:
-        candidate_metadata = _json_object(candidate.metadata_json)
-        if candidate_metadata.get("request_id") != user_message.request_id:
-            continue
-        associated_user_id = candidate_metadata.get("user_message_id")
-        if associated_user_id is None or associated_user_id == user_message.id:
-            assistant = candidate
-            break
+    assistant = _find_assistant_for_user_turn(db, user_message=user_message)
     branch_id = _conversation_branch_id(db, user_message.conversation_id)
     if assistant is None:
         return ChatResponseBody(
@@ -1498,6 +1482,29 @@ def _response_for_existing_turn(
         request_id=user_message.request_id,
         status=metadata.get("status", "completed"),
     )
+
+
+def _find_assistant_for_user_turn(
+    db: Session,
+    *,
+    user_message: ChatMessage,
+) -> ChatMessage | None:
+    assistants = db.scalars(
+        select(ChatMessage)
+        .where(
+            ChatMessage.conversation_id == user_message.conversation_id,
+            ChatMessage.role == "assistant",
+        )
+        .order_by(ChatMessage.sequence.desc())
+    )
+    for candidate in assistants:
+        candidate_metadata = _json_object(candidate.metadata_json)
+        if candidate_metadata.get("request_id") != user_message.request_id:
+            continue
+        associated_user_id = candidate_metadata.get("user_message_id")
+        if associated_user_id is None or associated_user_id == user_message.id:
+            return candidate
+    return None
 
 
 def _resolve_turn_conversation(
@@ -1684,6 +1691,85 @@ def _persist_assistant_turn(
     return assistant
 
 
+def _terminalize_failed_turn(
+    db: Session,
+    *,
+    user_message_id: str,
+    request_id: str | None,
+    prepared: PreparedChatTurn,
+) -> ChatResponseBody:
+    """Persist and return an error result for a previously admitted user turn.
+
+    Persistence is retried after rollback. Before each insert, the committed
+    state is checked in case the previous attempt committed but failed while
+    refreshing or returning the row.
+    """
+    response_text = "I'm sorry, I couldn't generate a response."
+    final_citations: list[ChatCitation] = list(prepared.current_job_citations)
+    last_error: Exception | None = None
+
+    for attempt in range(2):
+        db.rollback()
+        user_message = db.get(ChatMessage, user_message_id)
+        if user_message is None:
+            raise RuntimeError("admitted user turn no longer exists")
+        existing = _find_assistant_for_user_turn(db, user_message=user_message)
+        if existing is not None:
+            return _response_for_existing_turn(
+                db,
+                user_message=user_message,
+                requested_content=user_message.content,
+            )
+
+        metadata = {
+            "status": "error",
+            "request_id": request_id,
+            "user_message_id": user_message_id,
+            "retrieval_status": prepared.retrieval_status,
+            "citations": [citation.model_dump() for citation in final_citations],
+            "model_id": prepared.model_id,
+            "generation": prepared.generation.model_dump(),
+            "evidence_refs": [],
+            "suggested_followups": [],
+            "confidence": None,
+        }
+        try:
+            _persist_assistant_turn(
+                db,
+                conversation_id=user_message.conversation_id,
+                user_message_id=user_message_id,
+                request_id=request_id,
+                response_text=response_text,
+                final_citations=final_citations,
+                metadata=metadata,
+            )
+        except Exception as exc:
+            last_error = exc
+            logger.exception(
+                "Terminal chat error persistence attempt %s failed for user turn %s",
+                attempt + 1,
+                user_message_id,
+            )
+            continue
+        return _response_for_existing_turn(
+            db,
+            user_message=user_message,
+            requested_content=user_message.content,
+        )
+
+    db.rollback()
+    user_message = db.get(ChatMessage, user_message_id)
+    if user_message is not None:
+        existing = _find_assistant_for_user_turn(db, user_message=user_message)
+        if existing is not None:
+            return _response_for_existing_turn(
+                db,
+                user_message=user_message,
+                requested_content=user_message.content,
+            )
+    raise RuntimeError("could not persist terminal chat turn state") from last_error
+
+
 def _chat_response(
     *,
     conversation_id: str,
@@ -1710,6 +1796,40 @@ def _chat_response(
         request_id=request_id,
         status=status,
     )
+
+
+def _persisted_turn_sse_events(persisted: ChatResponseBody) -> list[str]:
+    meta = {
+        "type": "meta",
+        "conversation_id": persisted.conversation_id,
+        "branch_id": persisted.branch_id,
+        "request_id": persisted.request_id,
+        "status": persisted.status,
+        "retrieval_status": persisted.retrieval_status,
+        "citations": [citation.model_dump() for citation in persisted.citations],
+        "model_id": persisted.model_id,
+        "generation": (
+            persisted.generation.model_dump()
+            if persisted.generation is not None
+            else None
+        ),
+    }
+    events = [f"data: {json.dumps(meta)}\n\n"]
+    if persisted.response:
+        events.append(
+            f"data: {json.dumps({'type': 'replace', 'content': persisted.response})}\n\n"
+        )
+    if persisted.status != "pending":
+        events.append("data: [DONE]\n\n")
+    return events
+
+
+def _stream_persisted_turn(persisted: ChatResponseBody) -> StreamingResponse:
+    async def event_generator() -> AsyncGenerator[str, None]:
+        for event in _persisted_turn_sse_events(persisted):
+            yield event
+
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
 
 
 @router.post("/jobs/{job_id}/chat", response_model=ChatResponseBody)
@@ -1768,9 +1888,8 @@ async def chat_about_job(
             requested_content=body.message,
         )
 
-    client = _make_llm_client(settings)
-    status = "completed"
     try:
+        client = _make_llm_client(settings)
         response_text = await client.chat_completion(
             prepared.messages,
             temperature=prepared.generation.temperature,
@@ -1780,36 +1899,36 @@ async def chat_about_job(
             prepared,
             body.message,
         )
-    except Exception as exc:
-        logger.exception("LLM call failed for job %s", job_id)
-        status = "error"
-        final_citations = list(prepared.current_job_citations)
-        response_text = _append_sources_and_limits(
-            f"I'm sorry, I couldn't generate a response. Error: {str(exc)[:200]}",
-            prepared.current_job_citations,
+        evidence_refs, suggested_followups = _post_process_response(
+            response_text, body.message, final_citations,
         )
-    evidence_refs, suggested_followups = _post_process_response(
-        response_text, body.message, final_citations,
-    )
-    metadata = _assistant_metadata(
-        prepared=prepared,
-        final_citations=final_citations,
-        evidence_refs=evidence_refs,
-        suggested_followups=suggested_followups,
-        request_id=body.request_id,
-        user_message_id=user_message.id,
-        settings=settings,
-        status=status,
-    )
-    _persist_assistant_turn(
-        db,
-        conversation_id=conversation.id,
-        user_message_id=user_message.id,
-        request_id=body.request_id,
-        response_text=response_text,
-        final_citations=final_citations,
-        metadata=metadata,
-    )
+        metadata = _assistant_metadata(
+            prepared=prepared,
+            final_citations=final_citations,
+            evidence_refs=evidence_refs,
+            suggested_followups=suggested_followups,
+            request_id=body.request_id,
+            user_message_id=user_message.id,
+            settings=settings,
+            status="completed",
+        )
+        _persist_assistant_turn(
+            db,
+            conversation_id=conversation.id,
+            user_message_id=user_message.id,
+            request_id=body.request_id,
+            response_text=response_text,
+            final_citations=final_citations,
+            metadata=metadata,
+        )
+    except Exception:
+        logger.exception("Failed to complete chat turn for job %s", job_id)
+        return _terminalize_failed_turn(
+            db,
+            user_message_id=user_message.id,
+            request_id=body.request_id,
+            prepared=prepared,
+        )
     return _chat_response(
         conversation_id=conversation.id,
         branch_id=_conversation_branch_id(db, conversation.id),
@@ -1819,7 +1938,7 @@ async def chat_about_job(
         prepared=prepared,
         evidence_refs=evidence_refs,
         suggested_followups=suggested_followups,
-        status=status,
+        status="completed",
     )
 
 
@@ -1868,30 +1987,7 @@ async def chat_about_job_stream(
             user_message=existing,
             requested_content=body.message,
         )
-
-        async def replay_existing() -> AsyncGenerator[str, None]:
-            meta = {
-                "type": "meta",
-                "conversation_id": persisted.conversation_id,
-                "branch_id": persisted.branch_id,
-                "request_id": persisted.request_id,
-                "status": persisted.status,
-                "retrieval_status": persisted.retrieval_status,
-                "citations": [citation.model_dump() for citation in persisted.citations],
-                "model_id": persisted.model_id,
-                "generation": (
-                    persisted.generation.model_dump()
-                    if persisted.generation is not None
-                    else None
-                ),
-            }
-            yield f"data: {json.dumps(meta)}\n\n"
-            if persisted.response:
-                yield f"data: {json.dumps({'type': 'replace', 'content': persisted.response})}\n\n"
-            if persisted.status != "pending":
-                yield "data: [DONE]\n\n"
-
-        return StreamingResponse(replay_existing(), media_type="text/event-stream")
+        return _stream_persisted_turn(persisted)
     _reject_parallel_turn(db, body.conversation_id)
 
     try:
@@ -1920,18 +2016,20 @@ async def chat_about_job_stream(
             user_message=user_message,
             requested_content=body.message,
         )
-
-        async def replay_raced_turn() -> AsyncGenerator[str, None]:
-            yield f"data: {json.dumps({'type': 'meta', 'conversation_id': persisted.conversation_id, 'branch_id': persisted.branch_id, 'request_id': persisted.request_id, 'status': persisted.status, 'retrieval_status': persisted.retrieval_status, 'citations': [citation.model_dump() for citation in persisted.citations], 'model_id': persisted.model_id, 'generation': persisted.generation.model_dump() if persisted.generation else None})}\n\n"
-            if persisted.response:
-                yield f"data: {json.dumps({'type': 'replace', 'content': persisted.response})}\n\n"
-            if persisted.status != "pending":
-                yield "data: [DONE]\n\n"
-
-        return StreamingResponse(replay_raced_turn(), media_type="text/event-stream")
+        return _stream_persisted_turn(persisted)
     conv_id = conversation.id
-    branch_id = _conversation_branch_id(db, conv_id)
-    client = _make_llm_client(settings)
+    try:
+        branch_id = _conversation_branch_id(db, conv_id)
+        client = _make_llm_client(settings)
+    except Exception:
+        logger.exception("Failed to create streaming chat client for job %s", job_id)
+        persisted = _terminalize_failed_turn(
+            db,
+            user_message_id=user_message.id,
+            request_id=body.request_id,
+            prepared=prepared,
+        )
+        return _stream_persisted_turn(persisted)
 
     # Queue between the detached producer (LLM call + persistence) and the
     # SSE consumer (event_generator).  Sentinel ``None`` signals end-of-stream.
@@ -2041,9 +2139,25 @@ async def chat_about_job_stream(
             await event_queue.put("data: [DONE]\n\n")
         except Exception:
             logger.exception("Failed to complete streamed chat turn for conv %s", conv_id)
-            await event_queue.put(
-                f"data: {json.dumps({'type': 'error', 'code': 'CHAT_TURN_FAILED', 'retryable': True})}\n\n"
-            )
+            try:
+                session_factory = get_session_factory()
+                with session_factory() as recovery_db:
+                    persisted = _terminalize_failed_turn(
+                        recovery_db,
+                        user_message_id=user_message.id,
+                        request_id=body.request_id,
+                        prepared=prepared,
+                    )
+                for event in _persisted_turn_sse_events(persisted):
+                    await event_queue.put(event)
+            except Exception:
+                logger.exception(
+                    "Failed to persist terminal state for streamed chat turn %s",
+                    user_message.id,
+                )
+                await event_queue.put(
+                    f"data: {json.dumps({'type': 'error', 'code': 'CHAT_TURN_FAILED', 'retryable': True})}\n\n"
+                )
         finally:
             # Wake the consumer so it can exit cleanly.
             await event_queue.put(None)

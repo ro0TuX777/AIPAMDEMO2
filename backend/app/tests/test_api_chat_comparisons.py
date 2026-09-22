@@ -738,6 +738,323 @@ def test_failed_generation_is_persisted_but_excluded_from_next_prompt(
     assert "couldn't generate a response" not in second_model_input
 
 
+def _assert_terminal_error_response(response, *, streamed: bool) -> None:
+    assert response.status_code == 200, response.text
+    if not streamed:
+        assert response.json()["status"] == "error"
+        return
+    payloads = _sse_payloads(response)
+    assert any(
+        isinstance(payload, dict)
+        and payload.get("type") == "meta"
+        and payload.get("status") == "error"
+        for payload in payloads
+    )
+    assert payloads[-1] == "[DONE]"
+
+
+def _assert_failed_turn_replays_and_conversation_recovers(
+    client,
+    *,
+    conversation_id: str,
+    failed_request_id: str,
+    failed_message: str,
+) -> None:
+    next_request_id = str(uuid.uuid4())
+    completed = client.post(
+        "/jobs/job-1/chat",
+        json={
+            "message": "A distinct request after the failure",
+            "mode": "mnemos",
+            "conversation_id": conversation_id,
+            "request_id": next_request_id,
+        },
+    )
+    assert completed.status_code == 200, completed.text
+    assert completed.json()["status"] == "completed"
+
+    replay = client.post(
+        "/jobs/job-1/chat",
+        json={
+            "message": failed_message,
+            "mode": "mnemos",
+            "conversation_id": conversation_id,
+            "request_id": failed_request_id,
+        },
+    )
+    assert replay.status_code == 200, replay.text
+    assert replay.json()["status"] == "error"
+    assert "Current-job answer." not in replay.json()["response"]
+
+    with client.session_factory() as session:
+        messages = list(
+            session.scalars(
+                select(ChatMessage)
+                .where(ChatMessage.conversation_id == conversation_id)
+                .order_by(ChatMessage.sequence)
+            )
+        )
+    assert [message.role for message in messages] == [
+        "user",
+        "assistant",
+        "user",
+        "assistant",
+    ]
+    for user, assistant in zip(messages[::2], messages[1::2], strict=True):
+        metadata = json.loads(assistant.metadata_json)
+        assert metadata["request_id"] == user.request_id
+        assert metadata["user_message_id"] == user.id
+    assert json.loads(messages[1].metadata_json)["status"] == "error"
+    assert json.loads(messages[3].metadata_json)["status"] == "completed"
+
+
+@pytest.mark.parametrize("route", ["chat", "chat/stream"])
+def test_client_creation_failure_after_admission_is_terminal_and_recoverable(
+    client, monkeypatch, route
+) -> None:
+    opened = _open_comparison(client)
+    monkeypatch.setattr(
+        chat,
+        "retrieve_historical_findings",
+        lambda **_kwargs: MnemosRetrievalResult(
+            status="no_matches",
+            context="",
+            citations=[],
+        ),
+    )
+    attempts = 0
+
+    def fail_once(_settings):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("client construction failed")
+        return client.fake_llm
+
+    monkeypatch.setattr(chat, "_make_llm_client", fail_once)
+    request_id = str(uuid.uuid4())
+    message = f"Client construction failure through {route}"
+
+    failed = client.post(
+        f"/jobs/job-1/{route}",
+        json={
+            "message": message,
+            "mode": "mnemos",
+            "conversation_id": opened["conversation_id"],
+            "request_id": request_id,
+        },
+    )
+
+    _assert_terminal_error_response(failed, streamed=route.endswith("stream"))
+    _assert_failed_turn_replays_and_conversation_recovers(
+        client,
+        conversation_id=opened["conversation_id"],
+        failed_request_id=request_id,
+        failed_message=message,
+    )
+
+
+@pytest.mark.parametrize("route", ["chat", "chat/stream"])
+def test_client_runtime_failure_is_terminal_and_recoverable(
+    client, monkeypatch, route
+) -> None:
+    opened = _open_comparison(client)
+    monkeypatch.setattr(
+        chat,
+        "retrieve_historical_findings",
+        lambda **_kwargs: MnemosRetrievalResult(
+            status="no_matches",
+            context="",
+            citations=[],
+        ),
+    )
+    if route == "chat":
+        client.fake_llm.fail_completion = True
+    else:
+        original_stream = client.fake_llm.chat_completion_stream
+        attempts = 0
+
+        async def fail_stream_once(messages, temperature=0.3):
+            nonlocal attempts
+            attempts += 1
+            if attempts == 1:
+                raise RuntimeError("stream runtime failed")
+            async for token in original_stream(messages, temperature):
+                yield token
+
+        client.fake_llm.chat_completion_stream = fail_stream_once
+
+    request_id = str(uuid.uuid4())
+    message = f"Runtime failure through {route}"
+    failed = client.post(
+        f"/jobs/job-1/{route}",
+        json={
+            "message": message,
+            "mode": "mnemos",
+            "conversation_id": opened["conversation_id"],
+            "request_id": request_id,
+        },
+    )
+
+    _assert_terminal_error_response(failed, streamed=route.endswith("stream"))
+    _assert_failed_turn_replays_and_conversation_recovers(
+        client,
+        conversation_id=opened["conversation_id"],
+        failed_request_id=request_id,
+        failed_message=message,
+    )
+
+
+@pytest.mark.parametrize("route", ["chat", "chat/stream"])
+def test_post_generation_runtime_failure_is_terminal_and_recoverable(
+    client, monkeypatch, route
+) -> None:
+    opened = _open_comparison(client)
+    monkeypatch.setattr(
+        chat,
+        "retrieve_historical_findings",
+        lambda **_kwargs: MnemosRetrievalResult(
+            status="no_matches",
+            context="",
+            citations=[],
+        ),
+    )
+    original_post_process = chat._post_process_response
+    attempts = 0
+
+    def fail_once(*args, **kwargs):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("post-generation processing failed")
+        return original_post_process(*args, **kwargs)
+
+    monkeypatch.setattr(chat, "_post_process_response", fail_once)
+    request_id = str(uuid.uuid4())
+    message = f"Post-generation failure through {route}"
+    failed = client.post(
+        f"/jobs/job-1/{route}",
+        json={
+            "message": message,
+            "mode": "mnemos",
+            "conversation_id": opened["conversation_id"],
+            "request_id": request_id,
+        },
+    )
+
+    _assert_terminal_error_response(failed, streamed=route.endswith("stream"))
+    _assert_failed_turn_replays_and_conversation_recovers(
+        client,
+        conversation_id=opened["conversation_id"],
+        failed_request_id=request_id,
+        failed_message=message,
+    )
+
+
+@pytest.mark.parametrize("route", ["chat", "chat/stream"])
+def test_one_shot_assistant_persistence_failure_recovers_with_terminal_error(
+    client, monkeypatch, route
+) -> None:
+    opened = _open_comparison(client)
+    monkeypatch.setattr(
+        chat,
+        "retrieve_historical_findings",
+        lambda **_kwargs: MnemosRetrievalResult(
+            status="no_matches",
+            context="",
+            citations=[],
+        ),
+    )
+    original_persist = chat._persist_assistant_turn
+    attempts = 0
+
+    def fail_once(*args, **kwargs):
+        nonlocal attempts
+        attempts += 1
+        if attempts == 1:
+            raise RuntimeError("one-shot persistence failure")
+        return original_persist(*args, **kwargs)
+
+    monkeypatch.setattr(chat, "_persist_assistant_turn", fail_once)
+    request_id = str(uuid.uuid4())
+    message = f"Persistence failure through {route}"
+    failed = client.post(
+        f"/jobs/job-1/{route}",
+        json={
+            "message": message,
+            "mode": "mnemos",
+            "conversation_id": opened["conversation_id"],
+            "request_id": request_id,
+        },
+    )
+
+    _assert_terminal_error_response(failed, streamed=route.endswith("stream"))
+    assert attempts >= 2
+    _assert_failed_turn_replays_and_conversation_recovers(
+        client,
+        conversation_id=opened["conversation_id"],
+        failed_request_id=request_id,
+        failed_message=message,
+    )
+
+
+@pytest.mark.parametrize("route", ["chat", "chat/stream"])
+def test_one_shot_terminal_error_persistence_failure_is_retried(
+    client, monkeypatch, route
+) -> None:
+    opened = _open_comparison(client)
+    monkeypatch.setattr(
+        chat,
+        "retrieve_historical_findings",
+        lambda **_kwargs: MnemosRetrievalResult(
+            status="no_matches",
+            context="",
+            citations=[],
+        ),
+    )
+    client_attempts = 0
+
+    def fail_client_once(_settings):
+        nonlocal client_attempts
+        client_attempts += 1
+        if client_attempts == 1:
+            raise RuntimeError("client construction failed")
+        return client.fake_llm
+
+    original_persist = chat._persist_assistant_turn
+    persistence_attempts = 0
+
+    def fail_terminal_persist_once(*args, **kwargs):
+        nonlocal persistence_attempts
+        persistence_attempts += 1
+        if persistence_attempts == 1:
+            raise RuntimeError("one-shot terminal persistence failure")
+        return original_persist(*args, **kwargs)
+
+    monkeypatch.setattr(chat, "_make_llm_client", fail_client_once)
+    monkeypatch.setattr(chat, "_persist_assistant_turn", fail_terminal_persist_once)
+    request_id = str(uuid.uuid4())
+    message = f"Terminal persistence retry through {route}"
+    failed = client.post(
+        f"/jobs/job-1/{route}",
+        json={
+            "message": message,
+            "mode": "mnemos",
+            "conversation_id": opened["conversation_id"],
+            "request_id": request_id,
+        },
+    )
+
+    _assert_terminal_error_response(failed, streamed=route.endswith("stream"))
+    assert persistence_attempts == 2
+    _assert_failed_turn_replays_and_conversation_recovers(
+        client,
+        conversation_id=opened["conversation_id"],
+        failed_request_id=request_id,
+        failed_message=message,
+    )
+
+
 def test_list_rename_and_delete_operate_on_comparison_root(client) -> None:
     opened = _open_comparison(client)
 
