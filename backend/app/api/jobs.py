@@ -21,10 +21,8 @@ GET  /jobs/{id}/arkime/status  – Arkime import status
 POST /jobs/{id}/security_onion/import – push PCAPs to Security Onion
 """
 
-import hashlib
 import json
 import logging as _logging
-import os
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
@@ -51,12 +49,12 @@ from backend.app.schemas.common import (
     ExecutionProfile,
     JobStatus,
     PageInfo,
-    SourceType,
 )
 from backend.app.schemas.file import FileItem, FileListResponse
 from backend.app.schemas.ioc import IocItem, IocListResponse
 from backend.app.schemas.job import (
-    BundleUploadItem,
+    ArkimeJobRequest,
+    SecurityOnionJobRequest,
     EvidenceGraphResponse,
     GraphEdge,
     GraphNode,
@@ -87,6 +85,10 @@ from backend.app.schemas.system import (
     RejectedJob,
 )
 from backend.app.schemas.timeline import TimelineItem, TimelineListResponse
+from backend.app.services import job_creation, job_imports
+from backend.app.services.job_creation import MAX_PCAPS_PER_JOB
+from backend.app.services.job_dispatch import dispatch_job as _dispatch_job, dispatch_job_phase
+from backend.app.services import job_lifecycle
 
 router = APIRouter(tags=["Jobs"], dependencies=[Depends(verify_token)])
 
@@ -99,52 +101,11 @@ sse_router = APIRouter(tags=["Jobs"])
 _logger = _logging.getLogger("aipam.api.jobs")
 
 
-def _dispatch_job(job_id: str) -> None:
-    """Send the job to the Celery worker. Logs a warning on failure (e.g. no Redis)."""
-    try:
-        from backend.app.worker import run_job
-        run_job.delay(job_id)
-    except Exception as exc:
-        _logger.warning("Failed to dispatch job %s to Celery: %s", job_id, exc)
-
-
 def _now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
 # ---------- POST /jobs ----------
-
-MAX_PCAPS_PER_JOB = 10
-MAX_PCAP_SIZE_BYTES = 2 * 1024 * 1024 * 1024  # 2 GB per file
-MAX_TOTAL_SIZE_BYTES = 5 * 1024 * 1024 * 1024  # 5 GB total per job
-
-# Log bundles are capped by total bytes, not by file count — attach as many
-# perspectives as the investigation needs. Per-file limit lives in api/uploads.py.
-MAX_LOG_BYTES_PER_JOB = 10 * 1024 * 1024 * 1024  # 10 GB of logs per job
-
-
-def _enforce_log_budget(uploads: list[Upload]) -> None:
-    """Reject a job whose attached log bundles exceed the per-job byte budget."""
-    total = sum(u.size_bytes or 0 for u in uploads)
-    if total > MAX_LOG_BYTES_PER_JOB:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                f"Attached logs total {total / 1024**3:.1f} GB, over the "
-                f"{MAX_LOG_BYTES_PER_JOB // 1024**3} GB per-job limit. "
-                "There is no limit on how many log files you attach — only on their combined size."
-            ),
-        )
-
-
-def _resolve_upload_list(body: JobCreateRequest) -> list[PcapUploadItem]:
-    """Normalize old single-upload and new multi-upload request formats."""
-    if body.uploads:
-        return body.uploads
-    if body.upload_id:
-        return [PcapUploadItem(upload_id=body.upload_id)]
-    raise HTTPException(status_code=400, detail="Provide upload_id or uploads[]")
-
 
 @router.post("/jobs", status_code=status.HTTP_201_CREATED, response_model=JobCreateResponse)
 async def create_job(
@@ -159,409 +120,19 @@ async def create_job(
     Supports:
       - PCAP-only jobs (upload PCAPs)
       - Bundle-only jobs (upload log/C2/netflow archive, source_type != pcap)
-      - Hybrid jobs (PCAPs + bundle_upload_id in same request for fused analysis)
+      - Hybrid jobs (PCAPs + bundle_uploads in same request for fused analysis)
     """
     response.headers["X-Request-Id"] = request_id
-
-    # ── BlueScrub code-artifact path: source archives and standalone binaries
-    # audited along the DACV+R pillars. Never enters the PCAP pipeline. ──
-    if body.source_type == SourceType.code_artifact:
-        return _create_code_artifact_job(body, db, settings)
-
-    # ── Bundle-only path (no PCAPs) ──
-    if body.source_type != SourceType.pcap and not body.uploads and not body.bundle_upload_id:
-        return _create_bundle_job(body, db, settings)
-
-    # ── PCAP path (optionally with attached log bundle) ──
-    upload_items = _resolve_upload_list(body)
-
-    # ── Binary artifact path: a single upload classified as "binary" is
-    # routed to a binary/YARA analysis job instead of the PCAP pipeline. ──
-    if len(upload_items) == 1:
-        single = db.get(Upload, upload_items[0].upload_id)
-        if single is not None and single.artifact_class == "binary":
-            return _create_binary_job(body, single, db, settings)
-
-    if len(upload_items) > MAX_PCAPS_PER_JOB:
-        raise HTTPException(status_code=400, detail=f"Max {MAX_PCAPS_PER_JOB} PCAPs per job")
-
-    # Verify all uploads exist and accumulate total size
-    uploads: list[Upload] = []
-    total_size = 0
-    for item in upload_items:
-        upload: Upload | None = db.get(Upload, item.upload_id)
-        if upload is None:
-            raise HTTPException(status_code=400, detail=f"Upload {item.upload_id} not found")
-        total_size += upload.size_bytes or 0
-        uploads.append(upload)
-
-    if total_size > MAX_TOTAL_SIZE_BYTES:
-        raise HTTPException(status_code=400, detail=f"Total PCAP size exceeds {MAX_TOTAL_SIZE_BYTES // (1024**3)} GB limit")
-
-    job_id = str(uuid.uuid4())
-
-    # Create job directory
-    job_dir: Path = settings.aipam_job_root / job_id
-    job_dir.mkdir(parents=True, exist_ok=True)
-
-    # ── Stage log bundle(s) if attached (hybrid PCAP + logs job) ──
-    manifest_json: str | None = None
-    has_bundle = False
-    merged_manifest = None
-    if body.bundle_uploads:
-        from backend.app.pipeline.bundle_stager import stage_bundle
-
-        bundle_hints = None
-        if body.bundle_entries:
-            bundle_hints = [e.model_dump() for e in body.bundle_entries]
-
-        # Resolve every bundle up front so the byte budget is checked before any
-        # extraction happens — no partial staging left behind on rejection.
-        resolved_bundles: list[tuple[BundleUploadItem, Upload]] = []
-        for b_item in body.bundle_uploads:
-            bundle_upload: Upload | None = db.get(Upload, b_item.upload_id)
-            if bundle_upload is None:
-                raise HTTPException(
-                    status_code=400,
-                    detail=f"Bundle upload {b_item.upload_id} not found",
-                )
-            resolved_bundles.append((b_item, bundle_upload))
-
-        _enforce_log_budget([u for _, u in resolved_bundles])
-
-        for b_item, bundle_upload in resolved_bundles:
-            archive_path = settings.aipam_upload_root / b_item.upload_id / bundle_upload.filename
-            if not archive_path.exists():
-                raise HTTPException(status_code=400, detail="Bundle archive file missing from disk")
-
-            try:
-                manifest = stage_bundle(
-                    archive_path=archive_path,
-                    job_dir=job_dir,
-                    job_id=job_id,
-                    source_type=SourceType.log_bundle,
-                    exercise_id=body.exercise_id,
-                    bundle_entries=bundle_hints,
-                    label=b_item.label,
-                )
-                if merged_manifest is None:
-                    merged_manifest = manifest
-                else:
-                    # Merge entries from additional bundles into the first manifest
-                    merged_manifest.entries.extend(manifest.entries)
-                has_bundle = True
-            except ValueError as exc:
-                raise HTTPException(status_code=400, detail=f"Bundle staging failed: {exc}")
-
-        if merged_manifest is not None:
-            # Re-persist the merged manifest
-            manifest_path = job_dir / "source_manifest.json"
-            manifest_path.write_text(
-                merged_manifest.model_dump_json(indent=2),
-                encoding="utf-8",
-            )
-            manifest_json = merged_manifest.model_dump_json()
-
-    # Determine source_type for the job
-    source_type = "pcap+logs" if has_bundle else SourceType.pcap.value
-
-    # Use first PCAP for backward-compat fields on the Job model
-    first_upload = uploads[0]
-    job = Job(
-        job_id=job_id,
-        job_name=body.job_name,
-        notes=body.notes,
-        status="queued",
-        execution_profile=body.execution_profile.value,
-        priority=body.priority.value,
-        upload_id=first_upload.upload_id,
-        pcap_filename=first_upload.filename if len(uploads) == 1 else f"{len(uploads)} PCAPs",
-        pcap_size_bytes=total_size,
-        pcap_sha256=first_upload.sha256 if len(uploads) == 1 else None,
-        source_type=source_type,
-        exercise_id=body.exercise_id,
-        source_manifest_json=manifest_json,
-        created_at=_now_iso(),
-    )
-    db.add(job)
-
-    # Create JobPcap records
-    for ordinal, (item, upload) in enumerate(zip(upload_items, uploads)):
-        pcap_rec = JobPcap(
-            job_id=job_id,
-            upload_id=upload.upload_id,
-            label=item.label,
-            filename=upload.filename,
-            ordinal=ordinal,
-            size_bytes=upload.size_bytes,
-            sha256=upload.sha256,
-        )
-        db.add(pcap_rec)
-
-    # Create JobLogSource records from manifest entries (traceability)
-    if merged_manifest is not None:
-        for ordinal, entry in enumerate(merged_manifest.entries):
-            log_rec = JobLogSource(
-                job_id=job_id,
-                upload_id=None,  # bundle uploads don't map 1:1 to log files
-                label=entry.label,
-                filename=entry.filename,
-                source_system=entry.source_system,
-                parser_hint=entry.parser_hint,
-                ordinal=ordinal,
-                size_bytes=entry.size_bytes,
-                sha256=entry.sha256,
-            )
-            db.add(log_rec)
-
-    db.commit()
-
-    # Dispatch the pipeline to the Celery worker
-    _dispatch_job(job_id)
-
-    return JobCreateResponse(schema_version="1.0", job_id=job_id)
-
-def _create_binary_job(
-    body: JobCreateRequest,
-    upload: Upload,
-    db: Session,
-    settings: Settings,
-) -> JobCreateResponse:
-    """Create a binary/YARA analysis job from a single ``binary`` upload.
-
-    The artifact must have been uploaded via ``POST /uploads/artifact`` and
-    classified as ``binary``. It is copied into the job input directory and
-    the pipeline runs YARA/binary analysis on job start.
-    """
-    import shutil
-
-    src = settings.aipam_upload_root / upload.upload_id / upload.filename
-    if not src.exists():
-        raise HTTPException(status_code=400, detail="Binary upload file missing from disk")
-
-    job_id = str(uuid.uuid4())
-    input_dir: Path = settings.aipam_job_root / job_id / "input"
-    input_dir.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(src, input_dir / upload.filename)
-
-    job = Job(
-        job_id=job_id,
-        job_name=body.job_name or f"Binary analysis: {upload.filename}",
-        notes=body.notes,
-        status="queued",
-        execution_profile=body.execution_profile.value,
-        priority=body.priority.value,
-        upload_id=upload.upload_id,
-        pcap_filename=None,
-        pcap_size_bytes=upload.size_bytes,
-        source_type=SourceType.binary.value,
-        exercise_id=body.exercise_id,
-        created_at=_now_iso(),
-    )
-    db.add(job)
-    db.commit()
-
-    # Dispatch the pipeline to the Celery worker
-    _dispatch_job(job_id)
-
-    return JobCreateResponse(schema_version="1.0", job_id=job_id)
-
-
-def _create_code_artifact_job(
-    body: JobCreateRequest,
-    db: Session,
-    settings: Settings,
-) -> JobCreateResponse:
-    """Create a BlueScrub job from an uploaded source archive or binary.
-
-    The archive is staged through the hardened extractor, which rejects hostile
-    archives outright rather than sanitising them. Project binding is optional:
-    an unbound job still scans, but triage will not carry forward until it is
-    bound (``PUT /bluescrub/jobs/{id}/project``).
-    """
-    from backend.app.bluescrub.ingest import IngestError, IngestLimits, stage_archive
-    from backend.app.models.bluescrub import BlueScrubJobLineage, BlueScrubProject
-
-    upload_id = body.upload_id or (body.uploads[0].upload_id if body.uploads else None)
-    if not upload_id:
-        raise HTTPException(status_code=400, detail="code_artifact job requires an upload")
-
-    upload: Upload | None = db.get(Upload, upload_id)
-    if upload is None:
-        raise HTTPException(status_code=400, detail=f"Upload {upload_id} not found")
-
-    src = settings.aipam_upload_root / upload.upload_id / upload.filename
-    if not src.exists():
-        raise HTTPException(status_code=400, detail="Upload file missing from disk")
-
-    job_id = str(uuid.uuid4())
-    job_dir: Path = settings.aipam_job_root / job_id
-    source_root = job_dir / "input" / "source"
-
-    limits = IngestLimits(
-        max_files=int(os.getenv("AIPAM_BLUESCRUB_MAX_EXTRACT_FILES", "50000")),
-        max_total_bytes=int(os.getenv("AIPAM_BLUESCRUB_MAX_ARCHIVE_MB", "512")) * 1024 * 1024,
-    )
     try:
-        stage_archive(src, source_root, limits)
-    except IngestError as exc:
-        # A rejected archive is a finding about the artifact, not a server
-        # error: report the reason so the operator knows what was refused.
-        raise HTTPException(
-            status_code=400,
-            detail=f"Rejected code artifact ({exc.reason}): {exc.detail}",
-        ) from exc
+        result = job_creation.create_job_from_upload(body, db, settings)
+    except job_creation.JobCreationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
-    project_id = getattr(body, "project_id", None)
-    if project_id and db.get(BlueScrubProject, project_id) is None:
-        raise HTTPException(status_code=400, detail=f"Unknown project {project_id}")
-
-    job = Job(
-        job_id=job_id,
-        job_name=body.job_name or f"Code artifact: {upload.filename}",
-        notes=body.notes,
-        status="queued",
-        execution_profile=body.execution_profile.value,
-        priority=body.priority.value,
-        upload_id=upload.upload_id,
-        pcap_filename=None,
-        pcap_size_bytes=upload.size_bytes,
-        source_type=SourceType.code_artifact.value,
-        exercise_id=body.exercise_id,
-        created_at=_now_iso(),
-    )
-    db.add(job)
-
-    # Lineage is bound at creation, not resolved at persist time: two
-    # concurrent scans of one project must inherit from the same parent rather
-    # than racing on whichever finishes last.
-    parent = None
-    if project_id:
-        parent = db.execute(
-            select(Job.job_id)
-            .join(BlueScrubJobLineage, BlueScrubJobLineage.job_id == Job.job_id)
-            .where(
-                BlueScrubJobLineage.project_id == project_id,
-                Job.status.in_(("completed", "completed_with_errors")),
-            )
-            .order_by(Job.completed_at.desc())
-            .limit(1)
-        ).scalar_one_or_none()
-
-    db.add(BlueScrubJobLineage(
-        job_id=job_id,
-        project_id=project_id,
-        lineage_parent_job_id=parent,
-        analysis_kind="source_audit",
-        compatibility_signature="",   # filled in by the pipeline once known
-    ))
-    db.commit()
-
-    _dispatch_job(job_id)
-    return JobCreateResponse(schema_version="1.0", job_id=job_id)
-
-
-def _create_bundle_job(
-    body: JobCreateRequest,
-    db: Session,
-    settings: Settings,
-) -> JobCreateResponse:
-    """Create a job from a telemetry bundle (log/C2/netflow/exercise).
-
-    The bundle archive must have been uploaded via ``POST /uploads/bundle``
-    first.  The ``upload_id`` in the request body references that upload.
-    """
-    from backend.app.pipeline.bundle_stager import stage_bundle
-
-    if not body.upload_id:
-        raise HTTPException(status_code=400, detail="upload_id required for bundle jobs")
-
-    upload: Upload | None = db.get(Upload, body.upload_id)
-    if upload is None:
-        raise HTTPException(status_code=400, detail=f"Upload {body.upload_id} not found")
-
-    archive_path = settings.aipam_upload_root / body.upload_id / upload.filename
-    if not archive_path.exists():
-        raise HTTPException(status_code=400, detail="Upload file missing from disk")
-
-    _enforce_log_budget([upload])
-
-    job_id = str(uuid.uuid4())
-
-    # Create job directory with telemetry sub-tree
-    job_dir: Path = settings.aipam_job_root / job_id
-    job_dir.mkdir(parents=True, exist_ok=True)
-    (job_dir / "input").mkdir(exist_ok=True)
-    (job_dir / "normalized").mkdir(exist_ok=True)
-    (job_dir / "sensors").mkdir(exist_ok=True)
-    (job_dir / "report").mkdir(exist_ok=True)
-
-    # Extract bundle and build manifest
-    bundle_hints = None
-    if body.bundle_entries:
-        bundle_hints = [e.model_dump() for e in body.bundle_entries]
-
-    try:
-        manifest = stage_bundle(
-            archive_path=archive_path,
-            job_dir=job_dir,
-            job_id=job_id,
-            source_type=body.source_type,
-            exercise_id=body.exercise_id,
-            bundle_entries=bundle_hints,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc))
-
-    job = Job(
-        job_id=job_id,
-        job_name=body.job_name or f"{body.source_type.value} analysis",
-        notes=body.notes,
-        status="queued",
-        execution_profile=body.execution_profile.value,
-        priority=body.priority.value,
-        upload_id=body.upload_id,
-        pcap_filename=None,
-        pcap_size_bytes=upload.size_bytes,
-        source_type=body.source_type.value,
-        exercise_id=body.exercise_id,
-        source_manifest_json=manifest.model_dump_json(),
-        created_at=_now_iso(),
-    )
-    db.add(job)
-
-    # Create JobLogSource records from manifest entries (traceability)
-    for ordinal, entry in enumerate(manifest.entries):
-        log_rec = JobLogSource(
-            job_id=job_id,
-            upload_id=body.upload_id,
-            label=entry.label,
-            filename=entry.filename,
-            source_system=entry.source_system,
-            parser_hint=entry.parser_hint,
-            ordinal=ordinal,
-            size_bytes=entry.size_bytes,
-            sha256=entry.sha256,
-        )
-        db.add(log_rec)
-
-    db.commit()
-
-    # Dispatch the pipeline to the Celery worker
-    _dispatch_job(job_id)
-
-    return JobCreateResponse(schema_version="1.0", job_id=job_id)
+    _dispatch_job(result.job_id)
+    return result
 
 
 # ---------- POST /jobs/from_arkime ----------
-
-class ArkimeJobRequest(BaseModel):
-    """Request to create a job by exporting sessions from Arkime."""
-    source: str = "arkime"
-    filter: str
-    time_range: dict = Field(..., description="Dict with 'start' and 'end' ISO timestamps")
-    mode: str = "single_window"
-    metadata: dict = Field(default_factory=dict)
 
 
 @router.post("/jobs/from_arkime", status_code=status.HTTP_201_CREATED, response_model=JobCreateResponse)
@@ -574,79 +145,16 @@ async def create_job_from_arkime(
 ):
     """Create a new analysis job by exporting matching sessions from Arkime as PCAP."""
     response.headers["X-Request-Id"] = request_id
-
-    from backend.app.connectors import ArkimeConnector
-    connector = ArkimeConnector()
-
-    if not connector.enabled:
-        raise HTTPException(status_code=400, detail="Arkime integration is not enabled. Set ARKIME_ENABLED=true.")
-
-    # Export PCAP from Arkime Viewer
     try:
-        pcap_data = await connector.export_pcap(body.filter, body.time_range)
-    except Exception as exc:
-        _logger.error("Arkime PCAP export failed: %s", exc)
-        raise HTTPException(status_code=502, detail=f"Failed to export PCAP from Arkime: {exc}")
+        result = await job_imports.create_job_from_arkime(body, db, settings)
+    except job_creation.JobCreationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
-    if not pcap_data:
-        raise HTTPException(status_code=404, detail="No matching sessions found in Arkime for the given filter/time range.")
-
-    job_id = str(uuid.uuid4())
-    upload_id = str(uuid.uuid4())
-    pcap_filename = f"arkime_export_{job_id[:8]}.pcap"
-    pcap_sha256 = hashlib.sha256(pcap_data).hexdigest()
-
-    # Save the exported PCAP to the upload staging area so the
-    # pipeline can find it via the standard upload_id lookup.
-    upload_dir: Path = settings.aipam_upload_root / upload_id
-    upload_dir.mkdir(parents=True, exist_ok=True)
-    (upload_dir / pcap_filename).write_bytes(pcap_data)
-
-    # Create an Upload DB record
-    upload = Upload(
-        upload_id=upload_id,
-        filename=pcap_filename,
-        size_bytes=len(pcap_data),
-        sha256=pcap_sha256,
-        is_valid=1,
-        format="pcap",
-        created_at=_now_iso(),
-    )
-    db.add(upload)
-
-    # Create the Job record linked to the upload
-    job = Job(
-        job_id=job_id,
-        job_name=body.metadata.get("exercise_id", f"Arkime: {body.filter[:60]}"),
-        notes=body.metadata.get("notes", ""),
-        status="queued",
-        execution_profile="standard",
-        priority="normal",
-        upload_id=upload_id,
-        pcap_filename=pcap_filename,
-        pcap_size_bytes=len(pcap_data),
-        pcap_sha256=pcap_sha256,
-        created_at=_now_iso(),
-    )
-    db.add(job)
-    db.commit()
-
-    # Dispatch the pipeline to the Celery worker
-    _dispatch_job(job_id)
-
-    return JobCreateResponse(schema_version="1.0", job_id=job_id)
+    _dispatch_job(result.job_id)
+    return result
 
 
 # ---------- POST /jobs/from_security_onion ----------
-
-class SecurityOnionJobRequest(BaseModel):
-    """Request to create a job by exporting PCAP from Security Onion."""
-    source: str = "security_onion"
-    time_range: dict = Field(..., description="Dict with 'start' and 'end' ISO timestamps")
-    sensors: list = Field(default_factory=list, description="List of sensor names to filter by")
-    filter_fields: dict = Field(default_factory=dict, description="Optional packet filters: protocol, srcIp, dstIp, srcPort, dstPort")
-    mode: str = "single_window"
-    metadata: dict = Field(default_factory=dict)
 
 
 @router.post("/jobs/from_security_onion", status_code=status.HTTP_201_CREATED, response_model=JobCreateResponse)
@@ -659,67 +167,13 @@ async def create_job_from_security_onion(
 ):
     """Create a new analysis job by exporting matching PCAP from Security Onion."""
     response.headers["X-Request-Id"] = request_id
-
-    from backend.app.connectors import SecurityOnionConnector
-    connector = SecurityOnionConnector()
-
-    if not connector.enabled:
-        raise HTTPException(status_code=400, detail="Security Onion integration is not enabled. Set SECURITY_ONION_ENABLED=true.")
-
-    # Export PCAP from Security Onion
     try:
-        pcap_data = await connector.export_pcap(body.time_range, body.sensors, body.filter_fields)
-    except Exception as exc:
-        _logger.error("Security Onion PCAP export failed: %s", exc)
-        raise HTTPException(status_code=502, detail=f"Failed to export PCAP from Security Onion: {exc}")
+        result = await job_imports.create_job_from_security_onion(body, db, settings)
+    except job_creation.JobCreationError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
-    if not pcap_data:
-        raise HTTPException(status_code=404, detail="No matching packets found in Security Onion for the given time range/sensors.")
-
-    job_id = str(uuid.uuid4())
-    upload_id = str(uuid.uuid4())
-    pcap_filename = f"so_export_{job_id[:8]}.pcap"
-    pcap_sha256 = hashlib.sha256(pcap_data).hexdigest()
-
-    # Save the exported PCAP to the upload staging area
-    upload_dir: Path = settings.aipam_upload_root / upload_id
-    upload_dir.mkdir(parents=True, exist_ok=True)
-    (upload_dir / pcap_filename).write_bytes(pcap_data)
-
-    # Create an Upload DB record
-    upload = Upload(
-        upload_id=upload_id,
-        filename=pcap_filename,
-        size_bytes=len(pcap_data),
-        sha256=pcap_sha256,
-        is_valid=1,
-        format="pcap",
-        created_at=_now_iso(),
-    )
-    db.add(upload)
-
-    # Create the Job record linked to the upload
-    sensor_names = ", ".join(body.sensors) if body.sensors else "all"
-    job = Job(
-        job_id=job_id,
-        job_name=body.metadata.get("exercise_id", f"SO: {sensor_names}"),
-        notes=body.metadata.get("notes", ""),
-        status="queued",
-        execution_profile="standard",
-        priority="normal",
-        upload_id=upload_id,
-        pcap_filename=pcap_filename,
-        pcap_size_bytes=len(pcap_data),
-        pcap_sha256=pcap_sha256,
-        created_at=_now_iso(),
-    )
-    db.add(job)
-    db.commit()
-
-    # Dispatch the pipeline to the Celery worker
-    _dispatch_job(job_id)
-
-    return JobCreateResponse(schema_version="1.0", job_id=job_id)
+    _dispatch_job(result.job_id)
+    return result
 
 
 # ---------- GET /jobs ----------
@@ -931,13 +385,10 @@ async def cancel_job(
     job = _require_job(db, job_id)
     response.headers["X-Request-Id"] = request_id
 
-    if job.status not in ("queued", "running"):
-        raise HTTPException(status_code=409, detail=f"Cannot cancel job in '{job.status}' state")
-
-    job.status = "canceled"
-    job.completed_at = _now_iso()
-    db.commit()
-    db.refresh(job)
+    try:
+        job_lifecycle.cancel_job(job, db)
+    except job_lifecycle.JobLifecycleError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
     return JobGetResponse(job=JobDetail.model_validate(job))
 
@@ -956,42 +407,12 @@ async def rerun_job(
     old = _require_job(db, job_id)
     response.headers["X-Request-Id"] = request_id
 
-    new_id = str(uuid.uuid4())
-    job_dir: Path = settings.aipam_job_root / new_id
-    job_dir.mkdir(parents=True, exist_ok=True)
-
-    new_job = Job(
-        job_id=new_id,
-        job_name=f"Rerun of {old.job_name or old.job_id}",
-        notes=f"Rerun of job {old.job_id}",
-        status="queued",
-        execution_profile=old.execution_profile,
-        priority=old.priority,
-        upload_id=old.upload_id,
-        pcap_filename=old.pcap_filename,
-        pcap_size_bytes=old.pcap_size_bytes,
-        pcap_sha256=old.pcap_sha256,
-        created_at=_now_iso(),
-    )
-    db.add(new_job)
-
-    # Copy JobPcap records from the old job
-    old_pcaps = db.execute(
-        select(JobPcap).where(JobPcap.job_id == old.job_id).order_by(JobPcap.ordinal)
-    ).scalars().all()
-    for p in old_pcaps:
-        db.add(JobPcap(
-            job_id=new_id, upload_id=p.upload_id, label=p.label,
-            filename=p.filename, ordinal=p.ordinal,
-            size_bytes=p.size_bytes, sha256=p.sha256,
-        ))
-
-    db.commit()
+    result = job_lifecycle.rerun_job(old, db, settings)
 
     # Dispatch the pipeline to the Celery worker
-    _dispatch_job(new_id)
+    _dispatch_job(result.job_id)
 
-    return JobCreateResponse(schema_version="1.0", job_id=new_id)
+    return result
 
 
 # ---------- GET /jobs/{jobId}/pcaps ----------
@@ -1085,43 +506,10 @@ async def reanalyze_job(
     job = _require_job(db, job_id)
     response.headers["X-Request-Id"] = request_id
 
-    if job.status not in ("completed", "completed_with_errors", "failed"):
-        raise HTTPException(
-            status_code=409,
-            detail=f"Can only re-analyze completed or failed jobs (current: {job.status})"
-        )
-
-    # Verify PCAPs with this label exist
-    label_count = db.execute(
-        select(func.count()).select_from(JobPcap).where(
-            JobPcap.job_id == job_id,
-            JobPcap.label == body.pcap_label,
-        )
-    ).scalar() or 0
-
-    if label_count == 0:
-        raise HTTPException(
-            status_code=400,
-            detail=f"No PCAPs with label '{body.pcap_label}' found for this job"
-        )
-
-    # Update job status to re-running
-    job.status = "running"
-    job.error_summary = None
-    db.commit()
-
-    # Dispatch with pcap_label so the worker knows to only process that phase
     try:
-        from backend.app.worker import run_job_phase
-        run_job_phase.delay(job_id, body.pcap_label)
-    except Exception as exc:
-        _logger.warning("Failed to dispatch reanalyze for job %s: %s", job_id, exc)
-        job.status = "failed"
-        job.error_summary = f"Failed to dispatch re-analysis: {exc}"
-        db.commit()
-        raise HTTPException(status_code=500, detail="Failed to dispatch re-analysis task")
-
-    return {"job_id": job_id, "pcap_label": body.pcap_label, "status": "running", "pcap_count": label_count}
+        return job_lifecycle.reanalyze_job(job, db, body.pcap_label, dispatch_job_phase)
+    except job_lifecycle.JobLifecycleError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
 
 # ---------- POST /jobs/batch ----------
@@ -1280,7 +668,6 @@ async def list_sensors(
         ))
 
     return SensorListResponse(items=items)
-
 
 
 # ---------- GET /jobs/{jobId}/timeline ----------
@@ -1651,7 +1038,6 @@ async def export_job_package(
         media_type="application/zip",
         headers={"Content-Disposition": f"attachment; filename={filename}"}
     )
-
 
 
 # ---------- POST /jobs/{jobId}/arkime/import ----------

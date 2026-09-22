@@ -67,7 +67,7 @@ class TestSafeName:
         assert not result.startswith("/")
 
     def test_preserves_normal_path(self):
-        assert _safe_name("logs/auth.log") == "logs/auth.log"
+        assert _safe_name("logs/auth.log") == str(Path("logs") / "auth.log")
 
     def test_empty_parts_fallback(self):
         assert _safe_name("..") == "unnamed"
@@ -359,9 +359,7 @@ class TestLogUploadLimits:
 
     def test_per_job_log_budget_rejects_oversized_set(self):
         import pytest
-        from fastapi import HTTPException
-
-        from backend.app.api.jobs import MAX_LOG_BYTES_PER_JOB, _enforce_log_budget
+        from backend.app.services.job_creation import JobCreationError, MAX_LOG_BYTES_PER_JOB, _enforce_log_budget
         from backend.app.models.upload import Upload
 
         half = MAX_LOG_BYTES_PER_JOB // 2 + 1
@@ -369,13 +367,13 @@ class TestLogUploadLimits:
             Upload(upload_id="u1", filename="a.log", size_bytes=half, sha256="x", created_at="t"),
             Upload(upload_id="u2", filename="b.log", size_bytes=half, sha256="y", created_at="t"),
         ]
-        with pytest.raises(HTTPException) as exc:
+        with pytest.raises(JobCreationError) as exc:
             _enforce_log_budget(uploads)
         assert exc.value.status_code == 400
         assert "no limit on how many log files" in exc.value.detail.lower()
 
     def test_per_job_log_budget_allows_many_files_under_budget(self):
-        from backend.app.api.jobs import _enforce_log_budget
+        from backend.app.services.job_creation import _enforce_log_budget
         from backend.app.models.upload import Upload
 
         uploads = [

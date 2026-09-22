@@ -2,7 +2,7 @@
 
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from backend.app.schemas.common import (
     SCHEMA_VERSION,
@@ -49,6 +49,27 @@ class JobCreateRequest(BaseModel):
     bundle_uploads: list[BundleUploadItem] | None = None  # labeled log bundles to fuse with PCAPs
     # --- BlueScrub code-artifact jobs ---
     project_id: str | None = None  # optional; unbound jobs scan but do not carry triage forward
+
+
+class ArkimeJobRequest(BaseModel):
+    """Request to create a job by exporting sessions from Arkime."""
+    source: str = "arkime"
+    filter: str
+    time_range: dict = Field(..., description="Dict with 'start' and 'end' ISO timestamps")
+    mode: str = "single_window"
+    metadata: dict = Field(default_factory=dict)
+
+
+
+class SecurityOnionJobRequest(BaseModel):
+    """Request to create a job by exporting PCAP from Security Onion."""
+    source: str = "security_onion"
+    time_range: dict = Field(..., description="Dict with 'start' and 'end' ISO timestamps")
+    sensors: list = Field(default_factory=list, description="List of sensor names to filter by")
+    filter_fields: dict = Field(default_factory=dict, description="Optional packet filters: protocol, srcIp, dstIp, srcPort, dstPort")
+    mode: str = "single_window"
+    metadata: dict = Field(default_factory=dict)
+
 
 
 class JobCreateResponse(BaseModel):
