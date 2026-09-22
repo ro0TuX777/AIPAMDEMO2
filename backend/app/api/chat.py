@@ -1153,8 +1153,26 @@ def _message_out(message: ChatMessage, db: Session) -> ChatMessageOut:
     citations = citation_payload.get("items", [])
     if not isinstance(citations, list):
         citations = []
+    citations = _project_live_citation_availability(db, citations)
+    metadata = _json_object(message.metadata_json) or None
+    return ChatMessageOut(
+        id=message.id,
+        sequence=message.sequence,
+        role=message.role,
+        content=message.content,
+        citations=citations,
+        metadata=metadata,
+        request_id=message.request_id,
+        timestamp=message.created_at,
+    )
+
+
+def _project_live_citation_availability(db: Session, citations: list) -> list:
+    citations = [dict(citation) if isinstance(citation, dict) else citation for citation in citations]
     from backend.app.forensic_memory import finding_content_sha256
     for citation in citations:
+        if not isinstance(citation, dict):
+            continue
         if citation.get("type") != "historical_finding":
             continue
         job = db.get(Job, citation.get("source_job_id"))
@@ -1167,17 +1185,7 @@ def _message_out(message: ChatMessage, db: Session) -> ChatMessageOut:
             citation["source_availability"] = "unknown"
         else:
             citation["source_availability"] = "available" if finding_content_sha256(finding) == citation["source_content_sha256"] else "changed"
-    metadata = _json_object(message.metadata_json) or None
-    return ChatMessageOut(
-        id=message.id,
-        sequence=message.sequence,
-        role=message.role,
-        content=message.content,
-        citations=citations,
-        metadata=metadata,
-        request_id=message.request_id,
-        timestamp=message.created_at,
-    )
+    return citations
 
 
 def _branch_out(db: Session, branch: ChatComparisonBranch) -> ChatComparisonBranchOut:
@@ -1519,9 +1527,13 @@ def _response_for_existing_turn(
     metadata = _json_object(assistant.metadata_json)
     citation_payload = _json_object(assistant.citations_json)
     citations = citation_payload.get("items", [])
+    citations = _project_live_citation_availability(
+        db,
+        citations if isinstance(citations, list) else [],
+    )
     return ChatResponseBody(
         response=assistant.content,
-        citations=citations if isinstance(citations, list) else [],
+        citations=citations,
         conversation_id=user_message.conversation_id,
         confidence=metadata.get("confidence"),
         evidence_refs=metadata.get("evidence_refs", []),
@@ -1550,10 +1562,23 @@ def _find_assistant_for_user_turn(
     )
     for candidate in assistants:
         candidate_metadata = _json_object(candidate.metadata_json)
-        if candidate_metadata.get("request_id") != user_message.request_id:
-            continue
         associated_user_id = candidate_metadata.get("user_message_id")
-        if associated_user_id is None or associated_user_id == user_message.id:
+        if associated_user_id is not None:
+            if associated_user_id == user_message.id:
+                return candidate
+            continue
+        if user_message.request_id is not None:
+            if candidate_metadata.get("request_id") == user_message.request_id:
+                return candidate
+            continue
+        # Legacy turns predate request/origin metadata. Sequence adjacency is
+        # their only durable association; two missing request IDs are not an
+        # identity and must never match arbitrary earlier answers.
+        if (
+            user_message.sequence is not None
+            and candidate.sequence == user_message.sequence + 1
+            and candidate_metadata.get("request_id") is None
+        ):
             return candidate
     return None
 
@@ -2265,15 +2290,11 @@ async def chat_about_job_stream(
                     metadata=metadata,
                 )
                 persisted = _response_for_existing_turn(background_db, user_message=background_db.get(ChatMessage, user_message_id), requested_content=body.message)
-            if persisted.status != status:
-                for event in _persisted_turn_sse_events(persisted):
-                    await event_queue.put(event)
-                return
-            await event_queue.put(
-                f"data: {json.dumps({'type': 'meta', 'conversation_id': conv_id, 'branch_id': branch_id, 'request_id': request_id, 'status': status, 'retrieval_status': prepared.retrieval_status, 'citations': [citation.model_dump() for citation in final_citations], 'model_id': prepared.model_id, 'generation': prepared.generation.model_dump(), 'confidence': metadata['confidence'], 'evidence_refs': [reference.model_dump() for reference in evidence_refs], 'suggested_followups': suggested_followups})}\n\n"
-            )
-
-            await event_queue.put("data: [DONE]\n\n")
+            # Persistence is authoritative. A stale worker may finish after
+            # lease recovery with the same status but different content.
+            for event in _persisted_turn_sse_events(persisted):
+                await event_queue.put(event)
+            return
         except (Exception, asyncio.CancelledError):
             logger.warning("Failed to complete streamed chat turn for conv %s", conv_id)
             try:

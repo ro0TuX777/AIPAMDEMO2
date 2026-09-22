@@ -38,15 +38,22 @@ def _collect_changed_findings(db, _context, _instances):
     from backend.app.models.job import Job
     from backend.app.models.bluescrub import BlueScrubJobLineage
     pending = db.info.setdefault("mnemos_documents", {})
-    for finding in list(db.dirty):
-        if not isinstance(finding, Finding) or not db.is_modified(finding, include_collections=False):
+    new_objects = list(db.new)
+    new_jobs = {item.job_id: item for item in new_objects if isinstance(item, Job)}
+    new_lineage = {item.job_id: item for item in new_objects if isinstance(item, BlueScrubJobLineage)}
+    seen: set[int] = set()
+    for finding in [*new_objects, *list(db.dirty)]:
+        if not isinstance(finding, Finding) or id(finding) in seen:
+            continue
+        seen.add(id(finding))
+        if finding not in db.new and not db.is_modified(finding, include_collections=False):
             continue
         key = (finding.job_id, finding.finding_id)
-        job = db.get(Job, finding.job_id)
+        job = new_jobs.get(finding.job_id) or db.get(Job, finding.job_id)
         if finding.analyst_status != "confirmed" or job is None or job.status == "deleted":
             pending.pop(key, None)
             continue
-        lineage = db.get(BlueScrubJobLineage, finding.job_id)
+        lineage = new_lineage.get(finding.job_id) or db.get(BlueScrubJobLineage, finding.job_id)
         pending[key] = mnemos_document_for_finding(finding, project_id=lineage.project_id if lineage else None)
 
 

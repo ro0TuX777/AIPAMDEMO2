@@ -73,6 +73,26 @@ def test_confirmed_content_changes_retry_after_commit_without_leaking_failure(se
     assert documents == []
 
 
+def test_new_carried_forward_confirmed_finding_indexes_after_commit(session, monkeypatch):
+    from backend.app import mnemos_boundary
+    from backend.app.forensic_memory import mnemos_document_for_finding
+
+    add_job(session, "source")
+    session.commit()
+    documents = []
+
+    class Client:
+        def index(self, batch):
+            documents.extend(batch)
+            return len(batch)
+
+    monkeypatch.setattr(mnemos_boundary, "get_mnemos_client", lambda: Client())
+    finding = add_finding(session, "source", "F-carried", status="confirmed")
+    session.commit()
+
+    assert documents == [mnemos_document_for_finding(finding, project_id=None)]
+
+
 def test_remote_failure_cannot_rollback_feedback_or_leak_request_secrets(session, monkeypatch, caplog):
     from backend.app.mnemos_boundary import MnemosBoundaryClient
     from backend.app import mnemos_boundary

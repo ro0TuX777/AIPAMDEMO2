@@ -189,6 +189,54 @@ def test_request_uuid_cannot_create_a_second_turn_in_another_root(client):
 
 
 @pytest.mark.parametrize("stream", [False, True])
+def test_legacy_baseline_turn_without_request_id_uses_its_own_answer(client, stream):
+    body = {"message": "A new legacy-client question", "conversation_id": "root-1"}
+    response = client.post("/jobs/job-1/chat" + ("/stream" if stream else ""), json=body)
+    assert response.status_code == 200, response.text
+    if stream:
+        payloads = _sse_payloads(response)
+        rendered = "".join(
+            payload.get("content", "")
+            for payload in payloads
+            if isinstance(payload, dict) and payload.get("type") in {"token", "replace"}
+        )
+        assert "Current-job answer." in rendered
+        assert "inconclusive" not in rendered
+    else:
+        assert response.json()["response"].startswith("Current-job answer.")
+        assert "inconclusive" not in response.json()["response"]
+    follow_up = client.post(
+        "/jobs/job-1/chat",
+        json={"message": "Another legacy-client question", "conversation_id": "root-1"},
+    )
+    assert follow_up.status_code == 200, follow_up.text
+    assert follow_up.json()["status"] == "completed"
+
+
+def test_expired_legacy_pending_turn_without_request_id_recovers(client):
+    with client.session_factory() as db:
+        db.add(ChatMessage(
+            id="legacy-pending",
+            conversation_id="root-1",
+            role="user",
+            content="Interrupted legacy request",
+            created_at="2000-01-01T00:00:00Z",
+        ))
+        db.commit()
+    response = client.post(
+        "/jobs/job-1/chat",
+        json={"message": "Continue after interruption", "conversation_id": "root-1"},
+    )
+    assert response.status_code == 200, response.text
+    assert response.json()["status"] == "completed"
+    with client.session_factory() as db:
+        interrupted = db.get(ChatMessage, "legacy-pending")
+        recovered = chat._find_assistant_for_user_turn(db, user_message=interrupted)
+        assert recovered is not None
+        assert json.loads(recovered.metadata_json)["error_code"] == "TURN_INTERRUPTED"
+
+
+@pytest.mark.parametrize("stream", [False, True])
 def test_actual_generation_cancellation_terminalizes_admitted_turn(client, monkeypatch, stream):
     request_id = str(uuid.uuid4())
     async def exercise():
@@ -243,12 +291,15 @@ def test_expired_pending_turn_recovers_durably_and_rejects_late_completion(clien
 
 
 @pytest.mark.parametrize("stream", [False, True])
-def test_late_generator_returns_saved_recovery_instead_of_a_success(client, monkeypatch, stream):
+@pytest.mark.parametrize("late_fails", [False, True])
+def test_late_generator_returns_saved_recovery_instead_of_local_result(client, monkeypatch, stream, late_fails):
     async def exercise():
         started, release = asyncio.Event(), asyncio.Event()
         async def generate(*args, **kwargs):
             started.set()
             await release.wait()
+            if late_fails:
+                raise RuntimeError("late failure")
             return "Too late"
         async def generate_stream(*args, **kwargs):
             yield await generate()
@@ -291,7 +342,8 @@ def test_saved_citations_keep_version_and_retrieval_outcome_when_source_changes(
         source_hash = finding_content_sha256(finding)
     monkeypatch.setattr(retrieval, "get_mnemos_client", lambda: FakeMnemos([hit("x", "job-old", "finding-old")]))
     group = _open_comparison(client)
-    result = client.post("/jobs/job-1/chat", json={"conversation_id": group["conversation_id"], "mode": "mnemos", "request_id": str(uuid.uuid4()), "message": "What happened?"})
+    body = {"conversation_id": group["conversation_id"], "mode": "mnemos", "request_id": str(uuid.uuid4()), "message": "What happened?"}
+    result = client.post("/jobs/job-1/chat", json=body)
     assert result.status_code == 200
     saved = next(c for c in result.json()["citations"] if c["type"] == "historical_finding")
     assert saved["source_content_sha256"] == source_hash
@@ -308,6 +360,16 @@ def test_saved_citations_keep_version_and_retrieval_outcome_when_source_changes(
     assert citation["source_content_sha256"] == source_hash
     assert citation["source_availability"] == ("changed" if change == "changed" else "unavailable")
     assert answer["metadata"]["retrieval_status"] == "used"
+    replay = client.post("/jobs/job-1/chat", json=body)
+    replay_citation = next(c for c in replay.json()["citations"] if c["type"] == "historical_finding")
+    assert replay_citation["source_availability"] == citation["source_availability"]
+    streamed = client.post("/jobs/job-1/chat/stream", json=body)
+    terminal_meta = [
+        payload for payload in _sse_payloads(streamed)
+        if isinstance(payload, dict) and payload.get("type") == "meta"
+    ][-1]
+    streamed_citation = next(c for c in terminal_meta["citations"] if c["type"] == "historical_finding")
+    assert streamed_citation["source_availability"] == citation["source_availability"]
 
 
 def _open_comparison(client) -> dict:
