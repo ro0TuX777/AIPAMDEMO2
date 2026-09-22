@@ -7,6 +7,8 @@ import type { ChatConversation, ChatMessage, ChatMode } from "./chatTypes";
 export interface ChatPanelProps {
   jobId: string;
   conversation: ChatConversation;
+  /** Parent-owned identity that changes for every controlled selection, including drafts. */
+  selectionToken: string | number;
   mode: ChatMode;
   onCopyToMnemos: (messageId: string, content: string) => void;
   onRetry: (requestId: string) => void;
@@ -36,18 +38,28 @@ export function ChatPanel(props: ChatPanelInputProps) {
   const { jobId, initialMessage, contextHint, onClose } = props;
   const controlled = "conversation" in props;
   const conversation = controlled ? props.conversation : emptyConversation(jobId);
+  const selectionToken = controlled ? props.selectionToken : undefined;
   const mode: ChatMode = controlled ? props.mode : "baseline";
   const onConversationChanged = controlled ? props.onConversationChanged : () => {};
   const onCopyToMnemos = controlled ? props.onCopyToMnemos : () => {};
   const onRetry = controlled ? props.onRetry : () => {};
   const [input, setInput] = useState("");
-  const [isLoading, setIsLoading] = useState(false);
-  const [panelError, setPanelError] = useState<string | null>(null);
-  const [failedRequestId, setFailedRequestId] = useState<string | null>(null);
+  const [loadingGeneration, setLoadingGeneration] = useState<number | null>(null);
+  const [failure, setFailure] = useState<{ requestId: string; generation: number } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const messagesRef = useRef(conversation.messages);
   const selectedConversationRef = useRef(conversation);
   selectedConversationRef.current = conversation;
+  const selectionTokenRef = useRef(selectionToken);
+  const selectionGenerationRef = useRef(0);
+  if (controlled && selectionTokenRef.current !== selectionToken) {
+    selectionTokenRef.current = selectionToken;
+    selectionGenerationRef.current += 1;
+    messagesRef.current = conversation.messages;
+  }
+  const selectionGeneration = selectionGenerationRef.current;
+  const isLoading = loadingGeneration === selectionGeneration;
+  const activeFailure = failure?.generation === selectionGeneration ? failure : null;
   const initialContextHandled = useRef(false);
 
   useEffect(() => {
@@ -58,23 +70,28 @@ export function ChatPanel(props: ChatPanelInputProps) {
     messagesRef.current = conversation.messages;
   }, [conversation.messages]);
 
-  const emit = useCallback((originConversationId: string | undefined, messages: ChatMessage[], id = originConversationId) => {
+  useEffect(() => {
+    setLoadingGeneration(null);
+    setFailure(null);
+  }, [selectionGeneration]);
+
+  const emit = useCallback((originGeneration: number, messages: ChatMessage[], id = selectedConversationRef.current.id) => {
     const selected = selectedConversationRef.current;
-    if (controlled && selected.id !== originConversationId) return false;
+    if (controlled && selectionGenerationRef.current !== originGeneration) return false;
     messagesRef.current = messages;
     onConversationChanged({ ...selected, ...(id ? { id } : {}), updated_at: new Date().toISOString(), messages });
     return true;
   }, [controlled, onConversationChanged]);
 
-  const isCurrentConversation = useCallback((originConversationId: string | undefined) => (
-    !controlled || selectedConversationRef.current.id === originConversationId
+  const isCurrentSelection = useCallback((originGeneration: number) => (
+    !controlled || selectionGenerationRef.current === originGeneration
   ), [controlled]);
 
-  const updateAssistant = useCallback((originConversationId: string | undefined, requestId: string, update: (message: ChatMessage) => ChatMessage) => {
-    emit(originConversationId, messagesRef.current.map(message => message.request_id === requestId && message.role === "assistant" ? update(message) : message));
+  const updateAssistant = useCallback((originGeneration: number, requestId: string, update: (message: ChatMessage) => ChatMessage) => {
+    emit(originGeneration, messagesRef.current.map(message => message.request_id === requestId && message.role === "assistant" ? update(message) : message));
   }, [emit]);
 
-  const complete = useCallback(async (originConversationId: string | undefined, requestId: string, terminal: ChatStreamTerminalMetadata, content: string) => {
+  const complete = useCallback(async (originGeneration: number, requestId: string, terminal: ChatStreamTerminalMetadata, content: string) => {
     const metadata: Record<string, unknown> = {
       status: terminal.status, retrieval_status: terminal.retrieval_status ?? null,
       model_id: terminal.model_id ?? null, generation: terminal.generation ?? null,
@@ -83,9 +100,9 @@ export function ChatPanel(props: ChatPanelInputProps) {
     };
     try {
       const history = await api.getConversation(jobId, terminal.conversation_id);
-      emit(originConversationId, history.messages.map(message => ({ ...message, saved: true })), terminal.conversation_id);
+      emit(originGeneration, history.messages.map(message => ({ ...message, saved: true })), terminal.conversation_id);
     } catch {
-      emit(originConversationId, messagesRef.current.map(message => message.request_id === requestId && message.role === "assistant"
+      emit(originGeneration, messagesRef.current.map(message => message.request_id === requestId && message.role === "assistant"
         ? { ...message, content, citations: terminal.citations, metadata } : message), terminal.conversation_id);
     }
   }, [emit, jobId]);
@@ -94,18 +111,17 @@ export function ChatPanel(props: ChatPanelInputProps) {
     const text = messageText || input.trim();
     if (!text || isLoading) return;
     const requestId = newId();
-    const originConversationId = conversation.id;
+    const originGeneration = selectionGeneration;
     const timestamp = new Date().toISOString();
     const nextSequence = conversation.messages.reduce((highest, message) => Math.max(highest, message.sequence), 0) + 1;
     const userMessage: ChatMessage = { id: newId(), sequence: nextSequence, role: "user", content: text, citations: [], metadata: null, request_id: requestId, timestamp, saved: false };
     const assistantMessage: ChatMessage = { id: newId(), sequence: nextSequence + 1, role: "assistant", content: "", citations: [], metadata: { status: "pending" }, request_id: requestId, timestamp, saved: false };
-    emit(originConversationId, [...conversation.messages, userMessage, assistantMessage]);
+    emit(originGeneration, [...conversation.messages, userMessage, assistantMessage]);
     setInput("");
-    setPanelError(null);
-    setFailedRequestId(null);
-    setIsLoading(true);
+    setFailure(null);
+    setLoadingGeneration(originGeneration);
     const body = { message: text, conversation_id: conversation.id, context_hint: contextHint, mode, request_id: requestId };
-    const applyJsonResponse = async (response: Awaited<ReturnType<typeof api.chatWithJob>>) => complete(originConversationId, requestId, {
+    const applyJsonResponse = async (response: Awaited<ReturnType<typeof api.chatWithJob>>) => complete(originGeneration, requestId, {
       type: "meta", conversation_id: response.conversation_id, branch_id: response.branch_id,
       request_id: response.request_id, status: response.status ?? "completed", retrieval_status: response.retrieval_status,
       citations: response.citations, model_id: response.model_id, generation: response.generation,
@@ -122,17 +138,15 @@ export function ChatPanel(props: ChatPanelInputProps) {
         if (event.type === "replace") content = event.content;
         if (event.type === "error") {
           content = `Error: ${event.content || event.error || "Failed to get response"}`;
-          if (isCurrentConversation(originConversationId)) {
-            setPanelError(content);
-            setFailedRequestId(requestId);
+          if (isCurrentSelection(originGeneration)) {
+            setFailure({ requestId, generation: originGeneration });
           }
         }
-        if (event.type !== "error") updateAssistant(originConversationId, requestId, message => ({ ...message, content }));
+        if (event.type !== "error") updateAssistant(originGeneration, requestId, message => ({ ...message, content }));
       });
-      await complete(originConversationId, requestId, terminal, content);
-      if (terminal.status === "error" && isCurrentConversation(originConversationId)) {
-        setPanelError(mode === "mnemos" ? "MNEMOS could not complete this response." : "Chat could not complete this response.");
-        setFailedRequestId(requestId);
+      await complete(originGeneration, requestId, terminal, content);
+      if (terminal.status === "error" && isCurrentSelection(originGeneration)) {
+        setFailure({ requestId, generation: originGeneration });
       }
     } catch (error) {
       if (mode === "baseline" && error instanceof ChatStreamError && !error.responseReceived) {
@@ -140,24 +154,22 @@ export function ChatPanel(props: ChatPanelInputProps) {
           await applyJsonResponse(await api.chatWithJob(jobId, body));
         } catch (fallbackError) {
           const message = `Error: ${errorMessage(fallbackError)}`;
-          updateAssistant(originConversationId, requestId, assistant => ({ ...assistant, content: message, metadata: { status: "error" } }));
-          if (isCurrentConversation(originConversationId)) {
-            setPanelError(message);
-            setFailedRequestId(requestId);
+          updateAssistant(originGeneration, requestId, assistant => ({ ...assistant, content: message, metadata: { status: "error" } }));
+          if (isCurrentSelection(originGeneration)) {
+            setFailure({ requestId, generation: originGeneration });
           }
         }
       } else {
         const message = `Error: ${errorMessage(error)}`;
-        updateAssistant(originConversationId, requestId, assistant => ({ ...assistant, content: message, metadata: { status: "error" } }));
-        if (isCurrentConversation(originConversationId)) {
-          setPanelError(message);
-          setFailedRequestId(requestId);
+        updateAssistant(originGeneration, requestId, assistant => ({ ...assistant, content: message, metadata: { status: "error" } }));
+        if (isCurrentSelection(originGeneration)) {
+          setFailure({ requestId, generation: originGeneration });
         }
       }
     } finally {
-      if (isCurrentConversation(originConversationId)) setIsLoading(false);
+      if (isCurrentSelection(originGeneration)) setLoadingGeneration(null);
     }
-  }, [complete, contextHint, conversation.id, conversation.messages, emit, input, isCurrentConversation, isLoading, jobId, mode, updateAssistant]);
+  }, [complete, contextHint, conversation.id, conversation.messages, emit, input, isCurrentSelection, isLoading, jobId, mode, selectionGeneration, updateAssistant]);
 
   useEffect(() => {
     if (initialMessage && controlled && !initialContextHandled.current) {
@@ -195,7 +207,7 @@ export function ChatPanel(props: ChatPanelInputProps) {
         {message.role === "assistant" && message.metadata?.suggested_followups instanceof Array && !isLoading && <div className="mt-3 pt-2 border-t border-slate-700"><p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1.5">Follow-up questions</p><div className="flex flex-wrap gap-1.5">{message.metadata.suggested_followups.filter((item): item is string => typeof item === "string").map(question => <button key={question} onClick={() => void handleSend(question)} className="text-left text-xs px-2 py-1 rounded border border-slate-700 bg-slate-900/60 text-emerald-400/80">{question}</button>)}</div></div>}
       </div></div>)}
       {isLoading && <div className="flex justify-start"><div className="bg-slate-800 rounded-lg px-4 py-2 text-slate-400"><span className="animate-pulse">Thinking...</span></div></div>}
-      {mode === "mnemos" && panelError && failedRequestId && <button type="button" onClick={() => { setPanelError(null); onRetry(failedRequestId); }} className="text-sm text-amber-300 underline underline-offset-2">Retry MNEMOS</button>}
+      {mode === "mnemos" && activeFailure && <button type="button" onClick={() => { setFailure(null); onRetry(activeFailure.requestId); }} className="text-sm text-amber-300 underline underline-offset-2">Retry MNEMOS</button>}
       <div ref={messagesEndRef} />
     </div>
     <div className="p-4 border-t border-slate-700"><div className="flex gap-2"><input type="text" value={input} onChange={event => setInput(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void handleSend(); } }} placeholder="Ask about the findings..." className="flex-1 bg-slate-800 text-slate-100 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" disabled={isLoading} /><button onClick={() => void handleSend()} disabled={isLoading || !input.trim()} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50">Send</button></div></div>
