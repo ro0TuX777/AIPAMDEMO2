@@ -4,7 +4,20 @@ from __future__ import annotations
 
 from typing import Annotated, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+from pydantic import (
+    AfterValidator,
+    BaseModel,
+    ConfigDict,
+    Field,
+    StringConstraints,
+    model_validator,
+)
+
+
+def _reject_dot_path_segment(value: str) -> str:
+    if value in {".", ".."}:
+        raise ValueError("source identifiers cannot be dot path segments")
+    return value
 
 
 SourceId = Annotated[
@@ -14,6 +27,7 @@ SourceId = Annotated[
         min_length=1,
         pattern=r"^[A-Za-z0-9._:-]+$",
     ),
+    AfterValidator(_reject_dot_path_segment),
 ]
 
 

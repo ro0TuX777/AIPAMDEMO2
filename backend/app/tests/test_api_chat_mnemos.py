@@ -309,6 +309,38 @@ def test_chat_response_metadata_is_additive_and_typed() -> None:
             "source_project_id": None,
             "href": "/jobs/job#old/findings/F-2",
         },
+        {
+            "type": "historical_finding",
+            "id": ".",
+            "snippet": "Historical source",
+            "source_job_id": "job-old",
+            "source_project_id": None,
+            "href": "/jobs/job-old/findings/.",
+        },
+        {
+            "type": "historical_finding",
+            "id": "..",
+            "snippet": "Historical source",
+            "source_job_id": "job-old",
+            "source_project_id": None,
+            "href": "/jobs/job-old/findings/..",
+        },
+        {
+            "type": "historical_finding",
+            "id": "F-2",
+            "snippet": "Historical source",
+            "source_job_id": ".",
+            "source_project_id": None,
+            "href": "/jobs/./findings/F-2",
+        },
+        {
+            "type": "historical_finding",
+            "id": "F-2",
+            "snippet": "Historical source",
+            "source_job_id": "..",
+            "source_project_id": None,
+            "href": "/jobs/../findings/F-2",
+        },
     ],
 )
 def test_historical_citation_rejects_invalid_source_identity(citation) -> None:
@@ -320,7 +352,38 @@ def test_historical_citation_rejects_invalid_source_identity(citation) -> None:
         )
 
 
-def test_mnemos_prepare_uses_server_owned_cutoff_history(monkeypatch, session) -> None:
+def test_historical_citation_preserves_canonical_non_dot_segment_href() -> None:
+    citation = HistoricalChatCitationOut(
+        id="F..2",
+        snippet="Historical source",
+        source_job_id="job.old",
+        source_project_id=None,
+        href="/jobs/job.old/findings/F..2",
+    )
+
+    assert citation.href == f"/jobs/{citation.source_job_id}/findings/{citation.id}"
+
+
+@pytest.mark.parametrize(
+    "historical_appendix",
+    [
+        (
+            "\r\n\r\n=== Historical comparison ===\r\n\r\n"
+            "Historical-only detail from job-old"
+        ),
+        (
+            "\r\r  ===   Historical comparison   ===  \r"
+            "Historical-only detail from job-old"
+        ),
+        (
+            " \t=== HISTORICAL COMPARISON ===  \n"
+            "Historical-only detail from job-old"
+        ),
+    ],
+)
+def test_mnemos_prepare_uses_server_owned_cutoff_history(
+    monkeypatch, session, historical_appendix
+) -> None:
     root = ChatConversation(
         id="root-1",
         job_id="job-1",
@@ -367,11 +430,7 @@ def test_mnemos_prepare_uses_server_owned_cutoff_history(monkeypatch, session) -
                 conversation_id=branch.conversation_id,
                 sequence=2,
                 role="assistant",
-                content=(
-                    "Prior current-job answer\n\n"
-                    "=== Historical comparison ===\n\n"
-                    "Historical-only detail from job-old"
-                ),
+                content=f"Prior current-job answer{historical_appendix}",
                 created_at="2026-09-22T00:00:05Z",
             ),
         ]
@@ -400,11 +459,7 @@ def test_mnemos_prepare_uses_server_owned_cutoff_history(monkeypatch, session) -
         {"role": "user", "content": "Prior comparison question"},
         {
             "role": "assistant",
-            "content": (
-                "Prior current-job answer\n\n"
-                "=== Historical comparison ===\n\n"
-                "Historical-only detail from job-old"
-            ),
+            "content": f"Prior current-job answer{historical_appendix}",
         },
     ]
     assert prepared.messages[-5:] == [

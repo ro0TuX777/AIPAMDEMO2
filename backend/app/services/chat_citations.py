@@ -20,6 +20,10 @@ from backend.app.schemas.chat import (
 logger = logging.getLogger("aipam.chat")
 
 HISTORICAL_COMPARISON_HEADING = "=== Historical comparison ==="
+_HISTORICAL_COMPARISON_DELIMITER_RE = re.compile(
+    r"(?<!\S)===[ \t]*Historical[ \t]+comparison[ \t]*===(?!\S)",
+    re.IGNORECASE,
+)
 
 # ── Compiled regexes ──────────────────────────────────────────────────────
 
@@ -570,12 +574,11 @@ def build_historical_comparison_section(
 
 def strip_historical_comparison_section(response_text: str) -> str:
     """Remove the deterministic history appendix before reusing chat history."""
-    marker = f"\n\n{HISTORICAL_COMPARISON_HEADING}"
-    if marker in response_text:
-        return response_text.split(marker, 1)[0].rstrip()
-    if response_text.startswith(HISTORICAL_COMPARISON_HEADING):
-        return ""
-    return response_text
+    normalized = response_text.replace("\r\n", "\n").replace("\r", "\n")
+    delimiter = _HISTORICAL_COMPARISON_DELIMITER_RE.search(normalized)
+    if delimiter is None:
+        return normalized
+    return normalized[: delimiter.start()].rstrip()
 
 
 def finalize_mode_aware_response_payload(
