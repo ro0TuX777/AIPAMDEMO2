@@ -177,3 +177,6 @@ llama.cpp/
 /.gitconfig
 /.ripgreprc
 /.mcp.json
+
+# Isolated local worktrees
+.worktrees/
