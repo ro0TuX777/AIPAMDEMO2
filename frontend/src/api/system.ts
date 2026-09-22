@@ -8,6 +8,7 @@ import type {
   EmbeddingModelsResponse,
   EmbeddingModelConfig,
   EmbeddingModelPullStatus,
+  OllamaRuntimeConfig,
   SetupStatusResponse,
   OllamaGpuStatusResponse,
   FeedbackMetricsResponse,
@@ -21,6 +22,14 @@ import {
 
 export const systemApi = {
   getEmbeddingModel(): Promise<EmbeddingModelConfig> { return get<EmbeddingModelConfig>("/embedding-model"); },
+  getEmbeddingRuntime(): Promise<OllamaRuntimeConfig> { return get<OllamaRuntimeConfig>("/embedding-model/runtime"); },
+  saveEmbeddingRuntime(ollamaUrl: string): Promise<OllamaRuntimeConfig> {
+    return request<OllamaRuntimeConfig>(`${API_BASE}/embedding-model/runtime`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ollama_url: ollamaUrl }),
+    });
+  },
   getEmbeddingModels(): Promise<OllamaModelInfo[]> { return get<EmbeddingModelsResponse>("/embedding-models").then((r) => r.models); },
   selectEmbeddingModel(model: string): Promise<EmbeddingModelConfig> { return post<EmbeddingModelConfig>("/embedding-model", { model }); },
   pullEmbeddingModel(model: string): Promise<EmbeddingModelPullStatus> { return post<EmbeddingModelPullStatus>("/embedding-models/pull", { model }); },

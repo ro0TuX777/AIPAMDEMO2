@@ -8,6 +8,7 @@ import {
   OllamaGpuStatusResponse,
   EmbeddingModelConfig,
   EmbeddingModelPullStatus,
+  OllamaRuntimeConfig,
   ExplainTelemetryResponse,
   SystemConfigResponse,
 } from "../api";
@@ -49,6 +50,8 @@ export const SettingsPage: React.FC = () => {
   const [modelsLoading, setModelsLoading] = useState(false);
   const [embeddingConfig, setEmbeddingConfig] = useState<EmbeddingModelConfig | null>(null);
   const [embeddingModel, setEmbeddingModel] = useState("");
+  const [ollamaRuntime, setOllamaRuntime] = useState<OllamaRuntimeConfig | null>(null);
+  const [ollamaUrl, setOllamaUrl] = useState("");
   const [embeddingDownload, setEmbeddingDownload] = useState("");
   const [embeddingPull, setEmbeddingPull] = useState<EmbeddingModelPullStatus | null>(null);
   const [embeddingBusy, setEmbeddingBusy] = useState(false);
@@ -75,10 +78,34 @@ export const SettingsPage: React.FC = () => {
   }, []);
 
   const loadEmbeddingModel = useCallback(async () => {
-    const config = await api.getEmbeddingModel();
+    const [config, runtime] = await Promise.all([
+      api.getEmbeddingModel(),
+      api.getEmbeddingRuntime(),
+    ]);
     setEmbeddingConfig(config);
     setEmbeddingModel(config.model ?? "");
+    setOllamaRuntime(runtime);
+    setOllamaUrl(runtime.ollama_url);
   }, []);
+
+  const saveOllamaRuntime = useCallback(async () => {
+    setEmbeddingBusy(true);
+    setError(null);
+    try {
+      const runtime = await api.saveEmbeddingRuntime(ollamaUrl);
+      setOllamaRuntime(runtime);
+      setOllamaUrl(runtime.ollama_url);
+      setEmbeddingConfig(null);
+      setEmbeddingModel("");
+      setAvailableModels([]);
+      setSuccess(`Ollama endpoint saved: ${runtime.ollama_url}`);
+    } catch (err) {
+      console.error("Failed to save Ollama endpoint:", err);
+      setError("Enter an Ollama HTTP URL, including its port");
+    } finally {
+      setEmbeddingBusy(false);
+    }
+  }, [ollamaUrl]);
 
   const selectEmbeddingModel = useCallback(async (model: string) => {
     if (!model) return;
@@ -516,6 +543,30 @@ export const SettingsPage: React.FC = () => {
                   className="rounded bg-slate-700 px-2 py-1 text-[10px] font-medium hover:bg-slate-600 disabled:opacity-50"
                 >
                   Refresh
+                </button>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-2">
+                <div>
+                  <label className="block mb-1 text-xs text-slate-300">Ollama base URL</label>
+                  <input
+                    type="url"
+                    value={ollamaUrl}
+                    onChange={(e) => setOllamaUrl(e.target.value)}
+                    placeholder="http://host:11434"
+                    className="bg-slate-900 border border-slate-700 rounded px-2 py-1.5 w-full text-slate-200 text-sm"
+                    disabled={embeddingBusy}
+                    data-testid="input-ollama-base-url"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => { void saveOllamaRuntime(); }}
+                  disabled={embeddingBusy || !ollamaUrl.trim() || ollamaUrl === ollamaRuntime?.ollama_url}
+                  className="self-end rounded bg-slate-700 px-3 py-1.5 text-xs font-medium hover:bg-slate-600 disabled:opacity-50"
+                  data-testid="btn-save-ollama-base-url"
+                >
+                  Save endpoint
                 </button>
               </div>
 

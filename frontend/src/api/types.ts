@@ -2019,3 +2019,4 @@ export interface RelatedJobsResponse {
 export interface EmbeddingModelsResponse { schema_version: string; models: OllamaModelInfo[] }
 export interface EmbeddingModelConfig { schema_version: string; model: string | null; dimension: number | null; collection_name: string | null }
 export interface EmbeddingModelPullStatus { schema_version: string; model: string; status: string; completed: number; total: number; error: string | null }
+export interface OllamaRuntimeConfig { schema_version: string; ollama_url: string }
