@@ -25,6 +25,7 @@ from backend.app.database_v2 import get_session_factory
 from backend.app.llm_client import LLMClient, LLMConfig
 from backend.app.schemas.chat import (                       # shared Pydantic models
     ChatCitationOut,
+    ChatGenerationMetadata,
     ChatRequestBody,
     ChatResponseBody,
     ConversationHistoryOut,
@@ -1067,10 +1068,10 @@ async def prepare_chat_turn(
         current_job_context=current_job_context,
         retrieval_result=retrieval_result,
         model_id=config.model,
-        generation={
-            "temperature": config.temperature,
-            "max_tokens": config.max_tokens,
-        },
+        generation=ChatGenerationMetadata(
+            temperature=config.temperature,
+            max_tokens=config.max_tokens,
+        ),
     )
 
 

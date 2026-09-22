@@ -1,3 +1,5 @@
+import pytest
+
 from backend.app.api import chat
 
 
@@ -69,6 +71,96 @@ def test_historical_title_cannot_support_a_current_job_quoted_claim() -> None:
 
     assert "Historical C2 callback" not in response
     assert final_citations == []
+
+
+@pytest.mark.parametrize(
+    "claim",
+    [
+        "The current job contains command-and-control beaconing.",
+        "In this job, recurring command-and-control behavior occurred.",
+    ],
+)
+def test_unquoted_paraphrased_historical_claim_cannot_become_current_fact(
+    claim: str,
+) -> None:
+    historical = chat.HistoricalChatCitationOut(
+        type="historical_finding",
+        id="F-2",
+        snippet="Earlier investigation identified recurring C2 callback traffic",
+        source_job_id="job-old",
+        source_project_id="project-7",
+        href="/jobs/job-old/findings/F-2",
+    )
+
+    response, final_citations = chat._finalize_grounded_response_payload(
+        claim,
+        [historical],
+        "=== CURRENT JOB EVIDENCE ONLY ===\nNo analysis data available yet.\n"
+        "=== END CURRENT JOB EVIDENCE ===",
+        "What happened in this job?",
+    )
+
+    assert claim.lower() not in response.lower()
+    assert final_citations == []
+
+
+def test_historical_comparison_remains_allowed_without_current_evidence() -> None:
+    historical = chat.HistoricalChatCitationOut(
+        type="historical_finding",
+        id="F-2",
+        snippet="Earlier investigation identified recurring C2 callback traffic",
+        source_job_id="job-old",
+        source_project_id="project-7",
+        href="/jobs/job-old/findings/F-2",
+    )
+
+    response, final_citations = chat._finalize_grounded_response_payload(
+        "Historical job job-old contained command-and-control beaconing; this does not prove it occurred in the current job.",
+        [historical],
+        "=== CURRENT JOB EVIDENCE ONLY ===\nNo analysis data available yet.\n"
+        "=== END CURRENT JOB EVIDENCE ===",
+        "Were there similar historical cases?",
+    )
+
+    assert "Historical job job-old contained" in response
+    assert [citation.id for citation in final_citations] == ["F-2"]
+
+
+def test_historical_citations_cannot_crowd_out_relevant_current_evidence() -> None:
+    historical = [
+        chat.HistoricalChatCitationOut(
+            type="historical_finding",
+            id=f"HF-{index}",
+            snippet=f"Historical unrelated source {index}",
+            source_job_id=f"job-old-{index}",
+            source_project_id="project-7",
+            href=f"/jobs/job-old-{index}/findings/HF-{index}",
+        )
+        for index in range(5)
+    ]
+    current = [
+        chat.ChatCitationOut(
+            type="finding",
+            id=f"F-{index}",
+            snippet=(
+                "[high] Exact target beacon evidence"
+                if index == 9
+                else f"[low] Unrelated current evidence {index}"
+            ),
+        )
+        for index in range(10)
+    ]
+
+    response, final_citations = chat._finalize_grounded_response_payload(
+        "The answer is limited to the cited evidence.",
+        [*historical, *current],
+        "=== CURRENT JOB EVIDENCE ONLY ===\n[high] Exact target beacon evidence\n"
+        "=== END CURRENT JOB EVIDENCE ===",
+        "What exact target beacon evidence exists?",
+    )
+
+    assert any(citation.id == "F-9" for citation in final_citations)
+    assert "Exact target beacon evidence" in response
 
 
 def test_finalize_grounded_response_appends_sources_and_limits() -> None:

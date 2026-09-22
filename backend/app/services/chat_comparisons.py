@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Any, Literal
+from typing import Literal
 
 from sqlalchemy import delete, func, select
 from sqlalchemy.dialects.sqlite import insert as sqlite_insert
@@ -18,7 +18,11 @@ from backend.app.models.chat import (
     ChatConversation,
     ChatMessage,
 )
-from backend.app.schemas.chat import ChatCitation, ChatCitationOut
+from backend.app.schemas.chat import (
+    ChatCitation,
+    ChatCitationOut,
+    ChatGenerationMetadata,
+)
 from backend.app.services.mnemos_chat_retrieval import MnemosRetrievalResult
 
 
@@ -38,7 +42,7 @@ class PreparedChatTurn:
     current_job_context: str
     retrieval_result: MnemosRetrievalResult | None
     model_id: str
-    generation: dict[str, Any]
+    generation: ChatGenerationMetadata
 
     @property
     def retrieval_status(

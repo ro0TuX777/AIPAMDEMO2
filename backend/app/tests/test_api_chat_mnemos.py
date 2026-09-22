@@ -196,7 +196,8 @@ def test_chat_response_metadata_is_additive_and_typed() -> None:
     citation = response.citations[0]
     assert response.retrieval_status == "used"
     assert response.model_id == "aipam-trafficllm-v10"
-    assert response.generation["temperature"] == 0.3
+    assert response.generation.temperature == 0.3
+    assert response.generation.max_tokens == 4096
     assert citation.type == "historical_finding"
     assert isinstance(citation, HistoricalChatCitationOut)
     assert citation.source_job_id == "job-old"
@@ -212,6 +213,70 @@ def test_chat_response_metadata_is_additive_and_typed() -> None:
                     "snippet": "Missing source provenance",
                 }
             ],
+        )
+
+    with pytest.raises(ValidationError):
+        ChatResponseBody(
+            response="Unknown generation field.",
+            conversation_id="conversation-1",
+            generation={
+                "temperature": 0.3,
+                "max_tokens": 4096,
+                "top_p": 0.9,
+            },
+        )
+
+    with pytest.raises(ValidationError):
+        ChatResponseBody(
+            response="Wrong generation field type.",
+            conversation_id="conversation-1",
+            generation={"temperature": "0.3", "max_tokens": 4096},
+        )
+
+
+@pytest.mark.parametrize(
+    "citation",
+    [
+        {
+            "type": "historical_finding",
+            "id": "",
+            "snippet": "Historical source",
+            "source_job_id": "job-old",
+            "source_project_id": None,
+            "href": "/jobs/job-old/findings/F-2",
+        },
+        {
+            "type": "historical_finding",
+            "id": "F-2",
+            "snippet": "Historical source",
+            "source_job_id": "",
+            "source_project_id": None,
+            "href": "/jobs/job-old/findings/F-2",
+        },
+        {
+            "type": "historical_finding",
+            "id": "F-2",
+            "snippet": "Historical source",
+            "source_job_id": "job-old",
+            "source_project_id": None,
+            "href": "https://example.test/jobs/job-old/findings/F-2",
+        },
+        {
+            "type": "historical_finding",
+            "id": "F-2",
+            "snippet": "Historical source",
+            "source_job_id": "job-old",
+            "source_project_id": None,
+            "href": "/jobs/other-job/findings/F-2",
+        },
+    ],
+)
+def test_historical_citation_rejects_invalid_source_identity(citation) -> None:
+    with pytest.raises(ValidationError):
+        ChatResponseBody(
+            response="Invalid historical source.",
+            conversation_id="conversation-1",
+            citations=[citation],
         )
 
 

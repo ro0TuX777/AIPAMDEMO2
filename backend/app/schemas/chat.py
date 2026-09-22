@@ -2,9 +2,15 @@
 
 from __future__ import annotations
 
-from typing import Any, Literal
+from typing import Annotated, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field, StringConstraints, model_validator
+
+
+SourceId = Annotated[
+    str,
+    StringConstraints(strip_whitespace=True, min_length=1, pattern=r"^[^/]+$"),
+]
 
 
 class ChatCitationOut(BaseModel):
@@ -17,14 +23,28 @@ class ChatCitationOut(BaseModel):
 
 class HistoricalChatCitationOut(BaseModel):
     type: Literal["historical_finding"] = "historical_finding"
-    id: str
+    id: SourceId
     snippet: str
-    source_job_id: str
+    source_job_id: SourceId
     source_project_id: str | None
     href: str
 
+    @model_validator(mode="after")
+    def validate_finding_href(self) -> "HistoricalChatCitationOut":
+        expected_href = f"/jobs/{self.source_job_id}/findings/{self.id}"
+        if self.href != expected_href:
+            raise ValueError("href must identify the cited source job and finding")
+        return self
+
 
 ChatCitation = HistoricalChatCitationOut | ChatCitationOut
+
+
+class ChatGenerationMetadata(BaseModel):
+    model_config = ConfigDict(extra="forbid", strict=True)
+
+    temperature: float
+    max_tokens: int = Field(gt=0)
 
 
 class ChatRequestBody(BaseModel):
@@ -51,7 +71,7 @@ class ChatResponseBody(BaseModel):
     suggested_followups: list[str] = []
     retrieval_status: Literal["used", "no_matches", "unavailable", "error"] | None = None
     model_id: str | None = None
-    generation: dict[str, Any] | None = None
+    generation: ChatGenerationMetadata | None = None
 
 
 class ConversationSummaryOut(BaseModel):
