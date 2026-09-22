@@ -5,6 +5,7 @@ import type {
   ChatEvidenceRef,
   ChatGenerationMetadata,
   ChatRequest,
+  ChatMessage,
   ChatResponse,
   ConversationSummary,
   ConversationHistoryOut,
@@ -49,6 +50,7 @@ async function streamWithJob(
   jobId: string,
   body: ChatRequest,
   onEvent: (event: ChatStreamEvent) => void,
+  onMetadata?: (event: ChatStreamTerminalMetadata) => void,
 ): Promise<ChatStreamTerminalMetadata> {
   const token = getApiToken();
   let response: Response;
@@ -86,7 +88,7 @@ async function streamWithJob(
       const raw = line.slice(6).trim();
       if (!raw || raw === "[DONE]") continue;
       const event = JSON.parse(raw) as ChatStreamEvent | ChatStreamTerminalMetadata;
-      if (event.type === "meta") terminal = event;
+      if (event.type === "meta") { terminal = event; onMetadata?.(event); }
       else onEvent(event);
     }
   };
@@ -100,9 +102,18 @@ async function streamWithJob(
   }
   if (buffer) consume(buffer);
   if (!terminal || terminal.status === "pending") {
-    throw new ChatStreamError(`Stream ended with ${terminal?.status ?? "no"} terminal metadata`, true);
+    throw new ChatStreamError(`Stream ended with ${terminal?.status ?? "no"} terminal metadata`, true, terminal?.status === "pending" ? "TURN_PENDING" : undefined);
   }
   return terminal;
+}
+
+export function normalizeChatMessages(messages: ChatMessage[], conversationId?: string): ChatMessage[] {
+  return messages.map((message, index) => ({
+    ...message, id: message.id || `legacy:${conversationId ?? "draft"}:${index + 1}`,
+    sequence: Number.isFinite(message.sequence) ? message.sequence : index + 1,
+    citations: Array.isArray(message.citations) ? message.citations : [],
+    ...(!message.id ? { saved: false } : {}),
+  }));
 }
 
 export const chatApi = {
@@ -139,7 +150,7 @@ export const chatApi = {
   },
 
   getConversation(jobId: string, convId: string): Promise<ConversationHistoryOut> {
-    return get<ConversationHistoryOut>(`/jobs/${jobId}/conversations/${convId}`);
+    return get<ConversationHistoryOut>(`/jobs/${jobId}/conversations/${convId}`).then(history => ({ ...history, messages: normalizeChatMessages(history.messages, history.id) }));
   },
 
   renameConversation(jobId: string, convId: string, title: string): Promise<ConversationSummary> {

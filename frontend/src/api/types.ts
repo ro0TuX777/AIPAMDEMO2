@@ -1734,6 +1734,8 @@ export interface HistoricalFindingCitation extends ChatCitation {
   source_job_id: string;
   source_project_id: string | null;
   href: string;
+  source_content_sha256?: string | null;
+  source_availability?: "available" | "changed" | "unavailable" | "unknown";
 }
 export interface ChatEvidenceRef { type: string; id?: string; label: string }
 export type ChatMode = "baseline" | "mnemos";
@@ -1760,6 +1762,7 @@ export interface ChatResponse {
   branch_id?: string | null;
   request_id?: string | null;
   status?: "pending" | "completed" | "error";
+  retry_after_seconds?: number | null;
 }
 export interface ChatMessage {
   id: string;
@@ -1770,7 +1773,7 @@ export interface ChatMessage {
   metadata: Record<string, unknown> | null;
   request_id: string | null;
   timestamp: string;
-  /** False only for an optimistic client message awaiting persisted history. */
+  /** False for optimistic or legacy messages without a persisted source identity. */
   saved?: boolean;
 }
 export interface ChatComparisonBranch {
@@ -2013,3 +2016,6 @@ export interface RelatedJobsResponse {
   job_id: string;
   related_jobs: RelatedJob[];
 }
+export interface EmbeddingModelsResponse { schema_version: string; models: OllamaModelInfo[] }
+export interface EmbeddingModelConfig { schema_version: string; model: string | null; dimension: number | null; collection_name: string | null }
+export interface EmbeddingModelPullStatus { schema_version: string; model: string; status: string; completed: number; total: number; error: string | null }

@@ -1,6 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api, isDemoMode } from "../api";
-import { ChatStreamError } from "../api/chat";
+import { ChatStreamError, normalizeChatMessages } from "../api/chat";
 import type { ChatStreamTerminalMetadata } from "../api/chat";
 import type { ChatConversation, ChatMessage, ChatMode } from "./chatTypes";
 
@@ -83,7 +83,10 @@ interface RequestOwner {
 export function ChatPanel(props: ChatPanelInputProps) {
   const { jobId, initialMessage, contextHint, onClose } = props;
   const controlled = "conversation" in props;
-  const conversation = controlled ? props.conversation : emptyConversation(jobId);
+  const sourceConversation = controlled ? props.conversation : undefined;
+  const conversation = useMemo(() => sourceConversation
+    ? { ...sourceConversation, messages: normalizeChatMessages(sourceConversation.messages, sourceConversation.id) }
+    : emptyConversation(jobId), [sourceConversation, jobId]);
   const selectionToken = controlled ? props.selectionToken : undefined;
   const mode: ChatMode = controlled ? props.mode : "baseline";
   const onConversationChanged = controlled ? props.onConversationChanged : () => {};
@@ -174,7 +177,7 @@ export function ChatPanel(props: ChatPanelInputProps) {
     let finishedAttempt = { ...owner.attempt, conversationId: terminal.conversation_id };
     try {
       const history = await api.getConversation(jobId, terminal.conversation_id);
-      if (!emit(originGeneration, history.messages.map(message => ({ ...message, saved: true })), terminal.conversation_id, requestId)) return;
+      if (!emit(originGeneration, history.messages.map(message => ({ ...message, saved: message.saved !== false })), terminal.conversation_id, requestId)) return;
       finishedAttempt = {
         ...finishedAttempt,
         userMessageId: history.messages.find(message => messageRequestId(message) === requestId && message.role === "user")?.id ?? finishedAttempt.userMessageId,
@@ -246,12 +249,22 @@ export function ChatPanel(props: ChatPanelInputProps) {
     setFailure(null);
     setLoadingGeneration(originGeneration);
     const body = { message: text, conversation_id: targetConversation.id, context_hint: contextHint, mode, request_id: requestId };
-    const applyJsonResponse = async (response: Awaited<ReturnType<typeof api.chatWithJob>>) => complete(originGeneration, requestId, {
+    const applyJsonResponse = async (response: Awaited<ReturnType<typeof api.chatWithJob>>) => {
+      while (response.status === "pending" && isCurrentSelection(originGeneration, requestId)) {
+        body.conversation_id = response.conversation_id;
+        emit(originGeneration, messagesRef.current, response.conversation_id, requestId);
+        await new Promise(resolve => setTimeout(resolve, (response.retry_after_seconds ?? 2) * 1000));
+        if (!isCurrentSelection(originGeneration, requestId)) return;
+        response = await api.chatWithJob(jobId, body);
+      }
+      if (!isCurrentSelection(originGeneration, requestId)) return;
+      await complete(originGeneration, requestId, {
       type: "meta", conversation_id: response.conversation_id, branch_id: response.branch_id,
       request_id: response.request_id, status: response.status ?? "completed", retrieval_status: response.retrieval_status,
       citations: response.citations, model_id: response.model_id, generation: response.generation,
       confidence: response.confidence, evidence_refs: response.evidence_refs, suggested_followups: response.suggested_followups,
       }, response.response);
+    };
     try {
       if (isDemoMode()) {
         await applyJsonResponse(await api.chatWithJob(jobId, body));
@@ -268,10 +281,18 @@ export function ChatPanel(props: ChatPanelInputProps) {
           }
         }
         updateAssistant(originGeneration, requestId, message => ({ ...message, content }));
+      }, metadata => {
+        const owner = requestOwnersRef.current.get(requestId);
+        if (!owner || !isCurrentSelection(originGeneration, requestId)) return;
+        if (metadata.request_id && metadata.request_id !== requestId) return;
+        if (owner.conversationId && owner.conversationId !== metadata.conversation_id) return;
+        body.conversation_id = metadata.conversation_id;
+        owner.conversationId = metadata.conversation_id;
+        emit(originGeneration, messagesRef.current, metadata.conversation_id, requestId);
       });
       await complete(originGeneration, requestId, terminal, content);
     } catch (error) {
-      if (mode === "baseline" && error instanceof ChatStreamError && !error.responseReceived) {
+      if (error instanceof ChatStreamError && (error.code === "TURN_PENDING" || (mode === "baseline" && !error.responseReceived))) {
         try {
           await applyJsonResponse(await api.chatWithJob(jobId, body));
         } catch (fallbackError) {
@@ -313,13 +334,13 @@ export function ChatPanel(props: ChatPanelInputProps) {
     document.body.appendChild(link); link.click(); link.remove(); URL.revokeObjectURL(url);
   };
 
-  const startNewConversation = () => { initialContextHandled.current = false; if (controlled) props.onNewConversation?.(); onConversationChanged(emptyConversation(jobId)); };
+  const startNewConversation = () => { initialContextHandled.current = false; if (controlled && props.onNewConversation) props.onNewConversation(); else onConversationChanged(emptyConversation(jobId)); };
 
   return <div className="flex min-h-0 flex-col h-full overflow-hidden bg-slate-900 rounded-lg border border-slate-700">
     <div className="flex shrink-0 items-center justify-between px-4 py-3 border-b border-slate-700">
       <span className="text-slate-100 font-semibold">{mode === "mnemos" ? "MNEMOS comparison" : "AI Chat"}</span>
       <div className="flex items-center gap-2">
-        {conversation.messages.length > 0 && <><button onClick={startNewConversation} className="text-slate-400 hover:text-slate-50 transition-colors text-sm px-2 py-1 rounded hover:bg-slate-700">+ New</button><button onClick={exportToMarkdown} className="text-slate-400 hover:text-slate-50 transition-colors text-sm px-2 py-1 rounded hover:bg-slate-700">Export</button></>}
+        {conversation.messages.length > 0 && <>{mode === "baseline" && <button onClick={startNewConversation} className="text-slate-400 hover:text-slate-50 transition-colors text-sm px-2 py-1 rounded hover:bg-slate-700">+ New</button>}<button onClick={exportToMarkdown} className="text-slate-400 hover:text-slate-50 transition-colors text-sm px-2 py-1 rounded hover:bg-slate-700">Export</button></>}
         {onClose && <button onClick={onClose} className="text-slate-400 hover:text-slate-50 transition-colors">×</button>}
       </div>
     </div>

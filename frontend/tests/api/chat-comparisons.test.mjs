@@ -138,6 +138,22 @@ test("comparison stream rejects an EOF that only reports pending metadata", asyn
   );
 });
 
+test("stream exposes admitted conversation identity before completion", async () => {
+  let finish;
+  const stream = new ReadableStream({ start(controller) {
+    controller.enqueue(new TextEncoder().encode('data: {"type":"meta","conversation_id":"new-root","status":"pending","citations":[]}\n\n'));
+    finish = () => { controller.enqueue(new TextEncoder().encode('data: {"type":"meta","conversation_id":"new-root","status":"completed","citations":[]}\n\n')); controller.close(); };
+  } });
+  mock.method(globalThis, "fetch", async () => new Response(stream));
+  const metadata = [];
+  const promise = client.chatApi.streamWithJob("job-1", { message: "first" }, () => {}, event => metadata.push(event));
+  await new Promise(resolve => setTimeout(resolve, 10));
+  assert.equal(metadata[0]?.conversation_id, "new-root");
+  assert.equal(metadata[0]?.status, "pending");
+  finish();
+  assert.equal((await promise).status, "completed");
+});
+
 test("Copy to MNEMOS uses the persisted user message id after a baseline send", async () => {
   const harnessId = "virtual:chat-panel-persisted-id-harness";
   const resolvedHarnessId = `\0${harnessId}`;

@@ -13,17 +13,20 @@ function gate() { let release!: () => void; const promise = new Promise<void>(re
 async function fixture(page: Page, options: {
   fresh?: boolean; unavailable?: boolean; used?: boolean; terminalError?: boolean; lostBranchResponse?: boolean;
   withCopy?: boolean; longHistory?: boolean; failedRootHistory?: boolean;
+  pendingOnce?: boolean; generation?: "mismatch" | "unknown"; unavailableSource?: boolean;
   hydration?: ReturnType<typeof gate>; preparation?: ReturnType<typeof gate>; selection?: ReturnType<typeof gate>;
   retryResponse?: ReturnType<typeof gate>; streamResponse?: ReturnType<typeof gate>; redundantHistory?: ReturnType<typeof gate>;
   selectionResponses?: Array<ReturnType<typeof gate> | undefined>;
   selectionMutations?: Array<ReturnType<typeof gate> | undefined>;
 } = {}) {
-  const calls = { opens: [] as any[], branches: [] as any[], selections: [] as any[], streams: [] as any[], history: [] as string[], fallback: 0 };
+  const calls = { opens: [] as any[], branches: [] as any[], selections: [] as any[], streams: [] as any[], history: [] as string[], mutations: [] as any[], fallback: 0 };
   const groups = new Map(["root-1", "root-2"].map(root => [root, group(root)]));
   if (options.withCopy) groups.get("root-1")!.branches.push(branch("root-1", true));
   if (options.longHistory) groups.get("root-1")!.branches[0].inherited_messages = Array.from({ length: 40 }, (_, index) => message(`long-${index}`, index + 1, index % 2 ? "assistant" : "user", `History ${index + 1}: ` + "Investigate the observed outbound beacon traffic and correlate the network evidence. ".repeat(8)));
   const histories = new Map([history("root-1", structuredClone(rootMessages)), history("root-2", [message("other-q", 1, "user", "Other root question")])].map(item => [item.id, item]));
   const summaries = options.fresh ? [] : ["root-1", "root-2"];
+  const titles = new Map<string, string>();
+  if (options.generation === "mismatch") histories.get("root-1")!.messages.at(-1)!.metadata = { model_id: "older-model", generation: { temperature: 0.1, max_tokens: 512 } };
   let unavailable = options.unavailable;
   const json = (route: Route, data: unknown) => route.fulfill({ contentType: "application/json", body: JSON.stringify(data) });
   await page.route("**/api/v1/**", async route => {
@@ -32,9 +35,18 @@ async function fixture(page: Page, options: {
     const body = request.postDataJSON();
     if (path.endsWith("/settings/setup_status")) return json(route, { model_configured: true });
     if (path === "") return json(route, { job: { job_id: jobId, status: "completed", created_at: now, stages: [], sensors: [], pcaps: [], metrics: { durations: {}, pcap_stats: {} } } });
-    if (path === "/conversations") return json(route, summaries.map(id => ({ id, job_id: jobId, created_at: now, updated_at: now, title: id, message_count: histories.get(id)?.messages.length ?? 0 })));
+    if (path === "/conversations") return json(route, summaries.map(id => ({ id, job_id: jobId, created_at: now, updated_at: now, title: titles.get(id) ?? id, message_count: histories.get(id)?.messages.length ?? 0 })));
     if (path.startsWith("/conversations/")) {
       const id = path.split("/").at(-1)!;
+      if (request.method() === "PATCH") {
+        calls.mutations.push({ method: "PATCH", id, ...body }); titles.set(id, body.title);
+        groups.get(id)!.title = body.title;
+        return json(route, { id, title: body.title });
+      }
+      if (request.method() === "DELETE") {
+        calls.mutations.push({ method: "DELETE", id }); summaries.splice(summaries.indexOf(id), 1); histories.delete(id); groups.delete(id);
+        return route.fulfill({ status: 204 });
+      }
       calls.history.push(id);
       if (id === "root-2" && options.failedRootHistory) return route.fulfill({ status: 503, contentType: "application/json", body: JSON.stringify({ detail: "History unavailable" }) });
       if (id === "root-1" && options.hydration) await options.hydration.promise;
@@ -88,12 +100,19 @@ async function fixture(page: Page, options: {
       if (owner) owner.messages = [user, assistant];
       if (!body.conversation_id) summaries.push(id);
       const terminal = { type: "meta", conversation_id: id, request_id: body.request_id, branch_id: owner?.id, status: failed ? "error" : "completed", retrieval_status: assistant.metadata.retrieval_status, citations };
+      if (options.generation) Object.assign(assistant.metadata, { model_id: "current-model", generation: { temperature: 0.3, max_tokens: 4096 } });
+      if (options.unavailableSource) citations.forEach(c => Object.assign(c, { source_content_sha256: "saved-revision", source_availability: "unavailable" }));
+      if (options.pendingOnce) return route.fulfill({ contentType: "text/event-stream", body: `data: ${JSON.stringify({ ...terminal, status: "pending" })}\n\n` });
       const events = existingAssistant
         ? [terminal, { type: "replace", content: assistant.content }]
         : [{ type: failed ? "error" : "token", content: failed ? "Historical retrieval is unavailable" : "Server answer" }, terminal];
       return route.fulfill({ contentType: "text/event-stream", body: events.map(event => `data: ${JSON.stringify(event)}\n\n`).join("") + "data: [DONE]\n\n" });
     }
-    if (path === "/chat") { calls.fallback++; return route.fulfill({ status: 500 }); }
+    if (path === "/chat") {
+      calls.fallback++;
+      if (options.pendingOnce) return json(route, { conversation_id: body.conversation_id, request_id: body.request_id, status: "completed", response: "Server answer", citations: [] });
+      return route.fulfill({ status: 500 });
+    }
     if (path.endsWith("/library/config")) return json(route, { admin_required: false });
     return json(route, { items: [] });
   });
@@ -105,6 +124,93 @@ const settle = (page: Page) => page.evaluate(() => new Promise<void>(resolve => 
 async function visit(page: Page) { await page.goto(`/jobs/${jobId}/chat`); await expect(toggle(page)).toBeEnabled(); }
 async function copy(page: Page) { await page.getByRole("button", { name: "Copy to MNEMOS" }).nth(1).click(); }
 async function submit(page: Page, text = "Check history") { await page.getByLabel("MNEMOS message").fill(text); await page.getByRole("button", { name: "Send to MNEMOS" }).click(); }
+
+test("rename and confirmed delete operate on the selected original and saved comparisons", async ({ page }) => {
+  const { calls, groups } = await fixture(page, { withCopy: true });
+  await visit(page);
+  page.once("dialog", dialog => dialog.accept("Investigation title"));
+  await page.getByRole("button", { name: "Rename conversation", exact: true }).click();
+  await expect(page.getByLabel("Baseline conversation").locator("option:checked")).toHaveText("Investigation title");
+  await toggle(page).click();
+  expect(groups.get("root-1")!.title).toBe("Investigation title");
+  page.once("dialog", dialog => { expect(dialog.message()).toContain("original conversation and all saved MNEMOS comparisons"); return dialog.accept(); });
+  await page.getByRole("button", { name: "Delete conversation", exact: true }).click();
+  await expect(page).toHaveURL(/conversation=root-2/);
+  await expect(page.getByText("Other root question", { exact: true })).toBeVisible();
+  await expect(pane(page)).toHaveCount(0);
+  expect(calls.mutations).toEqual([{ method: "PATCH", id: "root-1", title: "Investigation title" }, { method: "DELETE", id: "root-1" }]);
+  expect(groups.has("root-1")).toBe(false);
+});
+
+test("single remaining root shows its renamed title and deleting the last root leaves a usable draft", async ({ page }) => {
+  const { calls } = await fixture(page);
+  await visit(page);
+  page.once("dialog", dialog => dialog.accept());
+  await page.getByRole("button", { name: "Delete conversation", exact: true }).click();
+  await expect(page.getByLabel("Baseline conversation")).toHaveValue("root-2");
+  page.once("dialog", dialog => dialog.accept("Only saved conversation"));
+  await page.getByRole("button", { name: "Rename conversation", exact: true }).click();
+  await expect(page.getByLabel("Baseline conversation").locator("option:checked")).toHaveText("Only saved conversation");
+  page.once("dialog", dialog => dialog.dismiss());
+  await page.getByRole("button", { name: "Delete conversation", exact: true }).click();
+  expect(calls.mutations.filter(item => item.method === "DELETE")).toHaveLength(1);
+  page.once("dialog", dialog => dialog.accept());
+  await page.getByRole("button", { name: "Delete conversation", exact: true }).click();
+  await expect(page).not.toHaveURL(/conversation=/);
+  await expect(toggle(page)).toBeDisabled();
+  await expect(page.getByText("Other root question", { exact: true })).toHaveCount(0);
+  await page.getByPlaceholder("Ask about the findings...").fill("New after delete");
+  await expect(page.getByRole("button", { name: "Send", exact: true })).toBeEnabled();
+});
+
+test("pending stream adopts its conversation and polls the same admitted request", async ({ page }) => {
+  const { calls } = await fixture(page, { fresh: true, pendingOnce: true });
+  await page.goto(`/jobs/${jobId}/chat`);
+  await page.getByPlaceholder("Ask about the findings...").fill("Pending first turn");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(page).toHaveURL(/conversation=saved-root/);
+  await expect(page.getByText("Server answer", { exact: true })).toBeVisible();
+  expect(calls.streams).toHaveLength(1);
+  expect(calls.fallback).toBe(1);
+});
+
+test("page adopts early conversation metadata while the stream is still running", async ({ page }) => {
+  await fixture(page, { fresh: true });
+  await page.addInitScript(() => {
+    const original = window.fetch;
+    window.fetch = async (input, init) => {
+      if (!String(input).endsWith("/chat/stream")) return original(input, init);
+      const request = JSON.parse(String(init?.body));
+      const metadata = { type: "meta", conversation_id: "early-root", request_id: request.request_id, status: "pending", citations: [] };
+      return new Response(new ReadableStream({ start(controller) {
+        const emit = (event: unknown) => controller.enqueue(new TextEncoder().encode(`data: ${JSON.stringify(event)}\n\n`));
+        emit(metadata);
+        (window as any).finishEarlyStream = () => { emit({ ...metadata, status: "completed" }); controller.close(); };
+      } }), { headers: { "Content-Type": "text/event-stream" } });
+    };
+  });
+  await page.goto(`/jobs/${jobId}/chat`);
+  await page.getByPlaceholder("Ask about the findings...").fill("First question");
+  await page.getByRole("button", { name: "Send", exact: true }).click();
+  await expect(page).toHaveURL(/conversation=early-root/);
+  await expect(page.getByText("Thinking...", { exact: true })).toBeVisible();
+  await page.evaluate(() => (window as any).finishEarlyStream());
+  await expect(page.getByText("Thinking...", { exact: true })).toHaveCount(0);
+});
+
+for (const generation of ["mismatch", "unknown"] as const) test(`MNEMOS discloses ${generation} generation settings and omits New`, async ({ page }) => {
+  await fixture(page, { generation }); await visit(page); await toggle(page).click(); await submit(page);
+  await expect(pane(page).getByText(generation === "mismatch" ? /Model or generation settings differ/ : /Generation settings are unknown/)).toBeVisible();
+  await expect(pane(page).getByRole("button", { name: "+ New", exact: true })).toHaveCount(0);
+});
+
+test("saved unavailable historical source keeps its excerpt and availability label", async ({ page }) => {
+  await fixture(page, { used: true, unavailableSource: true }); await visit(page); await toggle(page).click(); await submit(page);
+  const sources = pane(page).getByRole("region", { name: "Historical confirmed findings" });
+  await expect(sources).toContainText("Source unavailable");
+  await expect(sources).toContainText("Confirmed historical beacon");
+  await expect(sources.getByRole("link")).toHaveCount(0);
+});
 
 test("fresh baseline adopts server IDs and URL before its saved question can be copied", async ({ page }) => {
   const { calls } = await fixture(page, { fresh: true });

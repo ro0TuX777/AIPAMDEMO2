@@ -1,3 +1,5 @@
+// Heterogeneous demo wire records intentionally accept optional endpoint-specific fields.
+type DemoRecord = Record<string, any>;
 const SCHEMA = "1.0";
 
 const COMPLETED_JOB_ID = "a7f3c2e1-9b04-4d17-8e62-3fc51a0d7b88";
@@ -6,11 +8,11 @@ const FAILED_JOB_ID = "5e8a1f77-33c2-4a0b-9d45-118cf6de2a90";
 
 const nowIso = () => new Date().toISOString();
 
-function clone(value) {
-  return JSON.parse(JSON.stringify(value));
+function clone<T>(value: T): T {
+  return value === undefined ? value : JSON.parse(JSON.stringify(value));
 }
 
-function parsePath(url, apiBase) {
+function parsePath(url: string, apiBase: string) {
   const u = new URL(url, "http://localhost");
   const apiUrl = new URL(apiBase, "http://localhost");
   if (!u.pathname.startsWith(apiUrl.pathname)) return null;
@@ -18,7 +20,7 @@ function parsePath(url, apiBase) {
   return { path, searchParams: u.searchParams };
 }
 
-function toPage(items, limit = 200, offset = 0) {
+function toPage<T>(items: T[], limit: number | string | null = 200, offset: number | string | null = 0) {
   const safeOffset = Math.max(0, Number(offset) || 0);
   const safeLimit = Math.max(1, Number(limit) || 200);
   const sliced = items.slice(safeOffset, safeOffset + safeLimit);
@@ -34,7 +36,7 @@ function toPage(items, limit = 200, offset = 0) {
   };
 }
 
-const demoJobs = [
+const demoJobs: DemoRecord[] = [
   {
     job_id: COMPLETED_JOB_ID,
     job_name: "Emotet Epoch-5 / Cobalt Strike Case",
@@ -640,7 +642,7 @@ let conversations = [
   { id: "conv-demo-1", job_id: COMPLETED_JOB_ID, created_at: "2026-02-11T14:12:00Z", updated_at: "2026-02-11T14:15:38Z", title: "Containment triage", message_count: 6 },
 ];
 
-let conversationHistory = {
+let conversationHistory: Record<string, { id: string; job_id: string; created_at: string; updated_at: string; messages: DemoRecord[] }> = {
   "conv-demo-1": {
     id: "conv-demo-1",
     job_id: COMPLETED_JOB_ID,
@@ -689,7 +691,7 @@ let kbLibraryDocs = [
   },
 ];
 
-const alertsForJob = {
+const alertsForJob: Record<string, DemoRecord[]> = {
   [COMPLETED_JOB_ID]: completedAlerts,
   [RUNNING_JOB_ID]: [
     {
@@ -712,7 +714,7 @@ const alertsForJob = {
   ],
 };
 
-const findingsForJob = {
+const findingsForJob: Record<string, DemoRecord[]> = {
   [COMPLETED_JOB_ID]: completedFindings,
   [RUNNING_JOB_ID]: [
     {
@@ -737,12 +739,12 @@ const findingsForJob = {
   ],
 };
 
-const iocsForJob = {
+const iocsForJob: Record<string, DemoRecord[]> = {
   [COMPLETED_JOB_ID]: completedIocs,
   [RUNNING_JOB_ID]: [{ ioc_id: "R-IOC-1", type: "ip", value: "91.219.236.18", severity: "high", confidence: 0.82, sources: ["suricata"], context: "probable C2" }],
 };
 
-const hostsForJob = {
+const hostsForJob: Record<string, DemoRecord[]> = {
   [COMPLETED_JOB_ID]: completedHosts,
   [RUNNING_JOB_ID]: [
     { ip: "10.11.27.144", role: "internal", conn_count: 8412, bytes_sent: 620000000, bytes_recv: 22000000, alert_count: 44, top_domains: ["telemetry-sync.org"] },
@@ -751,7 +753,7 @@ const hostsForJob = {
   ],
 };
 
-function filterList(list, searchParams) {
+function filterList<T extends DemoRecord>(list: T[], searchParams: URLSearchParams) {
   let out = [...list];
   const severity = searchParams.get("severity");
   const q = searchParams.get("q");
@@ -765,11 +767,11 @@ function filterList(list, searchParams) {
   return out;
 }
 
-function getJob(jobId) {
+function getJob(jobId: string) {
   return demoJobs.find((j) => j.job_id === jobId) || null;
 }
 
-function getJobDetailPayload(jobId) {
+function getJobDetailPayload(jobId: string) {
   const base = getJob(jobId);
   if (!base) return null;
 
@@ -787,7 +789,7 @@ function getJobDetailPayload(jobId) {
     },
   };
 
-  const stages = [
+  const stages: DemoRecord[] = [
     { stage: "ingest", status: "completed", started_at: base.created_at, completed_at: "2026-02-11T14:03:10.000Z" },
     { stage: "parse", status: "completed", started_at: "2026-02-11T14:03:10.000Z", completed_at: "2026-02-11T14:05:10.000Z" },
     { stage: "aggregate", status: "completed", started_at: "2026-02-11T14:05:10.000Z", completed_at: "2026-02-11T14:06:01.000Z" },
@@ -899,7 +901,7 @@ function getJobDetailPayload(jobId) {
   return detail;
 }
 
-function buildJobSummary(jobId) {
+function buildJobSummary(jobId: string) {
   if (jobId === RUNNING_JOB_ID) {
     return {
       schema_version: SCHEMA,
@@ -951,10 +953,10 @@ function buildJobSummary(jobId) {
   };
 }
 
-function aggregateEvents(field) {
+function aggregateEvents(field: string) {
   const buckets = new Map();
   for (const ev of completedRawEvents) {
-    const key = ev[field] ?? null;
+    const key = (ev as DemoRecord)[field] ?? null;
     const k = key == null ? "null" : String(key);
     buckets.set(k, (buckets.get(k) || 0) + 1);
   }
@@ -963,10 +965,10 @@ function aggregateEvents(field) {
 
 function eventFlow() {
   const nodeMap = new Map();
-  const nodes = [];
+  const nodes: Array<{ id: string; label: string; kind: string }> = [];
   const links = [];
 
-  function getNode(label, kind) {
+  function getNode(label: string, kind: string) {
     const key = `${kind}:${label}`;
     if (nodeMap.has(key)) return nodeMap.get(key);
     const id = nodes.length;
@@ -997,7 +999,7 @@ function eventFlow() {
   };
 }
 
-function nextChatReply(prompt) {
+function nextChatReply(prompt: string) {
   const p = (prompt || "").toLowerCase();
   if (p.includes("contain") || p.includes("first")) {
     return {
@@ -1030,11 +1032,11 @@ function nextChatReply(prompt) {
   };
 }
 
-function mkJson(body) {
+function mkJson<T>(body: T) {
   return Promise.resolve(clone(body));
 }
 
-export async function handleDemoApiRequest(url, init, apiBase) {
+export async function handleDemoApiRequest(url: string, init: RequestInit, apiBase: string) {
   const parsed = parsePath(url, apiBase);
   if (!parsed) return null;
 

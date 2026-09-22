@@ -5,6 +5,9 @@ import type {
   SettingsPayload,
   EffectiveSettingsResponse,
   OllamaModelInfo,
+  EmbeddingModelsResponse,
+  EmbeddingModelConfig,
+  EmbeddingModelPullStatus,
   SetupStatusResponse,
   OllamaGpuStatusResponse,
   FeedbackMetricsResponse,
@@ -17,6 +20,11 @@ import {
 } from "./transport";
 
 export const systemApi = {
+  getEmbeddingModel(): Promise<EmbeddingModelConfig> { return get<EmbeddingModelConfig>("/embedding-model"); },
+  getEmbeddingModels(): Promise<OllamaModelInfo[]> { return get<EmbeddingModelsResponse>("/embedding-models").then((r) => r.models); },
+  selectEmbeddingModel(model: string): Promise<EmbeddingModelConfig> { return post<EmbeddingModelConfig>("/embedding-model", { model }); },
+  pullEmbeddingModel(model: string): Promise<EmbeddingModelPullStatus> { return post<EmbeddingModelPullStatus>("/embedding-models/pull", { model }); },
+  getEmbeddingModelPull(model: string): Promise<EmbeddingModelPullStatus> { return get<EmbeddingModelPullStatus>(`/embedding-models/pull/${encodeURIComponent(model)}`); },
   getHealth(): Promise<HealthResponse> { return get<HealthResponse>("/health"); },
 
   getSystemConfig(): Promise<SystemConfigResponse> { return get<SystemConfigResponse>("/system/config"); },

@@ -72,6 +72,37 @@ function interceptFetch(response = () => Response.json({ items: [] })) {
   return mock.method(globalThis, "fetch", async (...args) => response(...args));
 }
 
+test("public embedding settings API preserves config, selection, pull, and encoded polling", async () => {
+  const requests = [];
+  interceptFetch((url, init) => {
+    requests.push([url, init?.method ?? "GET", init?.body]);
+    return Response.json(url.endsWith("/embedding-models") ? { models: [{ name: "embed" }] } : { model: "embed" });
+  });
+  assert.equal((await live.api.getEmbeddingModel()).model, "embed");
+  assert.deepEqual(await live.api.getEmbeddingModels(), [{ name: "embed" }]);
+  await live.api.selectEmbeddingModel("embed");
+  await live.api.pullEmbeddingModel("embed");
+  await live.api.getEmbeddingModelPull("vendor/embed:latest");
+  assert.deepEqual(requests.map(([url, method]) => [url.slice(apiBase.length), method]), [
+    ["/embedding-model", "GET"], ["/embedding-models", "GET"], ["/embedding-model", "POST"],
+    ["/embedding-models/pull", "POST"], ["/embedding-models/pull/vendor%2Fembed%3Alatest", "GET"],
+  ]);
+  assert.equal(requests[2][2], JSON.stringify({ model: "embed" }));
+});
+
+test("demo saved chat history and new replies expose stable ordered messages with citations", async () => {
+  const jobId = "a7f3c2e1-9b04-4d17-8e62-3fc51a0d7b88";
+  const history = await demo.api.getConversation(jobId, "conv-demo-1");
+  for (const message of history.messages) {
+    assert.ok(message.id);
+    assert.ok(message.sequence > 0);
+    assert.ok(Array.isArray(message.citations));
+  }
+  const reply = await demo.api.chatWithJob(jobId, { message: "Hosts?", conversation_id: history.id, request_id: "demo-request" });
+  const updated = await demo.api.getConversation(jobId, reply.conversation_id);
+  assert.ok(updated.messages.at(-1).sequence > history.messages.at(-1).sequence);
+});
+
 test("requests preserve query encoding, zero/false values, and the current token", async () => {
   const fetch = interceptFetch();
   live.setApiToken("first-token");

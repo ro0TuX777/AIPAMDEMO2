@@ -54,6 +54,7 @@ export const ChatPage: React.FC = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const [kbOpen, setKbOpen] = useState(false);
+  const [conversationActionError, setConversationActionError] = useState("");
   const mnemosToggleRef = useRef<HTMLButtonElement>(null);
   const draftSequenceRef = useRef(0);
   const hydratedJobRef = useRef<string | null>(null);
@@ -218,6 +219,7 @@ export const ChatPage: React.FC = () => {
     navigationIntentRef.current += 1;
     pageGenerationRef.current += 1;
     selectBaselineToken();
+    setBaselineConversation({ job_id: jobId ?? "", messages: [] });
     setComparisonGroup(null);
     setCopiedPrompt(null);
     setMnemosDraft("");
@@ -226,7 +228,37 @@ export const ChatPage: React.FC = () => {
     const next = new URLSearchParams(searchParams);
     next.delete("conversation");
     setSearchParams(next, { replace: true });
-  }, [searchParams, selectBaselineToken, setSearchParams, storeAttempt]);
+  }, [jobId, searchParams, selectBaselineToken, setSearchParams, storeAttempt]);
+
+  const renameBaseline = async () => {
+    if (!jobId || !baselineConversation.id) return;
+    const rootId = baselineConversation.id;
+    const title = window.prompt("Rename conversation", conversationSummaries.find(item => item.id === rootId)?.title ?? "");
+    if (!title?.trim()) return;
+    setConversationActionError("");
+    try {
+      await api.renameConversation(jobId, rootId, title.trim());
+      if (pageOwnerRef.current.rootId !== rootId || pageOwnerRef.current.jobId !== jobId) return;
+      setComparisonGroup(current => current?.root_conversation_id === rootId ? { ...current, title: title.trim() } : current);
+      await refreshConversations();
+    } catch { setConversationActionError("Could not rename the conversation. Try again."); }
+  };
+
+  const deleteBaseline = async () => {
+    if (!jobId || !baselineConversation.id) return;
+    const rootId = baselineConversation.id;
+    if (!window.confirm("Delete this original conversation and all saved MNEMOS comparisons? This cannot be undone.")) return;
+    setConversationActionError("");
+    try {
+      await api.deleteConversation(jobId, rootId);
+      if (pageOwnerRef.current.rootId !== rootId || pageOwnerRef.current.jobId !== jobId) return;
+      const remaining = conversationSummaries.filter(item => item.id !== rootId);
+      setConversationSummaries(remaining);
+      startNewBaseline();
+      if (remaining[0]) await selectBaselineConversation(remaining[0].id);
+      await refreshConversations();
+    } catch { setConversationActionError("Could not delete the conversation. Try again."); }
+  };
 
   const onMnemosChanged = useCallback((next: ChatConversation, owner?: ChatAttempt) => {
     if (!owner || !isCurrentAttempt(owner)) return;
@@ -532,9 +564,15 @@ export const ChatPage: React.FC = () => {
           <div className={`flex-1 min-w-0 h-full transition-all ${kbOpen ? "" : ""} flex flex-col gap-2`}>
             <div className="flex items-center justify-between gap-2 rounded-lg border border-slate-800 bg-slate-900/60 px-3 py-2">
               <div className="min-w-0">
-                {conversationSummaries.length > 1 && <select aria-label="Baseline conversation" value={baselineConversation.id ?? ""} onChange={event => void selectBaselineConversation(event.target.value)} className="max-w-xs rounded border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-200">
+                {conversationSummaries.length > 0 && <select aria-label="Baseline conversation" value={baselineConversation.id ?? ""} onChange={event => void selectBaselineConversation(event.target.value)} className="max-w-xs rounded border border-slate-700 bg-slate-950 px-2 py-1 text-xs text-slate-200">
+                  {!baselineConversation.id && <option value="" disabled>New conversation</option>}
                   {conversationSummaries.map(conversation => <option key={conversation.id} value={conversation.id}>{conversation.title || conversation.id}</option>)}
                 </select>}
+                {baselineConversation.id && <span className="ml-2 inline-flex gap-2 text-xs text-slate-300">
+                  <button type="button" onClick={() => void renameBaseline()}>Rename conversation</button>
+                  <button type="button" onClick={() => void deleteBaseline()}>Delete conversation</button>
+                </span>}
+                {conversationActionError && <p role="alert" className="text-xs text-amber-300">{conversationActionError}</p>}
               </div>
               <button ref={mnemosToggleRef} type="button" onClick={() => void (mnemosOpen ? Promise.resolve(setMnemosOpen(false)) : openMnemos())} disabled={!baselineConversation.id} className="rounded bg-cyan-700 px-3 py-1.5 text-sm text-white hover:bg-cyan-600 disabled:cursor-not-allowed disabled:opacity-50">MNEMOS comparison</button>
             </div>
@@ -559,6 +597,7 @@ export const ChatPage: React.FC = () => {
               jobId={jobId}
               group={comparisonGroup}
               activeBranch={activeBranch}
+              baselineConversation={baselineConversation}
               conversation={{ id: activeBranch.conversation_id, job_id: jobId, messages: activeBranch.messages }}
               draft={mnemosDraft}
               onDraftChange={setMnemosDraft}

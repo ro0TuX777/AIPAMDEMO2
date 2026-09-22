@@ -9,6 +9,7 @@ interface MnemosChatDrawerProps {
   group: ChatComparisonGroup;
   activeBranch: ChatComparisonBranch;
   conversation: ChatConversation;
+  baselineConversation: ChatConversation;
   draft: string;
   onDraftChange: (value: string) => void;
   onClose: () => void;
@@ -30,11 +31,11 @@ const retrievalStatus = (conversation: ChatConversation) => {
 };
 
 const historicalSources = (conversation: ChatConversation): HistoricalFindingCitation[] => conversation.messages
-  .flatMap(message => message.citations)
+  .flatMap(message => message.citations ?? [])
   .filter((citation): citation is HistoricalFindingCitation => citation.type === "historical_finding");
 
 export function MnemosChatDrawer({
-  jobId, group, activeBranch, conversation, draft, onDraftChange, onClose, onBranchChange,
+  jobId, group, activeBranch, conversation, baselineConversation, draft, onDraftChange, onClose, onBranchChange,
   onBeforeSend, onConversationChanged, onRetry, returnFocusRef, pendingCopiedSource, attempt, onAttemptChange, isCurrentAttempt,
 }: MnemosChatDrawerProps) {
   const closeButtonRef = useRef<HTMLButtonElement>(null);
@@ -42,6 +43,15 @@ export function MnemosChatDrawer({
   const status = retrievalStatus(conversation);
   const sources = historicalSources(conversation);
   const busy = Boolean(attempt && attempt.status !== "error");
+  const sourceIndex = activeBranch.source_message_id ? baselineConversation.messages.findIndex(message => message.id === activeBranch.source_message_id) : -1;
+  const baselineAnswer = sourceIndex >= 0
+    ? baselineConversation.messages.slice(sourceIndex + 1).find(message => message.role === "assistant")
+    : [...baselineConversation.messages].reverse().find(message => message.role === "assistant");
+  const mnemosAnswer = [...conversation.messages].reverse().find(message => message.role === "assistant" && message.metadata?.status !== "pending");
+  const baselineMetadata = baselineAnswer?.metadata;
+  const currentMetadata = mnemosAnswer?.metadata;
+  const settingsKnown = baselineMetadata?.model_id && baselineMetadata.generation && currentMetadata?.model_id && currentMetadata.generation;
+  const settingsDiffer = settingsKnown && (baselineMetadata.model_id !== currentMetadata.model_id || JSON.stringify(baselineMetadata.generation) !== JSON.stringify(currentMetadata.generation));
 
   useEffect(() => {
     closeButtonRef.current?.focus();
@@ -101,6 +111,7 @@ export function MnemosChatDrawer({
       </div>
 
       <div className="min-h-0 max-h-[35%] shrink-0 overflow-y-auto pb-1">
+      {mnemosAnswer && <p className="mx-4 mt-3 text-xs text-amber-200">{!settingsKnown ? "Generation settings are unknown for one or both answers." : settingsDiffer ? "Model or generation settings differ from the baseline answer." : null}</p>}
       {(pendingCopiedSource ?? activeBranch.source_message_id) && <p className="mx-4 mt-3 text-xs text-cyan-200">Copied from baseline message {pendingCopiedSource ?? activeBranch.source_message_id}</p>}
       {(activeBranch.inherited_messages?.length ?? 0) > 0 && <section className="mx-4 mt-3 rounded border border-slate-700 bg-slate-900/60 p-3" aria-label="Baseline history">
         <h3 className="text-sm font-medium text-slate-100">Baseline history</h3>
@@ -116,7 +127,7 @@ export function MnemosChatDrawer({
       {sources.length > 0 && <section className="mx-4 mt-3 rounded border border-slate-700 bg-slate-900/60 p-3" aria-label="Historical confirmed findings">
         <h3 className="text-sm font-medium text-slate-100">Historical confirmed findings</h3>
         <ul className="mt-2 space-y-2">
-          {sources.map(source => <li key={`${source.source_job_id}-${source.id}`} className="text-xs text-slate-300"><a className="text-cyan-300 underline" href={source.href}>{source.snippet || source.id}</a><span className="ml-2 text-slate-500">Job {source.source_job_id}{source.source_project_id ? ` · Project ${source.source_project_id}` : ""}</span></li>)}
+          {sources.map((source, index) => <li key={`${source.source_job_id}-${source.id}-${index}`} className="text-xs text-slate-300">{source.source_availability === "unavailable" ? <span>{source.snippet || source.id} · Source unavailable</span> : <a className="text-cyan-300 underline" href={source.href}>{source.snippet || source.id}</a>}{source.source_availability === "changed" && <span> · Source has changed since this answer</span>}<span className="ml-2 text-slate-500">Job {source.source_job_id}{source.source_project_id ? ` · Project ${source.source_project_id}` : ""}</span></li>)}
         </ul>
       </section>}
       </div>
