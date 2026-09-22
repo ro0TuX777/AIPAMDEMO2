@@ -55,7 +55,7 @@ export function MnemosChatDrawer({
 
   useEffect(() => {
     if (!mobile) return;
-    const background = document.querySelector<HTMLElement>("[data-testid='main-content']");
+    const background = document.querySelector<HTMLElement>("[data-testid='app-root']");
     const previousHidden = background?.getAttribute("aria-hidden");
     if (background) {
       background.setAttribute("aria-hidden", "true");
@@ -64,7 +64,8 @@ export function MnemosChatDrawer({
     const keys = (event: KeyboardEvent) => {
       if (event.key === "Escape") { onClose(); return; }
       if (event.key !== "Tab") return;
-      const focusable = Array.from(document.querySelectorAll<HTMLElement>("aside[role='dialog'] button, aside[role='dialog'] input, aside[role='dialog'] select, aside[role='dialog'] a[href]"));
+      const focusable = Array.from(document.querySelectorAll<HTMLElement>("aside[role='dialog'] button, aside[role='dialog'] input, aside[role='dialog'] select, aside[role='dialog'] a[href]"))
+        .filter(element => !element.matches(":disabled") && element.tabIndex >= 0 && element.getClientRects().length > 0);
       if (!focusable.length) return;
       const index = focusable.indexOf(document.activeElement as HTMLElement);
       if (event.shiftKey && index <= 0) { event.preventDefault(); focusable.at(-1)?.focus(); }

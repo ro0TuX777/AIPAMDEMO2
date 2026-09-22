@@ -88,6 +88,7 @@ export const ChatPage: React.FC = () => {
   useEffect(() => {
     if (!jobId || hydratedJobRef.current === jobId) return;
     hydratedJobRef.current = jobId;
+    const generation = pageGenerationRef.current;
     void (async () => {
       try {
         const conversations = await api.listConversations(jobId);
@@ -96,6 +97,7 @@ export const ChatPage: React.FC = () => {
         const selected = conversations.find(item => item.id === requestedId) ?? conversations[0];
         if (selected) {
           const history = await api.getConversation(jobId, selected.id);
+          if (generation !== pageGenerationRef.current) return;
           setBaselineConversation(history);
           selectBaselineToken(history.id);
           if (requestedId !== history.id) {
@@ -121,6 +123,8 @@ export const ChatPage: React.FC = () => {
     setComparisonGroup(null);
     setCopiedPrompt(null);
     setMnemosDraft("");
+    setMnemosOpen(false);
+    setActiveAttempt(null);
   }, [baselineConversation.id, jobId, searchParams, selectBaselineToken, setSearchParams]);
 
   const activeBranch = useMemo<ChatComparisonBranch | null>(() => {
@@ -212,9 +216,11 @@ export const ChatPage: React.FC = () => {
 
   const prepareMnemosSend = useCallback(async (_message: string, requestId: string): Promise<ChatSendTarget | undefined> => {
     if (!jobId || !comparisonGroup || !activeBranch) return undefined;
+    const generation = pageGenerationRef.current;
     if (!copiedPrompt) return { conversation: { id: activeBranch.conversation_id, job_id: jobId, messages: activeBranch.messages }, branchId: activeBranch.id, selectionToken: activeBranch.id };
     try {
       const branch = await api.createComparisonBranch(jobId, comparisonGroup.group_id, copiedPrompt.messageId, requestId);
+      if (generation !== pageGenerationRef.current) return undefined;
       setComparisonGroup(current => current ? { ...current, active_branch_id: branch.id, branches: [...current.branches.filter(item => item.id !== branch.id), branch] } : current);
       setCopiedPrompt(null);
       setActiveAttempt({
@@ -225,11 +231,13 @@ export const ChatPage: React.FC = () => {
       });
       try {
         const selected = await api.selectComparisonBranch(jobId, comparisonGroup.group_id, branch.id);
+        if (generation !== pageGenerationRef.current) return undefined;
         setComparisonGroup(selected);
       } catch {
         // The branch POST is authoritative and idempotent by request ID. Keep
         // its owner selected locally so this turn can stream and later recover.
       }
+      if (generation !== pageGenerationRef.current) return undefined;
       return { conversation: { id: branch.conversation_id, job_id: jobId, messages: branch.messages }, branchId: branch.id, selectionToken: branch.id };
     } catch {
       return undefined;

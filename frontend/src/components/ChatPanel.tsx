@@ -104,8 +104,8 @@ export function ChatPanel(props: ChatPanelInputProps) {
   }
   const selectionGeneration = selectionGenerationRef.current;
   const isLoading = loadingGeneration === selectionGeneration;
-  const activeFailure = attempt?.status === "error" && attempt.generation === selectionGeneration
-    ? { requestId: attempt.requestId, generation: attempt.generation }
+  const activeFailure = attempt?.status === "error" && attempt.selectionToken === selectionToken
+    ? { requestId: attempt.requestId, generation: selectionGeneration }
     : failure?.generation === selectionGeneration ? failure : null;
   const initialContextHandled = useRef(false);
 
@@ -140,7 +140,11 @@ export function ChatPanel(props: ChatPanelInputProps) {
 
   const complete = useCallback(async (originGeneration: number, requestId: string, terminal: ChatStreamTerminalMetadata, content: string) => {
     const owner = requestOwnersRef.current.get(requestId);
-    if (!owner || owner.conversationId !== terminal.conversation_id || !isCurrentSelection(originGeneration)) return;
+    if (!owner || !isCurrentSelection(originGeneration)) return;
+    if (owner.conversationId && owner.conversationId !== terminal.conversation_id) return;
+    // An id-less draft acquires its server identity only while its original
+    // controlled selection still owns this response.
+    owner.conversationId = terminal.conversation_id;
     const metadata: Record<string, unknown> = {
       status: terminal.status, retrieval_status: terminal.retrieval_status ?? null,
       model_id: terminal.model_id ?? null, generation: terminal.generation ?? null,
@@ -196,12 +200,13 @@ export function ChatPanel(props: ChatPanelInputProps) {
     const userMessage: ChatMessage = { id: existingAttempt?.userMessageId ?? newId(), sequence: nextSequence, role: "user", content: text, citations: [], metadata: null, request_id: requestId, timestamp, saved: false };
     const assistantMessage: ChatMessage = { id: existingAttempt?.assistantMessageId ?? newId(), sequence: nextSequence + 1, role: "assistant", content: "", citations: [], metadata: { status: "pending" }, request_id: requestId, timestamp, saved: false };
     if (!existingAttempt) emit(originGeneration, [...targetConversation.messages, userMessage, assistantMessage], targetConversation.id);
-    onAttemptChange?.({
+    const currentAttempt: ChatAttempt = {
       ...(attempt ?? { prompt: text, requestId, selectionToken: selectionToken ?? "legacy", generation: originGeneration, status: "preparing" }),
       conversationId: targetConversation.id, branchId: targetBranchId ?? attempt?.branchId, prompt: text, requestId,
       selectionToken: selectionTokenRef.current ?? "legacy", generation: originGeneration,
       userMessageId: userMessage.id, assistantMessageId: assistantMessage.id, status: "streaming",
-    });
+    };
+    onAttemptChange?.(currentAttempt);
     if (controlledInput) props.onInputChange?.(""); else setInput("");
     setFailure(null);
     setLoadingGeneration(originGeneration);
@@ -243,7 +248,7 @@ export function ChatPanel(props: ChatPanelInputProps) {
           updateAssistant(originGeneration, requestId, assistant => ({ ...assistant, content: message, metadata: { status: "error" } }));
           if (isCurrentSelection(originGeneration)) {
             setFailure({ requestId, generation: originGeneration });
-            onAttemptChange?.(attempt ? { ...attempt, status: "error" } : null);
+            onAttemptChange?.({ ...currentAttempt, status: "error" });
           }
         }
       } else {
@@ -252,7 +257,7 @@ export function ChatPanel(props: ChatPanelInputProps) {
         updateAssistant(originGeneration, requestId, assistant => ({ ...assistant, content: message, metadata: { status: "error", ...(unavailable ? { retrieval_status: "unavailable" } : {}) } }));
         if (isCurrentSelection(originGeneration)) {
           setFailure({ requestId, generation: originGeneration });
-          onAttemptChange?.(attempt ? { ...attempt, status: "error" } : null);
+          onAttemptChange?.({ ...currentAttempt, status: "error" });
         }
       }
     } finally {
@@ -296,7 +301,7 @@ export function ChatPanel(props: ChatPanelInputProps) {
         {message.role === "assistant" && message.metadata?.suggested_followups instanceof Array && !isLoading && <div className="mt-3 pt-2 border-t border-slate-700"><p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1.5">Follow-up questions</p><div className="flex flex-wrap gap-1.5">{message.metadata.suggested_followups.filter((item): item is string => typeof item === "string").map(question => <button key={question} onClick={() => void handleSend(question)} className="text-left text-xs px-2 py-1 rounded border border-slate-700 bg-slate-900/60 text-emerald-400/80">{question}</button>)}</div></div>}
       </div></div>)}
       {isLoading && <div className="flex justify-start"><div className="bg-slate-800 rounded-lg px-4 py-2 text-slate-400"><span className="animate-pulse">Thinking...</span></div></div>}
-      {mode === "mnemos" && activeFailure && <button type="button" onClick={() => { const owner = requestOwnersRef.current.get(activeFailure.requestId); setFailure(null); onRetry(activeFailure.requestId); void handleSend(owner?.prompt, activeFailure.requestId); }} className="text-sm text-amber-300 underline underline-offset-2">Retry MNEMOS</button>}
+      {mode === "mnemos" && activeFailure && <button type="button" onClick={() => { const owner = requestOwnersRef.current.get(activeFailure.requestId); setFailure(null); onRetry(activeFailure.requestId); void handleSend(owner?.prompt ?? attempt?.prompt, activeFailure.requestId); }} className="text-sm text-amber-300 underline underline-offset-2">Retry MNEMOS</button>}
       <div ref={messagesEndRef} />
     </div>
     <div className="p-4 border-t border-slate-700"><div className="flex gap-2"><input type="text" aria-label={controlled ? props.inputLabel : undefined} value={controlledInput ? props.inputValue : input} onChange={event => controlledInput ? props.onInputChange?.(event.target.value) : setInput(event.target.value)} onKeyDown={event => { if (event.key === "Enter" && !event.shiftKey) { event.preventDefault(); void handleSend(); } }} placeholder="Ask about the findings..." className="flex-1 bg-slate-800 text-slate-100 rounded-lg px-4 py-2 focus:outline-none focus:ring-2 focus:ring-blue-500" disabled={isLoading} /><button onClick={() => void handleSend()} disabled={isLoading || !(controlledInput ? props.inputValue : input)?.trim()} className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 disabled:opacity-50">{controlled ? props.sendLabel ?? "Send" : "Send"}</button></div></div>
