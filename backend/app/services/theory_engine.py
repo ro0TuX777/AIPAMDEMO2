@@ -431,6 +431,12 @@ def _build_scope(db: Session, job_id: str, host_ip: str | None, pcap_label: str 
                 phase_key=pcap_label or "", scope_id_key=scope_id, theory_key=hyp_type,
                 created_at=now)
             db.add(theory)
+        else:
+            # Explanations describe the previous evidence snapshot. Keep
+            # analyst review metadata, but require a fresh explanation after
+            # any theory regeneration.
+            theory.explanation = None
+            theory.next_steps_json = None
         theory.label = label
         theory.hypothesis_type = hyp_type
         theory.score = score

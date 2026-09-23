@@ -410,8 +410,9 @@ def _alert(db, job, ip, phase=None):
 
 
 def _finding(db, job, **kw):
+    title = kw.pop("title", "C2 beacon")
     db.add(Finding(job_id=job, finding_id=_uid(), sensor="test", severity="high",
-                   title="C2 beacon", **kw))
+                   title=title, **kw))
 
 
 def _telemetry(db, job, ip, status, phase=None):
@@ -621,6 +622,30 @@ def test_coexisting_job_scope_keys_merge_latest_nonnull_review_fields(db_session
     assert rows[0].theory_id == "TH-reviewed-legacy"
     assert (rows[0].analyst_status, rows[0].analyst_notes, rows[0].reviewed_at, rows[0].reviewer_id) == (
         "false_positive", "new note", "2026-09-22T10:00:00Z", "reviewer-a")
+
+
+def test_regeneration_clears_stale_generated_explanation(db_session, c2_job):
+    job = c2_job.job_id
+    rows = generate_theories(db_session, job)
+    theory = next(row for row in rows if row.hypothesis_type == "c2")
+    theory.explanation = "Explains old evidence"
+    theory.next_steps_json = '["old recommendation"]'
+    theory.analyst_status = "confirmed"
+    theory.analyst_notes = "keep analyst review"
+    original_id = theory.theory_id
+    db_session.commit()
+
+    _finding(db_session, job, title="Updated malware delivery evidence")
+    db_session.commit()
+    generate_theories(db_session, job)
+
+    refreshed = db_session.scalar(select(Theory).where(
+        Theory.job_id == job, Theory.theory_key == "c2"))
+    assert refreshed.theory_id == original_id
+    assert refreshed.explanation is None
+    assert refreshed.next_steps_json is None
+    assert (refreshed.analyst_status, refreshed.analyst_notes) == (
+        "confirmed", "keep analyst review")
 
 
 def test_cancel_after_final_flush_rolls_back_theories(db_engine, monkeypatch):
