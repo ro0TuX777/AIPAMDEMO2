@@ -9,11 +9,10 @@ import subprocess
 import sys
 import time
 import threading
-from uuid import uuid4
 
 from backend.app.pipeline.outcomes import PipelineCanceled, OwnershipLost
 from backend.app.bluescrub.isolation.runner import (
-    _kill_group, ProcessGroup, ProcessIdentityConflict, read_process_identity,
+    _kill_group, ProcessIdentityConflict, read_process_identity,
     signal_exact_process, same_process, drain_processes, ProcessCleanupIncomplete,
     require_process_control,
 )
@@ -46,7 +45,7 @@ class TrackedChild:
 
 
 def reap_run_processes(run_output_dir):
-    """Only Popen objects created by this Celery child can be reaped here."""
+    """Reap local children, then prove receipt-bearing session quiescence."""
     root = Path(run_output_dir).resolve()
     from backend.app.pipeline.runtime_control import request_cancel_file
     request_cancel_file(root / 'control' / 'cancel.requested')
@@ -54,6 +53,19 @@ def reap_run_processes(run_output_dir):
         children = [child for child in _children.values() if child.record.parent.parent.resolve() == root]
     for child in children:
         child.reap(grace=0)
+    from backend.app.bluescrub.isolation.runner import ProcessSession
+    for record in (root/'control').glob('handler-*.json'):
+        try:
+            item = json.loads(record.read_text())
+        except FileNotFoundError:
+            continue
+        if item.get('state') == 'launching':
+            raise ProcessCleanupIncomplete('Process launch receipt pending')
+        if (os.name == 'nt' or item.get('pid') != item.get('pgid')
+                or item.get('pid') != item.get('sid') or not item.get('group_nonce')):
+            raise ProcessCleanupIncomplete('Process containment unavailable')
+        ProcessSession(item, item['group_nonce']).stop(0)
+        record.unlink(missing_ok=True)
 
 
 def classify_identity(expected, live):
@@ -79,20 +91,12 @@ def run_tracked_process(argv, *, run_output_dir, name, timeout_seconds, context,
     # reaper cannot remove a receipt before the launching thread writes it.
     with _children_lock:
         context.checkpoint()
-        nonce = uuid4().hex
-        proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                                stderr=subprocess.DEVNULL,
-                                env={**(os.environ if env is None else env), 'AIPAM_PROCESS_GROUP_NONCE': nonce},
-                                start_new_session=os.name != 'nt',
-                                creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0)
+        from backend.app.bluescrub.isolation.launch import launch_process
+        proc = launch_process(argv, record=record, name=name, stdin=subprocess.DEVNULL,
+                              stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                              env=os.environ if env is None else env)
         child = TrackedChild(proc, record)
         try:
-            if os.name == 'nt':
-                identity = {'pid': proc.pid, 'pgid': proc.pid, 'start_ticks': None, 'boot_id': None}
-            else:
-                identity = read_process_identity(proc.pid)
-                proc.aipam_group = ProcessGroup(identity, nonce)
-            atomic_json(record, {**identity, 'handler': name, 'group_nonce': nonce})
             _children[proc.pid] = child
         except BaseException:
             _kill_group(proc, 0)
@@ -143,229 +147,81 @@ def run_handler_process(sensor_def, *, input_root, run_output_dir, sensor_output
                         context=control or SensorExecutionContext(Path(cancel_path)), env=build_env(extra))
 
 
-def _descendants(expected):
-    """Discover children only under a continuously verified ancestry snapshot.
-
-    Validate every parent after reading all child relationships. A replacement
-    PID observed during enumeration can never grant authority over its children.
-    Once a child's identity is established this way, exact signalling retains
-    that authority even if the legitimate parent later exits.
-    """
-    live = read_identity(expected['pid'])
-    if live is None:
-        return []
-    if not same_process(expected, live):
-        raise ProcessIdentityConflict()
-    parents = {}
-    for path in Path('/proc').glob('[0-9]*/stat'):
-        try:
-            item = read_process_identity(int(path.parent.name))
-            if item:
-                parents[item['pid']] = item
-        except (OSError, ValueError, IndexError) as exc:
-            raise ProcessCleanupIncomplete('Could not establish process ancestry') from exc
-    result = []
-    authorities = [expected]
-    visited = {expected['pid']}
-    def walk(parent):
-        for child, item in parents.items():
-            if item['ppid'] == parent['pid']:
-                if child in visited:
-                    raise ProcessIdentityConflict('Inconsistent ancestry snapshot')
-                visited.add(child)
-                authorities.append(parent)
-                walk(item)
-                result.append(item)
-    walk(expected)
-    # Includes the root even when no child was found: disappearance/reuse while
-    # scanning must not silently authorize a later scan from its numeric PID.
-    for parent in authorities:
-        current = read_identity(parent['pid'])
-        if current is None:
-            raise ProcessCleanupIncomplete('Ancestry changed during discovery')
-        if not same_process(parent, current):
-            raise ProcessIdentityConflict()
-    return result
-
-
 def _signal_exact(identity, sig):
     signal_exact_process(identity, sig)
 
 
-def _freeze_ancestry(expected, deadline):
-    """Retain a fully stopped tree before any ancestry anchor may terminate.
-
-    Stop parents before discovering/freezing their children. Every observed
-    identity must remain present, stopped, and attached until two complete
-    stopped-tree snapshots agree. Lost anchors never become an empty tree.
-    """
-    root_pid = expected['pid']
-    known = {}
-
-    def current(item, *, stopped=False):
-        live = read_process_identity(item['pid'])
-        if live is None or live['state'] == 'Z':
-            raise ProcessCleanupIncomplete('Ancestry anchor exited before freeze')
-        if not same_process(item, live):
-            raise ProcessIdentityConflict()
-        if item['pid'] != root_pid and live.get('ppid') != item.get('ppid'):
-            raise ProcessCleanupIncomplete('Ancestry changed before freeze')
-        if stopped and live['state'] not in ('T', 't'):
-            raise ProcessCleanupIncomplete('Ancestry anchor is no longer stopped')
-        return live
-
-    def freeze(item):
-        live = current(item)
-        if live['state'] not in ('T', 't'):
-            _signal_exact(item, signal.SIGSTOP)
-        while time.monotonic() < deadline:
-            live = current(item)
-            if live['state'] in ('T', 't'):
-                return dict(live)
-            time.sleep(min(.01, max(0, deadline-time.monotonic())))
-        raise ProcessCleanupIncomplete('Ancestry freeze deadline exhausted')
-
-    known[root_pid] = freeze(expected)
-    stable = None
-    while time.monotonic() < deadline:
-        for item in known.values():
-            current(item, stopped=True)
-        # Discovery returns deepest first. Reverse it so each new parent is
-        # stopped and retained before its children are allowed to terminate.
-        for item in reversed(_descendants(known[root_pid])):
-            previous = known.get(item['pid'])
-            if previous is not None:
-                if not same_process(previous, item):
-                    raise ProcessIdentityConflict()
-                current(previous, stopped=True)
-                continue
-            parent = known.get(item.get('ppid'))
-            if parent is None:
-                raise ProcessCleanupIncomplete('Missing frozen ancestry anchor')
-            current(parent, stopped=True)
-            known[item['pid']] = freeze(item)
-        observed = {root_pid: known[root_pid], **{i['pid']: i for i in _descendants(known[root_pid])}}
-        for item in known.values():
-            current(item, stopped=True)
-            live = observed.get(item['pid'])
-            if live is None:
-                raise ProcessCleanupIncomplete('Frozen ancestry member detached')
-            if not same_process(item, live):
-                raise ProcessIdentityConflict()
-        if set(observed) == set(known):
-            signature = frozenset((i['pid'], i['start_ticks'], i['boot_id'], i.get('ppid'))
-                                  for i in known.values())
-            if signature == stable:
-                return known
-            stable = signature
-        else:
-            stable = None
-        time.sleep(min(.01, max(0, deadline-time.monotonic())))
-    raise ProcessCleanupIncomplete('Ancestry freeze deadline exhausted')
-
-
 def stop_executor(identity, run_dir, seconds, deadline=None):
-    """Runs inside the recorded worker namespace. Conflict means signal nothing."""
+    """Drain launch-time containment; parent links are never completion proof."""
+    from backend.app.bluescrub.isolation.runner import ProcessSession
     deadline = min(time.monotonic() + max(0, seconds), deadline if deadline is not None else float("inf"))
     expected = {'pid': identity['executor_pid'], 'start_ticks': identity['executor_pid_start_ticks'],
                 'boot_id': identity['executor_boot_id']}
     verdict = classify_identity(expected, read_identity(expected['pid']))
     if verdict == 'conflict':
         return verdict
-    freeze_marker = Path(run_dir)/'control'/'ancestry.freeze.pending'
-    if freeze_marker.exists():
-        # A previous helper lost its proof or was interrupted. Current parent
-        # links cannot prove that its reparented writers are gone. Fail closed
-        # across retries until an operator establishes containment/absence.
+    sid, nonce = identity.get('executor_session_id'), identity.get('executor_group_nonce')
+    # Historical rows/receipts have no containment proof. Empty ancestry is
+    # never sufficient, including when the historical executor has disappeared.
+    if sid is None or not nonce:
         return 'unavailable'
-    groups = []
-    for path in Path(run_dir).joinpath('control').glob('handler-*.json'):
-        item = json.loads(path.read_text())
-        if item['pgid'] != item['pid']:
-            return 'conflict'
-        groups.append(ProcessGroup(item, item.get('group_nonce')))
-    known = {}
+    if sid != expected['pid']:
+        return 'conflict'
+    control_dir = Path(run_dir)/'control'
+    if (control_dir/'ancestry.freeze.pending').exists():
+        return 'unavailable'
+    expected.update(pgid=sid, sid=sid)
+    executor = ProcessSession(expected, nonce)
+    groups = {}
+
     def snapshot():
-        tracked = [item for group in groups for item in group.snapshot()]
-        # Retain independently verified identities so a legitimate parent's
-        # later exit/reparenting does not discard already authorized children.
-        for item in tracked:
-            previous = known.get(item['pid'])
-            if previous is not None and not same_process(previous, item):
-                raise ProcessIdentityConflict()
-            known[item['pid']] = item
-        discovered = []
-        for item in list(known.values()):
-            discovered.extend(_descendants(item))
-        for item in discovered:
-            previous = known.get(item['pid'])
-            if previous is not None and not same_process(previous, item):
-                raise ProcessIdentityConflict()
-            known[item['pid']] = item
-        live_items = []
-        for item in known.values():
-            live = read_identity(item['pid'])
-            if live is None:
-                continue
-            if not same_process(item, live):
-                raise ProcessIdentityConflict()
-            if live.get('state') != 'Z':
-                # read_identity is also the public, small executor identity
-                # seam; obtain state from the same exact process for freezing.
-                full = live if 'state' in live else read_process_identity(item['pid'])
-                if full is None:
-                    continue
-                if not same_process(item, full):
-                    raise ProcessIdentityConflict()
-                if full['state'] != 'Z':
-                    live_items.append(full)
+        # Rescan durable launch intents on every pass: a child may publish a
+        # new boundary while its parent is being stopped. Pending intent means
+        # a potential escaping child whose identity is not yet known.
+        result = executor.snapshot()
+        for path in control_dir.glob('handler-*.json'):
+            try:
+                item = json.loads(path.read_text())
+            except FileNotFoundError:
+                continue  # Local reaper removes a receipt only after quiescence.
+            if item.get('state') == 'launching':
+                raise ProcessCleanupIncomplete('Process launch receipt pending')
+            if item['pgid'] != item['pid'] or item.get('sid') != item['pid'] or not item.get('group_nonce'):
+                raise ProcessIdentityConflict('Invalid process boundary')
+            key = (str(path), item['pid'], item['start_ticks'], item['boot_id'], item['group_nonce'])
+            if key not in groups:
+                groups[key] = ProcessSession(item, item['group_nonce'])
+        for group in groups.values():
+            result.extend(group.snapshot())
+        members = {item['pid']: item for item in result}
         def depth(item):
+            # Parent links order already-authorized members only. They never
+            # discover members or grant signal/containment authority.
             count, seen = 0, {item['pid']}
-            parent = known.get(item['pid'], {}).get('ppid')
-            while parent in known and parent not in seen:
+            parent = item.get('ppid')
+            while parent in members and parent not in seen:
                 count += 1
                 seen.add(parent)
-                parent = known[parent].get('ppid')
+                parent = members[parent].get('ppid')
             return count
-        live_items.sort(key=depth, reverse=True)
-        return live_items
+        return sorted(members.values(),
+                      key=lambda item: (item['pid'] != expected['pid'], depth(item)), reverse=True)
+
     try:
-        # Validate recorded group authorities before sending even STOP. Freeze
-        # the executor first: it must not fork or exit while membership is being
-        # established. Orphan recorded groups receive the same tree freeze.
-        tracked = [item for group in groups for item in group.snapshot()]
-        freeze_owned = False
-        if verdict == 'matching' or tracked:
-            freeze_marker.parent.mkdir(parents=True, exist_ok=True)
-            try:
-                fd = os.open(freeze_marker, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
-            except FileExistsError:
-                return 'unavailable'
-            os.close(fd)
-            freeze_owned = True
+        # Stop the exact root before discovery. Its running descendants may
+        # fork/reap in this interval; session membership still contains them.
         if verdict == 'matching':
-            known.update(_freeze_ancestry(expected, deadline))
-        for item in tracked:
-            if item['pid'] not in known:
-                known.update(_freeze_ancestry(item, deadline))
+            _signal_exact(expected, signal.SIGSTOP)
         targets = snapshot()
-        if time.monotonic() >= deadline:
-            return 'unavailable'
-        if any(item['state'] not in ('T', 't') for item in targets):
-            raise ProcessCleanupIncomplete('Membership changed after ancestry freeze')
         for item in targets:
             _signal_exact(item, signal.SIGTERM)
         end_grace = min(max(time.monotonic(), deadline-.5), time.monotonic()+3)
-        while time.monotonic() < end_grace:
-            if not snapshot():
-                break
-            time.sleep(.05)
+        while time.monotonic() < end_grace and snapshot():
+            time.sleep(min(.05, max(0, end_grace-time.monotonic())))
         drain_processes(snapshot, deadline, send=_signal_exact)
-        if freeze_owned:
-            freeze_marker.unlink()
     except ProcessIdentityConflict:
         return 'conflict'
-    except (ProcessCleanupIncomplete, OSError, AttributeError):
+    except (ProcessCleanupIncomplete, OSError, AttributeError, ValueError, KeyError):
         return 'unavailable'
     return verdict
 
@@ -385,11 +241,26 @@ def main():
     _current_control.set(context)
     try:
         context.checkpoint()
-        # Parent publishes identity before allowing handler Python to start.
+        # A stale filename or another process's receipt is never permission to
+        # execute a handler. The bootstrap published this exact session first.
         record = Path(payload['run_output_dir'])/'control'/f'handler-{name}.json'
         deadline = time.monotonic()+10
-        while not record.exists():
+        while True:
             context.checkpoint()
+            try:
+                item = json.loads(record.read_text())
+            except FileNotFoundError:
+                item = {'state': 'launching'}
+            if item.get('state') != 'launching':
+                if (item.get('pid') != os.getpid()
+                        or item.get('group_nonce') != os.environ.get('AIPAM_PROCESS_GROUP_NONCE')):
+                    return 1
+                if os.name != 'nt':
+                    live = read_process_identity(os.getpid())
+                    if (not same_process(item, live) or live['sid'] != live['pid']
+                            or live['pgid'] != live['pid']):
+                        return 1
+                break
             if time.monotonic() > deadline:
                 return 1
             time.sleep(.02)

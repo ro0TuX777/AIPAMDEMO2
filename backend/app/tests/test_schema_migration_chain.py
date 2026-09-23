@@ -67,6 +67,7 @@ def alembic_db(tmp_path, monkeypatch):
 
 # Canonical SQLite defaults for the explicit runtime metadata allowlist.
 EXPECTED_DEFAULTS = {
+    ("jobs", "queued_at"): "strftime('%Y-%m-%dT%H:%M:%fZ', 'now')",
     ("jobs", "execution_attempt"): "'0'",
     ("jobs", "artifact_layout_version"): "'2'",
     ("findings", "confidence"): "'0.0'",
@@ -202,6 +203,32 @@ def test_populated_runtime_roundtrip_preserves_jobs_and_backfills(alembic_db):
                 assert db.exec_driver_sql(
                     "SELECT artifact_layout_version, execution_attempt, run_token FROM jobs"
                 ).one() == (1, 0, None)
+    command.upgrade(config, "head")
+    assert_metadata_parity(engine)
+
+
+def test_containment_migration_frozen_predecessor_roundtrip(alembic_db):
+    config, engine = alembic_db
+    command.upgrade(config, '9c7a5e3b2d01')
+    before = {c['name'] for c in sa.inspect(engine).get_columns('jobs')}
+    assert 'executor_session_id' not in before and 'executor_group_nonce' not in before
+    with engine.begin() as db:
+        db.exec_driver_sql("INSERT INTO jobs (job_id, status, execution_profile, priority, created_at, source_type) VALUES ('old', 'running', 'standard', 'normal', '2020-01-01', 'pcap')")
+    command.upgrade(config, 'head')
+    columns = {c['name']: c for c in sa.inspect(engine).get_columns('jobs')}
+    assert set(columns) - before == {'executor_session_id', 'executor_group_nonce'}
+    assert columns['executor_session_id']['type']._type_affinity == sa.Integer
+    assert columns['executor_group_nonce']['type']._type_affinity == sa.String
+    assert all(columns[name]['nullable'] and columns[name]['default'] is None
+               for name in ('executor_session_id', 'executor_group_nonce'))
+    with engine.begin() as db:
+        assert db.exec_driver_sql('SELECT executor_session_id, executor_group_nonce FROM jobs').one() == (None, None)
+        db.exec_driver_sql("UPDATE jobs SET executor_session_id=42, executor_group_nonce='nonce'")
+    command.downgrade(config, '9c7a5e3b2d01')
+    assert {c['name'] for c in sa.inspect(engine).get_columns('jobs')} == before
+    with engine.connect() as db:
+        assert db.exec_driver_sql('SELECT status, created_at FROM jobs').one() == ('running', '2020-01-01')
+    command.upgrade(config, 'head')
     assert_metadata_parity(engine)
 
 

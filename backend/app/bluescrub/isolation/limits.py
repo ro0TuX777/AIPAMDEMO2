@@ -13,7 +13,7 @@ from typing import Callable
 #: deletions: a deletion list silently fails to cover variables added later,
 #: and the worker environment holds the API token, database URL, broker URL,
 #: the secret HMAC key, and Security Onion / Arkime passwords.
-ENV_ALLOWLIST: tuple[str, ...] = ("PATH", "LANG", "LC_ALL", "HOME", "TMPDIR", "AIPAM_PROCESS_GROUP_NONCE")
+ENV_ALLOWLIST: tuple[str, ...] = ("PATH", "LANG", "LC_ALL", "HOME", "TMPDIR", "AIPAM_PROCESS_GROUP_NONCE", "AIPAM_RUN_CONTROL_DIR")
 
 
 @dataclass(frozen=True)
@@ -81,6 +81,7 @@ def build_preexec(
     limits: ResourceLimits,
     uid: int | None,
     gid: int | None,
+    *, create_session: bool = True,
 ) -> Callable[[], None]:
     """Return a ``preexec_fn`` that detaches, drops privileges, and sets rlimits.
 
@@ -91,7 +92,8 @@ def build_preexec(
 
     def _preexec() -> None:  # pragma: no cover - runs only in the forked child
         import resource
-        os.setsid()
+        if create_session:
+            os.setsid()
 
         if gid is not None:
             os.setgroups([])

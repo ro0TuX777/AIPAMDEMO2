@@ -34,6 +34,8 @@ class ExecutorIdentity:
     executor_pid: int
     executor_pid_start_ticks: int
     executor_boot_id: str
+    executor_session_id: int | None = None
+    executor_group_nonce: str | None = None
 
 
 class ClaimDisposition(str, Enum):
@@ -114,6 +116,8 @@ def _clear_executor():
         executor_pid=None,
         executor_pid_start_ticks=None,
         executor_boot_id=None,
+        executor_session_id=None,
+        executor_group_nonce=None,
         cancel_escalation_token=None,
         cancel_escalation_started_at=None,
     )
@@ -235,6 +239,8 @@ def register_executor(
             executor_pid=identity.executor_pid,
             executor_pid_start_ticks=identity.executor_pid_start_ticks,
             executor_boot_id=identity.executor_boot_id,
+            executor_session_id=identity.executor_session_id,
+            executor_group_nonce=identity.executor_group_nonce,
         ),
     )
 
@@ -322,6 +328,8 @@ def claim_cancel_escalation(
                     "executor_pid",
                     "executor_pid_start_ticks",
                     "executor_boot_id",
+                    "executor_session_id",
+                    "executor_group_nonce",
                 )
             ),
             func.julianday(Job.cancel_force_at) <= func.julianday(_now()),
@@ -357,6 +365,8 @@ def claim_cancel_escalation(
             row["executor_pid"],
             row["executor_pid_start_ticks"],
             row["executor_boot_id"],
+            row["executor_session_id"],
+            row["executor_group_nonce"],
         )
     return EscalationClaim(True, handle, identity, row["cancel_deadline_at"])
 

@@ -143,6 +143,7 @@ def execute_job(job_id: str, task_id: str, pcap_label: str | None = None, *, wor
     handle = claim.handle
     db = None
     control = None
+    old_control_dir = os.environ.get('AIPAM_RUN_CONTROL_DIR')
     try:
         run_output_dir = create_run_output_dir(settings.aipam_job_root, job_id, handle.run_token)
         try:
@@ -157,6 +158,7 @@ def execute_job(job_id: str, task_id: str, pcap_label: str | None = None, *, wor
         with factory() as lifecycle:
             if not register_executor(lifecycle, handle, identity):
                 raise JobOwnershipLost()
+        os.environ['AIPAM_RUN_CONTROL_DIR'] = str((run_output_dir / 'control').resolve())
         control = ExecutionControl(handle, run_output_dir, factory,
                                    heartbeat_seconds=settings.aipam_heartbeat_seconds)
         control.start()
@@ -173,6 +175,8 @@ def execute_job(job_id: str, task_id: str, pcap_label: str | None = None, *, wor
         db.commit()
         db.close()
         db = None
+        # Receipt cleanup must win before any terminal CAS, including success.
+        control.stop()
         with factory() as lifecycle:
             finalized = finalize_owned_job(
                 lifecycle, handle, outcome.status,
@@ -198,8 +202,14 @@ def execute_job(job_id: str, task_id: str, pcap_label: str | None = None, *, wor
             return status
         raise
     finally:
-        if control is not None:
-            control.stop()
+        try:
+            if control is not None:
+                control.stop()
+        finally:
+            if old_control_dir is None:
+                os.environ.pop('AIPAM_RUN_CONTROL_DIR', None)
+            else:
+                os.environ['AIPAM_RUN_CONTROL_DIR'] = old_control_dir
 
     if not finalized:
         return _resolve_interrupted(factory, settings, handle)

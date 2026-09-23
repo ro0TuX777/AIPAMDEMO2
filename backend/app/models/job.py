@@ -44,6 +44,8 @@ class Job(Base):
     executor_pid = Column(Integer, nullable=True)
     executor_pid_start_ticks = Column(BigInteger, nullable=True)
     executor_boot_id = Column(String, nullable=True)
+    executor_session_id = Column(Integer, nullable=True)
+    executor_group_nonce = Column(String, nullable=True)
     heartbeat_at = Column(String, nullable=True)
     dispatched_at = Column(String, nullable=True)
     cancel_requested_at = Column(String, nullable=True)

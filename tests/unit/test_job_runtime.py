@@ -21,11 +21,29 @@ def test_job_response_exposes_liveness_but_not_ownership():
             "celery_task_id",
             "accepted_run_manifest_json",
             "executor_pid",
+            "executor_session_id",
+            "executor_group_nonce",
             "artifact_layout_version",
         }
         & public.keys()
     )
     assert Job.__table__.c.artifact_layout_version.default.arg == 2
+
+
+def test_containment_identity_persists_through_db_time_escalation_and_clears(runtime, db):
+    runtime.assign_task(db, 'job', 'task')
+    handle = runtime.claim_job(db, 'job', 'task', 'token', 'worker').handle
+    identity = runtime.ExecutorIdentity('node', 'a'*64, 42, 100, 'boot', 42, 'nonce')
+    assert runtime.register_executor(db, handle, identity)
+    runtime.request_cancel(db, 'job')
+    db.execute(sa.update(Job).values(cancel_force_at=runtime._now(-1)))
+    db.commit()
+    claim = runtime.claim_cancel_escalation(db, 'job', 'lease', lease_seconds=15)
+    assert claim.claimed and claim.identity == identity
+    row = db.get(Job, 'job')
+    assert row.cancel_escalation_started_at.endswith('Z')
+    assert runtime.complete_cancel_escalation(db, handle, 'lease')
+    assert row.executor_session_id is None and row.executor_group_nonce is None
 
 
 import pytest

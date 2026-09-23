@@ -129,6 +129,8 @@ def test_reanalysis_queues_and_dispatches_only_the_requested_label(lifecycle, st
     dispatched = []
     with Session(engine) as db:
         job = seed_job(db, status=status)
+        job.executor_session_id = 42
+        job.executor_group_nonce = 'old-session'
         db.add_all([
             JobPcap(job_id=job.job_id, upload_id="before", label="before", filename="before.pcap", ordinal=0),
             JobPcap(job_id=job.job_id, upload_id="after", label="after", filename="after.pcap", ordinal=1),
@@ -146,6 +148,7 @@ def test_reanalysis_queues_and_dispatches_only_the_requested_label(lifecycle, st
     with Session(engine) as db:
         job = db.get(Job, "job")
         assert (job.status, job.error_summary) == ("queued", None)
+        assert job.executor_session_id is None and job.executor_group_nonce is None
 
 
 @pytest.mark.parametrize("status", ["queued", "running", "canceled", "deleted"])

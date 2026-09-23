@@ -120,17 +120,20 @@ def run_analyzer(
 
     require_process_control()
     group_nonce = uuid4().hex
+    record = None
     try:
-        proc = subprocess.Popen(  # noqa: S603 - argv is constructed, never shell
-            argv,
-            cwd=str(cwd) if cwd else None,
-            stdin=subprocess.PIPE if stdin_data is not None else subprocess.DEVNULL,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            env=build_env({**(env_extra or {}), 'AIPAM_PROCESS_GROUP_NONCE': group_nonce}),
-            preexec_fn=build_preexec(limits, uid, gid),
-            close_fds=True,
-        )
+        options = dict(cwd=str(cwd) if cwd else None,
+                       stdin=subprocess.PIPE if stdin_data is not None else subprocess.DEVNULL,
+                       stdout=subprocess.PIPE, stderr=subprocess.PIPE, close_fds=True)
+        child_env = build_env({**(env_extra or {}), 'AIPAM_PROCESS_GROUP_NONCE': group_nonce})
+        if os.environ.get('AIPAM_RUN_CONTROL_DIR'):
+            from backend.app.bluescrub.isolation.launch import launch_process
+            record = Path(os.environ['AIPAM_RUN_CONTROL_DIR'])/f'handler-analyzer-{group_nonce}.json'
+            proc = launch_process(argv, record=record, name='bluescrub', env=child_env,
+                                  limits=limits, uid=uid, gid=gid, **options)
+        else:
+            proc = subprocess.Popen(argv, env=child_env,
+                                    preexec_fn=build_preexec(limits, uid, gid), **options)
     except FileNotFoundError:
         return AnalyzerResult(
             status=AnalyzerStatus.unavailable,
@@ -139,7 +142,8 @@ def run_analyzer(
     except OSError as exc:
         return AnalyzerResult(status=AnalyzerStatus.crashed, reason=str(exc))
 
-    proc.aipam_group = ProcessGroup(read_process_identity(proc.pid), group_nonce)
+    if record is None:
+        proc.aipam_group = ProcessSession(read_process_identity(proc.pid), group_nonce)
     try:
         stdout, stderr = proc.communicate(input=stdin_data, timeout=limits.wall_clock_seconds)
     except subprocess.TimeoutExpired:
@@ -147,6 +151,9 @@ def run_analyzer(
         _kill_group(proc, limits.grace_seconds)
         stdout, stderr = proc.communicate()
     finally:
+        if record is not None:
+            _kill_group(proc, 0)
+            record.unlink(missing_ok=True)
         duration_ms = int((time.monotonic() - started) * 1000)
 
     truncated = False
@@ -235,6 +242,16 @@ def group_members(pgid):
     return members
 
 
+def session_members(sid):
+    """Session membership survives double-fork/reparent and setpgid changes."""
+    members = []
+    for path in Path('/proc').glob('[0-9]*/stat'):
+        item = read_process_identity(int(path.parent.name))
+        if item and item['sid'] == sid and item['state'] != 'Z':
+            members.append(item)
+    return members
+
+
 def process_group_nonce(pid):
     try:
         values = Path(f'/proc/{pid}/environ').read_bytes().split(b'\0')
@@ -256,6 +273,8 @@ def signal_exact_process(expected, sig):
             return
         if not same_process(expected, live):
             raise ProcessIdentityConflict()
+        if any(key in expected and expected[key] != live[key] for key in ('sid', 'pgid')):
+            raise ProcessIdentityConflict('Process escaped its recorded containment')
         try:
             signal.pidfd_send_signal(fd, sig)
         except ProcessLookupError:
@@ -267,6 +286,10 @@ def signal_exact_process(expected, sig):
 class ProcessGroup:
     def __init__(self, leader, nonce):
         self.leader, self.nonce = leader, nonce
+        self._known = {}
+
+    def members(self):
+        return group_members(self.leader['pgid'])
 
     def snapshot(self):
         if self.leader is None:
@@ -274,26 +297,35 @@ class ProcessGroup:
         live = read_process_identity(self.leader['pid'])
         if live is not None and not same_process(self.leader, live):
             raise ProcessIdentityConflict()
-        members = group_members(self.leader['pgid'])
+        if live is not None and any(live[k] != self.leader[k] for k in ('pgid', 'sid')):
+            raise ProcessIdentityConflict()
+        members = self.members()
         # An unreaped leader (including a zombie) anchors the kernel group and
         # session. This also works after BlueScrub drops UID, where reading
         # another UID's environ may be forbidden without CAP_SYS_PTRACE.
         anchor = read_process_identity(self.leader['pid'])
         if anchor is not None and not same_process(self.leader, anchor):
             raise ProcessIdentityConflict()
+        if anchor is not None and any(anchor[k] != self.leader[k] for k in ('pgid', 'sid')):
+            raise ProcessIdentityConflict()
         verified = []
         for item in members:
-            nonce = self.nonce if anchor is not None else process_group_nonce(item['pid'])
+            retained = self._known.get(item['pid'])
+            if retained is not None and not same_process(retained, item):
+                raise ProcessIdentityConflict()
+            nonce = self.nonce if anchor is not None or retained is not None else process_group_nonce(item['pid'])
             if nonce is None and anchor is None:
                 current = read_process_identity(item['pid'])
                 if current is None or (same_process(item, current) and current['state'] == 'Z'):
                     continue
+                raise ProcessCleanupIncomplete('Orphan containment identity unavailable')
             if (item['sid'] != self.leader.get('sid', self.leader['pgid'])
                     or item['boot_id'] != self.leader['boot_id']
                     or item['start_ticks'] < self.leader['start_ticks']
                     or (anchor is None and (not self.nonce or nonce != self.nonce))):
                 raise ProcessIdentityConflict()
             verified.append(item)
+        self._known.update((item['pid'], dict(item)) for item in verified)
         return verified
 
     def stop(self, grace, deadline=None):
@@ -304,6 +336,12 @@ class ProcessGroup:
         while time.monotonic() < until and self.snapshot():
             time.sleep(min(.05, max(0, until-time.monotonic())))
         drain_processes(self.snapshot, deadline)
+
+
+class ProcessSession(ProcessGroup):
+    """A launch-time session contains descendants independently of ancestry."""
+    def members(self):
+        return session_members(self.leader['sid'])
 
 
 def drain_processes(snapshot, deadline, send=None):

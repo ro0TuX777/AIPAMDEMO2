@@ -126,6 +126,7 @@ def reanalyze_job(
             cancel_escalation_token=None, cancel_escalation_started_at=None,
             worker_id=None, worker_container_id=None, executor_pid=None,
             executor_pid_start_ticks=None, executor_boot_id=None,
+            executor_session_id=None, executor_group_nonce=None,
         )
     ).rowcount
     db.commit()

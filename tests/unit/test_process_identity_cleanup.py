@@ -15,10 +15,10 @@ def _forking_executor(monkeypatch, behavior):
     from backend.app.pipeline import sensor_process as m
     monkeypatch.setattr(signal, 'SIGSTOP', 19, raising=False)
     monkeypatch.setattr(signal, 'SIGKILL', 9, raising=False)
-    root = dict(identity(pid=42), ppid=1)
+    root = dict(identity(pid=42), ppid=1, pgid=42, sid=42)
     current = {42: dict(root)}
     if behavior in ('child_anchor_exit', 'deep_fork_captured'):
-        current[51] = dict(identity(pid=51, ticks=101), ppid=42)
+        current[51] = dict(identity(pid=51, ticks=101), ppid=42, pgid=42, sid=42)
     sent = []
     class ProcRoot:
         def glob(self, pattern):
@@ -27,6 +27,9 @@ def _forking_executor(monkeypatch, behavior):
     monkeypatch.setattr(m, 'Path', lambda p: ProcRoot() if str(p) == '/proc' else actual_path(p))
     monkeypatch.setattr(m, 'read_identity', lambda pid: current.get(pid))
     monkeypatch.setattr(m, 'read_process_identity', lambda pid: current.get(pid))
+    monkeypatch.setattr(runner, 'read_process_identity', current.get)
+    monkeypatch.setattr(runner, 'session_members', lambda sid: list(current.values()) if sid == 42 else [])
+    monkeypatch.setattr(runner, 'process_group_nonce', lambda pid: 'nonce')
     def send(item, sig):
         pid = item['pid']
         sent.append((pid, sig))
@@ -37,7 +40,7 @@ def _forking_executor(monkeypatch, behavior):
         should_fork = ((pid == 42 and behavior not in ('child_anchor_exit', 'deep_fork_captured')) or
                        (pid == 51 and behavior in ('child_anchor_exit', 'deep_fork_captured')))
         if should_fork and current[pid]['state'] == 'S' and sig in (signal.SIGSTOP, signal.SIGTERM):
-            current[303] = dict(identity(pid=303, ticks=102), ppid=pid)
+            current[303] = dict(identity(pid=303, ticks=102), ppid=pid, pgid=42, sid=42)
             if behavior in ('before_freeze_exit', 'child_anchor_exit') or sig == signal.SIGTERM:
                 current.pop(pid)
                 current[303]['ppid'] = 1
@@ -54,32 +57,17 @@ def _forking_executor(monkeypatch, behavior):
 
 
 @pytest.mark.parametrize('behavior', ['before_freeze_exit', 'freeze_captures_fork', 'child_anchor_exit', 'deep_fork_captured'])
-def test_no_receipt_fork_and_reparent_requires_frozen_ancestry(tmp_path, monkeypatch, behavior):
+def test_no_receipt_fork_and_reparent_stays_in_executor_session(tmp_path, monkeypatch, behavior):
     m, current, sent = _forking_executor(monkeypatch, behavior)
-    result = m.stop_executor(dict(executor_pid=42, executor_pid_start_ticks=100,
-                                 executor_boot_id='boot'), tmp_path, .3)
-    if behavior in ('freeze_captures_fork', 'deep_fork_captured'):
-        assert result == 'matching'
-        assert not current
-        first_term = next(i for i, (_, sig) in enumerate(sent) if sig == signal.SIGTERM)
-        assert (42, signal.SIGSTOP) in sent[:first_term]
-        assert (303, signal.SIGSTOP) in sent[:first_term]
-        if behavior == 'deep_fork_captured':
-            assert sent.index((42, signal.SIGSTOP)) < sent.index((51, signal.SIGSTOP)) < sent.index((303, signal.SIGSTOP))
-    else:
-        assert result == 'unavailable'
-        assert 303 in current
-        assert all(sig not in (signal.SIGTERM, signal.SIGKILL) for _, sig in sent)
-        if 42 in current:
-            assert current[42]['state'] == 'T'
-        # A retry must not reinterpret lost ancestry as an empty, safe tree.
-        assert m.stop_executor(dict(executor_pid=42, executor_pid_start_ticks=100,
-                                    executor_boot_id='boot'), tmp_path, .3) == 'unavailable'
-        assert 303 in current
-        assert all(sig not in (signal.SIGTERM, signal.SIGKILL) for _, sig in sent)
+    executor = dict(executor_pid=42, executor_pid_start_ticks=100, executor_boot_id='boot',
+                    executor_session_id=42, executor_group_nonce='nonce')
+    assert m.stop_executor(executor, tmp_path, .3) == 'matching'
+    assert not current
+    assert sent[0] == (42, signal.SIGSTOP)
+    assert m.stop_executor(executor, tmp_path, .3) == 'absent'
 
 
-def test_supervisor_does_not_cas_when_unrecorded_child_reparents(tmp_path, monkeypatch):
+def test_supervisor_does_not_cas_legacy_executor_without_containment(tmp_path, monkeypatch):
     from sqlalchemy import create_engine, update
     from sqlalchemy.orm import sessionmaker
     from backend.app.database_v2 import Base
@@ -119,7 +107,7 @@ def test_supervisor_does_not_cas_when_unrecorded_child_reparents(tmp_path, monke
     service.cancel_once()
     with factory() as db:
         assert db.get(Job, 'job').status == 'canceling'
-    assert 303 in current and not cas and not events
+    assert 42 in current and not cas and not events and not sent
     engine.dispose()
 
 
@@ -127,9 +115,9 @@ def test_supervisor_does_not_cas_when_unrecorded_child_reparents(tmp_path, monke
 def test_executor_reuse_before_discovery_never_authorizes_replacement_child(tmp_path, monkeypatch, stage):
     from backend.app.pipeline import sensor_process as m
     monkeypatch.setattr(signal, 'SIGSTOP', 19, raising=False)
-    original = dict(identity(pid=42), ppid=1)
+    original = dict(identity(pid=42), ppid=1, pgid=42, sid=42)
     replacement = dict(original, start_ticks=200)
-    unrelated = dict(identity(pid=88, ticks=201), ppid=42)
+    unrelated = dict(identity(pid=88, ticks=201), ppid=42, pgid=42, sid=42)
     current = {42: original}
     sent = []
     term_seen = [False]
@@ -144,6 +132,11 @@ def test_executor_reuse_before_discovery_never_authorizes_replacement_child(tmp_
     monkeypatch.setattr(m, 'Path', lambda p: ProcRoot() if str(p) == '/proc' else actual_path(p))
     monkeypatch.setattr(m, 'read_identity', lambda pid: current.get(pid))
     monkeypatch.setattr(m, 'read_process_identity', lambda pid: current.get(pid))
+    monkeypatch.setattr(runner, 'read_process_identity', current.get)
+    def members(sid):
+        ProcRoot().glob('')
+        return list(current.values())
+    monkeypatch.setattr(runner, 'session_members', members)
     def send(item, sig):
         sent.append((item['pid'], sig))
         if sig == signal.SIGSTOP:
@@ -153,7 +146,7 @@ def test_executor_reuse_before_discovery_never_authorizes_replacement_child(tmp_
     monkeypatch.setattr(m, '_signal_exact', send)
     monkeypatch.setattr(m.time, 'sleep', lambda seconds: None)
     result = m.stop_executor(dict(executor_pid=42, executor_pid_start_ticks=100,
-                                 executor_boot_id='boot'), tmp_path, .1)
+                                 executor_boot_id='boot', executor_session_id=42, executor_group_nonce='nonce'), tmp_path, .1)
     assert result == 'conflict'
     assert all(pid != 88 for pid, sig in sent)
 
@@ -167,6 +160,7 @@ def test_fork_at_kill_boundary_is_drained_before_success(tmp_path, monkeypatch, 
     members = {202: dict(leader)}
     monkeypatch.setattr(runner, 'read_process_identity', lambda pid: members.get(pid))
     monkeypatch.setattr(runner, 'group_members', lambda pgid: list(members.values()))
+    monkeypatch.setattr(runner, 'session_members', lambda sid: list(members.values()) if sid == 202 else [])
     monkeypatch.setattr(runner, 'process_group_nonce', lambda pid: 'nonce')
     def send(item, sig):
         if sig == signal.SIGSTOP:
@@ -189,10 +183,9 @@ def test_fork_at_kill_boundary_is_drained_before_success(tmp_path, monkeypatch, 
         (control/'handler-test.json').write_text(json.dumps({**leader, 'group_nonce':'nonce'}))
         monkeypatch.setattr(m, 'read_identity', lambda pid: members.get(pid))
         monkeypatch.setattr(m, 'read_process_identity', lambda pid: members.get(pid))
-        monkeypatch.setattr(m, '_descendants', lambda expected: [])
         monkeypatch.setattr(m, '_signal_exact', send)
         assert m.stop_executor(dict(executor_pid=999, executor_pid_start_ticks=1,
-                                   executor_boot_id='boot'), tmp_path, .3) == 'absent'
+                                   executor_boot_id='boot', executor_session_id=999, executor_group_nonce='nonce'), tmp_path, .3) == 'absent'
     assert members == {}
 
 
@@ -224,20 +217,18 @@ def test_bluescrub_pidfd_unavailable_prevents_analyzer_launch(monkeypatch, failu
 
 
 def test_reused_intermediate_ancestor_does_not_authorize_new_children(monkeypatch):
-    from backend.app.pipeline import sensor_process as m
-    root = dict(identity(pid=42), ppid=1)
-    parent = dict(identity(pid=51, ticks=101), ppid=42)
-    child = dict(identity(pid=88, ticks=202), ppid=51)
-    current = {42: root, 51: dict(parent, start_ticks=200), 88: child}
-    rows = {51: parent, 88: child}
+    root = dict(identity(pid=42), ppid=1, pgid=42, sid=42)
+    # Reused intermediate PID and its child belong to the replacement session,
+    # even if an old/stale parent link still appears to point at the executor.
+    parent = dict(identity(pid=51, ticks=200), ppid=42, pgid=51, sid=51)
+    child = dict(identity(pid=88, ticks=202), ppid=51, pgid=51, sid=51)
+    current = {42: root, 51: parent, 88: child}
     class ProcRoot:
         def glob(self, pattern):
-            return [SimpleNamespace(parent=SimpleNamespace(name=str(pid))) for pid in rows]
-    monkeypatch.setattr(m, 'Path', lambda p: ProcRoot())
-    monkeypatch.setattr(m, 'read_process_identity', rows.get)
-    monkeypatch.setattr(m, 'read_identity', current.get)
-    with pytest.raises(runner.ProcessIdentityConflict):
-        m._descendants(root)
+            return [SimpleNamespace(parent=SimpleNamespace(name=str(pid))) for pid in current]
+    monkeypatch.setattr(runner, 'Path', lambda p: ProcRoot())
+    monkeypatch.setattr(runner, 'read_process_identity', current.get)
+    assert runner.ProcessSession(root, 'nonce').snapshot() == [root]
 
 
 def test_unresolved_local_group_retains_receipt(tmp_path, monkeypatch):
@@ -349,7 +340,8 @@ def test_absent_executor_and_leader_stubborn_grandchild_is_stopped(tmp_path):
         assert ready.exists()
         assert runner.read_process_identity(proc.pid) is None
         result = sensor_process.stop_executor(dict(executor_pid=proc.pid,
-            executor_pid_start_ticks=leader['start_ticks'], executor_boot_id=leader['boot_id']), tmp_path, 5)
+            executor_pid_start_ticks=leader['start_ticks'], executor_boot_id=leader['boot_id'],
+            executor_session_id=proc.pid, executor_group_nonce=nonce), tmp_path, 5)
         assert result == 'absent'
         live = runner.read_process_identity(int(ready.read_text()))
         assert live is None or live['state'] == 'Z'

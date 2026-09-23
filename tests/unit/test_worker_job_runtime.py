@@ -118,7 +118,7 @@ def worker_harness(owned, monkeypatch):
     monkeypatch.setattr(database_v2, 'get_engine', lambda: factory.kw['bind'])
     monkeypatch.setattr(worker, 'get_settings', lambda: Settings(aipam_api_token='test', aipam_job_root=root/'jobs', aipam_upload_root=root/'uploads', _env_file=None))
     monkeypatch.setattr(docker, 'from_env', lambda **kw: None)
-    identity = runtime.ExecutorIdentity('node', 'a'*64, 42, 123, 'boot')
+    identity = runtime.ExecutorIdentity('node', 'a'*64, 42, 123, 'boot', 42, 'nonce')
     monkeypatch.setattr(runtime_control, 'current_executor', lambda *a: identity)
     events = []
     def emit(job_id, status):
@@ -139,12 +139,38 @@ def test_worker_registers_exact_executor_and_fenced_session(worker_harness, monk
         with h.factory() as db:
             row = db.get(Job, 'job')
             assert (row.worker_container_id, row.executor_pid, row.executor_pid_start_ticks, row.executor_boot_id) == ('a'*64, 42, 123, 'boot')
+            assert (row.executor_session_id, row.executor_group_nonce) == (42, 'nonce')
+            assert os.environ['AIPAM_RUN_CONTROL_DIR'] == str((kw['run_output_dir']/'control').resolve())
         return derive_outcome()
     monkeypatch.setattr(h.pipeline, 'run_pipeline', pipeline)
     assert h.worker.execute_job('job', 'task') == 'completed'
     assert h.events == ['completed']
     assert h.worker.execute_job('job', 'task') == 'terminal'
     assert h.events == ['completed']
+
+
+@pytest.mark.parametrize('cancel', [False, True])
+def test_worker_cannot_finalize_or_remove_pending_escape_receipt(worker_harness, monkeypatch, cancel):
+    import json
+    from backend.app.pipeline.outcomes import derive_outcome
+    from backend.app.bluescrub.isolation.runner import ProcessCleanupIncomplete
+    h = worker_harness
+    receipts = []
+    def pipeline(**kw):
+        receipt = kw['run_output_dir']/'control'/'handler-analyzer-pending.json'
+        receipt.write_text(json.dumps(dict(state='launching', group_nonce='pending')))
+        receipts.append(receipt)
+        if cancel:
+            with h.factory() as db:
+                runtime.request_cancel(db, 'job')
+        return derive_outcome()
+    monkeypatch.setattr(h.pipeline, 'run_pipeline', pipeline)
+    with pytest.raises(ProcessCleanupIncomplete):
+        h.worker.execute_job('job', 'task')
+    assert receipts[0].exists() and h.events == []
+    with h.factory() as db:
+        row = db.get(Job, 'job')
+        assert row.status == ('canceling' if cancel else 'running') and row.completed_at is None
 
 
 def test_cancel_before_internal_commit_finishes_canceled(worker_harness, monkeypatch):
@@ -308,10 +334,10 @@ def test_supervisor_finalizes_only_after_group_quiescence(owned, monkeypatch, qu
     monkeypatch.setattr(signal, 'SIGKILL', 9, raising=False)
     monkeypatch.setattr(runner, 'read_process_identity', members.get)
     monkeypatch.setattr(runner, 'group_members', lambda pgid: list(members.values()))
+    monkeypatch.setattr(runner, 'session_members', lambda sid: list(members.values()) if sid == 202 else [])
     monkeypatch.setattr(runner, 'process_group_nonce', lambda pid: 'nonce')
     monkeypatch.setattr(process, 'read_identity', members.get)
     monkeypatch.setattr(process, 'read_process_identity', members.get)
-    monkeypatch.setattr(process, '_descendants', lambda expected: [])
     def send(item, sig):
         if sig == signal.SIGSTOP and quiescent:
             members[item['pid']]['state'] = 'T'
@@ -323,7 +349,7 @@ def test_supervisor_finalizes_only_after_group_quiescence(owned, monkeypatch, qu
     class Transport:
         def stop_executor(self, identity, path, budget):
             return process.stop_executor(dict(executor_pid=999, executor_pid_start_ticks=1,
-                                               executor_boot_id='boot'), path, .3)
+                                               executor_boot_id='boot', executor_session_id=999, executor_group_nonce='nonce'), path, .3)
         def cleanup_containers(self, *args):
             assert not members
     events = []
@@ -464,7 +490,7 @@ def test_real_executor_exact_identity_and_conflict(tmp_path, identity_change):
         identity = process_identity(process.pid)
         if identity_change:
             identity[identity_change] = 'reused'
-        executor = dict(executor_pid=process.pid, executor_pid_start_ticks=identity['start_ticks'], executor_boot_id=identity['boot_id'])
+        executor = dict(executor_pid=process.pid, executor_pid_start_ticks=identity['start_ticks'], executor_boot_id=identity['boot_id'], executor_session_id=process.pid, executor_group_nonce='test')
         result = stop_executor(executor, tmp_path, 5)
         if identity_change:
             assert result == 'conflict'
@@ -497,7 +523,7 @@ def test_absent_executor_reaps_tracked_handler_descendants(tmp_path):
             time.sleep(.02)
         identity = process_identity(proc.pid)
         atomic_json(tmp_path/'control'/'handler-stubborn.json', {**identity, 'handler': 'stubborn', 'group_nonce': nonce})
-        result = stop_executor(dict(executor_pid=2147483647, executor_pid_start_ticks=1, executor_boot_id=identity['boot_id']), tmp_path, 5)
+        result = stop_executor(dict(executor_pid=2147483647, executor_pid_start_ticks=1, executor_boot_id=identity['boot_id'], executor_session_id=2147483647, executor_group_nonce='test'), tmp_path, 5)
         assert result == 'absent'
         proc.wait(timeout=1)
         child_stat = Path('/proc')/child_file.read_text()/'stat'
@@ -773,12 +799,13 @@ def test_reaper_racing_identity_publication_leaves_no_stale_record(tmp_path, mon
     from backend.app.pipeline import sensor_process as m
     from backend.app.pipeline.runtime_control import SensorExecutionContext
     entered, release = threading.Event(), threading.Event()
-    original = m.atomic_json
+    from backend.app.bluescrub.isolation import launch as boundary
+    original = boundary.publish
     def publish(path, payload):
         entered.set()
         assert release.wait(3)
         original(path, payload)
-    monkeypatch.setattr(m, 'atomic_json', publish)
+    monkeypatch.setattr(boundary, 'publish', publish)
     def launch():
         try:
             m.run_tracked_process([sys.executable, '-c', 'import time; time.sleep(20)'],
