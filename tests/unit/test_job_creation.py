@@ -48,12 +48,15 @@ def creation(tmp_path, monkeypatch):
     app.dependency_overrides[get_settings] = lambda: settings
     dispatched = []
 
-    def dispatch(job_id):
+    def dispatch(*, args, task_id):
+        job_id = args[0]
         # A separate connection can only see records that were committed.
         with Session(engine) as db:
             job = db.get(Job, job_id)
             assert job is not None
             assert job.status == "queued"
+            assert job.artifact_layout_version == 2
+            assert job.celery_task_id == task_id
             dispatched.append({
                 "job_id": job_id,
                 "pcaps": len(db.scalars(select(JobPcap).where(JobPcap.job_id == job_id)).all()),
@@ -61,7 +64,9 @@ def creation(tmp_path, monkeypatch):
                 "lineage": db.get(BlueScrubJobLineage, job_id) is not None,
             })
 
-    worker = SimpleNamespace(run_job=SimpleNamespace(delay=dispatch))
+    worker = SimpleNamespace(run_job=SimpleNamespace(apply_async=dispatch), run_job_phase=None)
+    from backend.app import database_v2
+    monkeypatch.setattr(database_v2, "get_session_factory", lambda: lambda: Session(engine))
     monkeypatch.setitem(sys.modules, "backend.app.worker", worker)
     with TestClient(app, raise_server_exceptions=False) as client:
         yield SimpleNamespace(client=client, engine=engine, settings=settings, dispatched=dispatched, worker=worker)
@@ -228,14 +233,15 @@ def test_commit_failure_never_dispatches(creation, monkeypatch):
 def test_dispatch_failure_keeps_committed_job_and_existing_201_response(creation, caplog):
     upload_id = upload(creation)
 
-    def unavailable(job_id):
+    def unavailable(**kwargs):
         raise RuntimeError("Queue unavailable")
 
-    creation.worker.run_job.delay = unavailable
+    creation.worker.run_job.apply_async = unavailable
     response = post_job(creation, upload_id=upload_id)
     assert response.status_code == 201
     with Session(creation.engine) as db:
-        assert db.get(Job, response.json()["job_id"]).status == "queued"
+        assert db.get(Job, response.json()["job_id"]).status == "failed"
+        assert db.get(Job, response.json()["job_id"]).completed_at
     assert "Failed to dispatch job" in caplog.text
 
 

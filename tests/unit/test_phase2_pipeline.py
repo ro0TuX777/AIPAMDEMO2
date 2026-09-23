@@ -736,6 +736,7 @@ class TestOrchestrator:
         job = Job(
             job_id=job_id,
             job_name="Test Pipeline Job",
+            artifact_layout_version=1,
             status="queued",
             execution_profile=profile,
             priority="normal",
@@ -793,10 +794,10 @@ class TestOrchestrator:
             # Reset cache after test
             reg._handlers_cache = None
 
-        assert status in ("completed", "completed_with_errors")
+        assert status.status in ("completed", "completed_with_errors")
         job = db_session.get(Job, job_id)
-        assert job.status in ("completed", "completed_with_errors")
-        assert job.started_at is not None
+        assert job.status == "queued"
+        assert job.started_at is None
         assert (run_output_dir / "metrics" / "job_metrics.json").is_file()
         assert (input_root / "input" / "pcap.pcap").is_file()
         if separate_output:
@@ -823,10 +824,10 @@ class TestOrchestrator:
             upload_root=tmp_path / "uploads",
         )
 
-        assert status == "failed"
+        assert status.status == "failed"
         job = db_session.get(Job, job_id)
-        assert job.status == "failed"
-        assert "Insufficient disk" in (job.error_summary or "")
+        assert job.status == "queued"
+        assert "Insufficient disk" in status.required_failures[0].error
 
     def test_pipeline_missing_job(self, db_session, tmp_path):
         from backend.app.pipeline.orchestrator import run_pipeline

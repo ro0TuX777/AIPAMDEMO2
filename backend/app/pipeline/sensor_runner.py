@@ -14,6 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
 
+from backend.app.pipeline.outcomes import PipelineCanceled, OwnershipLost
 from backend.app.sensors.registry import SensorDef, validate_image_allowlist
 
 logger = logging.getLogger("aipam.sensor_runner")
@@ -92,6 +93,8 @@ def run_sensor(
     # Verify image exists locally
     try:
         docker_client.images.get(sensor_def.image)
+    except (PipelineCanceled, OwnershipLost):
+        raise
     except Exception as exc:
         return SensorResult(
             sensor=name, status="failed",
@@ -151,6 +154,8 @@ def run_sensor(
         exit_code = result.get("StatusCode", -1)
         status = "completed" if exit_code == 0 else "failed"
 
+    except (PipelineCanceled, OwnershipLost):
+        raise
     except Exception as exc:
         # Timeout or other error — attempt graceful then force kill
         exc_str = str(exc)
@@ -249,6 +254,8 @@ def _run_handler(
         status = "completed"
         exit_code = 0
         error_msg = None
+    except (PipelineCanceled, OwnershipLost):
+        raise
     except Exception as exc:
         logger.exception("Handler for sensor %s failed", name)
         status = "failed"

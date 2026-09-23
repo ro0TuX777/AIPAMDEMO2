@@ -99,6 +99,7 @@ def test_rerun_copies_pcap_metadata_and_preserves_source_context(lifecycle):
         assert (settings.aipam_job_root / "rerun").is_dir()
     with Session(engine) as db:
         rerun = db.get(Job, "rerun")
+        assert rerun.artifact_layout_version == 2
         assert (rerun.job_name, rerun.notes, rerun.status) == ("Rerun of Original", "Rerun of job job", "queued")
         assert (rerun.execution_profile, rerun.priority) == ("deep", "high")
         # Preserve the route's existing rerun contract: source-specific context
@@ -122,7 +123,7 @@ def test_rerun_commits_before_dispatch_can_observe_the_new_job(lifecycle):
 
 
 @pytest.mark.parametrize("status", ["completed", "completed_with_errors", "failed"])
-def test_reanalysis_sets_running_and_dispatches_only_the_requested_label(lifecycle, status):
+def test_reanalysis_queues_and_dispatches_only_the_requested_label(lifecycle, status):
     engine, _ = lifecycle
     dispatched = []
     with Session(engine) as db:
@@ -135,15 +136,15 @@ def test_reanalysis_sets_running_and_dispatches_only_the_requested_label(lifecyc
 
         def dispatch(job_id, label):
             with Session(engine) as observer:
-                assert observer.get(Job, job_id).status == "running"
+                assert observer.get(Job, job_id).status == "queued"
             dispatched.append((job_id, label))
 
         result = reanalyze_job(job, db, "after", dispatch)
-        assert result == {"job_id": "job", "pcap_label": "after", "status": "running", "pcap_count": 1}
+        assert result == {"job_id": "job", "pcap_label": "after", "status": "queued", "pcap_count": 1}
         assert dispatched == [("job", "after")]
     with Session(engine) as db:
         job = db.get(Job, "job")
-        assert (job.status, job.error_summary) == ("running", None)
+        assert (job.status, job.error_summary) == ("queued", None)
 
 
 @pytest.mark.parametrize("status", ["queued", "running", "canceled", "deleted"])
@@ -170,7 +171,7 @@ def test_reanalysis_rejects_an_unknown_label_without_dispatch(lifecycle):
         assert job.status == "completed"
 
 
-def test_reanalysis_marks_job_failed_if_phase_dispatch_fails(lifecycle):
+def test_reanalysis_does_not_write_terminal_state_if_dispatch_callback_fails(lifecycle):
     engine, _ = lifecycle
     with Session(engine) as db:
         job = seed_job(db, status="completed")
@@ -181,8 +182,8 @@ def test_reanalysis_marks_job_failed_if_phase_dispatch_fails(lifecycle):
         assert (exc.value.status_code, exc.value.detail) == (500, "Failed to dispatch re-analysis task")
     with Session(engine) as db:
         failed = db.get(Job, "job")
-        assert failed.status == "failed"
-        assert failed.error_summary == "Failed to dispatch re-analysis: Queue unavailable"
+        assert failed.status == "queued"
+        assert failed.error_summary is None
 
 
 def test_routes_preserve_lifecycle_statuses_headers_and_phase_dispatch(app_client, monkeypatch):
@@ -229,6 +230,6 @@ def test_routes_preserve_lifecycle_statuses_headers_and_phase_dispatch(app_clien
     assert reanalysis.status_code == 202
     assert reanalysis.headers["X-Request-Id"] == "lifecycle-request"
     assert reanalysis.json() == {
-        "job_id": "completed", "pcap_label": "after", "status": "running", "pcap_count": 1,
+        "job_id": "completed", "pcap_label": "after", "status": "queued", "pcap_count": 1,
     }
     assert dispatched == [("completed", "after")]

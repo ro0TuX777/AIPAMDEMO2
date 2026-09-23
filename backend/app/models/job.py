@@ -50,7 +50,7 @@ class Job(Base):
     cancel_deadline_at = Column(String, nullable=True)
     cancel_escalation_token = Column(String, nullable=True)
     cancel_escalation_started_at = Column(String, nullable=True)
-    artifact_layout_version = Column(Integer, nullable=False, default=1, server_default="2")
+    artifact_layout_version = Column(Integer, nullable=False, default=2, server_default="2")
     accepted_run_manifest_json = Column(Text, nullable=True)
 
     __table_args__ = (

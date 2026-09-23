@@ -25,7 +25,7 @@ def test_job_response_exposes_liveness_but_not_ownership():
         }
         & public.keys()
     )
-    assert Job.__table__.c.artifact_layout_version.default.arg == 1
+    assert Job.__table__.c.artifact_layout_version.default.arg == 2
 
 
 import pytest

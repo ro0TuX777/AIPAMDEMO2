@@ -46,6 +46,8 @@ from backend.app.sensors.registry import (
     get_stages_for_profile,
 )
 from backend.app.events import publish_job_event
+from backend.app.pipeline.outcomes import PipelineOutcome, StageFailure, derive_outcome, stage_failure
+from backend.app.pipeline.run_artifacts import build_accepted_manifest
 
 logger = logging.getLogger("aipam.orchestrator")
 
@@ -104,135 +106,85 @@ def _now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
 
-def _update_job_status(db: Session, job: Job, status: str, error: str | None = None) -> None:
-    """Update job status in DB."""
-    job.status = status
-    if error:
-        job.error_summary = error
-    if status in ("completed", "completed_with_errors", "failed", "canceled"):
-        job.completed_at = _now_iso()
-    db.commit()
+def _finish_outcome(
+    job: Job, run_output_dir: Path, *, required=(), optional=(),
+    metrics: dict[str, Any] | None = None, pcap_label: str | None = None,
+) -> PipelineOutcome:
+    """Build the candidate manifest; only the worker may accept it."""
+    required = list(required)
+    manifest = "[]"
+    try:
+        if run_output_dir.parent.name == ".runs":
+            manifest = build_accepted_manifest(job.accepted_run_manifest_json,
+                                               run_output_dir.name, pcap_label)
+        elif job.artifact_layout_version != 1:
+            raise ValueError("Layout 2 requires an owned run directory")
+    except Exception as exc:
+        required.append(stage_failure("manifest", exc))
+    return derive_outcome(required=required, optional=optional, metrics=metrics,
+                          accepted_manifest_json=manifest)
 
 
 def _run_binary_pipeline(
-    job_id: str,
-    job: Job,
-    db: Session,
-    *,
-    input_root: Path,
-    run_output_dir: Path,
-    upload_root: Path,
-) -> str:
-    """Run YARA/binary analysis for a ``binary`` source-type job and finalize.
-
-    The artifact is normally copied into ``<job_dir>/input`` at job creation;
-    the upload directory is used as a fallback. Persistence is idempotent so
-    re-runs update the File row in place without duplicating findings.
-    """
+    job_id: str, job: Job, db: Session, *, input_root: Path,
+    run_output_dir: Path, upload_root: Path,
+) -> PipelineOutcome:
+    """Analyze a staged binary and return its persistence/sensor outcome."""
     from backend.app.binalysis.service import analyze_and_persist
 
+    def first_file(directory: Path) -> Path | None:
+        if not directory.exists():
+            return None
+        return next((p for p in sorted(directory.iterdir()) if p.is_file()), None)
+
+    target = first_file(input_root / "input")
+    if target is None and job.upload_id:
+        target = first_file(upload_root / job.upload_id)
+    if target is None:
+        return _finish_outcome(job, run_output_dir, required=[StageFailure("input", "No binary artifact found for job")])
     try:
-        input_dir = input_root / "input"
-
-        def _first_file(d: Path) -> Path | None:
-            if not d.exists():
-                return None
-            files = [p for p in sorted(d.iterdir()) if p.is_file()]
-            return files[0] if files else None
-
-        target = _first_file(input_dir)
-        if target is None and job.upload_id:
-            target = _first_file(upload_root / job.upload_id)
-
-        if target is None:
-            _update_job_status(db, job, "failed", "No binary artifact found for job")
-            _emit(job_id, "job.complete", status="failed")
-            return "failed"
-
-        _emit(job_id, "stage.status", stage="binary", status="running",
-              step=1, total_steps=1)
-        analysis, _file_row, created = analyze_and_persist(db, job_id, target, target.name)
-        _emit(job_id, "stage.status", stage="binary", status="completed",
-              step=1, total_steps=1,
-              message=f"yara_matches={len(analysis.yara_matches)} findings={created}")
-
-        job.metrics_json = json.dumps({
-            "artifact_class": analysis.artifact_class,
-            "format": analysis.format,
-            "yara_available": analysis.yara_available,
-            "yara_matches": len(analysis.yara_matches),
-            "findings_created": created,
-        })
-        _update_job_status(db, job, "completed")
-        _emit(job_id, "job.complete", status="completed")
-        logger.info("Binary pipeline completed for job %s: %d YARA matches, %d findings",
-                    job_id, len(analysis.yara_matches), created)
-        return "completed"
+        _emit(job_id, "stage.status", stage="binary", status="running")
+        analysis, _, created = analyze_and_persist(db, job_id, target, target.name)
+        metrics = {"artifact_class": analysis.artifact_class, "format": analysis.format,
+                   "yara_available": analysis.yara_available, "yara_matches": len(analysis.yara_matches),
+                   "findings_created": created}
+        _emit(job_id, "stage.status", stage="binary", status="completed")
+        optional = [] if analysis.yara_available else [StageFailure("yara", "YARA unavailable")]
+        return _finish_outcome(job, run_output_dir, metrics=metrics, optional=optional)
     except Exception as exc:
-        logger.error("Binary pipeline failed for job %s: %s", job_id, exc, exc_info=True)
-        _update_job_status(db, job, "failed", str(exc))
-        _emit(job_id, "job.complete", status="failed")
-        return "failed"
+        return _finish_outcome(job, run_output_dir, required=[stage_failure("binary", exc)])
 
 
 def _run_code_artifact_pipeline(
-    job_id: str,
-    job: Job,
-    db: Session,
-    *,
-    input_root: Path,
-    run_output_dir: Path,
-    upload_root: Path,
-) -> str:
-    """Run BlueScrub DACV+R analysis for a ``code_artifact`` job and finalize.
-
-    Sibling of :func:`_run_binary_pipeline` — it never enters the Zeek/Suricata
-    ``has_pcaps`` path. The staged source tree is produced at job creation;
-    this drives the scanner registry, scores, persists, and finalizes.
-
-    A scanner failure degrades its pillar rather than failing the job, so the
-    terminal status is ``completed`` even when the report is partial.
-    """
+    job_id: str, job: Job, db: Session, *, input_root: Path,
+    run_output_dir: Path, upload_root: Path,
+) -> PipelineOutcome:
+    """Return BlueScrub scanner coverage without writing lifecycle state."""
     from backend.app.bluescrub.service import analyze_and_persist
 
+    source_root = input_root / "input" / "source"
+    if not source_root.exists() or not any(source_root.rglob("*")):
+        return _finish_outcome(job, run_output_dir, required=[StageFailure("input", "No staged source found for job")])
     try:
-        source_root = input_root / "input" / "source"
-        if not source_root.exists() or not any(source_root.rglob("*")):
-            _update_job_status(db, job, "failed", "No staged source found for job")
-            _emit(job_id, "job.complete", status="failed")
-            return "failed"
-
-        profile = job.execution_profile or "standard"
         lineage = db.get(BlueScrubJobLineage, job_id)
-
-        def _progress(sensor: str, status: str, message: str | None = None) -> None:
-            _emit(job_id, "stage.status", stage=sensor, status=status,
-                  message=message or "")
+        def progress(sensor: str, status: str, message: str | None = None) -> None:
+            _emit(job_id, "stage.status", stage=sensor, status=status, message=message or "")
 
         metrics = analyze_and_persist(
             db, job_id, input_root, run_output_dir=run_output_dir,
-            profile=profile,
+            profile=job.execution_profile or "standard",
             project_id=lineage.project_id if lineage else None,
             analysis_kind=lineage.analysis_kind if lineage else "source_audit",
-            progress=_progress,
+            progress=progress,
         )
-
-        job.metrics_json = json.dumps(metrics)
         dacv = metrics["dacv"]
-        final = "completed_with_errors" if dacv.get("partial") else "completed"
-        _update_job_status(db, job, final)
-        _emit(job_id, "job.complete", status=final)
-        logger.info(
-            "BlueScrub pipeline %s for job %s: scoped=%s grade=%s overall=%s",
-            final, job_id, dacv["scoped"]["score"], dacv["scoped"]["grade"],
-            dacv["overall"]["status"],
-        )
-        return final
+        optional = [StageFailure(item.get("sensor", "bluescrub"), str(item))
+                    for item in dacv.get("partial_reasons", [])] if dacv.get("partial") else []
+        if dacv.get("partial") and not optional:
+            optional.append(StageFailure("bluescrub", "Partial scanner coverage"))
+        return _finish_outcome(job, run_output_dir, metrics=metrics, optional=optional)
     except Exception as exc:
-        logger.error("BlueScrub pipeline failed for job %s: %s", job_id, exc, exc_info=True)
-        _update_job_status(db, job, "failed", str(exc))
-        _emit(job_id, "job.complete", status="failed")
-        return "failed"
+        return _finish_outcome(job, run_output_dir, required=[stage_failure("bluescrub", exc)])
 
 
 def _record_sensor_result(db: Session, job_id: str, result: SensorResult) -> None:
@@ -278,7 +230,7 @@ def _write_job_metrics(
     """Write job_metrics.json per §20 of the implementation plan."""
     try:
         started = datetime.fromisoformat(job.started_at) if job.started_at else None
-        completed = datetime.fromisoformat(job.completed_at) if job.completed_at else None
+        completed = datetime.now(timezone.utc)
         total_runtime_sec = (
             int((completed - started).total_seconds()) if started and completed else 0
         )
@@ -404,7 +356,7 @@ def run_pipeline(
     pcap_label: str | None = None,
     input_root: Path | None = None,
     run_output_dir: Path | None = None,
-) -> str:
+) -> PipelineOutcome:
     """Execute the full analysis pipeline for a job.
 
     Args:
@@ -419,7 +371,7 @@ def run_pipeline(
         pcap_label: If set, only process PCAPs with this label (temporal re-analysis).
 
     Returns:
-        Final job status string.
+        One outcome for the worker to finalize under durable ownership.
     """
     job: Job | None = db.get(Job, job_id)
     if job is None:
@@ -434,9 +386,8 @@ def run_pipeline(
 
     logger.info("Starting pipeline for job %s (profile=%s, source_type=%s)",
                 job_id, job.execution_profile, job.source_type)
-    _update_job_status(db, job, "running")
-    job.started_at = _now_iso()
-    db.commit()
+    required_failures: list[StageFailure] = []
+    optional_failures: list[StageFailure] = []
 
     # --- Binary artifact job: run YARA/binary analysis and finalize ---
     if (job.source_type or "") == "binary":
@@ -518,8 +469,7 @@ def run_pipeline(
                     preflight_multiplier=preflight_multiplier,
                 )
                 if not preflight.ok:
-                    _update_job_status(db, job, "failed", preflight.message)
-                    return "failed"
+                    return _finish_outcome(job, run_output_dir, required=[StageFailure("input", preflight.message)], pcap_label=pcap_label)
 
                 # Compute SHA of the first PCAP for backward compat
                 first_pcap = list((input_root / "input").glob("*.pcap")) + list((input_root / "input").glob("*.pcapng"))
@@ -538,15 +488,13 @@ def run_pipeline(
 
     except Exception as exc:
         logger.error("Pipeline setup failed for job %s: %s", job_id, exc)
-        _update_job_status(db, job, "failed", str(exc))
-        return "failed"
+        return _finish_outcome(job, run_output_dir, required=[stage_failure("input", exc)], pcap_label=pcap_label)
 
     # --- Re-analysis isolation (PCAP only) ---
     _hidden_pcaps: list[tuple[Path, Path]] = []
     stages: list[Any] = []
     sensors: list[Any] = []
     sensor_results: list[SensorResult] = []
-    has_errors = False
 
     def _restore_hidden_pcaps() -> None:
         """Un-hide PCAPs hidden for single-phase re-analysis isolation.
@@ -625,7 +573,7 @@ def run_pipeline(
                   step=step_num, total_steps=total_steps,
                   duration_ms=result.duration_ms)
 
-            if result.status in ("failed", "timeout"):
+            if result.status in ("failed", "timeout") or (stage_def.required and result.status != "completed"):
                 # Not fatal. Zeek and Suricata are independent of each other, and
                 # neither is needed by the uploaded-log telemetry pipeline — so a
                 # Zeek timeout used to throw away perfectly good Suricata alerts,
@@ -633,7 +581,7 @@ def run_pipeline(
                 # failure, skip only what genuinely depended on this stage, and
                 # let the rest of the job produce what it still can.
                 failed_stages.add(stage_def.name)
-                has_errors = True
+                (required_failures if stage_def.required else optional_failures).append(StageFailure(stage_def.name, result.error or result.status))
                 logger.error(
                     "Stage %s %s for job %s — continuing without it: %s",
                     stage_def.name, result.status, job_id, result.error,
@@ -749,6 +697,8 @@ def run_pipeline(
                     )
                     _record_sensor_result(db, job_id, skip_result)
                     sensor_results.append(skip_result)
+                    if sensor_def.required:
+                        required_failures.append(StageFailure(sensor_def.name, reason))
                     continue
 
             step_num += 1
@@ -772,8 +722,8 @@ def run_pipeline(
                   step=step_num, total_steps=total_steps,
                   duration_ms=result.duration_ms)
 
-            if result.status in ("failed", "timeout"):
-                has_errors = True
+            if result.status in ("failed", "timeout") or (sensor_def.required and result.status != "completed"):
+                (required_failures if sensor_def.required else optional_failures).append(StageFailure(sensor_def.name, result.error or result.status))
                 logger.warning(
                     "Sensor %s %s for job %s: %s",
                     sensor_def.name, result.status, job_id, result.error,
@@ -782,7 +732,7 @@ def run_pipeline(
             # Check job disk quota
             if check_job_quota(input_root, max_job_disk_bytes):
                 logger.warning("Job %s exceeded disk quota", job_id)
-                has_errors = True
+                required_failures.append(StageFailure("quota", "Job exceeded disk quota"))
                 break
 
     finally:
@@ -843,7 +793,7 @@ def run_pipeline(
             _completed_stages.append("telemetry")
         except Exception as exc:
             logger.error("Telemetry pipeline failed for job %s: %s", job_id, exc, exc_info=True)
-            has_errors = True
+            optional_failures.append(stage_failure("telemetry", exc))
             _emit(job_id, "stage.status", stage="telemetry", status="failed",
                   step=step_num, total_steps=total_steps, message=str(exc))
 
@@ -861,12 +811,17 @@ def run_pipeline(
               step=step_num, total_steps=total_steps,
               message=f"findings={corr_counts.get('findings', 0)}")
 
-        # Update global host registry for cross-job forensics
-        from backend.app.normalize.post_process import update_global_host_stats
-        update_global_host_stats(db, job_id)
     except Exception as exc:
         logger.error("Correlation failed for job %s: %s", job_id, exc, exc_info=True)
-        has_errors = True
+        required_failures.append(stage_failure("correlate", exc))
+
+    # Cross-job host enrichment is optional; correlation persistence above is required.
+    if corr_counts is not None:
+        try:
+            from backend.app.normalize.post_process import update_global_host_stats
+            update_global_host_stats(db, job_id)
+        except Exception as exc:
+            optional_failures.append(stage_failure("host_stats", exc))
 
     # Populate the Raw Events explorer for PCAP jobs by normalizing zeek flows/
     # events and suricata alerts into normalized_events. The telemetry pipeline
@@ -877,7 +832,8 @@ def run_pipeline(
             from backend.app.normalize.network_events import normalize_network_events
             n_events = normalize_network_events(job_id, run_output_dir, db)
             logger.info("Raw network events for job %s: %d", job_id, n_events)
-        except Exception:
+        except Exception as exc:
+            optional_failures.append(stage_failure("network_events", exc))
             logger.warning("PCAP network-event normalization failed for job %s", job_id, exc_info=True)
 
     # --- Publish partial result: correlation / aggregate data ---
@@ -920,6 +876,7 @@ def run_pipeline(
                   step=step_num, total_steps=total_steps,
                   message=f"matches={tc_result.get('matches', 0)} upgraded={tc_result.get('upgraded_events', 0)}")
         except Exception as exc:
+            optional_failures.append(stage_failure("temporal_correlate", exc))
             logger.error("Temporal correlation failed for job %s: %s", job_id, exc, exc_info=True)
             _emit(job_id, "stage.status", stage="temporal_correlate", status="failed",
                   step=step_num, total_steps=total_steps, message=str(exc))
@@ -958,8 +915,9 @@ def run_pipeline(
                   step=step_num, total_steps=total_steps)
 
     except Exception as exc:
+        optional_failures.append(stage_failure("index", exc))
         logger.warning("Auto-indexing failed for job %s (non-fatal): %s", job_id, exc)
-        _emit(job_id, "stage.status", stage="index", status="completed",
+        _emit(job_id, "stage.status", stage="index", status="failed",
               step=step_num, total_steps=total_steps, message="index failed (non-fatal)")
 
     # --- Step 10: Generate Theory of the Case ───────────────────────
@@ -975,8 +933,9 @@ def run_pipeline(
               step=step_num, total_steps=total_steps,
               message=f"theories={theory_counts.get('total', 0)}")
     except Exception as exc:
+        optional_failures.append(stage_failure("theories", exc))
         logger.warning("Theory generation failed for job %s (non-fatal): %s", job_id, exc)
-        _emit(job_id, "stage.status", stage="theories", status="completed",
+        _emit(job_id, "stage.status", stage="theories", status="failed",
               step=step_num, total_steps=total_steps, message="theories failed (non-fatal)")
 
     # --- Step 11: Generate Incident Slices ──────────────────────────
@@ -992,8 +951,9 @@ def run_pipeline(
               step=step_num, total_steps=total_steps,
               message=f"slices={len(slices)}")
     except Exception as exc:
+        optional_failures.append(stage_failure("slices", exc))
         logger.warning("Slice generation failed for job %s (non-fatal): %s", job_id, exc)
-        _emit(job_id, "stage.status", stage="slices", status="completed",
+        _emit(job_id, "stage.status", stage="slices", status="failed",
               step=step_num, total_steps=total_steps, message="slices failed (non-fatal)")
 
     # --- Step 12: Generate Context Annotations (Why Unusual?) ─────
@@ -1009,42 +969,10 @@ def run_pipeline(
               step=step_num, total_steps=total_steps,
               message=f"annotations={len(anns)}")
     except Exception as exc:
+        optional_failures.append(stage_failure("annotations", exc))
         logger.warning("Annotation generation failed for job %s (non-fatal): %s", job_id, exc)
-        _emit(job_id, "stage.status", stage="annotations", status="completed",
+        _emit(job_id, "stage.status", stage="annotations", status="failed",
               step=step_num, total_steps=total_steps, message="annotations failed (non-fatal)")
-
-    # --- Frontier Knowledge Distillation v2 (non-blocking) ---
-    try:
-        from backend.app.distillation import reload_teacher_config, distill_v2
-        teacher = reload_teacher_config()  # reload from shared JSON on disk
-        if teacher.enabled and teacher.is_configured():
-            logger.info(
-                "[PIPELINE] Frontier distillation v2 enabled — distilling job %s via %s",
-                job_id, teacher.model,
-            )
-            import asyncio
-            from backend.app.database_v2 import get_session_factory
-            distill_stats = asyncio.run(
-                distill_v2(
-                    db_session_factory=get_session_factory(),
-                    job_id=job_id,
-                    teacher=teacher,
-                )
-            )
-            logger.info("[PIPELINE] Distillation v2 result: %s", distill_stats)
-        else:
-            logger.debug("[PIPELINE] Distillation v2 skipped (not configured or disabled)")
-    except Exception as distill_exc:
-        # Distillation failure must never fail the analysis job
-        logger.warning(
-            "[PIPELINE] Frontier distillation failed (continuing): %s",
-            distill_exc,
-        )
-
-    # --- Final status ---
-    final_status = "completed_with_errors" if has_errors else "completed"
-    _update_job_status(db, job, final_status)
-    _emit(job_id, "job.complete", status=final_status)
 
     # Store metrics
     metrics = {
@@ -1054,8 +982,6 @@ def run_pipeline(
         "timeout": sum(1 for r in sensor_results if r.status == "timeout"),
         "skipped": sum(1 for r in sensor_results if r.status == "skipped"),
     }
-    job.metrics_json = json.dumps(metrics)
-    db.commit()
 
     # --- Write job_metrics.json (§20) ---
     _write_job_metrics(run_output_dir, job, stages, sensor_results, corr_counts)
@@ -1067,5 +993,4 @@ def run_pipeline(
     except Exception:
         pass
 
-    logger.info("Pipeline completed for job %s: status=%s, metrics=%s", job_id, final_status, metrics)
-    return final_status
+    return _finish_outcome(job, run_output_dir, required=required_failures, optional=optional_failures, metrics=metrics, pcap_label=pcap_label)

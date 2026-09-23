@@ -217,7 +217,7 @@ def test_orchestrator_branch_routes_code_artifact(db, tmp_path, stub_registry, m
     (job_root / "job-x" / "input" / "source" / "a.py").write_text("import os\n")
 
     job = Job(
-        job_id="job-x", status="queued", execution_profile="triage",
+        job_id="job-x", artifact_layout_version=1, status="queued", execution_profile="triage",
         priority="normal", source_type="code_artifact",
         created_at="2026-08-09T00:00:00Z",
     )
@@ -227,12 +227,12 @@ def test_orchestrator_branch_routes_code_artifact(db, tmp_path, stub_registry, m
     monkeypatch.setattr(orchestrator, "_emit", lambda *a, **kw: None)
 
     status = orchestrator._run_code_artifact_pipeline(
-        "job-x", job, db, job_root=job_root, upload_root=tmp_path / "uploads",
+        "job-x", job, db, input_root=job_root / "job-x", run_output_dir=job_root / "job-x", upload_root=tmp_path / "uploads",
     )
 
-    assert status in ("completed", "completed_with_errors")
-    assert job.metrics_json is not None
-    assert json.loads(job.metrics_json)["dacv"]["analysis_kind"] == "source_audit"
+    assert status.status in ("completed", "completed_with_errors")
+    assert job.status == "queued"
+    assert status.metrics["dacv"]["analysis_kind"] == "source_audit"
 
 
 def test_missing_source_fails_cleanly(db, tmp_path, monkeypatch):
@@ -240,14 +240,16 @@ def test_missing_source_fails_cleanly(db, tmp_path, monkeypatch):
 
     job_root = tmp_path / "jobs"
     (job_root / "job-y").mkdir(parents=True)
-    job = Job(job_id="job-y", status="queued", execution_profile="triage",
+    job = Job(job_id="job-y", artifact_layout_version=1, status="queued", execution_profile="triage",
               priority="normal", source_type="code_artifact",
               created_at="2026-08-09T00:00:00Z")
     db.add(job)
     db.commit()
     monkeypatch.setattr(orchestrator, "_emit", lambda *a, **kw: None)
 
-    assert orchestrator._run_code_artifact_pipeline(
-        "job-y", job, db, job_root=job_root, upload_root=tmp_path,
-    ) == "failed"
-    assert "No staged source" in (job.error_summary or "")
+    outcome = orchestrator._run_code_artifact_pipeline(
+        "job-y", job, db, input_root=job_root / "job-y", run_output_dir=job_root / "job-y", upload_root=tmp_path,
+    )
+    assert outcome.status == "failed"
+    assert job.status == "queued"
+    assert "No staged source" in outcome.required_failures[0].error

@@ -8,7 +8,7 @@ from datetime import datetime, timezone
 import logging
 from pathlib import Path
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
 from backend.app.config_v2 import Settings
@@ -61,6 +61,7 @@ def rerun_job(
         job_name=f"Rerun of {old.job_name or old.job_id}",
         notes=f"Rerun of job {old.job_id}",
         status="queued",
+        artifact_layout_version=2,
         execution_profile=old.execution_profile,
         priority=old.priority,
         upload_id=old.upload_id,
@@ -95,7 +96,7 @@ def reanalyze_job(
     pcap_label: str,
     dispatch_phase: Callable[[str, str], None],
 ) -> dict[str, str | int]:
-    """Queue a phase-specific rerun, restoring a failed state if dispatch fails."""
+    """Queue a phase-specific rerun with a fresh dispatch/ownership identity."""
     if job.status not in ("completed", "completed_with_errors", "failed"):
         raise JobLifecycleError(
             409,
@@ -111,22 +112,37 @@ def reanalyze_job(
     if label_count == 0:
         raise JobLifecycleError(400, f"No PCAPs with label '{pcap_label}' found for this job")
 
-    job.status = "running"
-    job.error_summary = None
+    # Queue a new delivery identity; a worker claim alone enters running.
+    # Keep the accepted manifest so a phase replacement preserves other phases.
+    job_id = job.job_id
+    changed = db.execute(
+        update(Job).where(Job.job_id == job_id, Job.status.in_(
+            ("completed", "completed_with_errors", "failed")
+        )).values(
+            status="queued", artifact_layout_version=2, error_summary=None,
+            celery_task_id=None, run_token=None, dispatched_at=None,
+            started_at=None, completed_at=None, heartbeat_at=None,
+            cancel_requested_at=None, cancel_force_at=None, cancel_deadline_at=None,
+            cancel_escalation_token=None, cancel_escalation_started_at=None,
+            worker_id=None, worker_container_id=None, executor_pid=None,
+            executor_pid_start_ticks=None, executor_boot_id=None,
+        )
+    ).rowcount
     db.commit()
+    if changed != 1:
+        raise JobLifecycleError(409, "Job state changed before re-analysis")
 
     try:
         dispatch_phase(job.job_id, pcap_label)
     except Exception as exc:
         _logger.warning("Failed to dispatch reanalyze for job %s: %s", job.job_id, exc)
-        job.status = "failed"
-        job.error_summary = f"Failed to dispatch re-analysis: {exc}"
-        db.commit()
+        # The dispatcher owns dispatch-failure CAS; do not overwrite a worker.
+        db.rollback()
         raise JobLifecycleError(500, "Failed to dispatch re-analysis task") from exc
 
     return {
         "job_id": job.job_id,
         "pcap_label": pcap_label,
-        "status": "running",
+        "status": "queued",
         "pcap_count": label_count,
     }

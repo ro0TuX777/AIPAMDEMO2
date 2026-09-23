@@ -27,6 +27,7 @@ class SensorDef:
     name: str
     type: SensorType
     enabled_by_default: bool = True
+    required: bool = False
 
     # Docker image — used when handler is None (container-based execution)
     image: str | None = None
