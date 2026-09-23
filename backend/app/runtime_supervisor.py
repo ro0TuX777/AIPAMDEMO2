@@ -4,6 +4,7 @@ import argparse
 from dataclasses import asdict
 import json
 import logging
+import os
 from pathlib import Path
 import subprocess
 import sys

@@ -412,6 +412,7 @@ def adopt_legacy_database(database_path: str | Path, *, lock_timeout: float = 30
         operation = uuid4().hex
         source_counts = _table_row_counts(source)
         source_primary_keys = _primary_key_fingerprints(source)
+        source_foreign_key_violations = _foreign_key_violations(source)
         backups = source.parent / "schema-backups"
         receipts = source.parent / "schema-receipts"
         backups.mkdir(exist_ok=True)
@@ -446,16 +447,22 @@ def adopt_legacy_database(database_path: str | Path, *, lock_timeout: float = 30
                     # only after an exact reviewed fingerprint is registered.
                     pass
                 db.execute("PRAGMA integrity_check")
-                if db.execute("PRAGMA foreign_key_check").fetchone():
-                    raise SchemaBootstrapError("candidate foreign_key_check failed")
+            if _foreign_key_violations(candidate) != source_foreign_key_violations:
+                raise SchemaBootstrapError(
+                    "candidate foreign-key violations changed before migration"
+                )
             command.upgrade(_alembic_config(candidate), "heads")
             _create_v1_compatibility_tables(candidate)
             with _sqlite_connection(candidate) as db:
                 check = db.execute("PRAGMA integrity_check").fetchone()
-                if not check or check[0] != "ok" or db.execute("PRAGMA foreign_key_check").fetchone():
+                if not check or check[0] != "ok":
                     raise SchemaBootstrapError("migrated candidate validation failed")
                 revisions = _revision_state(db)
                 table_count = db.execute("SELECT count(*) FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'").fetchone()[0]
+            if _foreign_key_violations(candidate) != source_foreign_key_violations:
+                raise SchemaBootstrapError(
+                    "candidate foreign-key violations changed during migration"
+                )
             candidate_counts = _table_row_counts(candidate)
             candidate_primary_keys = _primary_key_fingerprints(candidate)
             generated_or_migrated = {
@@ -495,6 +502,7 @@ def adopt_legacy_database(database_path: str | Path, *, lock_timeout: float = 30
                        "candidate_row_counts": candidate_counts,
                        "source_primary_key_fingerprints": source_primary_keys,
                        "candidate_primary_key_fingerprints": candidate_primary_keys,
+                       "source_foreign_key_violations": source_foreign_key_violations,
                        "chat_row_counts": {name: count for name, count in source_counts.items() if name.startswith("chat_")},
                        "status": "prepared", "created_at": datetime.now(timezone.utc).isoformat()}
             _atomic_json(staging, receipt_path, payload)
@@ -514,8 +522,10 @@ def adopt_legacy_database(database_path: str | Path, *, lock_timeout: float = 30
             with _sqlite_connection(f"file:{source.as_posix()}?mode=ro", uri=True) as db:
                 if db.execute("PRAGMA quick_check").fetchone() != ("ok",):
                     raise SchemaBootstrapError("replaced database quick_check failed")
-                if db.execute("PRAGMA foreign_key_check").fetchone():
-                    raise SchemaBootstrapError("replaced database foreign_key_check failed")
+            if _foreign_key_violations(source) != source_foreign_key_violations:
+                raise SchemaBootstrapError(
+                    "replaced database foreign-key violations changed"
+                )
             assert_schema_current(source)
             payload["status"] = "committed"
             payload["committed_at"] = datetime.now(timezone.utc).isoformat()
@@ -754,6 +764,13 @@ def _table_row_counts(path: Path) -> dict[str, int]:
             "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name"
         )]
         return {name: db.execute(f'SELECT count(*) FROM "{name}"').fetchone()[0] for name in names}
+
+
+def _foreign_key_violations(path: Path) -> list[tuple]:
+    if not path.exists() or not path.stat().st_size:
+        return []
+    with _sqlite_connection(f"file:{path.resolve().as_posix()}?mode=ro", uri=True) as db:
+        return [tuple(row) for row in db.execute("PRAGMA foreign_key_check")]
 
 
 def _primary_key_fingerprints(path: Path) -> dict[str, str]:

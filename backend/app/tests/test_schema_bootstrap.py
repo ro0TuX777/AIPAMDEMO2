@@ -21,6 +21,7 @@ from backend.app.schema_bootstrap import (
 from backend.app.schema_bootstrap import (
     SchemaBootstrapError,
     _backup,
+    _create_v1_compatibility_tables,
     _database_content_sha256,
     _is_original_source,
     _table_row_counts,
@@ -197,6 +198,55 @@ def test_empty_partial_chat_fixture_migrates_from_verified_backup(tmp_path):
         assert db.execute("SELECT count(*) FROM chat_comparison_groups").fetchone()[0] == 1
         assert db.execute("SELECT mode FROM chat_conversations WHERE id='c1'").fetchone() == ("baseline",)
         assert db.execute("SELECT content FROM chat_messages WHERE id='m1'").fetchone() == ("preserve this answer",)
+
+
+def test_migration_preserves_preexisting_orphan_partial_results(tmp_path):
+    path = _copy_fixture(tmp_path, "legacy_unversioned.sql")
+    db = sqlite3.connect(path)
+    try:
+        db.execute(
+            "INSERT INTO partialjobresultdb (job_id, result, updated_at) VALUES (?, ?, ?)",
+            ("deleted-job", "{}", "2026-01-01"),
+        )
+        db.commit()
+        original_violations = db.execute("PRAGMA foreign_key_check").fetchall()
+    finally:
+        db.close()
+    assert len(original_violations) == 1
+
+    receipt = adopt_legacy_database(path)
+
+    assert receipt["status"] == "committed"
+    assert_schema_current(path)
+    with sqlite3.connect(path) as db:
+        assert db.execute("PRAGMA foreign_key_check").fetchall() == original_violations
+        assert db.execute(
+            "SELECT result FROM partialjobresultdb WHERE job_id='deleted-job'"
+        ).fetchone() == ("{}",)
+
+
+def test_migration_rejects_new_foreign_key_violations(tmp_path, monkeypatch):
+    path = _copy_fixture(tmp_path, "legacy_unversioned.sql")
+    before = _sha(path)
+    def add_orphan_to_candidate(candidate):
+        _create_v1_compatibility_tables(candidate)
+        db = sqlite3.connect(candidate)
+        try:
+            db.execute(
+                "INSERT INTO partialjobresultdb (job_id, result, updated_at) VALUES (?, ?, ?)",
+                ("new-orphan", "{}", "2026-01-01"),
+            )
+            db.commit()
+        finally:
+            db.close()
+
+    monkeypatch.setattr(
+        "backend.app.schema_bootstrap._create_v1_compatibility_tables",
+        add_orphan_to_candidate,
+    )
+    with pytest.raises(SchemaBootstrapError, match="foreign-key violations changed"):
+        adopt_legacy_database(path)
+    assert _sha(path) == before
 
 
 def test_fresh_database_runs_migrations_and_writes_receipt(tmp_path):
