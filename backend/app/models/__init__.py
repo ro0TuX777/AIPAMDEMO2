@@ -4,7 +4,7 @@
 # (the old models.py was replaced by this models/ package)
 from backend.app.domain_models import *  # noqa: F401,F403
 
-from backend.app.models.job import Job
+from backend.app.models.job import Job, TERMINAL_JOB_STATUSES
 from backend.app.models.sensor import JobSensor
 from backend.app.models.finding import Finding
 from backend.app.models.host import Host
@@ -45,6 +45,7 @@ from backend.app.models.bluescrub import (
 )
 
 __all__ = [
+    "TERMINAL_JOB_STATUSES",
     "BlueScrubAudit",
     "BlueScrubBaseline",
     "BlueScrubJobLineage",

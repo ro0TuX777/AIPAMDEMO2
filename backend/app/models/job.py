@@ -1,8 +1,11 @@
 """Job model (§12.5)."""
 
-from sqlalchemy import Column, Index, String, Integer, Text
+from sqlalchemy import BigInteger, Column, Index, String, Integer, Text
 
 from backend.app.database_v2 import Base
+
+
+TERMINAL_JOB_STATUSES = frozenset({"completed", "completed_with_errors", "failed", "canceled", "deleted"})
 
 
 class Job(Base):
@@ -32,7 +35,26 @@ class Job(Base):
     completed_at = Column(String, nullable=True)
     metrics_json = Column(Text, nullable=True)  # JSON blob
 
+    celery_task_id = Column(String, nullable=True)
+    execution_attempt = Column(Integer, nullable=False, default=0, server_default="0")
+    run_token = Column(String, nullable=True)
+    worker_id = Column(String, nullable=True)
+    worker_container_id = Column(String, nullable=True)
+    executor_pid = Column(Integer, nullable=True)
+    executor_pid_start_ticks = Column(BigInteger, nullable=True)
+    executor_boot_id = Column(String, nullable=True)
+    heartbeat_at = Column(String, nullable=True)
+    dispatched_at = Column(String, nullable=True)
+    cancel_requested_at = Column(String, nullable=True)
+    cancel_force_at = Column(String, nullable=True)
+    cancel_deadline_at = Column(String, nullable=True)
+    cancel_escalation_token = Column(String, nullable=True)
+    cancel_escalation_started_at = Column(String, nullable=True)
+    artifact_layout_version = Column(Integer, nullable=False, default=1, server_default="2")
+    accepted_run_manifest_json = Column(Text, nullable=True)
+
     __table_args__ = (
+        Index("idx_jobs_celery_task_id", "celery_task_id"),
         Index("idx_jobs_status", "status"),
         Index("idx_jobs_created", "created_at"),
         Index("idx_jobs_profile", "execution_profile"),

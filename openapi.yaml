@@ -314,6 +314,7 @@ components:
       enum:
         - queued
         - running
+        - canceling
         - completed
         - completed_with_errors
         - failed
@@ -408,6 +409,8 @@ components:
         created_at: { type: string, format: date-time }
         started_at: { type: string, format: date-time, nullable: true }
         completed_at: { type: string, format: date-time, nullable: true }
+        heartbeat_at: { type: string, format: date-time, nullable: true }
+        cancel_requested_at: { type: string, format: date-time, nullable: true }
         status: { $ref: "#/components/schemas/JobStatus" }
         execution_profile: { $ref: "#/components/schemas/ExecutionProfile" }
         priority: { $ref: "#/components/schemas/Priority" }

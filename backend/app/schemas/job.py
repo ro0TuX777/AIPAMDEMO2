@@ -177,6 +177,8 @@ class JobListItem(BaseModel):
     created_at: str
     started_at: str | None = None
     completed_at: str | None = None
+    heartbeat_at: str | None = None
+    cancel_requested_at: str | None = None
     status: JobStatus
     execution_profile: ExecutionProfile
     priority: Priority

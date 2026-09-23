@@ -22,6 +22,7 @@ class Priority(str, Enum):
 
 
 class JobStatus(str, Enum):
+    canceling = "canceling"
     queued = "queued"
     running = "running"
     completed = "completed"

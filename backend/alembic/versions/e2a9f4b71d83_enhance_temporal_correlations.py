@@ -23,6 +23,31 @@ depends_on: Union[str, Sequence[str], None] = None
 
 def upgrade() -> None:
     """Upgrade schema."""
+    if not sa.inspect(op.get_bind()).has_table("temporal_correlations"):
+        op.create_table("temporal_correlations",
+            sa.Column('id', sa.Integer(), nullable=False),
+            sa.Column('job_id', sa.String(), nullable=False),
+            sa.Column('log_event_id', sa.String(), nullable=False),
+            sa.Column('log_source', sa.String(), nullable=True),
+            sa.Column('log_event_type', sa.String(), nullable=True),
+            sa.Column('log_timestamp', sa.String(), nullable=False),
+            sa.Column('pcap_entity_type', sa.String(), nullable=False),
+            sa.Column('pcap_entity_id', sa.String(), nullable=False),
+            sa.Column('pcap_summary', sa.Text(), nullable=True),
+            sa.Column('pcap_timestamp', sa.String(), nullable=False),
+            sa.Column('shared_ip', sa.String(), nullable=False),
+            sa.Column('time_delta_seconds', sa.Float(), nullable=False),
+            sa.Column('match_score', sa.Float(), nullable=False),
+            sa.Column('match_type', sa.String(), nullable=False),
+            sa.PrimaryKeyConstraint('id'),
+            sa.ForeignKeyConstraint(['job_id'], ['jobs.job_id'], ondelete='CASCADE'),
+        )
+        op.create_index('idx_tc_job', "temporal_correlations", ['job_id'], unique=False)
+        op.create_index('idx_tc_job_score', "temporal_correlations", ['job_id', 'match_score'], unique=False)
+        op.create_index('idx_tc_log_event', "temporal_correlations", ['job_id', 'log_event_id'], unique=False)
+        op.create_index('idx_tc_pcap_entity', "temporal_correlations", ['job_id', 'pcap_entity_type', 'pcap_entity_id'], unique=False)
+        op.create_index('ix_temporal_correlations_log_event_id', "temporal_correlations", ['log_event_id'], unique=False)
+        op.create_index('ix_temporal_correlations_pcap_entity_id', "temporal_correlations", ['pcap_entity_id'], unique=False)
     with op.batch_alter_table('temporal_correlations', schema=None) as batch_op:
         batch_op.add_column(sa.Column('community_id', sa.String(), nullable=True))
         batch_op.add_column(sa.Column('match_keys_json', sa.Text(), nullable=True))

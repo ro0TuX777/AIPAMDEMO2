@@ -132,6 +132,7 @@ class ChangeSummary(BaseModel):
 
 
 class JobStatus(str, Enum):
+    CANCELING = "canceling"
     QUEUED = "queued"
     RUNNING = "running"
     FAILED = "failed"

@@ -21,47 +21,10 @@ def _config(database_path: Path) -> Config:
 
 
 def _create_legacy_schema(database_path: Path) -> None:
-    """Build the tables this migration owns and mark the DB at its parent.
-
-    Earlier repository migrations include a historical dependency gap for an
-    unrelated temporal-correlations table, so this regression fixture starts
-    at the declared parent revision instead of retesting that old chain.
-    """
+    """Create the real declared predecessor, including non-chat tables."""
+    command.upgrade(_config(database_path), BASE_REVISION)
     with sqlite3.connect(database_path) as connection:
-        connection.executescript(
-            """
-            PRAGMA foreign_keys = ON;
-            CREATE TABLE alembic_version (
-                version_num VARCHAR(32) NOT NULL PRIMARY KEY
-            );
-            INSERT INTO alembic_version (version_num) VALUES ('d4e5f6a7b8c9');
-            CREATE TABLE jobs (
-                job_id VARCHAR NOT NULL PRIMARY KEY,
-                status VARCHAR NOT NULL,
-                execution_profile VARCHAR NOT NULL,
-                priority VARCHAR NOT NULL,
-                created_at VARCHAR NOT NULL
-            );
-            CREATE TABLE chat_conversations (
-                id VARCHAR NOT NULL PRIMARY KEY,
-                job_id VARCHAR NOT NULL REFERENCES jobs(job_id) ON DELETE CASCADE,
-                title TEXT,
-                created_at VARCHAR NOT NULL,
-                updated_at VARCHAR NOT NULL
-            );
-            CREATE INDEX idx_chat_conv_job ON chat_conversations(job_id);
-            CREATE TABLE chat_messages (
-                id VARCHAR NOT NULL PRIMARY KEY,
-                conversation_id VARCHAR NOT NULL
-                    REFERENCES chat_conversations(id) ON DELETE CASCADE,
-                role VARCHAR NOT NULL,
-                content TEXT NOT NULL,
-                citations_json TEXT,
-                created_at VARCHAR NOT NULL
-            );
-            CREATE INDEX idx_chat_msg_conv ON chat_messages(conversation_id);
-            """
-        )
+        connection.execute("PRAGMA foreign_keys = ON")
         connection.execute(
             """
             INSERT INTO jobs (
