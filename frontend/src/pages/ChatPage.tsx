@@ -67,6 +67,7 @@ export const ChatPage: React.FC = () => {
   const [mnemosOpen, setMnemosOpen] = useState(false);
   const [comparisonGroup, setComparisonGroup] = useState<ChatComparisonGroup | null>(null);
   const [mnemosDraft, setMnemosDraft] = useState("");
+  const mnemosDraftOwnerRef = useRef<{ jobId: string | undefined; conversationId: string | undefined } | null>(null);
   const [copiedPrompt, setCopiedPrompt] = useState<{ messageId: string; content: string } | null>(null);
   const [activeAttempt, setActiveAttempt] = useState<ChatAttempt | null>(null);
   const activeAttemptRef = useRef<ChatAttempt | null>(null);
@@ -94,6 +95,20 @@ export const ChatPage: React.FC = () => {
     const owner = readyOwnerRef.current;
     return owner.ready && owner.jobId === ownerJobId && owner.epoch === epoch;
   }, []);
+
+  const clearMnemosDraft = useCallback(() => {
+    mnemosDraftOwnerRef.current = null;
+    setMnemosDraft("");
+  }, []);
+  const updateMnemosDraft = useCallback((value: string) => {
+    if (!isCurrentReadyEpoch(readyEpoch, jobId)) return;
+    mnemosDraftOwnerRef.current = value ? { jobId, conversationId: baselineConversation.id } : null;
+    setMnemosDraft(value);
+  }, [baselineConversation.id, isCurrentReadyEpoch, readyEpoch, jobId]);
+
+  useEffect(() => {
+    if (mnemosDraftOwnerRef.current && mnemosDraftOwnerRef.current.jobId !== jobId) clearMnemosDraft();
+  }, [jobId, clearMnemosDraft]);
 
   const storeAttempt = useCallback((next: ChatAttempt | null) => {
     activeAttemptRef.current = next;
@@ -149,6 +164,8 @@ export const ChatPage: React.FC = () => {
         if (selected) {
           const history = await api.getConversation(jobId, selected.id);
           if (!isCurrentReadyEpoch(readyEpoch, jobId) || generation !== pageGenerationRef.current || navigationIntent !== navigationIntentRef.current) return;
+          if (mnemosDraftOwnerRef.current &&
+            (mnemosDraftOwnerRef.current.jobId !== jobId || mnemosDraftOwnerRef.current.conversationId !== history.id)) clearMnemosDraft();
           setBaselineConversation(history);
           selectBaselineToken(history.id);
           if (requestedId !== history.id) {
@@ -156,10 +173,12 @@ export const ChatPage: React.FC = () => {
             next.set("conversation", history.id);
             setSearchParams(next, { replace: true });
           }
+        } else if (mnemosDraftOwnerRef.current) {
+          clearMnemosDraft();
         }
       } catch { /* Initial drafts remain usable while history is unavailable. */ }
     })();
-  }, [jobId, chatReady, readyEpoch, isCurrentReadyEpoch, searchParams, selectBaselineToken, setSearchParams]);
+  }, [jobId, chatReady, readyEpoch, isCurrentReadyEpoch, searchParams, selectBaselineToken, setSearchParams, clearMnemosDraft]);
 
   const selectBaselineConversation = useCallback(async (conversationId: string) => {
     if (!jobId || !isCurrentReadyEpoch(readyEpoch, jobId)) return;
@@ -181,10 +200,10 @@ export const ChatPage: React.FC = () => {
     setSearchParams(next, { replace: true });
     setComparisonGroup(null);
     setCopiedPrompt(null);
-    setMnemosDraft("");
+    clearMnemosDraft();
     setMnemosOpen(false);
     storeAttempt(null);
-  }, [baselineConversation.id, jobId, readyEpoch, isCurrentReadyEpoch, searchParams, selectBaselineToken, setSearchParams, storeAttempt]);
+  }, [baselineConversation.id, jobId, readyEpoch, isCurrentReadyEpoch, searchParams, selectBaselineToken, setSearchParams, storeAttempt, clearMnemosDraft]);
 
   const activeBranch = useMemo<ChatComparisonBranch | null>(() => {
     if (!comparisonGroup) return null;
@@ -217,12 +236,13 @@ export const ChatPage: React.FC = () => {
     if (!group || !isCurrentReadyEpoch(readyEpoch, jobId)) return;
     if (mnemosDraft.trim() && mnemosDraft !== content && !window.confirm("Replace the unfinished MNEMOS message with the copied question?")) return;
     setCopiedPrompt({ messageId, content });
-    setMnemosDraft(content);
+    updateMnemosDraft(content);
     setMnemosOpen(true);
-  }, [ensureComparison, isCurrentReadyEpoch, readyEpoch, jobId, mnemosDraft]);
+  }, [ensureComparison, isCurrentReadyEpoch, readyEpoch, jobId, mnemosDraft, updateMnemosDraft]);
 
   const onBaselineChanged = useCallback((next: ChatConversation) => {
     if (!isCurrentReadyEpoch(readyEpoch, jobId)) return;
+    if (mnemosDraftOwnerRef.current && next.id && mnemosDraftOwnerRef.current.conversationId !== next.id) clearMnemosDraft();
     // A persisted conversation becoming saved is the same selection; only the
     // explicit transition from a persisted conversation to a new draft gets a
     // fresh controlled-selection identity.
@@ -239,7 +259,7 @@ export const ChatPage: React.FC = () => {
         setSearchParams(params, { replace: true });
       }
     }
-  }, [baselineConversation.id, refreshConversations, searchParams, selectBaselineToken, setSearchParams, isCurrentReadyEpoch, readyEpoch, jobId]);
+  }, [baselineConversation.id, refreshConversations, searchParams, selectBaselineToken, setSearchParams, isCurrentReadyEpoch, readyEpoch, jobId, clearMnemosDraft]);
 
   const startNewBaseline = useCallback(() => {
     if (!isCurrentReadyEpoch(readyEpoch, jobId)) return;
@@ -249,13 +269,13 @@ export const ChatPage: React.FC = () => {
     setBaselineConversation({ job_id: jobId ?? "", messages: [] });
     setComparisonGroup(null);
     setCopiedPrompt(null);
-    setMnemosDraft("");
+    clearMnemosDraft();
     setMnemosOpen(false);
     storeAttempt(null);
     const next = new URLSearchParams(searchParams);
     next.delete("conversation");
     setSearchParams(next, { replace: true });
-  }, [jobId, searchParams, selectBaselineToken, setSearchParams, storeAttempt, isCurrentReadyEpoch, readyEpoch]);
+  }, [jobId, searchParams, selectBaselineToken, setSearchParams, storeAttempt, isCurrentReadyEpoch, readyEpoch, clearMnemosDraft]);
 
   const renameBaseline = async () => {
     if (!jobId || !baselineConversation.id || !isCurrentReadyEpoch(readyEpoch, jobId)) return;
@@ -410,7 +430,7 @@ export const ChatPage: React.FC = () => {
     setConversationActionError("");
     setComparisonGroup(null);
     setMnemosOpen(false);
-    setMnemosDraft("");
+    if (mnemosDraftOwnerRef.current && mnemosDraftOwnerRef.current.jobId !== jobId) clearMnemosDraft();
     setCopiedPrompt(null);
     setKbDocs([]);
     setKbLoading(false);
@@ -420,7 +440,7 @@ export const ChatPage: React.FC = () => {
     setKbOpen(false);
     setKbAdminRequired(false);
     setKbAdminToken("");
-  }, [chatReady, jobId, selectBaselineToken, storeAttempt]);
+  }, [chatReady, jobId, selectBaselineToken, storeAttempt, clearMnemosDraft]);
 
   // ── KB helpers ──
   const fetchKBDocs = useCallback(async () => {
@@ -666,8 +686,8 @@ export const ChatPage: React.FC = () => {
               activeBranch={activeBranch}
               baselineConversation={baselineConversation}
               conversation={{ id: activeBranch.conversation_id, job_id: jobId, messages: activeBranch.messages }}
-              draft={mnemosDraft}
-              onDraftChange={setMnemosDraft}
+              draft={mnemosDraftOwnerRef.current?.jobId === jobId && mnemosDraftOwnerRef.current?.conversationId === baselineConversation.id ? mnemosDraft : ""}
+              onDraftChange={updateMnemosDraft}
               onClose={() => setMnemosOpen(false)}
               onBranchChange={branchId => void selectMnemosBranch(branchId)}
               onBeforeSend={prepareMnemosSend}

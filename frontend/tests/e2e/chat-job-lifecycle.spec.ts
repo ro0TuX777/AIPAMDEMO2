@@ -265,6 +265,62 @@ test("delayed MNEMOS open cannot reopen after readiness is revoked", async ({ pa
   } finally { oldComparison.release(); }
 });
 
+test("unsent MNEMOS draft survives readiness loss for its owner and clears on conversation change", async ({ page }) => {
+  await page.route("**/api/v1/**", async route => {
+    const path = new URL(route.request().url()).pathname;
+    const json = (body: unknown) => route.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
+    if (path === `/api/v1/jobs/${jobId}`) return json(job("completed"));
+    if (path.endsWith("/conversations")) return json([summary("root"), summary("other")]);
+    if (path.endsWith("/conversations/root")) return json(history("root", "Root baseline answer"));
+    if (path.endsWith("/conversations/other")) return json(history("other", "Other baseline answer"));
+    if (path.endsWith("/chat/comparisons")) return json(group(route.request().postDataJSON().root_conversation_id));
+    if (path.endsWith("/library/config")) return json({ admin_required: false });
+    return json({ items: [] });
+  });
+  await page.goto("/tests/e2e/fixtures/chat-lifecycle-harness.html");
+  await expect(page.getByText("Root baseline answer")).toBeVisible();
+  await page.getByRole("button", { name: "MNEMOS comparison" }).click();
+  await page.getByLabel("MNEMOS message").fill("Keep this unsent thought");
+  await page.evaluate(() => window.setHarnessJobStatus("running"));
+  await expect(page.getByText("Analysis in progress")).toBeVisible();
+  await page.evaluate(() => window.setHarnessJobStatus("completed"));
+  await expect(page.getByText("Root baseline answer")).toBeVisible();
+  await expect(page.getByRole("complementary", { name: "MNEMOS comparison" })).toHaveCount(0);
+  await page.getByRole("button", { name: "MNEMOS comparison" }).click();
+  await expect(page.getByLabel("MNEMOS message")).toHaveValue("Keep this unsent thought");
+  await page.getByLabel("Baseline conversation").selectOption("other");
+  await expect(page.getByText("Other baseline answer")).toBeVisible();
+  await page.getByRole("button", { name: "MNEMOS comparison" }).click();
+  await expect(page.getByLabel("MNEMOS message")).toHaveValue("");
+});
+
+test("MNEMOS draft clears when the mounted chat changes job owner", async ({ page }) => {
+  const otherJobId = "chat-lifecycle-other-job";
+  await page.route("**/api/v1/**", async route => {
+    const path = new URL(route.request().url()).pathname;
+    const json = (body: unknown) => route.fulfill({ contentType: "application/json", body: JSON.stringify(body) });
+    const requestedJobId = path.match(/^\/api\/v1\/jobs\/([^/]+)/)?.[1];
+    if (path === `/api/v1/jobs/${requestedJobId}` && requestedJobId) {
+      const response = job("completed");
+      return json({ ...response, job: { ...response.job, job_id: requestedJobId } });
+    }
+    if (path.endsWith("/conversations")) return json([summary(requestedJobId === otherJobId ? "other" : "root")]);
+    if (path.endsWith("/conversations/root")) return json(history("root", "First job answer"));
+    if (path.endsWith("/conversations/other")) return json(history("other", "Other job answer"));
+    if (path.endsWith("/chat/comparisons")) return json(group(route.request().postDataJSON().root_conversation_id));
+    if (path.endsWith("/library/config")) return json({ admin_required: false });
+    return json({ items: [] });
+  });
+  await page.goto("/tests/e2e/fixtures/chat-lifecycle-harness.html");
+  await expect(page.getByText("First job answer")).toBeVisible();
+  await page.getByRole("button", { name: "MNEMOS comparison" }).click();
+  await page.getByLabel("MNEMOS message").fill("Private draft for first job");
+  await page.evaluate(nextJobId => window.setHarnessJobId(nextJobId), otherJobId);
+  await expect(page.getByText("Other job answer")).toBeVisible();
+  await page.getByRole("button", { name: "MNEMOS comparison" }).click();
+  await expect(page.getByLabel("MNEMOS message")).toHaveValue("");
+});
+
 test("completed with errors keeps chat enabled and warns about partial analysis", async ({ page }) => {
   const { calls } = await fixture(page, ["completed_with_errors"], "One sensor failed");
   await page.goto(`/jobs/${jobId}/chat`);
