@@ -150,7 +150,7 @@ def scanned(tmp_path, monkeypatch):
     job = tmp_path / "job"
     (job / "input" / "source").mkdir(parents=True)
     (job / "input" / "source" / "cfg.py").write_text("x = 1\n")
-    metrics = bs_service.analyze_and_persist(db, "j", job, profile="deep")
+    metrics = bs_service.analyze_and_persist(db, "j", job, profile="deep", run_output_dir=job)
     yield db, metrics, job
     db.close()
 

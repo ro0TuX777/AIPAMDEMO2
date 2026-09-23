@@ -69,7 +69,7 @@ rule TestRule {
     sensor_out = job_dir / "sensors" / "file_triage"
     sensor_out.mkdir(parents=True)
     
-    handle_file_triage(job_dir, sensor_out, job_id, "standard")
+    handle_file_triage(job_dir, sensor_out, job_id, "standard", run_output_dir=job_dir)
     
     # 5. Verify sensor output
     results_file = sensor_out / "sensor.results.jsonl"

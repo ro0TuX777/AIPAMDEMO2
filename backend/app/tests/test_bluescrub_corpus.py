@@ -77,7 +77,7 @@ def scanned(implant, tmp_path_factory):
         {"term": "NIGHTFALL", "category": "codename"},
         {"term": "redcell", "category": "org"},
     ])
-    dacv = bs_service.analyze_and_persist(db, "j", root, profile="deep")["dacv"]
+    dacv = bs_service.analyze_and_persist(db, "j", root, profile="deep", run_output_dir=root)["dacv"]
     rows = db.scalars(select(Finding)).all()
     evidence = [json.loads(r.evidence_json) for r in rows]
     yield dacv, rows, evidence, spec
@@ -279,7 +279,7 @@ def test_without_a_wordlist_the_artifact_still_reports_something(implant,
 
     import os
     os.environ["AIPAM_BLUESCRUB_REQUIRE_UID_DROP"] = "false"
-    dacv = bs_service.analyze_and_persist(db, "j", root, profile="deep")["dacv"]
+    dacv = bs_service.analyze_and_persist(db, "j", root, profile="deep", run_output_dir=root)["dacv"]
     rules = _rules([json.loads(r.evidence_json)
                     for r in db.scalars(select(Finding)).all()])
 

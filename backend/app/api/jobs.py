@@ -40,6 +40,7 @@ from backend.app.config_v2 import Settings, get_settings
 from backend.app.models.file import File
 from backend.app.models.ioc import Ioc
 from backend.app.models.job import Job
+from backend.app.pipeline.run_artifacts import resolve_accepted_run_dirs, safe_artifact_path, iter_run_files
 from backend.app.models.job_pcap import JobPcap
 from backend.app.models.job_log_source import JobLogSource
 from backend.app.models.sensor import JobSensor
@@ -244,13 +245,13 @@ async def get_job(
     diag_map: dict[str, dict] = {}
     try:
         from backend.app.config_v2 import get_settings
-        job_dir = get_settings().aipam_job_root / job_id
-        diag_path = job_dir / "telemetry_diagnostics.json"
-        if diag_path.exists():
-            import json as _json
-            diag_data = _json.loads(diag_path.read_text(encoding="utf-8"))
-            for fd in diag_data.get("files", []):
-                diag_map[fd["filename"]] = fd
+        for run_dir in resolve_accepted_run_dirs(job, get_settings().aipam_job_root):
+            diag_path = safe_artifact_path(run_dir, "telemetry_diagnostics.json")
+            if diag_path.exists():
+                import json as _json
+                diag_data = _json.loads(diag_path.read_text(encoding="utf-8"))
+                for fd in diag_data.get("files", []):
+                    diag_map[fd["filename"]] = fd
     except Exception:
         pass  # diagnostics are best-effort
 
@@ -784,7 +785,7 @@ async def download_extracted_file(
     settings: Settings = Depends(get_settings),
 ):
     """Download an extracted file by its file_id (Zeek extract filename)."""
-    _require_job(db, job_id)
+    job = _require_job(db, job_id)
     response.headers["X-Request-Id"] = request_id
 
     # Verify the file exists in DB
@@ -795,14 +796,16 @@ async def download_extracted_file(
         raise HTTPException(status_code=404, detail="File not found in database")
 
     # Search for the actual file on disk under the Zeek extraction directories
-    job_dir = settings.aipam_job_root / job_id
-    zeek_raw = job_dir / "sensors" / "zeek" / "raw"
     disk_path = None
-    if zeek_raw.exists():
-        for candidate in zeek_raw.rglob(file_id):
-            if candidate.is_file():
+    # Literal filename matching avoids turning a DB/API identifier into a glob.
+    for run_dir in reversed(resolve_accepted_run_dirs(job, settings.aipam_job_root, phase_label=file_row.pcap_label)):
+        for candidate in iter_run_files(run_dir):
+            relative = candidate.relative_to(run_dir).as_posix()
+            if candidate.name == file_id and (relative.startswith("sensors/zeek/raw/") or relative.startswith("extracted_files/files/")):
                 disk_path = candidate
                 break
+        if disk_path:
+            break
 
     if not disk_path or not disk_path.exists():
         raise HTTPException(status_code=404, detail="Extracted file not found on disk")

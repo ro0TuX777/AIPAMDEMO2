@@ -332,7 +332,7 @@ def test_the_cache_does_not_leak_between_jobs(tmp_path, monkeypatch):
     (src / "loader").write_bytes(elf_with(b"OPERATION NIGHTFALL"))
 
     monkeypatch.setenv(binstrings.CACHE_ENV, "/from/a/previous/job.json")
-    bs_service.analyze_and_persist(db, "j", tmp_path, profile="triage")
+    bs_service.analyze_and_persist(db, "j", tmp_path, profile="triage", run_output_dir=tmp_path)
 
     assert binstrings.CACHE_ENV not in __import__("os").environ
     db.close()
@@ -365,7 +365,7 @@ def test_a_stale_cache_path_is_cleared_before_the_scan(tmp_path, monkeypatch):
 
     from backend.app.bluescrub import wordlists as wl
     wl.create(db, "Ops", [{"term": "GHOSTWRITER", "category": "codename"}])
-    bs_service.analyze_and_persist(db, "j", tmp_path, profile="triage")
+    bs_service.analyze_and_persist(db, "j", tmp_path, profile="triage", run_output_dir=tmp_path)
 
     from sqlalchemy import select
 

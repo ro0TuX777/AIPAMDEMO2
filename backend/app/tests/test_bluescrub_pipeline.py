@@ -89,7 +89,7 @@ def stub_registry(monkeypatch):
 
 def test_pipeline_persists_findings_and_scores(db, job_dir, stub_registry):
     metrics = bs_service.analyze_and_persist(
-        db, "job-1", job_dir, profile="triage",
+        db, "job-1", job_dir, profile="triage", run_output_dir=job_dir,
     )["dacv"]
 
     rows = db.scalars(select(Finding).where(Finding.job_id == "job-1")).all()
@@ -115,7 +115,7 @@ def test_pipeline_persists_findings_and_scores(db, job_dir, stub_registry):
 
 
 def test_rescan_updates_in_place_and_preserves_triage(db, job_dir, stub_registry):
-    bs_service.analyze_and_persist(db, "job-1", job_dir, profile="triage")
+    bs_service.analyze_and_persist(db, "job-1", job_dir, profile="triage", run_output_dir=job_dir)
 
     row = db.scalars(select(Finding)).one()
     row.analyst_status = "false_positive"
@@ -123,7 +123,7 @@ def test_rescan_updates_in_place_and_preserves_triage(db, job_dir, stub_registry
     db.commit()
 
     # Re-persist the same job: scanner columns refresh, analyst columns do not.
-    bs_service.analyze_and_persist(db, "job-1", job_dir, profile="triage")
+    bs_service.analyze_and_persist(db, "job-1", job_dir, profile="triage", run_output_dir=job_dir)
 
     rows = db.scalars(select(Finding)).all()
     assert len(rows) == 1, "re-scan must upsert, not duplicate"
@@ -138,7 +138,7 @@ def test_triage_carries_forward_from_the_ledger(db, job_dir, stub_registry):
     db.commit()
 
     first = bs_service.analyze_and_persist(
-        db, "job-1", job_dir, profile="triage", project_id=PROJECT,
+        db, "job-1", job_dir, profile="triage", project_id=PROJECT, run_output_dir=job_dir,
     )
     finding_id = db.scalars(select(Finding.finding_id)).first()
 
@@ -154,7 +154,7 @@ def test_triage_carries_forward_from_the_ledger(db, job_dir, stub_registry):
     db.commit()
 
     bs_service.analyze_and_persist(
-        db, "job-2", job_dir, profile="triage", project_id=PROJECT,
+        db, "job-2", job_dir, profile="triage", project_id=PROJECT, run_output_dir=job_dir,
     )
     row = db.scalars(select(Finding).where(Finding.job_id == "job-2")).one()
 
@@ -171,7 +171,7 @@ def test_lineage_and_history_recorded(db, job_dir, stub_registry):
     db.commit()
 
     bs_service.analyze_and_persist(
-        db, "job-1", job_dir, profile="deep", project_id=PROJECT,
+        db, "job-1", job_dir, profile="deep", project_id=PROJECT, run_output_dir=job_dir,
     )
 
     lineage = db.get(BlueScrubJobLineage, "job-1")
@@ -185,7 +185,7 @@ def test_lineage_and_history_recorded(db, job_dir, stub_registry):
 
 
 def test_ad_hoc_job_writes_no_history(db, job_dir, stub_registry):
-    bs_service.analyze_and_persist(db, "job-1", job_dir, profile="triage")
+    bs_service.analyze_and_persist(db, "job-1", job_dir, profile="triage", run_output_dir=job_dir)
     assert db.scalars(select(BlueScrubScoreHistory)).all() == []
 
 
@@ -199,7 +199,7 @@ def test_scanner_crash_degrades_pillar_without_failing_the_job(db, job_dir, monk
     monkeypatch.setattr(bs_service, "required_for", lambda pillar, profile: ["semgrep"])
 
     metrics = bs_service.analyze_and_persist(
-        db, "job-1", job_dir, profile="triage",
+        db, "job-1", job_dir, profile="triage", run_output_dir=job_dir,
     )["dacv"]
 
     assert metrics["partial"] is True

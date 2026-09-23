@@ -227,25 +227,25 @@ async def sse_generator(job_id: str, db_factory):
 def create_export_zip(db: Session, job: Job, job_dir: Path) -> bytes:
     """Create a ZIP archive of all job artifacts and return the bytes."""
     from backend.app.api.findings import _finding_to_item
+    from backend.app.pipeline.run_artifacts import (
+        iter_run_files, resolve_accepted_run_dirs, run_archive_prefix, safe_artifact_path,
+    )
 
     buf = io.BytesIO()
     with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
         # input PCAPs
         for pcap in (job_dir / "input").glob("*"):
+            try:
+                pcap = safe_artifact_path(job_dir, pcap.relative_to(job_dir))
+            except ValueError:
+                continue
             if pcap.is_file():
                 zf.write(pcap, arcname=f"input/{pcap.name}")
 
-        # sensor results
-        for res in (job_dir / "sensors").rglob("sensor.results.jsonl"):
-            rel = res.relative_to(job_dir)
-            zf.write(res, arcname=str(rel))
-
-        # report directory
-        report_dir = job_dir / "report"
-        if report_dir.exists():
-            for f in report_dir.iterdir():
-                if f.is_file():
-                    zf.write(f, arcname=f"report/{f.name}")
+        for run_dir in resolve_accepted_run_dirs(job, job_dir.parent):
+            prefix = run_archive_prefix(job, run_dir)
+            for path in iter_run_files(run_dir):
+                zf.write(path, arcname=prefix + path.relative_to(run_dir).as_posix())
 
         # findings JSON
         findings_q = select(Finding).where(Finding.job_id == job.job_id)
@@ -263,4 +263,3 @@ def create_export_zip(db: Session, job: Job, job_dir: Path) -> bytes:
         zf.writestr("export_metadata.json", json.dumps(meta, indent=2))
 
     return buf.getvalue()
-

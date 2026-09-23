@@ -195,7 +195,7 @@ def test_pipeline_writes_diagnostics_file(tmp_path, db):
         {"filename": "unknown.xyz", "source_type": "log_bundle"},
     ])
 
-    run_telemetry_pipeline(job_id, job_dir, db)
+    run_telemetry_pipeline(job_id, job_dir, db, run_output_dir=job_dir)
     diag_path = job_dir / "telemetry_diagnostics.json"
     assert diag_path.exists(), "telemetry_diagnostics.json should be created"
 
@@ -211,7 +211,7 @@ def test_pipeline_no_manifest_still_writes_diagnostics(tmp_path, db):
     job_dir = tmp_path / "job_empty"
     job_dir.mkdir()
 
-    result = run_telemetry_pipeline("j-none", job_dir, db)
+    result = run_telemetry_pipeline("j-none", job_dir, db, run_output_dir=job_dir)
     assert result["error"] == "no_manifest"
     diag_path = job_dir / "telemetry_diagnostics.json"
     assert diag_path.exists()
@@ -234,7 +234,7 @@ def test_pipeline_missing_file_creates_skipped_diagnostic(tmp_path, db):
         {"filename": "ghost.log", "source_type": "log_bundle"},
     ], create_files=False)
 
-    run_telemetry_pipeline(job_id, job_dir, db)
+    run_telemetry_pipeline(job_id, job_dir, db, run_output_dir=job_dir)
     diag_path = job_dir / "telemetry_diagnostics.json"
     data = json.loads(diag_path.read_text())
     assert data["files_skipped"] >= 1
@@ -262,7 +262,7 @@ def test_error_budget_in_summary(tmp_path, db):
         {"filename": "ok.json", "source_type": "log_bundle"},
     ])
 
-    result = run_telemetry_pipeline(job_id, job_dir, db)
+    result = run_telemetry_pipeline(job_id, job_dir, db, run_output_dir=job_dir)
     # files_error should be present in the summary
     assert "files_error" in result
     # phase_durations_ms should be present

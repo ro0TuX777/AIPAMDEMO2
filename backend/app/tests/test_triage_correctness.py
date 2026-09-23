@@ -50,7 +50,7 @@ def test_ti_matcher_continues_alert_correlation_when_bundle_mount_is_unavailable
 
     monkeypatch.setattr(Path, "exists", unavailable_mount_exists)
 
-    sensor_handlers.handle_ti_matcher(job_dir, output_dir, "job-1", "triage")
+    sensor_handlers.handle_ti_matcher(job_dir, output_dir, "job-1", "triage", run_output_dir=job_dir)
 
     result = json.loads((output_dir / "sensor.results.jsonl").read_text().strip())
     assert result["data"]["value"] == "8.8.8.8"

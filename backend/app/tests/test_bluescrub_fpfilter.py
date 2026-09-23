@@ -183,7 +183,7 @@ def test_pipeline_reports_suppression_in_metrics(tmp_path, monkeypatch):
     (job / "input" / "source").mkdir(parents=True)
     (job / "input" / "source" / "a.py").write_text("x = 1\n")
 
-    dacv = bs_service.analyze_and_persist(db, "j", job, profile="triage")["dacv"]
+    dacv = bs_service.analyze_and_persist(db, "j", job, profile="triage", run_output_dir=job)["dacv"]
     assert dacv["suppressed_findings"] == 1
     assert dacv["suppressed_by_filter"]["placeholder_value"] == 1
     db.close()

@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any
 
 
-def create_job_directory(job_root: Path, job_id: str) -> Path:
+def create_job_directory(job_root: Path, job_id: str, *, run_output_dir: Path) -> Path:
     """Create the full job directory tree (§2).
 
     Returns the job directory path.
@@ -25,10 +25,12 @@ def create_job_directory(job_root: Path, job_id: str) -> Path:
     # Core directories
     (job_dir / "input").mkdir(parents=True, exist_ok=True)
     (job_dir / "runtime").mkdir(exist_ok=True)
-    (job_dir / "extracted_files" / "files").mkdir(parents=True, exist_ok=True)
-    (job_dir / "sensors").mkdir(exist_ok=True)
-    (job_dir / "normalized").mkdir(exist_ok=True)
-    (job_dir / "report").mkdir(exist_ok=True)
+    output = run_output_dir
+    output.mkdir(parents=True, exist_ok=True)
+    (output / "extracted_files" / "files").mkdir(parents=True, exist_ok=True)
+    (output / "sensors").mkdir(exist_ok=True)
+    (output / "normalized").mkdir(exist_ok=True)
+    (output / "report").mkdir(exist_ok=True)
 
     return job_dir
 

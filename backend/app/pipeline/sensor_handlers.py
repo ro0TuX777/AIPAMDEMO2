@@ -9,7 +9,7 @@ directory layout so downstream pipeline stages can consume them.
 Handler signature::
 
     def handle_<name>(
-        job_dir: Path,
+        input_root: Path,
         sensor_output_dir: Path,
         job_id: str,
         execution_profile: str,
@@ -47,9 +47,9 @@ _DEFAULT_STALL_SECONDS = 300.0
 # Helper: find the PCAP inside the job directory
 # ---------------------------------------------------------------------------
 
-def _find_pcap(job_dir: Path) -> Path:
-    """Locate the PCAP file inside ``job_dir/input/``."""
-    input_dir = job_dir / "input"
+def _find_pcap(input_root: Path) -> Path:
+    """Locate the PCAP file inside ``input_root/input/``."""
+    input_dir = input_root / "input"
     for ext in ("*.pcap", "*.pcapng"):
         matches = list(input_dir.glob(ext))
         if matches:
@@ -57,13 +57,13 @@ def _find_pcap(job_dir: Path) -> Path:
     raise FileNotFoundError(f"No PCAP found in {input_dir}")
 
 
-def _find_all_pcaps(job_dir: Path) -> list[Path]:
-    """Locate all PCAP files inside ``job_dir/input/``.
+def _find_all_pcaps(input_root: Path) -> list[Path]:
+    """Locate all PCAP files inside ``input_root/input/``.
 
     Returns a list of Paths. Skips symlinks to avoid double-processing
     the backward-compat ``pcap.pcap`` symlink.
     """
-    input_dir = job_dir / "input"
+    input_dir = input_root / "input"
     results = []
     for ext in ("*.pcap", "*.pcapng"):
         for p in sorted(input_dir.glob(ext)):
@@ -74,7 +74,7 @@ def _find_all_pcaps(job_dir: Path) -> list[Path]:
     return results
 
 
-def _find_all_pcaps_labeled(job_dir: Path) -> list[tuple[Path, str]]:
+def _find_all_pcaps_labeled(input_root: Path) -> list[tuple[Path, str]]:
     """Pair each staged PCAP with its phase label.
 
     Filenames carry an ordinal so captures sharing a label don't collide, so the
@@ -82,8 +82,8 @@ def _find_all_pcaps_labeled(job_dir: Path) -> list[tuple[Path, str]]:
     Jobs staged before that manifest existed fall back to the stem, which is
     exactly what they were named with.
     """
-    labels = load_pcap_labels(job_dir)
-    return [(p, labels.get(p.name) or p.stem) for p in _find_all_pcaps(job_dir)]
+    labels = load_pcap_labels(input_root)
+    return [(p, labels.get(p.name) or p.stem) for p in _find_all_pcaps(input_root)]
 
 
 def _sensor_timeout(name: str, default: int) -> int:
@@ -244,10 +244,11 @@ def _normalize_text_indicator(value: str | None) -> str:
 # ---------------------------------------------------------------------------
 
 def handle_zeek(
-    job_dir: Path,
+    input_root: Path,
     sensor_output_dir: Path,
     job_id: str,
     execution_profile: str,
+    *, run_output_dir: Path,
 ) -> None:
     """Run Zeek on each job PCAP and store parsed logs.
 
@@ -255,7 +256,7 @@ def handle_zeek(
     raw subdirectory, and every result record is tagged with ``pcap_label``
     so downstream stages can group evidence by capture phase.
     """
-    pcaps = _find_all_pcaps_labeled(job_dir)
+    pcaps = _find_all_pcaps_labeled(input_root)
     zeek_bin = shutil.which("zeek")
     if not zeek_bin:
         raise RuntimeError("Zeek binary not found on PATH")
@@ -442,17 +443,18 @@ def _event_to_dict(event) -> dict:
 # ---------------------------------------------------------------------------
 
 def handle_suricata(
-    job_dir: Path,
+    input_root: Path,
     sensor_output_dir: Path,
     job_id: str,
     execution_profile: str,
+    *, run_output_dir: Path,
 ) -> None:
     """Run Suricata on each job PCAP and store parsed alerts.
 
     For multi-PCAP jobs, each PCAP is processed independently and every
     result record is tagged with ``pcap_label``.
     """
-    pcaps = _find_all_pcaps_labeled(job_dir)
+    pcaps = _find_all_pcaps_labeled(input_root)
     suricata_bin = shutil.which("suricata")
     if not suricata_bin:
         raise RuntimeError("Suricata binary not found on PATH")
@@ -544,17 +546,18 @@ def _alert_to_dict(alert) -> dict:
 # ---------------------------------------------------------------------------
 
 def handle_tls_enrich(
-    job_dir: Path,
+    input_root: Path,
     sensor_output_dir: Path,
     job_id: str,
     execution_profile: str,
+    *, run_output_dir: Path,
 ) -> None:
     """Enrich TLS data from Zeek ssl.log / x509.log.
 
     For multi-PCAP jobs, reads from per-label raw subdirectories and
     tags each result with ``pcap_label``.
     """
-    zeek_raw = job_dir / "sensors" / "zeek" / "raw"
+    zeek_raw = run_output_dir / "sensors" / "zeek" / "raw"
     results: list[dict] = []
 
     # Determine raw directories: either direct (single PCAP) or per-label subdirs
@@ -626,10 +629,11 @@ def handle_tls_enrich(
 # ---------------------------------------------------------------------------
 
 def handle_beaconing(
-    job_dir: Path,
+    input_root: Path,
     sensor_output_dir: Path,
     job_id: str,
     execution_profile: str,
+    *, run_output_dir: Path,
 ) -> None:
     """Detect C2 beaconing patterns using the V1 AnomalyDetector."""
     from backend.app.anomaly_detector import AnomalyDetector
@@ -645,7 +649,7 @@ def handle_beaconing(
         )
 
     # Read flows and DNS queries from zeek sensor output
-    zeek_results = job_dir / "sensors" / "zeek" / "sensor.results.jsonl"
+    zeek_results = run_output_dir / "sensors" / "zeek" / "sensor.results.jsonl"
     if zeek_results.exists():
         with open(zeek_results) as f:
             for line in f:
@@ -671,13 +675,13 @@ def handle_beaconing(
     # Also try raw Zeek logs directly if flow records were not available yet.
     have_flows = any(group["flows"] for group in grouped_inputs.values())
     if not have_flows:
-        zeek_raw = job_dir / "sensors" / "zeek" / "raw"
+        zeek_raw = run_output_dir / "sensors" / "zeek" / "raw"
         raw_dirs: list[tuple[Path, str | None]] = []
         if zeek_raw.exists():
             # Zeek's per-capture subdirectories are named for the staged file,
             # which is no longer the phase label — translate back via the manifest.
             try:
-                stem_to_label = {p.stem: lbl for p, lbl in _find_all_pcaps_labeled(job_dir)}
+                stem_to_label = {p.stem: lbl for p, lbl in _find_all_pcaps_labeled(input_root)}
             except FileNotFoundError:
                 stem_to_label = {}
 
@@ -730,7 +734,7 @@ def handle_beaconing(
     _now = datetime.now(timezone.utc)
 
     # Read alerts from suricata sensor output
-    suri_results = job_dir / "sensors" / "suricata" / "sensor.results.jsonl"
+    suri_results = run_output_dir / "sensors" / "suricata" / "sensor.results.jsonl"
     if suri_results.exists():
         with open(suri_results) as f:
             for line in f:
@@ -868,14 +872,14 @@ def _detect_file_type(data: bytes) -> tuple[str, str]:
     return "application/octet-stream", "Unknown binary"
 
 
-def _find_extracted_files(job_dir: Path) -> list[Path]:
+def _find_extracted_files(run_output_dir: Path) -> list[Path]:
     """Search all possible locations for Zeek-extracted files."""
     search_dirs = [
-        job_dir / "extracted_files" / "files",
-        job_dir / "sensors" / "zeek" / "raw" / "extract_files",
+        run_output_dir / "extracted_files" / "files",
+        run_output_dir / "sensors" / "zeek" / "raw" / "extract_files",
     ]
     # Also check per-PCAP subdirs under zeek raw
-    zeek_raw = job_dir / "sensors" / "zeek" / "raw"
+    zeek_raw = run_output_dir / "sensors" / "zeek" / "raw"
     if zeek_raw.exists():
         for sub in zeek_raw.iterdir():
             if sub.is_dir() and sub.name != "extract_files":
@@ -890,7 +894,8 @@ def _find_extracted_files(job_dir: Path) -> list[Path]:
     return found
 
 
-def _build_zeek_files_lookup(job_dir: Path) -> dict[str, dict]:
+
+def _build_zeek_files_lookup(run_output_dir: Path) -> dict[str, dict]:
     """Parse all Zeek files.log files and build a lookup from extracted filename → metadata.
 
     Returns a dict keyed by the ``extracted`` filename (e.g.
@@ -900,7 +905,7 @@ def _build_zeek_files_lookup(job_dir: Path) -> dict[str, dict]:
     from datetime import datetime, timezone
 
     lookup: dict[str, dict] = {}
-    zeek_raw = job_dir / "sensors" / "zeek" / "raw"
+    zeek_raw = run_output_dir / "sensors" / "zeek" / "raw"
     if not zeek_raw.exists():
         return lookup
 
@@ -960,21 +965,23 @@ def _build_zeek_files_lookup(job_dir: Path) -> dict[str, dict]:
     return lookup
 
 
+
 def handle_file_triage(
-    job_dir: Path,
+    input_root: Path,
     sensor_output_dir: Path,
     job_id: str,
     execution_profile: str,
+    *, run_output_dir: Path,
 ) -> None:
     """Triage extracted files from Zeek's file extraction."""
     from backend.app.config_v2 import get_settings
     settings = get_settings()
 
-    files = _find_extracted_files(job_dir)
+    files = _find_extracted_files(run_output_dir)
     logger.info("file_triage: found %d extracted files to triage", len(files))
 
     # --- Build Zeek files.log lookup for enrichment ---
-    zeek_lookup = _build_zeek_files_lookup(job_dir)
+    zeek_lookup = _build_zeek_files_lookup(run_output_dir)
 
     # --- Compile YARA rules if available ---
     rules = None
@@ -1106,9 +1113,9 @@ _CAPA_DEFAULT_RULES_DIR = Path("/opt/aipam/rules/capa")
 _CAPA_DEFAULT_SIGNATURES_DIR = Path("/opt/aipam/signatures/capa")
 
 
-def _load_file_triage_records(job_dir: Path) -> list[dict]:
+def _load_file_triage_records(run_output_dir: Path) -> list[dict]:
     """Read extracted-file records emitted by the file_triage sensor."""
-    results_file = job_dir / "sensors" / "file_triage" / "sensor.results.jsonl"
+    results_file = run_output_dir / "sensors" / "file_triage" / "sensor.results.jsonl"
     if not results_file.exists():
         return []
 
@@ -1128,6 +1135,7 @@ def _load_file_triage_records(job_dir: Path) -> list[dict]:
             if isinstance(data, dict):
                 records.append(data)
     return records
+
 
 
 def _format_capa_framework_entry(entry: object) -> str | None:
@@ -1203,10 +1211,11 @@ def _dedupe_preserve_order(values: list[str]) -> list[str]:
 
 
 def handle_capa(
-    job_dir: Path,
+    input_root: Path,
     sensor_output_dir: Path,
     job_id: str,
     execution_profile: str,
+    *, run_output_dir: Path,
 ) -> None:
     """Run CAPA against extracted executable-like files and emit findings."""
     capa_bin = shutil.which("capa")
@@ -1216,13 +1225,13 @@ def handle_capa(
         out.write_text("")
         return
 
-    triage_records = _load_file_triage_records(job_dir)
+    triage_records = _load_file_triage_records(run_output_dir)
     if not triage_records:
         logger.info("capa: no file_triage records available, writing empty results")
         out.write_text("")
         return
 
-    extracted_paths = {path.name: path for path in _find_extracted_files(job_dir)}
+    extracted_paths = {path.name: path for path in _find_extracted_files(run_output_dir)}
     candidates = [
         record for record in triage_records
         if str(record.get("mime") or "") in _CAPA_EXECUTABLE_MIME_TYPES
@@ -1385,10 +1394,11 @@ def handle_capa(
 # ---------------------------------------------------------------------------
 
 def handle_ti_matcher(
-    job_dir: Path,
+    input_root: Path,
     sensor_output_dir: Path,
     job_id: str,
     execution_profile: str,
+    *, run_output_dir: Path,
 ) -> None:
     """Match observed artifacts against threat intelligence feeds.
 
@@ -1453,7 +1463,7 @@ def handle_ti_matcher(
     observed_ja3: set[str] = set()
     observed_ja3s: set[str] = set()
 
-    zeek_results = job_dir / "sensors" / "zeek" / "sensor.results.jsonl"
+    zeek_results = run_output_dir / "sensors" / "zeek" / "sensor.results.jsonl"
     if zeek_results.exists():
         with open(zeek_results) as f:
             for line in f:
@@ -1475,7 +1485,7 @@ def handle_ti_matcher(
                         if host:
                             observed_domains.add(_normalize_host_indicator(host))
 
-    tls_results = job_dir / "sensors" / "tls_enrich" / "sensor.results.jsonl"
+    tls_results = run_output_dir / "sensors" / "tls_enrich" / "sensor.results.jsonl"
     if tls_results.exists():
         with open(tls_results) as f:
             for line in f:
@@ -1494,7 +1504,7 @@ def handle_ti_matcher(
                     if ja3s:
                         observed_ja3s.add(ja3s)
 
-    file_results = job_dir / "sensors" / "file_triage" / "sensor.results.jsonl"
+    file_results = run_output_dir / "sensors" / "file_triage" / "sensor.results.jsonl"
     if file_results.exists():
         with open(file_results) as f:
             for line in f:
@@ -1507,7 +1517,7 @@ def handle_ti_matcher(
                     if sha256:
                         observed_hashes.add(sha256)
 
-    suri_results = job_dir / "sensors" / "suricata" / "sensor.results.jsonl"
+    suri_results = run_output_dir / "sensors" / "suricata" / "sensor.results.jsonl"
     if suri_results.exists():
         with open(suri_results) as f:
             for line in f:

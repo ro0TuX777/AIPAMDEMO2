@@ -78,7 +78,7 @@ def test_terms_never_travel_as_argv(monkeypatch, tmp_path):
 def test_pipeline_removes_the_staged_wordlist(db, leaky_job, monkeypatch):
     monkeypatch.setenv("AIPAM_BLUESCRUB_REQUIRE_UID_DROP", "false")
     wl.create(db, "Ops", [{"term": "NIGHTFALL", "category": "codename"}])
-    bs_service.analyze_and_persist(db, "j", leaky_job, profile="triage")
+    bs_service.analyze_and_persist(db, "j", leaky_job, profile="triage", run_output_dir=leaky_job)
 
     assert not (leaky_job / "runtime" / "wordlist.json").exists()
     assert dw.WORDLIST_ENV not in os.environ
@@ -175,7 +175,7 @@ def test_quick_scan_catches_a_leaked_codename(db, leaky_job, monkeypatch):
     monkeypatch.setenv("AIPAM_BLUESCRUB_REQUIRE_UID_DROP", "false")
     wl.create(db, "Engagement", [{"term": "NIGHTFALL", "category": "codename"}])
 
-    dacv = bs_service.analyze_and_persist(db, "j", leaky_job, profile="triage")["dacv"]
+    dacv = bs_service.analyze_and_persist(db, "j", leaky_job, profile="triage", run_output_dir=leaky_job)["dacv"]
 
     rows = db.scalars(select(Finding).where(Finding.sensor == "dirty_word")).all()
     assert rows, "declared term not found"

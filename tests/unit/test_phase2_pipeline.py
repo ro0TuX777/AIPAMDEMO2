@@ -115,7 +115,7 @@ class TestSensorRegistry:
 class TestJobDirectory:
     def test_create_job_directory(self, tmp_path):
         job_id = _uuid()
-        job_dir = create_job_directory(tmp_path, job_id)
+        job_dir = _legacy_job_directory(tmp_path, job_id)
         assert (job_dir / "input").is_dir()
         assert (job_dir / "runtime").is_dir()
         assert (job_dir / "sensors").is_dir()
@@ -124,13 +124,13 @@ class TestJobDirectory:
         assert (job_dir / "extracted_files" / "files").is_dir()
 
     def test_create_sensor_output_dir(self, tmp_path):
-        job_dir = create_job_directory(tmp_path, _uuid())
+        job_dir = _legacy_job_directory(tmp_path, _uuid())
         sensor_dir = create_sensor_output_dir(job_dir, "beaconing")
         assert sensor_dir.is_dir()
         assert (sensor_dir / "raw").is_dir()
 
     def test_link_pcap(self, tmp_path):
-        job_dir = create_job_directory(tmp_path, _uuid())
+        job_dir = _legacy_job_directory(tmp_path, _uuid())
         pcap = tmp_path / "source.pcap"
         pcap.write_bytes(b"\xd4\xc3\xb2\xa1" + b"\x00" * 100)
         dest = link_pcap(job_dir, pcap)
@@ -140,7 +140,7 @@ class TestJobDirectory:
 
     def test_write_and_read_input_meta(self, tmp_path):
         job_id = _uuid()
-        job_dir = create_job_directory(tmp_path, job_id)
+        job_dir = _legacy_job_directory(tmp_path, job_id)
         write_input_meta(
             job_dir,
             job_id=job_id,
@@ -160,14 +160,14 @@ class TestJobDirectory:
         assert len(sha) == 64  # SHA-256 hex length
 
     def test_get_job_disk_usage(self, tmp_path):
-        job_dir = create_job_directory(tmp_path, _uuid())
+        job_dir = _legacy_job_directory(tmp_path, _uuid())
         (job_dir / "input" / "pcap.pcap").write_bytes(b"\x00" * 1000)
         usage = get_job_disk_usage(job_dir)
         assert usage >= 1000
 
     def test_cleanup_job_directory(self, tmp_path):
         job_id = _uuid()
-        create_job_directory(tmp_path, job_id)
+        _legacy_job_directory(tmp_path, job_id)
         assert (tmp_path / job_id).is_dir()
         assert cleanup_job_directory(tmp_path, job_id) is True
         assert not (tmp_path / job_id).exists()
@@ -203,12 +203,12 @@ class TestPreflight:
         assert pct == 90.0
 
     def test_check_job_quota_under(self, tmp_path):
-        job_dir = create_job_directory(tmp_path, _uuid())
+        job_dir = _legacy_job_directory(tmp_path, _uuid())
         (job_dir / "input" / "pcap.pcap").write_bytes(b"\x00" * 100)
         assert check_job_quota(job_dir, 1_000_000) is False
 
     def test_check_job_quota_over(self, tmp_path):
-        job_dir = create_job_directory(tmp_path, _uuid())
+        job_dir = _legacy_job_directory(tmp_path, _uuid())
         (job_dir / "input" / "pcap.pcap").write_bytes(b"\x00" * 1000)
         assert check_job_quota(job_dir, 500) is True
 
@@ -218,7 +218,7 @@ class TestPreflight:
         assert check_extracted_quota(job_dir, 1_000_000) is False
 
     def test_check_extracted_quota_over(self, tmp_path):
-        job_dir = create_job_directory(tmp_path, _uuid())
+        job_dir = _legacy_job_directory(tmp_path, _uuid())
         ef_dir = job_dir / "extracted_files" / "files"
         (ef_dir / "big.bin").write_bytes(b"\x00" * 2000)
         assert check_extracted_quota(job_dir, 500) is True
@@ -318,7 +318,7 @@ class TestSensorRunner:
     def test_run_sensor_handler_success(self, tmp_path):
         """Sensors with handlers run in-process."""
         sensor_def = SENSORS["ti_matcher"]
-        job_dir = create_job_directory(tmp_path, _uuid())
+        job_dir = _legacy_job_directory(tmp_path, _uuid())
         # Create required inputs so the handler doesn't fail
         zeek_dir = job_dir / "sensors" / "zeek"
         zeek_dir.mkdir(parents=True, exist_ok=True)
@@ -327,7 +327,7 @@ class TestSensorRunner:
         suri_dir.mkdir(parents=True, exist_ok=True)
         (suri_dir / "sensor.results.jsonl").write_text("")
 
-        result = run_sensor(sensor_def, job_dir, "job-1", "standard")
+        result = run_sensor(sensor_def, job_dir, "job-1", "standard", run_output_dir=job_dir)
         assert result.status == "completed"
         assert result.exit_code == 0
         assert result.sensor == "ti_matcher"
@@ -338,7 +338,7 @@ class TestSensorRunner:
         assert meta["status"] == "completed"
 
     def test_handle_ti_matcher_matches_domain_hash_and_tls_iocs(self, tmp_path, monkeypatch):
-        job_dir = create_job_directory(tmp_path, _uuid())
+        job_dir = _legacy_job_directory(tmp_path, _uuid())
 
         zeek_dir = job_dir / "sensors" / "zeek"
         zeek_dir.mkdir(parents=True, exist_ok=True)
@@ -393,7 +393,7 @@ class TestSensorRunner:
         monkeypatch.setenv("AIPAM_TI_BUNDLE_DIR", str(tmp_path / "ti" / "bundles"))
 
         output_dir = create_sensor_output_dir(job_dir, "ti_matcher")
-        handle_ti_matcher(job_dir, output_dir, "job-ti", "standard")
+        handle_ti_matcher(job_dir, output_dir, "job-ti", "standard", run_output_dir=job_dir)
 
         results = [json.loads(line) for line in (output_dir / "sensor.results.jsonl").read_text().splitlines()]
         by_type = {item["data"]["ioc_type"]: item["data"] for item in results}
@@ -406,7 +406,7 @@ class TestSensorRunner:
         assert by_type["ja3s"]["value"] == "ja3s-fingerprint"
 
     def test_handle_beaconing_emits_dns_findings_with_pcap_label(self, tmp_path):
-        job_dir = create_job_directory(tmp_path, _uuid())
+        job_dir = _legacy_job_directory(tmp_path, _uuid())
 
         zeek_dir = job_dir / "sensors" / "zeek"
         zeek_dir.mkdir(parents=True, exist_ok=True)
@@ -457,7 +457,7 @@ class TestSensorRunner:
         (suri_dir / "sensor.results.jsonl").write_text("")
 
         output_dir = create_sensor_output_dir(job_dir, "beaconing")
-        handle_beaconing(job_dir, output_dir, "job-beacon", "standard")
+        handle_beaconing(job_dir, output_dir, "job-beacon", "standard", run_output_dir=job_dir)
 
         results = [json.loads(line) for line in (output_dir / "sensor.results.jsonl").read_text().splitlines()]
 
@@ -468,7 +468,7 @@ class TestSensorRunner:
         assert "long DNS queries" in results[0]["data"]["description"]
 
     def test_handle_capa_skips_cleanly_when_binary_missing(self, tmp_path):
-        job_dir = create_job_directory(tmp_path, _uuid())
+        job_dir = _legacy_job_directory(tmp_path, _uuid())
         extracted = job_dir / "extracted_files" / "files" / "sample.exe"
         extracted.write_bytes(b"MZ" + b"\x00" * 32)
 
@@ -490,12 +490,12 @@ class TestSensorRunner:
 
         output_dir = create_sensor_output_dir(job_dir, "capa")
         with patch("backend.app.pipeline.sensor_handlers.shutil.which", return_value=None):
-            handle_capa(job_dir, output_dir, "job-capa", "standard")
+            handle_capa(job_dir, output_dir, "job-capa", "standard", run_output_dir=job_dir)
 
         assert (output_dir / "sensor.results.jsonl").read_text() == ""
 
     def test_handle_capa_emits_findings_for_executable_triage_records(self, tmp_path, monkeypatch):
-        job_dir = create_job_directory(tmp_path, _uuid())
+        job_dir = _legacy_job_directory(tmp_path, _uuid())
         extracted = job_dir / "extracted_files" / "files" / "sample.exe"
         extracted.write_bytes(b"MZ" + b"\x00" * 64)
 
@@ -559,7 +559,7 @@ class TestSensorRunner:
                 stdout=json.dumps(capa_json),
                 stderr="",
             )
-            handle_capa(job_dir, output_dir, "job-capa", "standard")
+            handle_capa(job_dir, output_dir, "job-capa", "standard", run_output_dir=job_dir)
 
         results = [json.loads(line) for line in (output_dir / "sensor.results.jsonl").read_text().splitlines()]
 
@@ -591,9 +591,9 @@ class TestSensorRunner:
         def bad_handler(**kwargs):
             raise RuntimeError("analysis crashed")
         sensor_def = SensorDef(name="bad", type="sensor", handler=bad_handler)
-        job_dir = create_job_directory(tmp_path, _uuid())
+        job_dir = _legacy_job_directory(tmp_path, _uuid())
 
-        result = run_sensor(sensor_def, job_dir, "job-2", "standard")
+        result = run_sensor(sensor_def, job_dir, "job-2", "standard", run_output_dir=job_dir)
         assert result.status == "failed"
         assert result.exit_code == 1
         assert "analysis crashed" in result.error
@@ -601,21 +601,21 @@ class TestSensorRunner:
     def test_run_sensor_docker_success(self, tmp_path):
         """Docker-based sensors (no handler) use Docker client."""
         sensor_def = _make_docker_sensor_def()
-        job_dir = create_job_directory(tmp_path, _uuid())
+        job_dir = _legacy_job_directory(tmp_path, _uuid())
         docker = _make_mock_docker(exit_code=0, logs=b"all good")
 
-        result = run_sensor(sensor_def, job_dir, "job-3", "standard", docker)
+        result = run_sensor(sensor_def, job_dir, "job-3", "standard", docker, run_output_dir=job_dir)
         assert result.status == "completed"
         assert result.exit_code == 0
 
     def test_run_sensor_docker_timeout(self, tmp_path):
         sensor_def = _make_docker_sensor_def()
-        job_dir = create_job_directory(tmp_path, _uuid())
+        job_dir = _legacy_job_directory(tmp_path, _uuid())
         docker = _make_mock_docker()
         mock_container = docker.containers.run.return_value
         mock_container.wait.side_effect = Exception("Read timed out")
 
-        result = run_sensor(sensor_def, job_dir, "job-4", "standard", docker)
+        result = run_sensor(sensor_def, job_dir, "job-4", "standard", docker, run_output_dir=job_dir)
         assert result.status == "timeout"
         assert result.exit_code is None
         mock_container.kill.assert_called_once()
@@ -623,28 +623,28 @@ class TestSensorRunner:
     def test_run_sensor_skipped_no_image_no_handler(self, tmp_path):
         """SensorDef with no image and no handler should be skipped."""
         sensor_def = SensorDef(name="empty", type="stage")
-        job_dir = create_job_directory(tmp_path, _uuid())
+        job_dir = _legacy_job_directory(tmp_path, _uuid())
         docker = _make_mock_docker()
 
-        result = run_sensor(sensor_def, job_dir, "job-5", "standard", docker)
+        result = run_sensor(sensor_def, job_dir, "job-5", "standard", docker, run_output_dir=job_dir)
         assert result.status == "skipped"
 
     def test_run_sensor_image_not_found(self, tmp_path):
         sensor_def = _make_docker_sensor_def()
-        job_dir = create_job_directory(tmp_path, _uuid())
+        job_dir = _legacy_job_directory(tmp_path, _uuid())
         docker = _make_mock_docker()
         docker.images.get.side_effect = Exception("Image not found")
 
-        result = run_sensor(sensor_def, job_dir, "job-6", "standard", docker)
+        result = run_sensor(sensor_def, job_dir, "job-6", "standard", docker, run_output_dir=job_dir)
         assert result.status == "failed"
         assert "Image not found" in result.error
 
     def test_run_sensor_container_log_saved(self, tmp_path):
         sensor_def = _make_docker_sensor_def(name="test_logger")
-        job_dir = create_job_directory(tmp_path, _uuid())
+        job_dir = _legacy_job_directory(tmp_path, _uuid())
         docker = _make_mock_docker(exit_code=0, logs=b"matched 3 IOCs")
 
-        run_sensor(sensor_def, job_dir, "job-7", "standard", docker)
+        run_sensor(sensor_def, job_dir, "job-7", "standard", docker, run_output_dir=job_dir)
         log_path = job_dir / "sensors" / "test_logger" / "container.log"
         assert log_path.exists()
         assert "matched 3 IOCs" in log_path.read_text()
@@ -652,10 +652,10 @@ class TestSensorRunner:
     def test_run_sensor_docker_kwargs(self, tmp_path):
         """Verify Docker security hardening kwargs are passed."""
         sensor_def = _make_docker_sensor_def()
-        job_dir = create_job_directory(tmp_path, _uuid())
+        job_dir = _legacy_job_directory(tmp_path, _uuid())
         docker = _make_mock_docker()
 
-        run_sensor(sensor_def, job_dir, "job-8", "standard", docker)
+        run_sensor(sensor_def, job_dir, "job-8", "standard", docker, run_output_dir=job_dir)
         call_kwargs = docker.containers.run.call_args[1]
         assert call_kwargs["network_mode"] == "none"
         assert call_kwargs["read_only"] is True
@@ -749,8 +749,9 @@ class TestOrchestrator:
 
         return job_id, upload_id
 
+    @pytest.mark.parametrize("separate_output", [False, True])
     @patch("backend.app.pipeline.orchestrator.check_disk_space")
-    def test_pipeline_happy_path(self, mock_preflight, db_session, tmp_path):
+    def test_pipeline_happy_path(self, mock_preflight, db_session, tmp_path, separate_output):
         from backend.app.pipeline.orchestrator import run_pipeline
 
         mock_preflight.return_value = PreflightResult(
@@ -759,6 +760,8 @@ class TestOrchestrator:
 
         job_id, upload_id = self._setup_job(db_session, tmp_path)
         docker = _make_mock_docker(exit_code=0, logs=b"ok")
+        input_root = tmp_path / "jobs" / job_id
+        run_output_dir = input_root / ".runs" / _uuid() if separate_output else input_root
 
         # Patch all handlers to no-ops since Zeek/Suricata aren't installed in test env
         def noop_handler(**kwargs):
@@ -783,6 +786,8 @@ class TestOrchestrator:
                 docker_client=docker,
                 job_root=tmp_path / "jobs",
                 upload_root=tmp_path / "uploads",
+                input_root=input_root,
+                run_output_dir=run_output_dir,
             )
 
             # Reset cache after test
@@ -792,6 +797,11 @@ class TestOrchestrator:
         job = db_session.get(Job, job_id)
         assert job.status in ("completed", "completed_with_errors")
         assert job.started_at is not None
+        assert (run_output_dir / "metrics" / "job_metrics.json").is_file()
+        assert (input_root / "input" / "pcap.pcap").is_file()
+        if separate_output:
+            assert not (input_root / "sensors").exists()
+            assert not (input_root / "metrics").exists()
 
     @patch("backend.app.pipeline.orchestrator.check_disk_space")
     def test_pipeline_preflight_fails(self, mock_preflight, db_session, tmp_path):
@@ -829,3 +839,7 @@ class TestOrchestrator:
                 job_root=tmp_path / "jobs",
                 upload_root=tmp_path / "uploads",
             )
+
+
+def _legacy_job_directory(job_root, job_id):
+    return create_job_directory(job_root, job_id, run_output_dir=job_root / job_id)

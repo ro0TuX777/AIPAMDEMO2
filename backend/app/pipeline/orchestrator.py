@@ -119,7 +119,8 @@ def _run_binary_pipeline(
     job: Job,
     db: Session,
     *,
-    job_root: Path,
+    input_root: Path,
+    run_output_dir: Path,
     upload_root: Path,
 ) -> str:
     """Run YARA/binary analysis for a ``binary`` source-type job and finalize.
@@ -131,8 +132,7 @@ def _run_binary_pipeline(
     from backend.app.binalysis.service import analyze_and_persist
 
     try:
-        job_dir = create_job_directory(job_root, job_id)
-        input_dir = job_dir / "input"
+        input_dir = input_root / "input"
 
         def _first_file(d: Path) -> Path | None:
             if not d.exists():
@@ -180,7 +180,8 @@ def _run_code_artifact_pipeline(
     job: Job,
     db: Session,
     *,
-    job_root: Path,
+    input_root: Path,
+    run_output_dir: Path,
     upload_root: Path,
 ) -> str:
     """Run BlueScrub DACV+R analysis for a ``code_artifact`` job and finalize.
@@ -195,8 +196,7 @@ def _run_code_artifact_pipeline(
     from backend.app.bluescrub.service import analyze_and_persist
 
     try:
-        job_dir = create_job_directory(job_root, job_id)
-        source_root = job_dir / "input" / "source"
+        source_root = input_root / "input" / "source"
         if not source_root.exists() or not any(source_root.rglob("*")):
             _update_job_status(db, job, "failed", "No staged source found for job")
             _emit(job_id, "job.complete", status="failed")
@@ -210,7 +210,7 @@ def _run_code_artifact_pipeline(
                   message=message or "")
 
         metrics = analyze_and_persist(
-            db, job_id, job_dir,
+            db, job_id, input_root, run_output_dir=run_output_dir,
             profile=profile,
             project_id=lineage.project_id if lineage else None,
             analysis_kind=lineage.analysis_kind if lineage else "source_audit",
@@ -402,6 +402,8 @@ def run_pipeline(
     max_job_disk_bytes: int = 53_687_091_200,
     preflight_multiplier: int = 4,
     pcap_label: str | None = None,
+    input_root: Path | None = None,
+    run_output_dir: Path | None = None,
 ) -> str:
     """Execute the full analysis pipeline for a job.
 
@@ -423,6 +425,13 @@ def run_pipeline(
     if job is None:
         raise ValueError(f"Job {job_id} not found")
 
+    if input_root is None:
+        input_root = job_root / job_id
+    if run_output_dir is None:
+        if job.artifact_layout_version != 1:
+            raise ValueError("Layout 2 requires an owned run_output_dir")
+        run_output_dir = input_root
+
     logger.info("Starting pipeline for job %s (profile=%s, source_type=%s)",
                 job_id, job.execution_profile, job.source_type)
     _update_job_status(db, job, "running")
@@ -431,11 +440,11 @@ def run_pipeline(
 
     # --- Binary artifact job: run YARA/binary analysis and finalize ---
     if (job.source_type or "") == "binary":
-        return _run_binary_pipeline(job_id, job, db, job_root=job_root, upload_root=upload_root)
+        return _run_binary_pipeline(job_id, job, db, input_root=input_root, run_output_dir=run_output_dir, upload_root=upload_root)
 
     if (job.source_type or "") == "code_artifact":
         return _run_code_artifact_pipeline(
-            job_id, job, db, job_root=job_root, upload_root=upload_root
+            job_id, job, db, input_root=input_root, run_output_dir=run_output_dir, upload_root=upload_root
         )
 
     profile: Profile = job.execution_profile  # type: ignore[assignment]
@@ -454,7 +463,7 @@ def run_pipeline(
 
     # --- Step 1: Setup job directory ---
     try:
-        job_dir = create_job_directory(job_root, job_id)
+        create_job_directory(input_root.parent, input_root.name, run_output_dir=run_output_dir)
 
         if has_pcaps:
             from sqlalchemy import select as sa_select
@@ -480,8 +489,8 @@ def run_pipeline(
                     total_pcap_size += pcap_source.stat().st_size
                     label = rec.label or "before"
                     # Ordinal disambiguates captures sharing a phase label.
-                    link_pcap_labeled(job_dir, pcap_source, label, rec.ordinal or 0)
-                staged = len(list((job_dir / "input").glob("*.pcap*")))
+                    link_pcap_labeled(input_root, pcap_source, label, rec.ordinal or 0)
+                staged = len(list((input_root / "input").glob("*.pcap*")))
                 logger.info(
                     "Linked %d/%d PCAPs for job %s", staged, len(pcap_records), job_id,
                 )
@@ -499,7 +508,7 @@ def run_pipeline(
                 else:
                     pcap_source = pcap_files[0]
                     total_pcap_size = pcap_source.stat().st_size
-                    link_pcap(job_dir, pcap_source)
+                    link_pcap(input_root, pcap_source)
 
             if has_pcaps:
                 # Preflight disk check
@@ -513,14 +522,14 @@ def run_pipeline(
                     return "failed"
 
                 # Compute SHA of the first PCAP for backward compat
-                first_pcap = list((job_dir / "input").glob("*.pcap")) + list((job_dir / "input").glob("*.pcapng"))
+                first_pcap = list((input_root / "input").glob("*.pcap")) + list((input_root / "input").glob("*.pcapng"))
                 if first_pcap:
                     pcap_sha = compute_pcap_sha256(first_pcap[0])
                     job.pcap_sha256 = pcap_sha
                     db.commit()
 
                     write_input_meta(
-                        job_dir,
+                        input_root,
                         job_id=job_id,
                         pcap_filename=job.pcap_filename or first_pcap[0].name,
                         pcap_sha256=pcap_sha,
@@ -567,7 +576,7 @@ def run_pipeline(
         if pcap_label:
             import shutil as _shutil
 
-            input_dir = job_dir / "input"
+            input_dir = input_root / "input"
             safe_label = "".join(c if c.isalnum() or c in "-_" else "_" for c in pcap_label)
             for p in sorted(input_dir.iterdir()):
                 if p.is_symlink():
@@ -579,7 +588,7 @@ def run_pipeline(
                     logger.info("Hid non-target PCAP %s during re-analysis", p.name)
 
             # Clean old sensor output directories so correlator only sees new data
-            sensors_dir = job_dir / "sensors"
+            sensors_dir = run_output_dir / "sensors"
             if sensors_dir.exists():
                 for sd in sensors_dir.iterdir():
                     if sd.is_dir():
@@ -599,12 +608,13 @@ def run_pipeline(
             logger.info("Running stage %s for job %s", stage_def.name, job_id)
             _emit(job_id, "stage.status", stage=stage_def.name, status="running",
                   step=step_num, total_steps=total_steps)
-            create_sensor_output_dir(job_dir, stage_def.name)
+            create_sensor_output_dir(run_output_dir, stage_def.name)
 
             # Stages are run as Docker containers just like sensors
             result = run_sensor(
                 sensor_def=stage_def,
-                job_dir=job_dir,
+                input_root=input_root,
+                run_output_dir=run_output_dir,
                 job_id=job_id,
                 execution_profile=profile,
                 docker_client=docker_client,
@@ -634,7 +644,7 @@ def run_pipeline(
         _pcap_stats: dict[str, Any] = {}
         try:
             # Gather PCAP stats from input files
-            input_dir = job_dir / "input"
+            input_dir = input_root / "input"
             pcap_files_on_disk = list(input_dir.glob("*.pcap")) + list(input_dir.glob("*.pcapng"))
             _pcap_stats = {
                 "file_count": len(pcap_files_on_disk),
@@ -643,7 +653,7 @@ def run_pipeline(
             # Try to read Zeek conn.log for top hosts
             _top_hosts: list[dict[str, Any]] = []
             _protocol_dist: dict[str, int] = {}
-            conn_log = job_dir / "sensors" / "zeek" / "conn.log"
+            conn_log = run_output_dir / "sensors" / "zeek" / "conn.log"
             if conn_log.exists():
                 host_bytes: dict[str, int] = {}
                 for line in conn_log.read_text().splitlines():
@@ -664,7 +674,7 @@ def run_pipeline(
 
             # Try to read Suricata alert summary
             _alert_summary: dict[str, Any] = {"total": 0, "by_severity": {}}
-            eve_json = job_dir / "sensors" / "suricata" / "eve.json"
+            eve_json = run_output_dir / "sensors" / "suricata" / "eve.json"
             if eve_json.exists():
                 sev_counts: dict[str, int] = {}
                 alert_total = 0
@@ -722,8 +732,8 @@ def run_pipeline(
                     reason = f"Upstream stage(s) did not complete: {', '.join(broken)}"
                 for req in sensor_def.inputs_required:
                     # Requirements refer to a previously-run sensor whose output lives
-                    # under  job_dir / "sensors" / <req>  (e.g. "zeek", "suricata").
-                    req_dir = job_dir / "sensors" / req
+                    # under  run_output_dir / "sensors" / <req>  (e.g. "zeek", "suricata").
+                    req_dir = run_output_dir / "sensors" / req
                     if not req_dir.exists():
                         missing = True
                         break
@@ -745,11 +755,12 @@ def run_pipeline(
             logger.info("Running sensor %s for job %s", sensor_def.name, job_id)
             _emit(job_id, "sensor.status", sensor=sensor_def.name, status="running",
                   step=step_num, total_steps=total_steps)
-            create_sensor_output_dir(job_dir, sensor_def.name)
+            create_sensor_output_dir(run_output_dir, sensor_def.name)
 
             result = run_sensor(
                 sensor_def=sensor_def,
-                job_dir=job_dir,
+                input_root=input_root,
+                run_output_dir=run_output_dir,
                 job_id=job_id,
                 execution_profile=profile,
                 docker_client=docker_client,
@@ -769,7 +780,7 @@ def run_pipeline(
                 )
 
             # Check job disk quota
-            if check_job_quota(job_dir, max_job_disk_bytes):
+            if check_job_quota(input_root, max_job_disk_bytes):
                 logger.warning("Job %s exceeded disk quota", job_id)
                 has_errors = True
                 break
@@ -778,7 +789,7 @@ def run_pipeline(
         _restore_hidden_pcaps()
 
     # --- Write extraction manifest (§3.3) ---
-    _write_extraction_manifest(job_dir)
+    _write_extraction_manifest(run_output_dir)
 
     # --- Publish partial result: sensor completion summary ---
     _completed_stages.append("sensors")
@@ -804,10 +815,10 @@ def run_pipeline(
 
     # --- Step 5b: Telemetry pipeline (log bundles) ---
     # Runs for hybrid (pcap+logs) and bundle-only jobs when a source_manifest.json exists.
-    _manifest_path = job_dir / "input" / "telemetry" / "source_manifest.json"
+    _manifest_path = input_root / "input" / "telemetry" / "source_manifest.json"
     if not _manifest_path.exists():
         # Also check alternate location
-        _manifest_path = job_dir / "source_manifest.json"
+        _manifest_path = input_root / "source_manifest.json"
     if has_telemetry_bundle or _manifest_path.exists():
         step_num += 1
         _emit(job_id, "stage.status", stage="telemetry", status="running",
@@ -817,7 +828,8 @@ def run_pipeline(
 
             telemetry_result = run_telemetry_pipeline(
                 job_id=job_id,
-                job_dir=job_dir,
+                input_root=input_root,
+                run_output_dir=run_output_dir,
                 db=db,
                 exercise_id=job.exercise_id,
             )
@@ -843,7 +855,7 @@ def run_pipeline(
     try:
         from backend.app.normalize.correlate import correlate_job
 
-        corr_counts = correlate_job(job_id, job_dir, db)
+        corr_counts = correlate_job(job_id, run_output_dir, db)
         logger.info("Correlation results for job %s: %s", job_id, corr_counts)
         _emit(job_id, "stage.status", stage="correlate", status="completed",
               step=step_num, total_steps=total_steps,
@@ -863,7 +875,7 @@ def run_pipeline(
     if has_pcaps:
         try:
             from backend.app.normalize.network_events import normalize_network_events
-            n_events = normalize_network_events(job_id, job_dir, db)
+            n_events = normalize_network_events(job_id, run_output_dir, db)
             logger.info("Raw network events for job %s: %d", job_id, n_events)
         except Exception:
             logger.warning("PCAP network-event normalization failed for job %s", job_id, exc_info=True)
@@ -1046,7 +1058,7 @@ def run_pipeline(
     db.commit()
 
     # --- Write job_metrics.json (§20) ---
-    _write_job_metrics(job_dir, job, stages, sensor_results, corr_counts)
+    _write_job_metrics(run_output_dir, job, stages, sensor_results, corr_counts)
 
     # --- Clean up partial results (full results now available) ---
     try:

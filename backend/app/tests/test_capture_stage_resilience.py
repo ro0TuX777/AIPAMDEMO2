@@ -32,7 +32,7 @@ def _make_pcap(tmp_path: Path, name: str, size: int = 64) -> Path:
 class TestLabelledStaging:
     def test_captures_sharing_a_label_are_all_staged(self, tmp_path):
         """Three "during" captures must produce three files, not one."""
-        job_dir = create_job_directory(tmp_path / "jobs", "job-1")
+        job_dir = _legacy_job_directory(tmp_path / "jobs", "job-1")
         sources = [_make_pcap(tmp_path, f"capture{i}.pcap", 64 + i) for i in range(3)]
 
         for ordinal, src in enumerate(sources):
@@ -45,7 +45,7 @@ class TestLabelledStaging:
         assert len(sizes) == 3
 
     def test_phase_label_survives_the_unique_filename(self, tmp_path):
-        job_dir = create_job_directory(tmp_path / "jobs", "job-2")
+        job_dir = _legacy_job_directory(tmp_path / "jobs", "job-2")
         link_pcap_labeled(job_dir, _make_pcap(tmp_path, "a.pcap"), "during", 0)
         link_pcap_labeled(job_dir, _make_pcap(tmp_path, "b.pcap"), "during", 1)
         link_pcap_labeled(job_dir, _make_pcap(tmp_path, "c.pcap"), "after", 2)
@@ -64,7 +64,7 @@ class TestLabelledStaging:
 
     def test_legacy_jobs_without_a_manifest_fall_back_to_the_stem(self, tmp_path):
         """Jobs staged before the manifest existed keep working unchanged."""
-        job_dir = create_job_directory(tmp_path / "jobs", "job-3")
+        job_dir = _legacy_job_directory(tmp_path / "jobs", "job-3")
         (job_dir / "input" / "before.pcap").write_bytes(b"\xd4\xc3\xb2\xa1")
 
         pairs = sensor_handlers._find_all_pcaps_labeled(job_dir)
@@ -138,3 +138,7 @@ class TestCaptureWatchdog:
                 label="partial", ceiling_seconds=60, stall_seconds=0.5,
             )
         assert (tmp_path / "conn.log").read_text() == "partial"
+
+
+def _legacy_job_directory(job_root, job_id):
+    return create_job_directory(job_root, job_id, run_output_dir=job_root / job_id)

@@ -29,7 +29,11 @@ from backend.app.models.file import File
 from backend.app.models.finding import Finding
 from backend.app.models.host import Host
 from backend.app.models.ioc import Ioc
-from backend.app.models.job import Job
+from backend.app.models.job import Job, TERMINAL_JOB_STATUSES
+from backend.app.pipeline.run_artifacts import (
+    resolve_published_artifact_dir, resolve_accepted_run_dirs,
+    iter_run_files, run_archive_prefix, safe_artifact_path,
+)
 from backend.app.models.timeline import TimelineEvent
 from backend.app.models.tls import TlsSession
 from backend.app.schemas.artifact import (
@@ -87,10 +91,11 @@ def _query_to_dicts(db: Session, model, job_id: str, limit: int = 10000) -> list
 
 def _build_evidence_zip(
     db: Session, job_id: str, job: Job, artifact_dir: Path,
+    *, job_root: Path | None = None,
 ) -> tuple[Path, int, str]:
     """Build a ZIP evidence package and return (path, size_bytes, sha256)."""
     artifact_dir.mkdir(parents=True, exist_ok=True)
-    zip_name = f"evidence-{job_id[:8]}.zip"
+    zip_name = f"evidence-{artifact_dir.name}.zip"
     zip_path = artifact_dir / zip_name
 
     manifest = {
@@ -115,10 +120,15 @@ def _build_evidence_zip(
         "timeline.json": _query_to_dicts(db, TimelineEvent, job_id),
     }
 
-    with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED) as zf:
+    with zipfile.ZipFile(zip_path, "x", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("manifest.json", json.dumps(manifest, indent=2, default=str))
         for fname, data in sections.items():
             zf.writestr(fname, json.dumps(data, indent=2, default=str))
+        if job_root is not None:
+            for run_dir in resolve_accepted_run_dirs(job, job_root):
+                prefix = run_archive_prefix(job, run_dir)
+                for path in iter_run_files(run_dir):
+                    zf.write(path, prefix + path.relative_to(run_dir).as_posix())
 
     size = zip_path.stat().st_size
     sha = hashlib.sha256(zip_path.read_bytes()).hexdigest()
@@ -135,6 +145,8 @@ async def create_evidence_package(
 ):
     """Create an evidence package artifact (ZIP with all job data)."""
     job = _require_job(db, job_id)
+    if job.status not in TERMINAL_JOB_STATUSES:
+        raise HTTPException(status_code=409, detail="Evidence packages require a terminal job")
     response.headers["X-Request-Id"] = request_id
 
     artifact_id = str(uuid.uuid4())
@@ -149,8 +161,8 @@ async def create_evidence_package(
     db.commit()
 
     try:
-        artifact_dir = settings.aipam_job_root / job_id / "artifacts"
-        zip_path, size_bytes, sha256 = _build_evidence_zip(db, job_id, job, artifact_dir)
+        artifact_dir = resolve_published_artifact_dir(job, settings.aipam_job_root, artifact_id)
+        zip_path, size_bytes, sha256 = _build_evidence_zip(db, job_id, job, artifact_dir, job_root=settings.aipam_job_root)
 
         artifact.status = "available"
         artifact.filename = zip_path.name
@@ -194,9 +206,22 @@ async def download_artifact(
     if artifact.status != "available":
         raise HTTPException(status_code=409, detail=f"Artifact status is '{artifact.status}', not available")
 
-    # Build the file path
-    artifact_path = settings.aipam_job_root / artifact.job_id / "artifacts" / (artifact.filename or artifact_id)
-    if not artifact_path.exists():
+    job = _require_job(db, artifact.job_id)
+    artifact_path = None
+    try:
+        published = resolve_published_artifact_dir(job, settings.aipam_job_root, artifact_id)
+        candidate = safe_artifact_path(published, artifact.filename or artifact_id)
+        if candidate.is_file():
+            artifact_path = candidate
+        else:
+            for run_dir in reversed(resolve_accepted_run_dirs(job, settings.aipam_job_root)):
+                candidate = safe_artifact_path(run_dir, "artifacts/" + (artifact.filename or artifact_id))
+                if candidate.is_file():
+                    artifact_path = candidate
+                    break
+    except ValueError:
+        pass
+    if artifact_path is None:
         raise HTTPException(status_code=404, detail="Artifact file not found on disk")
 
     return FileResponse(
@@ -204,4 +229,3 @@ async def download_artifact(
         filename=artifact.filename or f"{artifact_id}.zip",
         media_type="application/octet-stream",
     )
-

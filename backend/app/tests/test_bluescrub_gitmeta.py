@@ -614,7 +614,7 @@ def test_a_declared_operator_handle_in_history_disqualifies(db, job):
     make_repo(job / "input" / "source", author="Ada Nightfall",
               email="ada@corp.example.org", commits=2)
 
-    dacv = bs_service.analyze_and_persist(db, "j", job, profile="triage")["dacv"]
+    dacv = bs_service.analyze_and_persist(db, "j", job, profile="triage", run_output_dir=job)["dacv"]
 
     rows = db.scalars(select(Finding).where(Finding.sensor == "gitmeta")).all()
     declared = [r for r in rows if _rule_of(r) == "gitmeta.declared_identity"]
@@ -630,7 +630,7 @@ def test_a_scan_of_an_ordinary_repository_persists_without_disqualifying(db, job
               email="maint@opensource.example.org",
               remote="https://github.com/upstream/loader.git", commits=3)
 
-    dacv = bs_service.analyze_and_persist(db, "j", job, profile="triage")["dacv"]
+    dacv = bs_service.analyze_and_persist(db, "j", job, profile="triage", run_output_dir=job)["dacv"]
 
     rules = {_rule_of(r) for r in db.scalars(
         select(Finding).where(Finding.sensor == "gitmeta")
@@ -647,7 +647,7 @@ def test_no_remote_credential_reaches_the_database(db, job, monkeypatch):
               remote="https://ada:ghp_secrettokenvalue@git.internal/ops/x.git",
               commits=2)
 
-    bs_service.analyze_and_persist(db, "j", job, profile="triage")
+    bs_service.analyze_and_persist(db, "j", job, profile="triage", run_output_dir=job)
 
     dumped = json.dumps([
         {c.name: str(getattr(row, c.name)) for c in Finding.__table__.columns}

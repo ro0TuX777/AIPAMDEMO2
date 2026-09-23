@@ -64,7 +64,7 @@ def test_a_planted_codename_in_a_binary_surfaces_with_category_and_offset(db, tm
     (src / "loader").write_bytes(elf_with(b"OPERATION NIGHTFALL"))
     wl.create(db, "Engagement", [{"term": "NIGHTFALL", "category": "codename"}])
 
-    bs_service.analyze_and_persist(db, "j", tmp_path, profile="triage")
+    bs_service.analyze_and_persist(db, "j", tmp_path, profile="triage", run_output_dir=tmp_path)
 
     hits = [
         json.loads(r.evidence_json)
@@ -108,7 +108,7 @@ def test_a_critical_attribution_hit_sets_grade_f_and_disqualified(db, tmp_path):
     (src / "loader").write_bytes(elf_with(b"OPERATION NIGHTFALL"))
     wl.create(db, "Engagement", [{"term": "NIGHTFALL", "category": "codename"}])
 
-    dacv = bs_service.analyze_and_persist(db, "j", tmp_path, profile="triage")["dacv"]
+    dacv = bs_service.analyze_and_persist(db, "j", tmp_path, profile="triage", run_output_dir=tmp_path)["dacv"]
 
     assert dacv["disqualified"] is True
     assert dacv["scoped"]["grade"] == "F"
@@ -121,7 +121,7 @@ def test_the_disqualifying_hit_must_be_a_reviewed_critical(db, tmp_path):
     src.mkdir(parents=True)
     (src / "notes.py").write_text("# TODO: finish this\nprint('DEBUG: here')\n")
 
-    dacv = bs_service.analyze_and_persist(db, "j", tmp_path, profile="triage")["dacv"]
+    dacv = bs_service.analyze_and_persist(db, "j", tmp_path, profile="triage", run_output_dir=tmp_path)["dacv"]
     assert dacv["disqualified"] is False
 
 
@@ -174,7 +174,7 @@ def gitleaks_job(db, tmp_path, monkeypatch):
     src.mkdir(parents=True)
     (src / "uploader.py").write_text("token = 'placeholder'\n")
 
-    metrics = bs_service.analyze_and_persist(db, "j", tmp_path, profile="standard")
+    metrics = bs_service.analyze_and_persist(db, "j", tmp_path, profile="standard", run_output_dir=tmp_path)
     return db, metrics, tmp_path
 
 

@@ -156,7 +156,7 @@ def test_the_metrics_the_api_serves_validate(db, tmp_path, profile):
     src.mkdir(parents=True)
     (src / "main.c").write_text("int main(void){return 0;}\n")
 
-    metrics = bs_service.analyze_and_persist(db, "j", tmp_path, profile=profile)
+    metrics = bs_service.analyze_and_persist(db, "j", tmp_path, profile=profile, run_output_dir=tmp_path)
 
     assert validation.check_metrics(metrics) == []
     assert {"findings_created", "findings_updated"} <= set(metrics["dacv"])

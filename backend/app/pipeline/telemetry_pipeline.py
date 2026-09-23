@@ -175,16 +175,17 @@ _DEFAULT_ERROR_BUDGET_PCT = 50
 
 def run_telemetry_pipeline(
     job_id: str,
-    job_dir: Path,
+    input_root: Path,
     db: Session,
     *,
+    run_output_dir: Path,
     exercise_id: str | None = None,
     error_budget_pct: int = _DEFAULT_ERROR_BUDGET_PCT,
 ) -> dict[str, Any]:
     """Execute the full telemetry pipeline for a bundle job.
 
     Returns a summary dict with parsing and correlation statistics.
-    Writes ``telemetry_diagnostics.json`` into *job_dir* for support-bundle collection.
+    Writes ``telemetry_diagnostics.json`` into *run_output_dir* for support bundles.
     """
     from datetime import datetime, timezone
 
@@ -197,11 +198,11 @@ def run_telemetry_pipeline(
     # Ensure parsers are registered
     register_all_parsers()
 
-    manifest = _load_manifest(job_dir)
+    manifest = _load_manifest(input_root)
     if manifest is None:
         diagnostics.completed_at = datetime.now(timezone.utc).isoformat()
         diagnostics.total_duration_ms = round((time.monotonic() - pipeline_t0) * 1000, 2)
-        _save_diagnostics(job_dir, diagnostics)
+        _save_diagnostics(run_output_dir, diagnostics)
         return {"error": "no_manifest", "parsed": 0, "correlated": 0}
 
     # Derive source type from first entry (all entries share source_type)
@@ -221,7 +222,7 @@ def run_telemetry_pipeline(
     all_results: list[ParserResult] = []
 
     for entry in manifest.entries:
-        file_path = job_dir / "input" / "telemetry" / entry.filename
+        file_path = input_root / "input" / "telemetry" / entry.filename
         if not file_path.exists():
             logger.warning("Manifest entry not found on disk: %s", entry.filename)
             diagnostics.files.append(FileDiagnostic(
@@ -308,7 +309,7 @@ def run_telemetry_pipeline(
     # Finalize diagnostics
     diagnostics.completed_at = datetime.now(timezone.utc).isoformat()
     diagnostics.total_duration_ms = round((time.monotonic() - pipeline_t0) * 1000, 2)
-    _save_diagnostics(job_dir, diagnostics)
+    _save_diagnostics(run_output_dir, diagnostics)
 
     summary = {
         "files_total": total_files,
@@ -326,4 +327,3 @@ def run_telemetry_pipeline(
     }
     logger.info("Telemetry pipeline complete for job %s: %s", job_id, summary)
     return summary
-

@@ -302,7 +302,7 @@ def test_a_pdb_path_in_a_shipped_binary_reaches_the_database(db, tmp_path):
     src.mkdir(parents=True)
     (src / "loader.exe").write_bytes(elf_with(PDB.encode(), pad=2048))
 
-    bs_service.analyze_and_persist(db, "j", tmp_path, profile="standard")
+    bs_service.analyze_and_persist(db, "j", tmp_path, profile="standard", run_output_dir=tmp_path)
 
     rows = [r for r in db.scalars(select(Finding)).all() if r.sensor == "build_paths"]
     evidence = [json.loads(r.evidence_json) for r in rows]

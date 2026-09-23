@@ -88,7 +88,7 @@ def test_code_findings_never_populate_network_evidence_columns(db, job_dir, stub
     A code finding carrying src_ip would enter host and connection views, and
     the IOC bridge, as though something had been seen on the wire.
     """
-    bs_service.analyze_and_persist(db, "j", job_dir, profile="standard")
+    bs_service.analyze_and_persist(db, "j", job_dir, profile="standard", run_output_dir=job_dir)
 
     row = db.scalars(select(Finding).where(Finding.job_id == "j")).one()
     for column in NETWORK_EVIDENCE_COLUMNS:
@@ -99,7 +99,7 @@ def test_code_findings_never_populate_network_evidence_columns(db, job_dir, stub
 
 
 def test_every_finding_declares_the_code_domain(db, job_dir, stub):
-    bs_service.analyze_and_persist(db, "j", job_dir, profile="standard")
+    bs_service.analyze_and_persist(db, "j", job_dir, profile="standard", run_output_dir=job_dir)
     row = db.scalars(select(Finding)).one()
     assert json.loads(row.evidence_json)["analysis_domain"] == "code"
 

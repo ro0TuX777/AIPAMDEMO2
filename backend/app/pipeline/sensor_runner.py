@@ -51,11 +51,12 @@ GRACEFUL_SHUTDOWN_SECONDS = 10
 
 def run_sensor(
     sensor_def: SensorDef,
-    job_dir: Path,
+    input_root: Path,
     job_id: str,
     execution_profile: str,
     docker_client: Any = None,
     sensor_config_dir: Path | None = None,
+    *, run_output_dir: Path,
 ) -> SensorResult:
     """Launch a sensor (in-process handler or Docker container) and wait for completion.
 
@@ -71,7 +72,7 @@ def run_sensor(
 
     # --- In-process handler path ---
     if sensor_def.handler is not None:
-        return _run_handler(sensor_def, job_dir, job_id, execution_profile, started_at)
+        return _run_handler(sensor_def, input_root, run_output_dir, job_id, execution_profile, started_at)
 
     # --- Docker pre-checks ---
     if sensor_def.image is None:
@@ -99,13 +100,18 @@ def run_sensor(
         )
 
     # --- Build mount volumes ---
-    sensor_output_dir = job_dir / "sensors" / name
+    sensor_output_dir = run_output_dir / "sensors" / name
     sensor_output_dir.mkdir(parents=True, exist_ok=True)
 
     volumes = {
-        str(job_dir): {"bind": "/input", "mode": "ro"},
+        str(input_root): {"bind": "/input", "mode": "ro"},
         str(sensor_output_dir): {"bind": "/output", "mode": "rw"},
     }
+
+    if run_output_dir != input_root:
+        volumes.pop(str(input_root))
+        volumes[str(run_output_dir)] = {"bind": "/input", "mode": "ro"}
+        volumes[str(input_root / "input")] = {"bind": "/input/input", "mode": "ro"}
 
     # --- Build container kwargs ---
     container_kwargs: dict[str, Any] = {
@@ -217,7 +223,8 @@ def run_sensor(
 
 def _run_handler(
     sensor_def: SensorDef,
-    job_dir: Path,
+    input_root: Path,
+    run_output_dir: Path,
     job_id: str,
     execution_profile: str,
     started_at: datetime,
@@ -226,14 +233,15 @@ def _run_handler(
     name = sensor_def.name
     started_str = started_at.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
-    sensor_output_dir = job_dir / "sensors" / name
+    sensor_output_dir = run_output_dir / "sensors" / name
     sensor_output_dir.mkdir(parents=True, exist_ok=True)
     (sensor_output_dir / "raw").mkdir(exist_ok=True)
 
     try:
         logger.info("Running in-process handler for sensor %s", name)
         sensor_def.handler(  # type: ignore[misc]
-            job_dir=job_dir,
+            input_root=input_root,
+            run_output_dir=run_output_dir,
             sensor_output_dir=sensor_output_dir,
             job_id=job_id,
             execution_profile=execution_profile,
@@ -285,4 +293,3 @@ def _write_sensor_meta(
     }
     meta_path = sensor_output_dir / "sensor.meta.json"
     meta_path.write_text(json.dumps(meta, indent=2), encoding="utf-8")
-

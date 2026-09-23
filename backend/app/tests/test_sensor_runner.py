@@ -34,7 +34,8 @@ def test_run_sensor_docker_mounts(tmp_path):
         # Run
         result = run_sensor(
             sensor_def=sensor_def,
-            job_dir=job_dir,
+            input_root=job_dir,
+            run_output_dir=job_dir,
             job_id="job-123",
             execution_profile="standard",
             docker_client=mock_docker
@@ -95,7 +96,8 @@ def test_run_sensor_timeout(tmp_path):
         
         result = run_sensor(
             sensor_def=sensor_def,
-            job_dir=job_dir,
+            input_root=job_dir,
+            run_output_dir=job_dir,
             job_id="job-456",
             execution_profile="deep",
             docker_client=mock_docker

@@ -93,8 +93,9 @@ def _looks_like_manifest(path: str) -> bool:
     )
 
 
-def write_sbom(payload: dict, report_dir: Path) -> Path | None:
+def write_sbom(payload: dict, run_output_dir: Path) -> Path | None:
     """Persist the SBOM as a report artifact. Returns the path written."""
+    report_dir = run_output_dir / "report"
     try:
         report_dir.mkdir(parents=True, exist_ok=True)
         target = report_dir / "sbom.syft.json"

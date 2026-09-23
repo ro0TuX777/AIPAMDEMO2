@@ -307,7 +307,7 @@ def test_a_signature_hit_reaches_the_database(rules, tmp_path, monkeypatch):
     engine = create_engine("sqlite://")
     Base.metadata.create_all(engine)
     db = sessionmaker(bind=engine)()
-    bs_service.analyze_and_persist(db, "j", job, profile="deep")
+    bs_service.analyze_and_persist(db, "j", job, profile="deep", run_output_dir=job)
 
     rows = [r for r in db.scalars(select(Finding)).all() if r.sensor == "yara"]
     assert rows, "the planted signature did not reach the database"

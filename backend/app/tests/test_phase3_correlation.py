@@ -305,7 +305,7 @@ class TestEvidenceGraphTelemetry:
 class TestTelemetryPipeline:
     def test_pipeline_no_manifest(self, db, job, tmp_path):
         from backend.app.pipeline.telemetry_pipeline import run_telemetry_pipeline
-        result = run_telemetry_pipeline(job.job_id, tmp_path, db)
+        result = run_telemetry_pipeline(job.job_id, tmp_path, db, run_output_dir=tmp_path)
         assert result["error"] == "no_manifest"
 
     def test_pipeline_with_fixture_files(self, db, job, tmp_path):
@@ -341,7 +341,7 @@ class TestTelemetryPipeline:
         manifest_path = tmp_path / "source_manifest.json"
         manifest_path.write_text(manifest.model_dump_json(indent=2))
 
-        result = run_telemetry_pipeline(job.job_id, tmp_path, db)
+        result = run_telemetry_pipeline(job.job_id, tmp_path, db, run_output_dir=tmp_path)
         assert result["files_parsed"] >= 1
         assert result["events_total"] >= 1
 
@@ -362,6 +362,6 @@ class TestTelemetryPipeline:
         manifest_path = tmp_path / "source_manifest.json"
         manifest_path.write_text(manifest.model_dump_json(indent=2))
 
-        result = run_telemetry_pipeline(job.job_id, tmp_path, db)
+        result = run_telemetry_pipeline(job.job_id, tmp_path, db, run_output_dir=tmp_path)
         assert result["files_skipped"] == 1
         assert result["events_total"] == 0

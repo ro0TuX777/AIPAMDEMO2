@@ -162,8 +162,9 @@ def test_syft_ignores_ecosystems_with_no_manifest_concept():
 
 
 def test_syft_writes_the_sbom_as_a_report_artifact(tmp_path):
-    written = sbom.write_sbom(SYFT_OUTPUT, tmp_path / "report")
+    written = sbom.write_sbom(SYFT_OUTPUT, run_output_dir=tmp_path)
     assert written and written.exists()
+    assert written == tmp_path / "report" / "sbom.syft.json"
     assert "vendored-thing" in written.read_text()
 
 

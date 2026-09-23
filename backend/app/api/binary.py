@@ -31,7 +31,8 @@ from backend.app.binalysis import (
 )
 from backend.app.config_v2 import Settings, get_settings
 from backend.app.models.file import File
-from backend.app.models.job import Job
+from backend.app.models.job import Job, TERMINAL_JOB_STATUSES
+from backend.app.pipeline.run_artifacts import safe_artifact_path
 from backend.app.schemas.binary import (
     BinaryAnalysisItem,
     BinaryAnalysisListResponse,
@@ -135,13 +136,20 @@ async def upload_and_analyze_binary(
     settings: Settings = Depends(get_settings),
 ):
     """Stream-save an uploaded binary into the job and run full analysis."""
-    _require_job(db, job_id)
+    job = _require_job(db, job_id)
+    if job.status not in TERMINAL_JOB_STATUSES:
+        raise HTTPException(status_code=409, detail="Binary uploads require a terminal job")
     response.headers["X-Request-Id"] = request_id
 
     filename = _filename_from_request(request)
-    input_dir = settings.aipam_job_root / job_id / "input"
+    try:
+        input_dir = safe_artifact_path(settings.aipam_job_root, f"{job_id}/api-artifacts/binary/{uuid.uuid4()}")
+        dest = safe_artifact_path(input_dir, filename)
+        if dest.parent != input_dir:
+            raise ValueError("Expected a filename")
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="Invalid binary filename") from exc
     input_dir.mkdir(parents=True, exist_ok=True)
-    dest = input_dir / filename
     size = await _stream_to_disk(request, dest)
     if size == 0:
         dest.unlink(missing_ok=True)

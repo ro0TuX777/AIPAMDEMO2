@@ -102,13 +102,13 @@ def _record_to_event(record: dict, job_id: str, sensor: str) -> NormalizedEvent 
     )
 
 
-def normalize_network_events(job_id: str, job_dir: Path, db: Session) -> int:
+def normalize_network_events(job_id: str, run_output_dir: Path, db: Session) -> int:
     """(Re)write normalized_events for a PCAP job's zeek/suricata output.
 
     Idempotent: clears this job's previously-written network events first, so
     re-analysis replaces rather than duplicates them. Returns events written.
     """
-    sensors_dir = Path(job_dir) / "sensors"
+    sensors_dir = Path(run_output_dir) / "sensors"
     events: list[NormalizedEvent] = []
     if sensors_dir.exists():
         for sensor_dir in sorted(sensors_dir.iterdir()):

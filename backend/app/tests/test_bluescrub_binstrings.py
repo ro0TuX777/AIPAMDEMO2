@@ -353,7 +353,7 @@ def test_a_planted_codename_in_a_binary_surfaces_with_category_and_offset(db, tm
     (src / "loader").write_bytes(elf_with(b"OPERATION NIGHTFALL", pad=4096))
     wl.create(db, "Engagement", [{"term": "NIGHTFALL", "category": "codename"}])
 
-    dacv = bs_service.analyze_and_persist(db, "j", tmp_path, profile="triage")["dacv"]
+    dacv = bs_service.analyze_and_persist(db, "j", tmp_path, profile="triage", run_output_dir=tmp_path)["dacv"]
 
     rows = [r for r in db.scalars(select(Finding)).all() if r.sensor == "dirty_word"]
     evidence = [json.loads(r.evidence_json) for r in rows]
@@ -381,7 +381,7 @@ def test_the_binary_is_not_scanned_twice(db, tmp_path):
     (src / "payload.bin").write_bytes(elf_with(b"OPERATION NIGHTFALL", pad=512))
     wl.create(db, "Engagement", [{"term": "NIGHTFALL", "category": "codename"}])
 
-    bs_service.analyze_and_persist(db, "j", tmp_path, profile="triage")
+    bs_service.analyze_and_persist(db, "j", tmp_path, profile="triage", run_output_dir=tmp_path)
 
     codenames = [
         r for r in db.scalars(select(Finding)).all()

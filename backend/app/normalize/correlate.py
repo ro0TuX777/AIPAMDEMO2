@@ -220,10 +220,10 @@ def _normalize_event(raw: dict) -> dict | None:
     return None
 
 
-def _collect_sensor_outputs(job_dir: Path) -> list[dict]:
+def _collect_sensor_outputs(run_output_dir: Path) -> list[dict]:
     """Gather all sensor.results.jsonl events from all sensors, normalized."""
     all_events: list[dict] = []
-    sensors_dir = job_dir / "sensors"
+    sensors_dir = run_output_dir / "sensors"
     if not sensors_dir.exists():
         return all_events
     for sensor_dir in sorted(sensors_dir.iterdir()):
@@ -619,18 +619,18 @@ def _make_timeline_event(evt: dict, job_id: str) -> TimelineEvent:
 
 def correlate_job(
     job_id: str,
-    job_dir: Path,
+    run_output_dir: Path,
     db: Session,
 ) -> dict[str, int]:
     """
     Main correlator entry point.
 
-    Reads all sensor outputs from job_dir/sensors/*/sensor.results.jsonl,
+    Reads all sensor outputs from run_output_dir/sensors/*/sensor.results.jsonl,
     processes events by type, and persists to the database.
 
     Returns a dict of counts: {connections: N, alerts: N, ...}
     """
-    events = _collect_sensor_outputs(job_dir)
+    events = _collect_sensor_outputs(run_output_dir)
     logger.info("Correlating %d events for job %s", len(events), job_id)
 
     hosts = HostAccumulator()

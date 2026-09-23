@@ -86,7 +86,7 @@ def test_handle_capa_emits_finding_for_executable(monkeypatch, tmp_path):
 
     monkeypatch.setattr(sensor_handlers.subprocess, "run", fake_run)
 
-    sensor_handlers.handle_capa(job_dir, sensor_output_dir, "job-1", "standard")
+    sensor_handlers.handle_capa(job_dir, sensor_output_dir, "job-1", "standard", run_output_dir=job_dir)
 
     assert len(calls) == 1
     cmd, timeout, capture_output, text = calls[0]
@@ -150,7 +150,7 @@ def test_handle_capa_writes_empty_results_when_configured_rules_dir_missing(monk
     calls = []
     monkeypatch.setattr(sensor_handlers.subprocess, "run", lambda *args, **kwargs: calls.append((args, kwargs)))
 
-    sensor_handlers.handle_capa(job_dir, sensor_output_dir, "job-2", "standard")
+    sensor_handlers.handle_capa(job_dir, sensor_output_dir, "job-2", "standard", run_output_dir=job_dir)
 
     assert calls == []
     assert (sensor_output_dir / "sensor.results.jsonl").read_text() == ""

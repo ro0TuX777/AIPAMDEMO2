@@ -144,7 +144,7 @@ def test_handle_suricata_uses_explicit_managed_bundle(monkeypatch, tmp_path):
 
     monkeypatch.setattr(sensor_handlers, "run_capture_tool", fake_run)
 
-    sensor_handlers.handle_suricata(job_dir, sensor_output_dir, "job-1", "standard")
+    sensor_handlers.handle_suricata(job_dir, sensor_output_dir, "job-1", "standard", run_output_dir=job_dir)
 
     bundle_path = rules_dir / ".runtime" / "aipam-ui.rules"
     raw_dir = sensor_output_dir / "raw"

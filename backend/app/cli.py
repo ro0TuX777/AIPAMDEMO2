@@ -434,6 +434,8 @@ def cmd_support_bundle(args):
     from backend.app.models.job import Job
     from backend.app.models.sensor import JobSensor
 
+    from backend.app.pipeline.run_artifacts import (resolve_accepted_run_dirs, iter_run_files, run_archive_prefix)
+
     job_root = Path(os.environ.get("AIPAM_JOB_ROOT", "/jobs"))
     db_path = Path(os.environ.get("AIPAM_DB_PATH", "/data/aipam.db"))
     log_dir = Path(os.environ.get("AIPAM_LOG_DIR", "/opt/aipam/logs"))
@@ -508,27 +510,17 @@ def cmd_support_bundle(args):
                     })
                 _add_json_to_tar(tar, f"{bundle_root}/jobs/{job.job_id}/sensors.json", sensor_list)
 
-                # Job metrics file
-                metrics_path = job_root / job.job_id / "metrics" / "job_metrics.json"
-                if metrics_path.exists():
-                    tar.add(str(metrics_path), arcname=f"{bundle_root}/jobs/{job.job_id}/job_metrics.json")
+                # Execution diagnostics/logs come only from accepted runs.
+                for run_dir in resolve_accepted_run_dirs(job, job_root):
+                    prefix = run_archive_prefix(job, run_dir)
+                    for path in iter_run_files(run_dir):
+                        relative = path.relative_to(run_dir).as_posix()
+                        if relative in ("metrics/job_metrics.json", "telemetry_diagnostics.json") or path.name == "container.log" or relative.startswith("logs/"):
+                            tar.add(str(path), arcname=f"{bundle_root}/jobs/{job.job_id}/{prefix}{relative}", recursive=False)
 
-                # Telemetry pipeline diagnostics
-                diag_path = job_root / job.job_id / "telemetry_diagnostics.json"
-                if diag_path.exists():
-                    tar.add(str(diag_path), arcname=f"{bundle_root}/jobs/{job.job_id}/telemetry_diagnostics.json")
-
-                # Source manifest (useful for understanding what was ingested)
-                manifest_path = job_root / job.job_id / "source_manifest.json"
-                if manifest_path.exists():
-                    tar.add(str(manifest_path), arcname=f"{bundle_root}/jobs/{job.job_id}/source_manifest.json")
-
-                # Sensor container logs (NOT raw pcap data)
-                sensors_dir = job_root / job.job_id / "sensors"
-                if sensors_dir.exists():
-                    for container_log in sensors_dir.rglob("container.log"):
-                        rel = container_log.relative_to(job_root / job.job_id)
-                        tar.add(str(container_log), arcname=f"{bundle_root}/jobs/{job.job_id}/{rel}")
+                # Source metadata is stable input, not execution output.
+                if job.source_manifest_json:
+                    _add_text_to_tar(tar, f"{bundle_root}/jobs/{job.job_id}/source_manifest.json", job.source_manifest_json)
 
             # 2. Health snapshot
             health = _collect_health_snapshot(job_root)
@@ -832,9 +824,29 @@ def cmd_perf_gate(args):
         print(f"ERROR: Job root not found: {job_root}")
         sys.exit(2)
 
-    job_dirs = sorted(
-        [d for d in job_root.iterdir() if d.is_dir() and (d / "metrics" / "job_metrics.json").exists()]
-    )
+    from sqlalchemy import create_engine, select
+    from sqlalchemy.orm import Session
+    from backend.app.models.job import Job
+    from backend.app.pipeline.run_artifacts import resolve_accepted_run_dirs, safe_artifact_path
+
+    db_path = Path(os.environ.get("AIPAM_DB_PATH", "/data/aipam.db"))
+    if not db_path.is_file():
+        print(f"ERROR: Database not found at {db_path}")
+        sys.exit(2)
+    engine = create_engine(f"sqlite:///{db_path}")
+    job_dirs = []
+    try:
+        with Session(engine) as db:
+            for job in db.scalars(select(Job).order_by(Job.job_id)):
+                for run_dir in resolve_accepted_run_dirs(job, job_root):
+                    try:
+                        path = safe_artifact_path(run_dir, "metrics/job_metrics.json")
+                    except ValueError:
+                        continue
+                    if path.is_file():
+                        job_dirs.append((job.job_id, job.execution_profile, run_dir, path))
+    finally:
+        engine.dispose()
 
     if not job_dirs:
         print("No jobs with job_metrics.json found.")
@@ -843,16 +855,9 @@ def cmd_perf_gate(args):
     violations = 0
     checked = 0
 
-    for jd in job_dirs:
-        metrics_path = jd / "metrics" / "job_metrics.json"
-        input_meta_path = jd / "input" / "input.meta.json"
+    for job_id, profile, jd, metrics_path in job_dirs:
         try:
             metrics = json.loads(metrics_path.read_text())
-            profile = "standard"
-            if input_meta_path.exists():
-                meta = json.loads(input_meta_path.read_text())
-                profile = meta.get("execution_profile", "standard")
-
             runtime_sec = metrics.get("total_runtime_sec", 0)
             pcap_mb = metrics.get("pcap_size_bytes", 0) / (1024 * 1024)
 
@@ -873,7 +878,7 @@ def cmd_perf_gate(args):
                 violations += 1
 
             print(
-                f"{status} {jd.name}  profile={profile}  "
+                f"{status} {job_id}/{jd.name}  profile={profile}  "
                 f"pcap={pcap_mb:.1f}MB  runtime={runtime_sec}s  "
                 f"SLO={slo_target}s"
             )

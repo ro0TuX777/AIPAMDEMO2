@@ -82,8 +82,9 @@ def _config_hash(profile: str) -> str:
 def analyze_and_persist(
     db: Session,
     job_id: str,
-    job_dir: Path,
+    input_root: Path,
     *,
+    run_output_dir: Path,
     profile: str = "standard",
     project_id: str | None = None,
     analysis_kind: str = "source_audit",
@@ -95,7 +96,7 @@ def analyze_and_persist(
     failed scanner degrades its pillar and is reported. Only ingest and
     persistence failures are job-level failures.
     """
-    source_root = job_dir / "input" / "source"
+    source_root = input_root / "input" / "source"
     specs = scanners_for(profile)
     scope = pillars_in_scope(profile)
 
@@ -105,7 +106,7 @@ def analyze_and_persist(
     # The dirty-word list holds the very codenames and markings being hunted,
     # so it is handed to the sandbox by path at mode 0600 — never as argv,
     # where `ps` would publish it — and removed once the scan finishes.
-    wordlist_path = _stage_wordlist(db, job_dir)
+    wordlist_path = _stage_wordlist(db, run_output_dir)
     # The recovery tier is profile-gated: FLOSS emulates the sample, and the
     # isolation contract confines emulation to `deep`.
     os.environ[binstrings.PROFILE_ENV] = profile
@@ -124,7 +125,7 @@ def analyze_and_persist(
             continue
 
         try:
-            outcome = spec.run(source_root, job_dir / "sensors" / spec.name)
+            outcome = spec.run(source_root, run_output_dir / "sensors" / spec.name)
         except Exception as exc:  # a scanner must never fail the job
             logger.warning("BlueScrub scanner %s raised: %s", spec.name, exc, exc_info=True)
             runs.append(ScannerRun(
