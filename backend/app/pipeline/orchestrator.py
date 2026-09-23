@@ -46,7 +46,7 @@ from backend.app.sensors.registry import (
     get_stages_for_profile,
 )
 from backend.app.events import publish_job_event
-from backend.app.pipeline.outcomes import PipelineOutcome, StageFailure, derive_outcome, stage_failure
+from backend.app.pipeline.outcomes import PipelineOutcome, StageFailure, derive_outcome, stage_failure, public_failure
 from backend.app.pipeline.run_artifacts import build_accepted_manifest
 
 logger = logging.getLogger("aipam.orchestrator")
@@ -99,7 +99,7 @@ def _publish_partial_result(
               completed_stages=completed_stages, current_stage=current_stage)
     except Exception as exc:
         logger.debug("Failed to publish partial result for job %s stage %s: %s",
-                      job_id, stage, exc)
+                      job_id, stage, public_failure(exc))
 
 
 def _now_iso() -> str:
@@ -178,7 +178,7 @@ def _run_code_artifact_pipeline(
             progress=progress,
         )
         dacv = metrics["dacv"]
-        optional = [StageFailure(item.get("sensor", "bluescrub"), str(item))
+        optional = [StageFailure(item.get("sensor", "bluescrub"), "analysis_failed")
                     for item in dacv.get("partial_reasons", [])] if dacv.get("partial") else []
         if dacv.get("partial") and not optional:
             optional.append(StageFailure("bluescrub", "Partial scanner coverage"))
@@ -203,7 +203,7 @@ def _record_sensor_result(db: Session, job_id: str, result: SensorResult) -> Non
         existing.started_at = result.started_at
         existing.completed_at = result.completed_at
         existing.duration_ms = result.duration_ms
-        existing.error = result.error
+        existing.error = public_failure(result.error) if result.error else None
         existing.error_code = result.error_code
     else:
         sensor_row = JobSensor(
@@ -213,7 +213,7 @@ def _record_sensor_result(db: Session, job_id: str, result: SensorResult) -> Non
             started_at=result.started_at,
             completed_at=result.completed_at,
             duration_ms=result.duration_ms,
-            error=result.error,
+            error=public_failure(result.error) if result.error else None,
             error_code=result.error_code,
         )
         db.add(sensor_row)
@@ -291,7 +291,7 @@ def _write_job_metrics(
         metrics_path.write_text(json.dumps(metrics_data, indent=2), encoding="utf-8")
         logger.info("Wrote job_metrics.json for job %s", job.job_id)
     except Exception as exc:
-        logger.warning("Failed to write job_metrics.json: %s", exc)
+        logger.warning("Failed to write job_metrics.json: %s", public_failure(exc))
 
 
 def _write_extraction_manifest(job_dir: Path) -> None:
@@ -340,7 +340,7 @@ def _write_extraction_manifest(job_dir: Path) -> None:
         manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
         logger.info("Wrote extracted_files/manifest.json with %d entries", len(entries))
     except Exception as exc:
-        logger.warning("Failed to write extraction manifest: %s", exc)
+        logger.warning("Failed to write extraction manifest: %s", public_failure(exc))
 
 
 def run_pipeline(
@@ -469,7 +469,7 @@ def run_pipeline(
                     preflight_multiplier=preflight_multiplier,
                 )
                 if not preflight.ok:
-                    return _finish_outcome(job, run_output_dir, required=[StageFailure("input", preflight.message)], pcap_label=pcap_label)
+                    return _finish_outcome(job, run_output_dir, required=[StageFailure("input", "insufficient_disk")], pcap_label=pcap_label)
 
                 # Compute SHA of the first PCAP for backward compat
                 first_pcap = list((input_root / "input").glob("*.pcap")) + list((input_root / "input").glob("*.pcapng"))
@@ -487,7 +487,7 @@ def run_pipeline(
                     )
 
     except Exception as exc:
-        logger.error("Pipeline setup failed for job %s: %s", job_id, exc)
+        logger.error("Pipeline setup failed for job %s: %s", job_id, public_failure(exc))
         return _finish_outcome(job, run_output_dir, required=[stage_failure("input", exc)], pcap_label=pcap_label)
 
     # --- Re-analysis isolation (PCAP only) ---
@@ -513,7 +513,7 @@ def run_pipeline(
                     logger.info("Restored hidden PCAP %s", original.name)
                 except OSError as exc:
                     logger.warning(
-                        "Failed to restore hidden PCAP %s: %s", original.name, exc
+                        "Failed to restore hidden PCAP %s: %s", original.name, public_failure(exc)
                     )
 
     if has_pcaps:
@@ -584,7 +584,7 @@ def run_pipeline(
                 (required_failures if stage_def.required else optional_failures).append(StageFailure(stage_def.name, result.error or result.status))
                 logger.error(
                     "Stage %s %s for job %s — continuing without it: %s",
-                    stage_def.name, result.status, job_id, result.error,
+                    stage_def.name, result.status, job_id, public_failure(result.error),
                 )
 
         # --- Publish partial result: ingest/parse stage data ---
@@ -659,7 +659,7 @@ def run_pipeline(
                 current_stage="sensors",
             )
         except Exception as exc:
-            logger.debug("Failed to publish parse partial result: %s", exc)
+            logger.debug("Failed to publish parse partial result: %s", public_failure(exc))
 
         # --- Step 4: File extraction manifest ---
         # The actual extraction happens in file_triage sensor (Step 5).
@@ -726,13 +726,13 @@ def run_pipeline(
                 (required_failures if sensor_def.required else optional_failures).append(StageFailure(sensor_def.name, result.error or result.status))
                 logger.warning(
                     "Sensor %s %s for job %s: %s",
-                    sensor_def.name, result.status, job_id, result.error,
+                    sensor_def.name, result.status, job_id, public_failure(result.error),
                 )
 
             # Check job disk quota
             if check_job_quota(input_root, max_job_disk_bytes):
                 logger.warning("Job %s exceeded disk quota", job_id)
-                required_failures.append(StageFailure("quota", "Job exceeded disk quota"))
+                required_failures.append(StageFailure("quota", "quota_exceeded"))
                 break
 
     finally:
@@ -761,7 +761,7 @@ def run_pipeline(
             current_stage="correlate",
         )
     except Exception as exc:
-        logger.debug("Failed to publish sensor partial result: %s", exc)
+        logger.debug("Failed to publish sensor partial result: %s", public_failure(exc))
 
     # --- Step 5b: Telemetry pipeline (log bundles) ---
     # Runs for hybrid (pcap+logs) and bundle-only jobs when a source_manifest.json exists.
@@ -783,19 +783,30 @@ def run_pipeline(
                 db=db,
                 exercise_id=job.exercise_id,
             )
-            logger.info("Telemetry pipeline for job %s: %s", job_id, telemetry_result)
+            telemetry_failed = bool(telemetry_result.get("error"))
+            telemetry_partial = any(telemetry_result.get(key, 0) for key in (
+                "files_error", "files_skipped", "files_unprocessed", "enrichment_errors"
+            )) or bool(telemetry_result.get("partial"))
+            if telemetry_failed:
+                required_failures.append(StageFailure("input", "input_invalid"))
+            elif telemetry_partial:
+                optional_failures.append(StageFailure("telemetry", "telemetry_partial"))
+            logger.info("Telemetry stage returned for job %s", job_id)
             parsed = telemetry_result.get("files_parsed", 0)
             events = telemetry_result.get("events_total", 0)
             corroborated = telemetry_result.get("corroborated", 0)
-            _emit(job_id, "stage.status", stage="telemetry", status="completed",
+            telemetry_status = "failed" if telemetry_failed else (
+                "completed_with_errors" if telemetry_partial else "completed"
+            )
+            _emit(job_id, "stage.status", stage="telemetry", status=telemetry_status,
                   step=step_num, total_steps=total_steps,
                   message=f"files={parsed} events={events} corroborated={corroborated}")
             _completed_stages.append("telemetry")
         except Exception as exc:
-            logger.error("Telemetry pipeline failed for job %s: %s", job_id, exc, exc_info=True)
+            logger.error("Telemetry pipeline failed for job %s: %s", job_id, public_failure(exc))
             optional_failures.append(stage_failure("telemetry", exc))
             _emit(job_id, "stage.status", stage="telemetry", status="failed",
-                  step=step_num, total_steps=total_steps, message=str(exc))
+                  step=step_num, total_steps=total_steps, message=public_failure(exc))
 
     # --- Step 6-8: Normalize, Correlate, Persist ---
     step_num += 1
@@ -812,7 +823,7 @@ def run_pipeline(
               message=f"findings={corr_counts.get('findings', 0)}")
 
     except Exception as exc:
-        logger.error("Correlation failed for job %s: %s", job_id, exc, exc_info=True)
+        logger.error("Correlation failed for job %s: %s", job_id, public_failure(exc))
         required_failures.append(stage_failure("correlate", exc))
 
     # Cross-job host enrichment is optional; correlation persistence above is required.
@@ -834,7 +845,7 @@ def run_pipeline(
             logger.info("Raw network events for job %s: %d", job_id, n_events)
         except Exception as exc:
             optional_failures.append(stage_failure("network_events", exc))
-            logger.warning("PCAP network-event normalization failed for job %s", job_id, exc_info=True)
+            logger.warning("PCAP network-event normalization failed for job %s", job_id)
 
     # --- Publish partial result: correlation / aggregate data ---
     _completed_stages.append("correlate")
@@ -861,7 +872,7 @@ def run_pipeline(
             current_stage="index",
         )
     except Exception as exc:
-        logger.debug("Failed to publish correlate partial result: %s", exc)
+        logger.debug("Failed to publish correlate partial result: %s", public_failure(exc))
 
     # --- Step: Cross-source temporal correlation (logs ↔ PCAPs) ───────
     if has_pcaps and has_telemetry_bundle:
@@ -877,9 +888,9 @@ def run_pipeline(
                   message=f"matches={tc_result.get('matches', 0)} upgraded={tc_result.get('upgraded_events', 0)}")
         except Exception as exc:
             optional_failures.append(stage_failure("temporal_correlate", exc))
-            logger.error("Temporal correlation failed for job %s: %s", job_id, exc, exc_info=True)
+            logger.error("Temporal correlation failed for job %s: %s", job_id, public_failure(exc))
             _emit(job_id, "stage.status", stage="temporal_correlate", status="failed",
-                  step=step_num, total_steps=total_steps, message=str(exc))
+                  step=step_num, total_steps=total_steps, message=public_failure(exc))
 
     # --- Step 9: Auto-index pipeline outputs for RAG ───────────────
     step_num += 1
@@ -916,7 +927,7 @@ def run_pipeline(
 
     except Exception as exc:
         optional_failures.append(stage_failure("index", exc))
-        logger.warning("Auto-indexing failed for job %s (non-fatal): %s", job_id, exc)
+        logger.warning("Auto-indexing failed for job %s (non-fatal): %s", job_id, public_failure(exc))
         _emit(job_id, "stage.status", stage="index", status="failed",
               step=step_num, total_steps=total_steps, message="index failed (non-fatal)")
 
@@ -934,7 +945,7 @@ def run_pipeline(
               message=f"theories={theory_counts.get('total', 0)}")
     except Exception as exc:
         optional_failures.append(stage_failure("theories", exc))
-        logger.warning("Theory generation failed for job %s (non-fatal): %s", job_id, exc)
+        logger.warning("Theory generation failed for job %s (non-fatal): %s", job_id, public_failure(exc))
         _emit(job_id, "stage.status", stage="theories", status="failed",
               step=step_num, total_steps=total_steps, message="theories failed (non-fatal)")
 
@@ -952,7 +963,7 @@ def run_pipeline(
               message=f"slices={len(slices)}")
     except Exception as exc:
         optional_failures.append(stage_failure("slices", exc))
-        logger.warning("Slice generation failed for job %s (non-fatal): %s", job_id, exc)
+        logger.warning("Slice generation failed for job %s (non-fatal): %s", job_id, public_failure(exc))
         _emit(job_id, "stage.status", stage="slices", status="failed",
               step=step_num, total_steps=total_steps, message="slices failed (non-fatal)")
 
@@ -970,7 +981,7 @@ def run_pipeline(
               message=f"annotations={len(anns)}")
     except Exception as exc:
         optional_failures.append(stage_failure("annotations", exc))
-        logger.warning("Annotation generation failed for job %s (non-fatal): %s", job_id, exc)
+        logger.warning("Annotation generation failed for job %s (non-fatal): %s", job_id, public_failure(exc))
         _emit(job_id, "stage.status", stage="annotations", status="failed",
               step=step_num, total_steps=total_steps, message="annotations failed (non-fatal)")
 

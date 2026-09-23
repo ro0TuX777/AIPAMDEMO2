@@ -41,6 +41,8 @@ docs/BLUESCRUB_ISOLATION_CONTRACT.md §3.1 (`repo_history`)
 
 from __future__ import annotations
 
+from backend.app.pipeline.outcomes import PROPAGATE_ERRORS, public_failure
+
 import json
 import logging
 import os
@@ -854,7 +856,7 @@ def declared_terms() -> list[str]:
     try:
         terms = json.loads(Path(path).read_text())
     except (OSError, json.JSONDecodeError) as exc:
-        logger.warning("gitmeta: unreadable dirty-word list: %s", exc)
+        logger.warning("gitmeta: unreadable dirty-word list: %s", public_failure(exc))
         return []
     return [
         str(t["term"]) for t in terms
@@ -884,7 +886,7 @@ def scan_repository(
                 )
         except OSError as exc:
             degraded = True
-            logger.warning("gitmeta: could not read %s: %s", config_path, exc)
+            logger.warning("gitmeta: could not read %s: %s", config_path, public_failure(exc))
 
     log = _run_git(binary, repo, [
         "log", "--all", "--no-color", "--no-decorate", "--no-show-signature",
@@ -971,9 +973,10 @@ def run(source_root: Path, output_dir: Path, *,
     for repo in repos:
         try:
             found, repo_degraded = scan_repository(binary, repo, limits, declared)
+        except PROPAGATE_ERRORS:
+            raise
         except Exception as exc:  # one bad repository must not lose the others
-            logger.warning("gitmeta: %s raised on %s", type(exc).__name__, repo.rel,
-                           exc_info=True)
+            logger.warning("gitmeta scan failed: %s", public_failure(exc))
             degraded = True
             continue
         findings += found

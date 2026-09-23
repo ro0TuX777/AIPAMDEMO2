@@ -47,6 +47,8 @@ docs/BLUESCRUB_DACV_IMPLEMENTATION_PLAN.md §14 Sprint 5
 
 from __future__ import annotations
 
+from backend.app.pipeline.outcomes import PROPAGATE_ERRORS, public_failure
+
 import hashlib
 import json
 import logging
@@ -318,8 +320,10 @@ def recover(
 
     try:
         payload = run_floss(path)
+    except PROPAGATE_ERRORS:
+        raise
     except Exception as exc:  # a recovery failure must not lose the static pass
-        logger.warning("floss on %s raised: %s", path.name, exc)
+        logger.warning("floss on %s raised: %s", path.name, public_failure(exc))
         payload = None
 
     if payload:
@@ -381,7 +385,7 @@ def read_cache(sha256: str, path: str | None = None) -> list[RecoveredString]:
     try:
         payload = json.loads(Path(location).read_text())
     except (OSError, json.JSONDecodeError) as exc:
-        logger.warning("unreadable string cache %s: %s", location, exc)
+        logger.warning("unreadable string cache %s: %s", location, public_failure(exc))
         return []
     if payload.get("schema") != CACHE_SCHEMA:
         logger.warning("string cache has schema %r, expected %r",

@@ -135,7 +135,7 @@ def reanalyze_job(
     try:
         dispatch_phase(job.job_id, pcap_label)
     except Exception as exc:
-        _logger.warning("Failed to dispatch reanalyze for job %s: %s", job.job_id, exc)
+        _logger.warning("Failed to dispatch reanalyze for job %s", job.job_id)
         # The dispatcher owns dispatch-failure CAS; do not overwrite a worker.
         db.rollback()
         raise JobLifecycleError(500, "Failed to dispatch re-analysis task") from exc

@@ -596,7 +596,7 @@ class TestSensorRunner:
         result = run_sensor(sensor_def, job_dir, "job-2", "standard", run_output_dir=job_dir)
         assert result.status == "failed"
         assert result.exit_code == 1
-        assert "analysis crashed" in result.error
+        assert result.error == "Analysis stage failed."
 
     def test_run_sensor_docker_success(self, tmp_path):
         """Docker-based sensors (no handler) use Docker client."""

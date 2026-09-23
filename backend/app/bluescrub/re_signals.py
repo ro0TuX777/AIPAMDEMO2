@@ -33,6 +33,8 @@ docs/BLUESCRUB_DACV_IMPLEMENTATION_PLAN.md §4.1
 
 from __future__ import annotations
 
+from backend.app.pipeline.outcomes import PROPAGATE_ERRORS, public_failure
+
 import logging
 from pathlib import Path
 
@@ -167,8 +169,10 @@ def _artifact_facts(path: Path) -> dict | None:
 
         lief.logging.disable()
         binary = lief.parse(str(path))
+    except PROPAGATE_ERRORS:
+        raise
     except Exception as exc:  # pragma: no cover - lief is a declared dependency
-        logger.info("lief could not parse %s: %s", path.name, exc)
+        logger.info("lief could not parse %s: %s", path.name, public_failure(exc))
         return facts
 
     if binary is None:

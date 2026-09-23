@@ -16,6 +16,8 @@ Reference: docs/BLUESCRUB_ISOLATION_CONTRACT.md, docs/BLUESCRUB_SUPPLY_CHAIN.md
 
 from __future__ import annotations
 
+from backend.app.pipeline.outcomes import PROPAGATE_ERRORS, public_failure
+
 import json
 import logging
 import shutil
@@ -122,17 +124,19 @@ def run_external(
         _quarantine(output_dir, tool.sensor, raw, tool.secret_bearing)
         return ScannerOutcome(
             sensor=tool.sensor, status=AnalyzerStatus.unparseable.value,
-            duration_ms=result.duration_ms, reason=f"invalid JSON: {exc}",
+            duration_ms=result.duration_ms, reason="Invalid scanner JSON output",
         )
 
     try:
         findings = tool.parse(payload, source_root)
+    except PROPAGATE_ERRORS:
+        raise
     except Exception as exc:  # a parser bug must not fail the job
-        logger.warning("%s parser raised: %s", tool.sensor, exc, exc_info=True)
+        logger.warning("%s parser raised: %s", tool.sensor, public_failure(exc))
         _quarantine(output_dir, tool.sensor, raw, tool.secret_bearing)
         return ScannerOutcome(
             sensor=tool.sensor, status=AnalyzerStatus.unparseable.value,
-            duration_ms=result.duration_ms, reason=f"parser error: {exc}"[:256],
+            duration_ms=result.duration_ms, reason=public_failure(exc),
         )
 
     write_results(output_dir, findings, sensor=tool.sensor,

@@ -429,3 +429,260 @@ def test_rollback_error_does_not_prevent_fresh_session_failure(runtime, monkeypa
     with runtime.factory() as db:
         assert db.get(Job, 'job').status == 'failed'
         assert db.get(Job, 'job').completed_at
+
+# Fix round 1: disclosure, recovery races, real stage exceptions and telemetry.
+SECRET = 'synthetic-sensitive-marker-DO-NOT-DISCLOSE'
+
+
+@pytest.mark.parametrize('error_kind', ['database', 'provider', 'outcome'])
+def test_public_failures_never_disclose_exception_payload(runtime, monkeypatch, caplog, error_kind):
+    def pipeline(**kw):
+        if error_kind == 'database':
+            raise IntegrityError('INSERT secret', {'value': SECRET}, RuntimeError(SECRET))
+        if error_kind == 'provider':
+            raise RuntimeError(SECRET)
+        return outcome_module().derive_outcome(required=[outcome_module().StageFailure(SECRET, SECRET * 100)])
+    monkeypatch.setattr(orchestrator, 'run_pipeline', pipeline)
+    if error_kind == 'outcome':
+        runtime.worker.execute_job('job', 'task')
+    else:
+        with pytest.raises((IntegrityError, RuntimeError)):
+            runtime.worker.execute_job('job', 'task')
+    with runtime.factory() as db:
+        public = db.get(Job, 'job').error_summary
+        assert public and len(public) <= 512
+        assert SECRET not in public
+    assert SECRET not in caplog.text
+
+
+@pytest.mark.parametrize('path', ['job', 'phase', 'distill_dispatch', 'distill'])
+def test_broker_and_distillation_logs_do_not_disclose_payload(runtime, monkeypatch, caplog, path):
+    def fail(*a, **kw):
+        raise RuntimeError(SECRET)
+    if path in ('job', 'phase'):
+        from backend.app.services import job_dispatch
+        with runtime.factory() as db:
+            db.get(Job, 'job').celery_task_id = None
+            db.commit()
+        monkeypatch.setattr(runtime.worker.run_job if path == 'job' else runtime.worker.run_job_phase, 'apply_async', fail)
+        if path == 'job':
+            job_dispatch.dispatch_job('job')
+        else:
+            from backend.app.services.job_lifecycle import reanalyze_job, JobLifecycleError
+            from backend.app.models.job_pcap import JobPcap
+            with runtime.factory() as db:
+                db.get(Job, 'job').status = 'completed'
+                db.add(JobPcap(job_id='job', upload_id='upload', filename='a', label='after', ordinal=0))
+                db.commit()
+                with pytest.raises(JobLifecycleError):
+                    reanalyze_job(db.get(Job, 'job'), db, 'after', job_dispatch.dispatch_job_phase)
+    elif path == 'distill_dispatch':
+        monkeypatch.setattr(runtime.worker.distill_job, 'delay', fail)
+        monkeypatch.setattr(orchestrator, 'run_pipeline', lambda **kw: completed(kw['run_output_dir']))
+        runtime.worker.execute_job('job', 'task')
+    else:
+        with runtime.factory() as db:
+            db.get(Job, 'job').status = 'completed'
+            db.commit()
+        monkeypatch.setitem(sys.modules, 'backend.app.distillation', SimpleNamespace(reload_teacher_config=fail, distill_v2=fail))
+        runtime.worker.distill_job('job')
+    assert SECRET not in caplog.text
+    with runtime.factory() as db:
+        assert SECRET not in (db.get(Job, 'job').error_summary or '')
+
+
+def test_optional_provider_failure_is_safe_in_outcome_and_logs(pipeline_env, monkeypatch, caplog):
+    run, _, _ = pipeline_env
+    def fail(*a, **kw):
+        raise RuntimeError(SECRET)
+    monkeypatch.setattr(sys.modules['backend.app.services.theory_engine'], 'generate_all_theories', fail)
+    result = run()
+    assert result.status == 'completed_with_errors'
+    assert SECRET not in repr(result.optional_failures)
+    assert SECRET not in caplog.text
+
+
+def test_cancellation_between_recovery_read_and_failed_cas_terminalizes(runtime, monkeypatch):
+    from backend.app.services import job_runtime
+    real_finalize = job_runtime.finalize_owned_job
+    attempted = []
+    def race(db, handle, status, **kw):
+        attempted.append(status)
+        if status == 'failed':
+            with runtime.factory() as cancellation:
+                request_cancel(cancellation, 'job')
+        return real_finalize(db, handle, status, **kw)
+    monkeypatch.setattr(job_runtime, 'finalize_owned_job', race)
+    def fail(**kw):
+        raise RuntimeError('pipeline failed')
+    monkeypatch.setattr(orchestrator, 'run_pipeline', fail)
+    with pytest.raises(RuntimeError):
+        runtime.worker.execute_job('job', 'task')
+    assert attempted == ['failed', 'canceled']
+    with runtime.factory() as db:
+        job = db.get(Job, 'job')
+        assert job.status == 'canceled'
+        assert job.completed_at
+        assert job.accepted_run_manifest_json is None
+    assert runtime.events == [('job.complete', 'canceled')]
+
+
+def test_real_inprocess_sensor_database_failure_propagates(tmp_path, caplog):
+    from backend.app.pipeline.sensor_runner import run_sensor
+    from backend.app.sensors.registry import SensorDef
+    error = IntegrityError('INSERT secret', {'value': SECRET}, RuntimeError(SECRET))
+    def handler(**kw):
+        raise error
+    with pytest.raises(IntegrityError) as caught:
+        run_sensor(SensorDef(name='db_sensor', type='sensor', handler=handler), tmp_path, 'job', 'standard', run_output_dir=tmp_path)
+    assert caught.value is error
+    assert SECRET not in caplog.text
+
+
+@pytest.mark.parametrize('manifest', ['missing', 'invalid_json', 'invalid_schema'])
+def test_telemetry_missing_or_invalid_manifest_is_required_failure(pipeline_env, manifest, caplog):
+    run, runtime, _ = pipeline_env
+    with runtime.factory() as db:
+        db.get(Job, 'job').source_type = 'log_bundle'
+        db.commit()
+    root = runtime.settings.aipam_job_root/'job'
+    if manifest != 'missing':
+        (root/'source_manifest.json').write_text(SECRET if manifest == 'invalid_json' else json.dumps({'job_id': SECRET}))
+    result = run()  # Real telemetry implementation, not a whole-service stub.
+    assert result.status == 'failed'
+    assert 'input' in [f.stage for f in result.required_failures]
+    assert SECRET not in caplog.text
+
+
+@pytest.mark.parametrize('summary,want', [
+    ({'files_total': 2, 'files_parsed': 1, 'files_error': 1}, 'completed_with_errors'),
+    ({'files_total': 1, 'files_parsed': 0, 'files_skipped': 1}, 'completed_with_errors'),
+    ({'error': 'no_manifest'}, 'failed'),
+    ({'error': SECRET}, 'failed'),
+])
+def test_telemetry_returned_errors_cannot_be_plain_success(pipeline_env, monkeypatch, summary, want):
+    run, runtime, _ = pipeline_env
+    with runtime.factory() as db:
+        db.get(Job, 'job').source_type = 'log_bundle'
+        db.commit()
+    monkeypatch.setitem(sys.modules, 'backend.app.pipeline.telemetry_pipeline', SimpleNamespace(run_telemetry_pipeline=lambda **kw: summary))
+    result = run()
+    assert result.status == want
+    assert SECRET not in repr(result.required_failures)
+
+
+@pytest.mark.parametrize('boundary', ['binstrings', 're_signals', 'enrich', 'validation'])
+@pytest.mark.parametrize('kind', ['cancel', 'ownership', 'database'])
+def test_importable_bluescrub_inner_boundaries_propagate(tmp_path, monkeypatch, boundary, kind):
+    m = outcome_module()
+    error = {'cancel': m.PipelineCanceled('stop'), 'ownership': m.OwnershipLost('stop'),
+             'database': IntegrityError('INSERT', {}, RuntimeError('db failed'))}[kind]
+    def fail(*a, **kw):
+        raise error
+    artifact = tmp_path/'sample'
+    artifact.write_bytes(b'\x7fELFexample-string')
+    if boundary == 'binstrings':
+        from backend.app.bluescrub import binstrings
+        call = lambda: binstrings.recover(artifact, run_floss=fail)
+    elif boundary == 're_signals':
+        from backend.app.bluescrub import re_signals
+        monkeypatch.setitem(sys.modules, 'lief', SimpleNamespace(logging=SimpleNamespace(disable=lambda: None), parse=fail))
+        monkeypatch.setitem(sys.modules, 'backend.app.binalysis.engine', SimpleNamespace(_compute_entropy=lambda _: 0))
+        call = lambda: re_signals._artifact_facts(artifact)
+    elif boundary == 'enrich':
+        from backend.app.bluescrub import enrich
+        monkeypatch.setitem(sys.modules, 'backend.app.bluescrub.vendored.enrichment.mitre', SimpleNamespace(get_mitre_mapping=fail))
+        call = lambda: enrich.mitre_for('sample')
+    else:
+        from backend.app.bluescrub import validation
+        monkeypatch.setattr(validation, 'enabled', lambda: True)
+        finding = SimpleNamespace(to_dict=fail, sensor='test', rule_id='rule')
+        call = lambda: validation.check_raw_findings([finding])
+    with pytest.raises(type(error)) as caught:
+        call()
+    assert caught.value is error
+
+
+@pytest.mark.parametrize('kind', ['cancel', 'ownership', 'database'])
+def test_telemetry_parser_preserves_control_and_database_failures(tmp_path, monkeypatch, kind):
+    from backend.app.pipeline import telemetry_pipeline as telemetry
+    from backend.app.schemas.common import SourceType
+    m = outcome_module()
+    error = {'cancel': m.PipelineCanceled('stop'), 'ownership': m.OwnershipLost('stop'),
+             'database': IntegrityError('INSERT', {}, RuntimeError('db failed'))}[kind]
+    def fail(*a, **kw):
+        raise error
+    monkeypatch.setattr(telemetry, 'get_parser_registry', lambda: SimpleNamespace(find_for_file=lambda *a, **kw: SimpleNamespace(name='test', parse=fail)))
+    with pytest.raises(type(error)) as caught:
+        telemetry._parse_entry(tmp_path/'file', 'job', SourceType.log_bundle)
+    assert caught.value is error
+
+
+def test_real_telemetry_partial_error_has_safe_diagnostics(pipeline_env, monkeypatch, caplog):
+    from backend.app.pipeline import telemetry_pipeline as telemetry
+    run, runtime, run_dir = pipeline_env
+    with runtime.factory() as db:
+        db.get(Job, 'job').source_type = 'log_bundle'
+        db.commit()
+    root = runtime.settings.aipam_job_root/'job'
+    (root/'source_manifest.json').write_text(json.dumps({'job_id': 'job', 'created_at': '2026-09-23T00:00:00Z', 'entries': [{'filename': 'input.log', 'source_type': 'log_bundle'}]}))
+    (root/'input'/'telemetry').mkdir(parents=True)
+    (root/'input'/'telemetry'/'input.log').write_text('event')
+    def fail(*a, **kw):
+        raise RuntimeError(SECRET)
+    monkeypatch.setattr(telemetry, 'get_parser_registry', lambda: SimpleNamespace(find_for_file=lambda *a, **kw: SimpleNamespace(name='test', parse=fail)))
+    outcome = run()
+    assert outcome.status == 'completed_with_errors'
+    assert [f.stage for f in outcome.optional_failures] == ['telemetry']
+    diagnostics = (run_dir/'telemetry_diagnostics.json').read_text()
+    assert json.loads(diagnostics)['files_error'] == 1
+    assert SECRET not in diagnostics
+    assert SECRET not in caplog.text
+
+
+@pytest.mark.parametrize('kind', ['cancel', 'ownership', 'database', 'provider'])
+def test_telemetry_memory_enrichment_preserves_control_or_reports_partial(pipeline_env, monkeypatch, caplog, kind):
+    from backend.app.pipeline import telemetry_pipeline as telemetry
+    run, runtime, _ = pipeline_env
+    with runtime.factory() as db:
+        db.get(Job, 'job').source_type = 'log_bundle'
+        db.commit()
+    root = runtime.settings.aipam_job_root/'job'
+    (root/'source_manifest.json').write_text(json.dumps({'job_id': 'job', 'created_at': '2026-09-23T00:00:00Z', 'entries': [{'filename': 'missing.log', 'source_type': 'log_bundle'}]}))
+    m = outcome_module()
+    error = {'cancel': m.PipelineCanceled('stop'), 'ownership': m.OwnershipLost('stop'),
+             'database': IntegrityError('INSERT', {}, RuntimeError('db failed')), 'provider': RuntimeError(SECRET)}[kind]
+    def fail(*a, **kw):
+        raise error
+    monkeypatch.setattr(telemetry, 'extract_all_fingerprints', lambda *a, **kw: [SimpleNamespace(to_dict=lambda: {})])
+    monkeypatch.setitem(sys.modules, 'backend.app.forensic_memory', SimpleNamespace(store_behavioral_fingerprints=fail))
+    caplog.set_level('DEBUG', logger='aipam.telemetry_pipeline')
+    if kind == 'provider':
+        assert run().status == 'completed_with_errors'
+        assert SECRET not in caplog.text
+    else:
+        with pytest.raises(type(error)):
+            run()
+
+
+@pytest.mark.parametrize('boundary', ['logs', 'remove', 'kill'])
+@pytest.mark.parametrize('kind', ['cancel', 'ownership', 'database'])
+def test_sensor_container_catches_preserve_runtime_exceptions(tmp_path, monkeypatch, boundary, kind):
+    from unittest.mock import MagicMock
+    from backend.app.pipeline import sensor_runner
+    from backend.app.sensors.registry import SensorDef
+    m = outcome_module()
+    error = {'cancel': m.PipelineCanceled('stop'), 'ownership': m.OwnershipLost('stop'),
+             'database': IntegrityError('INSERT', {}, RuntimeError('db failed'))}[kind]
+    docker = MagicMock()
+    container = docker.containers.run.return_value
+    container.wait.return_value = {'StatusCode': 0}
+    container.logs.return_value = b''
+    getattr(container, boundary).side_effect = error
+    if boundary == 'kill':
+        container.wait.side_effect = RuntimeError('read timeout')
+    monkeypatch.setattr(sensor_runner, 'validate_image_allowlist', lambda _: True)
+    sensor = SensorDef(name='container', type='sensor', image='aipam/test:1.0')
+    with pytest.raises(type(error)) as caught:
+        sensor_runner.run_sensor(sensor, tmp_path, 'job', 'standard', docker, run_output_dir=tmp_path)
+    assert caught.value is error

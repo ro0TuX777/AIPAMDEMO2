@@ -85,7 +85,7 @@ def _load_config_from_file() -> TeacherConfig:
                 extra_headers=data.get("extra_headers", {}),
             )
         except Exception as e:
-            logger.warning("Failed to load teacher config from %s: %s", _CONFIG_FILE, e)
+            logger.warning("Teacher configuration is invalid; using environment defaults")
     # Fallback to env vars
     return TeacherConfig(
         endpoint=os.environ.get("TEACHER_LLM_ENDPOINT", ""),
@@ -176,20 +176,14 @@ async def distill_chunk(
         async with httpx.AsyncClient(timeout=teacher.timeout_seconds) as client:
             resp = await client.post(teacher.endpoint, json=payload, headers=headers)
             if resp.status_code != 200:
-                # Log the full error body so we can diagnose
-                try:
-                    err_body = resp.json()
-                except Exception:
-                    err_body = resp.text
-                logger.error(
-                    "Frontier teacher HTTP %s: %s", resp.status_code, err_body
-                )
+                # Provider error bodies can echo prompts, credentials or evidence.
+                logger.error("Frontier teacher HTTP request failed (status=%s)", resp.status_code)
                 return None
             data = resp.json()
         content = data["choices"][0]["message"]["content"]
         return content.strip()
     except Exception as e:
-        logger.error("Frontier teacher call failed: %s", e)
+        logger.error("Frontier teacher request failed")
         return None
 
 
@@ -260,14 +254,14 @@ def _validate_teacher_response(
     try:
         data = json.loads(raw_response)
     except json.JSONDecodeError as e:
-        return {"valid": False, "reason": f"invalid_json: {e}"}
+        return {"valid": False, "reason": "invalid_json"}
 
     # 2. Must match the Pydantic schema
     try:
         parsed = task_spec.output_schema.model_validate(data)
         return {"valid": True, "parsed": parsed}
     except Exception as e:
-        return {"valid": False, "reason": f"schema_mismatch: {e}"}
+        return {"valid": False, "reason": "schema_mismatch"}
 
 
 async def distill_v2(

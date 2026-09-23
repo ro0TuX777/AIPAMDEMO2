@@ -16,6 +16,7 @@ import os
 from celery import Celery
 
 from backend.app.config_v2 import get_settings
+from backend.app.pipeline.outcomes import public_failure, public_failure_summary
 
 logger = logging.getLogger("aipam.worker")
 
@@ -61,7 +62,7 @@ def _emit_complete(job_id: str, status: str) -> None:
     try:
         publish_job_event(job_id, "job.complete", {"job_id": job_id, "status": status})
     except Exception:
-        logger.warning("Could not publish terminal event for %s", job_id, exc_info=True)
+        logger.warning("Could not publish terminal event for %s", job_id)
 
 
 def _cleanup_private_run(settings, handle, job) -> None:
@@ -78,7 +79,7 @@ def _cleanup_private_run(settings, handle, job) -> None:
         if path.is_dir():
             shutil.rmtree(path)
     except (ValueError, TypeError, KeyError, OSError):
-        logger.warning("Could not clean private run for %s", handle.job_id, exc_info=True)
+        logger.warning("Could not clean private run for %s", handle.job_id)
 
 
 def _resolve_interrupted(factory, settings, handle, error=None) -> str:
@@ -91,10 +92,21 @@ def _resolve_interrupted(factory, settings, handle, error=None) -> str:
         status = "superseded"
         if owned and job.status in ("running", "canceling"):
             status = "canceled" if job.status == "canceling" else "failed"
-            if finalize_owned_job(db, handle, status, error_summary=str(error) if error else None):
+            if finalize_owned_job(db, handle, status, error_summary=public_failure(error) if error else None):
                 _emit_complete(handle.job_id, status)
             else:
+                # Exactly one recovery re-read: cancellation may have won the
+                # failed-CAS race without changing the execution identity.
+                db.expire_all()
+                current = db.get(Job, handle.job_id)
+                same_owner = current is not None and (
+                    current.celery_task_id, current.run_token, current.execution_attempt
+                ) == (handle.task_id, handle.run_token, handle.execution_attempt)
                 status = "superseded"
+                if same_owner and current.status == "canceling":
+                    if finalize_owned_job(db, handle, "canceled"):
+                        status = "canceled"
+                        _emit_complete(handle.job_id, status)
         db.expire_all()
         _cleanup_private_run(settings, handle, db.get(Job, handle.job_id))
         return status
@@ -144,7 +156,7 @@ def execute_job(job_id: str, task_id: str, pcap_label: str | None = None) -> str
             finalized = finalize_owned_job(
                 lifecycle, handle, outcome.status,
                 metrics_json=json.dumps(outcome.metrics),
-                error_summary="; ".join(f"{f.stage}: {f.error}" for f in (*outcome.required_failures, *outcome.optional_failures)) or None,
+                error_summary=public_failure_summary((*outcome.required_failures, *outcome.optional_failures)),
                 accepted_manifest_json=outcome.accepted_manifest_json,
             )
     except BaseException as exc:
@@ -152,12 +164,12 @@ def execute_job(job_id: str, task_id: str, pcap_label: str | None = None) -> str
             try:
                 db.rollback()
             except Exception:
-                logger.exception("Pipeline rollback failed for %s", job_id)
+                logger.warning("Pipeline rollback failed for %s", job_id)
             finally:
                 try:
                     db.close()
                 except Exception:
-                    logger.exception("Pipeline session close failed for %s", job_id)
+                    logger.warning("Pipeline session close failed for %s", job_id)
         status = _resolve_interrupted(factory, settings, handle, exc)
         if isinstance(exc, (PipelineCanceled, OwnershipLost)):
             return status
@@ -170,7 +182,7 @@ def execute_job(job_id: str, task_id: str, pcap_label: str | None = None) -> str
         try:
             distill_job.delay(job_id)
         except Exception:
-            logger.warning("Distillation dispatch failed for %s", job_id, exc_info=True)
+            logger.warning("Distillation dispatch failed for %s", job_id)
     else:
         from backend.app.models.job import Job
         with factory() as lifecycle:
@@ -205,10 +217,10 @@ def distill_job(job_id: str) -> dict:
         if not teacher.enabled or not teacher.is_configured():
             return {"status": "skipped"}
         result = asyncio.run(distill_v2(db_session_factory=factory, job_id=job_id, teacher=teacher))
-        logger.info("Distillation job=%s result=%s", job_id, result)
+        logger.info("Distillation completed for job %s", job_id)
         return {"status": "completed", "result": result}
     except Exception:
-        logger.exception("Distillation failed for %s", job_id)
+        logger.warning("Distillation failed for %s", job_id)
         return {"status": "failed"}
 
 
@@ -227,8 +239,8 @@ def prune_old_jobs() -> dict:
             "pruned_count": deleted_count,
         }
     except Exception as e:
-        logger.exception("Prune task failed with unhandled error")
-        return {"status": "error", "message": str(e)}
+        logger.warning("Prune task failed with unhandled error")
+        return {"status": "error", "message": public_failure(e)}
     finally:
         db.close()
 

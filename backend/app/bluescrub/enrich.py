@@ -10,6 +10,8 @@ Reference: docs/BLUESCRUB_DATA_CONTRACTS.md §2.6
 
 from __future__ import annotations
 
+from backend.app.pipeline.outcomes import PROPAGATE_ERRORS, public_failure
+
 import logging
 from typing import Any
 
@@ -34,8 +36,10 @@ def _lookup(fn_name: str, text: str) -> Any:
         from backend.app.bluescrub.vendored.enrichment.auto_fix import get_auto_fix
 
         return get_auto_fix(text)
+    except PROPAGATE_ERRORS:
+        raise
     except Exception as exc:  # pragma: no cover - defensive
-        logger.debug("enrichment %s failed for %r: %s", fn_name, text[:60], exc)
+        logger.debug("enrichment %s failed: %s", fn_name, public_failure(exc))
         return None
 
 

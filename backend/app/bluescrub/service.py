@@ -8,6 +8,8 @@ Reference: docs/BLUESCRUB_DACV_IMPLEMENTATION_PLAN.md §5.3
 
 from __future__ import annotations
 
+from backend.app.pipeline.outcomes import PROPAGATE_ERRORS, public_failure
+
 import hashlib
 import json
 import os
@@ -92,9 +94,9 @@ def analyze_and_persist(
 ) -> dict[str, Any]:
     """Run the enabled scanners, score, and persist findings for one job.
 
-    Returns the ``dacv`` metrics object. Never raises on scanner failure: a
-    failed scanner degrades its pillar and is reported. Only ingest and
-    persistence failures are job-level failures.
+    Returns the ``dacv`` metrics object. Ordinary scanner failures degrade
+    their pillars; cancellation, ownership loss and database errors propagate
+    to the worker boundary.
     """
     source_root = input_root / "input" / "source"
     specs = scanners_for(profile)
@@ -107,133 +109,140 @@ def analyze_and_persist(
     # so it is handed to the sandbox by path at mode 0600 — never as argv,
     # where `ps` would publish it — and removed once the scan finishes.
     wordlist_path = _stage_wordlist(db, run_output_dir)
-    # The recovery tier is profile-gated: FLOSS emulates the sample, and the
-    # isolation contract confines emulation to `deep`.
-    os.environ[binstrings.PROFILE_ENV] = profile
-    os.environ.pop(binstrings.CACHE_ENV, None)
+    try:
+        # The recovery tier is profile-gated: FLOSS emulates the sample, and the
+        # isolation contract confines emulation to `deep`.
+        os.environ[binstrings.PROFILE_ENV] = profile
+        os.environ.pop(binstrings.CACHE_ENV, None)
 
-    for step, spec in enumerate(specs, start=1):
-        if progress:
-            progress(spec.name, "running", f"{step}/{len(specs)}")
+        for step, spec in enumerate(specs, start=1):
+            if progress:
+                progress(spec.name, "running", f"{step}/{len(specs)}")
 
-        pillars = tuple(p for p in spec.pillars if p in scope)
-        if not pillars:
+            pillars = tuple(p for p in spec.pillars if p in scope)
+            if not pillars:
+                runs.append(ScannerRun(
+                    sensor=spec.name, status="skipped", required_for=(),
+                    optional=spec.optional, reason="profile_excludes",
+                ))
+                continue
+
+            try:
+                outcome = spec.run(source_root, run_output_dir / "sensors" / spec.name)
+            except PROPAGATE_ERRORS:
+                raise
+            except Exception as exc:  # a scanner must never fail the job
+                logger.warning("BlueScrub scanner %s raised: %s", spec.name, public_failure(exc))
+                runs.append(ScannerRun(
+                    sensor=spec.name, status="crashed", required_for=pillars,
+                    optional=spec.optional, reason=public_failure(exc),
+                ))
+                if progress:
+                    progress(spec.name, "failed", public_failure(exc))
+                continue
+
+            raw.extend(outcome.findings)
             runs.append(ScannerRun(
-                sensor=spec.name, status="skipped", required_for=(),
-                optional=spec.optional, reason="profile_excludes",
-            ))
-            continue
-
-        try:
-            outcome = spec.run(source_root, run_output_dir / "sensors" / spec.name)
-        except Exception as exc:  # a scanner must never fail the job
-            logger.warning("BlueScrub scanner %s raised: %s", spec.name, exc, exc_info=True)
-            runs.append(ScannerRun(
-                sensor=spec.name, status="crashed", required_for=pillars,
-                optional=spec.optional, reason=str(exc)[:256],
+                sensor=spec.name, status=outcome.status, required_for=pillars,
+                optional=spec.optional, version=outcome.version,
+                ruleset_version=outcome.ruleset_version,
+                ruleset_state=outcome.ruleset_state,
+                duration_ms=outcome.duration_ms,
+                reason=public_failure(outcome.reason) if outcome.reason else None,
             ))
             if progress:
-                progress(spec.name, "failed", str(exc)[:120])
-            continue
+                progress(spec.name, "completed",
+                         f"{len(outcome.findings)} findings ({outcome.status})")
 
-        raw.extend(outcome.findings)
-        runs.append(ScannerRun(
-            sensor=spec.name, status=outcome.status, required_for=pillars,
-            optional=spec.optional, version=outcome.version,
-            ruleset_version=outcome.ruleset_version,
-            ruleset_state=outcome.ruleset_state,
-            duration_ms=outcome.duration_ms, reason=outcome.reason,
-        ))
-        if progress:
-            progress(spec.name, "completed",
-                     f"{len(outcome.findings)} findings ({outcome.status})")
+        # Suppression runs before canonicalization so a suppressed finding cannot
+        # become the primary detector of a group it should not be in. The count is
+        # reported, never silent.
+        filtered = fpfilter.apply(raw)
 
-    # Suppression runs before canonicalization so a suppressed finding cannot
-    # become the primary detector of a group it should not be in. The count is
-    # reported, never silent.
-    filtered = fpfilter.apply(raw)
+        # Redaction runs after suppression, which needs the plaintext to tell a real
+        # credential from `password = "changeme"`, and before canonicalization, so
+        # nothing downstream — fingerprints, evidence, exports — ever sees the
+        # original value.
+        redacted = redaction.redact(filtered.kept)
+        raw = redacted.findings
 
-    # Redaction runs after suppression, which needs the plaintext to tell a real
-    # credential from `password = "changeme"`, and before canonicalization, so
-    # nothing downstream — fingerprints, evidence, exports — ever sees the
-    # original value.
-    redacted = redaction.redact(filtered.kept)
-    raw = redacted.findings
+        # After redaction, so what is checked is what is persisted — a finding that
+        # validated before its plaintext was masked proves nothing about the row.
+        validation.check_raw_findings(raw)
 
-    # After redaction, so what is checked is what is persisted — a finding that
-    # validated before its plaintext was masked proves nothing about the row.
-    validation.check_raw_findings(raw)
+        # Tier 1 and 2 of the severity chain. Without these every finding falls
+        # through to the scanner's own severity string, which is calibrated for
+        # services rather than offensive tooling — it rates a hardcoded C2 address
+        # "low".
 
-    # Tier 1 and 2 of the severity chain. Without these every finding falls
-    # through to the scanner's own severity string, which is calibrated for
-    # services rather than offensive tooling — it rates a hardcoded C2 address
-    # "low".
-    _discard_wordlist(wordlist_path)
+        result = canonicalize(
+            raw,
+            project_id=project_id or job_id,
+            optional_sensors=optional_sensors(),
+            rule_mapping=build_rule_mapping(raw),
+            impact_modifiers=build_impact_modifiers(raw, analysis_kind=analysis_kind),
+        )
 
-    result = canonicalize(
-        raw,
-        project_id=project_id or job_id,
-        optional_sensors=optional_sensors(),
-        rule_mapping=build_rule_mapping(raw),
-        impact_modifiers=build_impact_modifiers(raw, analysis_kind=analysis_kind),
-    )
+        signature_fields = signature_payload(
+            profile=profile,
+            scanner_manifest_digest=_manifest_digest(runs),
+            ruleset_versions_digest=_ruleset_digest(runs),
+            required_scanners=sorted(
+                {name for p in scope for name in required_for(p, profile)}
+            ),
+            pillar_scope=list(scope),
+            config_hash=_config_hash(profile),
+        )
+        signature = digest_payload(signature_fields)
 
-    signature_fields = signature_payload(
-        profile=profile,
-        scanner_manifest_digest=_manifest_digest(runs),
-        ruleset_versions_digest=_ruleset_digest(runs),
-        required_scanners=sorted(
-            {name for p in scope for name in required_for(p, profile)}
-        ),
-        pillar_scope=list(scope),
-        config_hash=_config_hash(profile),
-    )
-    signature = digest_payload(signature_fields)
+        # RE-Feasibility is measured after canonicalization because two of its
+        # signals — whether the artifact resists analysis, and whether its config
+        # sits in plain sight — are read off the findings rather than the bytes.
+        try:
+            measured_signals = re_signals.compute(source_root, result.groups)
+        except PROPAGATE_ERRORS:
+            raise
+        except Exception as exc:  # a signal failure must not lose the scan
+            logger.warning("RE signal measurement raised: %s", public_failure(exc))
+            measured_signals = []
 
-    # RE-Feasibility is measured after canonicalization because two of its
-    # signals — whether the artifact resists analysis, and whether its config
-    # sits in plain sight — are read off the findings rather than the bytes.
-    try:
-        measured_signals = re_signals.compute(source_root, result.groups)
-    except Exception as exc:  # a signal failure must not lose the scan
-        logger.warning("RE signal measurement raised: %s", exc, exc_info=True)
-        measured_signals = []
+        metrics = score_job(
+            result.groups, runs,
+            profile=profile,
+            analysis_kind=analysis_kind,
+            project_id=project_id,
+            re_signals=measured_signals,
+            files_scanned=_count_files(source_root),
+            unmapped=result.unmapped,
+            collisions=result.collisions,
+            compat_signature=signature,
+        )
+        metrics["dacv"].update(filtered.as_metrics())
+        metrics["dacv"].update(redacted.as_metrics())
 
-    metrics = score_job(
-        result.groups, runs,
-        profile=profile,
-        analysis_kind=analysis_kind,
-        project_id=project_id,
-        re_signals=measured_signals,
-        files_scanned=_count_files(source_root),
-        unmapped=result.unmapped,
-        collisions=result.collisions,
-        compat_signature=signature,
-    )
-    metrics["dacv"].update(filtered.as_metrics())
-    metrics["dacv"].update(redacted.as_metrics())
+        created, updated = persist_groups(
+            db, job_id, result.groups, project_id=project_id
+        )
+        logger.info(
+            "BlueScrub job %s: %d raw -> %d canonical (%d created, %d updated)",
+            job_id, len(raw), len(result.groups), created, updated,
+        )
 
-    created, updated = persist_groups(
-        db, job_id, result.groups, project_id=project_id
-    )
-    logger.info(
-        "BlueScrub job %s: %d raw -> %d canonical (%d created, %d updated)",
-        job_id, len(raw), len(result.groups), created, updated,
-    )
+        _record_lineage(db, job_id, project_id, analysis_kind, signature,
+                        signature_fields)
+        if project_id:
+            _record_history(db, job_id, project_id, profile, signature, metrics["dacv"])
 
-    _record_lineage(db, job_id, project_id, analysis_kind, signature,
-                    signature_fields)
-    if project_id:
-        _record_history(db, job_id, project_id, profile, signature, metrics["dacv"])
+        metrics["dacv"]["findings_created"] = created
+        metrics["dacv"]["findings_updated"] = updated
 
-    metrics["dacv"]["findings_created"] = created
-    metrics["dacv"]["findings_updated"] = updated
-
-    # Last, because these two keys are added after scoring and the scoring
-    # test therefore never saw them — which is exactly how they came to violate
-    # `additionalProperties: false` unnoticed.
-    validation.check_metrics(metrics)
-    return metrics
+        # Last, because these two keys are added after scoring and the scoring
+        # test therefore never saw them — which is exactly how they came to violate
+        # `additionalProperties: false` unnoticed.
+        validation.check_metrics(metrics)
+        return metrics
+    finally:
+        _discard_wordlist(wordlist_path)
 
 
 def _stage_wordlist(db: Session, job_dir: Path) -> Path | None:
@@ -241,8 +250,10 @@ def _stage_wordlist(db: Session, job_dir: Path) -> Path | None:
     try:
         wordlists.seed_builtins(db)
         terms = wordlists.active_terms(db)
+    except PROPAGATE_ERRORS:
+        raise
     except Exception as exc:  # a wordlist problem must not fail the job
-        logger.warning("could not assemble dirty-word terms: %s", exc)
+        logger.warning("could not assemble dirty-word terms: %s", public_failure(exc))
         return None
 
     path = dirty_word_scanner.write_wordlist(job_dir, terms)
@@ -262,7 +273,7 @@ def _discard_wordlist(path: Path | None) -> None:
     try:
         path.unlink(missing_ok=True)
     except OSError as exc:  # pragma: no cover - runtime dir is writable
-        logger.warning("could not remove staged wordlist %s: %s", path, exc)
+        logger.warning("could not remove staged wordlist %s: %s", path, public_failure(exc))
 
 
 def _manifest_digest(runs: list[ScannerRun]) -> str:

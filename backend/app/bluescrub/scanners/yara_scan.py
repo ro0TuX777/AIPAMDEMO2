@@ -31,6 +31,8 @@ docs/BLUESCRUB_SUPPLY_CHAIN.md (rule provenance)
 
 from __future__ import annotations
 
+from backend.app.pipeline.outcomes import PROPAGATE_ERRORS, public_failure
+
 import json
 import logging
 import os
@@ -85,15 +87,19 @@ def rules_dir() -> Path | None:
         path = Path(get_settings().aipam_yara_rules_dir)
         if path.is_dir():
             return path
+    except PROPAGATE_ERRORS:
+        raise
     except Exception as exc:  # pragma: no cover - settings always load in tests
-        logger.info("could not read the configured YARA rules dir: %s", exc)
+        logger.info("could not read the configured YARA rules dir: %s", public_failure(exc))
 
     try:
         from backend.app.binalysis.service import default_rules_dir
 
         bundled = default_rules_dir()
+    except PROPAGATE_ERRORS:
+        raise
     except Exception as exc:  # pragma: no cover - binalysis always imports
-        logger.info("could not locate the bundled YARA rules: %s", exc)
+        logger.info("could not locate the bundled YARA rules: %s", public_failure(exc))
         return None
     return bundled if bundled.is_dir() else None
 

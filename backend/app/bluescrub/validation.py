@@ -31,6 +31,8 @@ at error level and counted; the job continues.
 
 from __future__ import annotations
 
+from backend.app.pipeline.outcomes import PROPAGATE_ERRORS, public_failure
+
 import json
 import logging
 import os
@@ -104,8 +106,10 @@ def check_raw_findings(findings: list) -> list[str]:
     for finding in findings:
         try:
             problem = _describe(finding.to_dict(), "raw-finding.schema.json")
+        except PROPAGATE_ERRORS:
+            raise
         except Exception as exc:  # pragma: no cover - defensive
-            problem = f"could not validate: {type(exc).__name__}: {exc}"
+            problem = public_failure(exc)
         if problem:
             # The rule id, never the evidence — a violating finding may hold a
             # plaintext credential, and this goes to the log.

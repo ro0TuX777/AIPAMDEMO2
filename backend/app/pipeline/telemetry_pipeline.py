@@ -21,6 +21,7 @@ from pathlib import Path
 from typing import Any
 
 from sqlalchemy.orm import Session
+from backend.app.pipeline.outcomes import PROPAGATE_ERRORS, public_failure
 
 from backend.app.parsers import register_all_parsers
 from backend.app.parsers.base import ParserResult
@@ -93,8 +94,10 @@ def _load_manifest(job_dir: Path) -> SourceManifest | None:
     try:
         data = json.loads(manifest_path.read_text(encoding="utf-8"))
         return SourceManifest(**data)
+    except PROPAGATE_ERRORS:
+        raise
     except Exception as exc:
-        logger.error("Failed to parse source_manifest.json: %s", exc)
+        logger.error("Failed to parse source_manifest.json: %s", public_failure(exc))
         return None
 
 
@@ -129,10 +132,12 @@ def _parse_entry(
         ):
             results.append(result)
         diag.status = "ok"
+    except PROPAGATE_ERRORS:
+        raise
     except Exception as exc:
-        logger.error("Parser %s failed on %s: %s", parser.name, file_path.name, exc)
+        logger.error("Parser %s failed on %s: %s", parser.name, file_path.name, public_failure(exc))
         diag.status = "error"
-        diag.error = str(exc)
+        diag.error = public_failure(exc)
 
     diag.duration_ms = round((time.monotonic() - t0) * 1000, 2)
     diag.events_produced = len(results)
@@ -153,8 +158,10 @@ def _save_diagnostics(job_dir: Path, diagnostics: PipelineDiagnostics) -> None:
             encoding="utf-8",
         )
         logger.debug("Diagnostics written to %s", diag_path)
+    except PROPAGATE_ERRORS:
+        raise
     except Exception as exc:
-        logger.warning("Failed to write diagnostics: %s", exc)
+        logger.warning("Failed to write diagnostics: %s", public_failure(exc))
 
 
 def _phase_timer(diagnostics: PipelineDiagnostics, phase_name: str):
@@ -199,7 +206,7 @@ def run_telemetry_pipeline(
     register_all_parsers()
 
     manifest = _load_manifest(input_root)
-    if manifest is None:
+    if manifest is None or not manifest.entries:
         diagnostics.completed_at = datetime.now(timezone.utc).isoformat()
         diagnostics.total_duration_ms = round((time.monotonic() - pipeline_t0) * 1000, 2)
         _save_diagnostics(run_output_dir, diagnostics)
@@ -291,6 +298,7 @@ def run_telemetry_pipeline(
     mt = _phase_timer(diagnostics, "memory")
     fingerprints = extract_all_fingerprints(db, job_id, exercise_id=eid or "")
     memory_indexed = 0
+    enrichment_errors = 0
     if fingerprints:
         try:
             from backend.app.forensic_memory import store_behavioral_fingerprints
@@ -300,8 +308,11 @@ def run_telemetry_pipeline(
                 project_id="",
                 fingerprints=fp_dicts,
             )
+        except PROPAGATE_ERRORS:
+            raise
         except Exception:
-            logger.debug("Memory indexing unavailable — skipping", exc_info=True)
+            enrichment_errors += 1
+            logger.debug("Memory indexing unavailable; skipping")
     mt.stop()
 
     db.commit()
@@ -316,6 +327,8 @@ def run_telemetry_pipeline(
         "files_parsed": diagnostics.files_ok,
         "files_skipped": diagnostics.files_skipped,
         "files_error": diagnostics.files_error,
+        "files_unprocessed": total_files - len(diagnostics.files),
+        "enrichment_errors": enrichment_errors,
         "events_total": len(rows),
         "behavioral_findings": len(behavioral_findings),
         "c2_fusion_findings": len(c2_findings),

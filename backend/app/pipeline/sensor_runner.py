@@ -14,7 +14,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Protocol
 
-from backend.app.pipeline.outcomes import PipelineCanceled, OwnershipLost
+from backend.app.pipeline.outcomes import PROPAGATE_ERRORS, public_failure
 from backend.app.sensors.registry import SensorDef, validate_image_allowlist
 
 logger = logging.getLogger("aipam.sensor_runner")
@@ -93,12 +93,12 @@ def run_sensor(
     # Verify image exists locally
     try:
         docker_client.images.get(sensor_def.image)
-    except (PipelineCanceled, OwnershipLost):
+    except PROPAGATE_ERRORS:
         raise
     except Exception as exc:
         return SensorResult(
             sensor=name, status="failed",
-            error=f"Image not found locally: {sensor_def.image} ({exc})",
+            error="Image not found locally",
             started_at=started_str,
         )
 
@@ -154,7 +154,7 @@ def run_sensor(
         exit_code = result.get("StatusCode", -1)
         status = "completed" if exit_code == 0 else "failed"
 
-    except (PipelineCanceled, OwnershipLost):
+    except PROPAGATE_ERRORS:
         raise
     except Exception as exc:
         # Timeout or other error — attempt graceful then force kill
@@ -164,12 +164,14 @@ def run_sensor(
         if container is not None:
             try:
                 container.kill()
+            except PROPAGATE_ERRORS:
+                raise
             except Exception:
                 pass
 
         exit_code = None
         status = "timeout" if is_timeout else "failed"
-        error_msg = f"Timeout after {sensor_def.timeout_seconds}s" if is_timeout else exc_str
+        error_msg = public_failure("timed_out") if is_timeout else public_failure(exc)
 
         ended_at = datetime.now(timezone.utc)
         duration_ms = int((ended_at - started_at).total_seconds() * 1000)
@@ -191,12 +193,16 @@ def run_sensor(
     container_log = ""
     try:
         container_log = container.logs(tail=200).decode("utf-8", errors="replace")
+    except PROPAGATE_ERRORS:
+        raise
     except Exception:
         pass
 
     # Clean up container
     try:
         container.remove(force=True)
+    except PROPAGATE_ERRORS:
+        raise
     except Exception:
         pass
 
@@ -254,13 +260,13 @@ def _run_handler(
         status = "completed"
         exit_code = 0
         error_msg = None
-    except (PipelineCanceled, OwnershipLost):
+    except PROPAGATE_ERRORS:
         raise
     except Exception as exc:
-        logger.exception("Handler for sensor %s failed", name)
+        logger.warning("Handler for sensor %s failed: %s", name, public_failure(exc))
         status = "failed"
         exit_code = 1
-        error_msg = str(exc)[:2000]
+        error_msg = public_failure(exc)
 
     ended_at = datetime.now(timezone.utc)
     duration_ms = int((ended_at - started_at).total_seconds() * 1000)

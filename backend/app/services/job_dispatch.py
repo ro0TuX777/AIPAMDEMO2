@@ -31,7 +31,7 @@ def dispatch_job(job_id: str) -> None:
     try:
         _dispatch(job_id)
     except Exception:
-        _logger.warning("Failed to dispatch job %s to Celery", job_id, exc_info=True)
+        _logger.warning("Failed to dispatch job %s to Celery", job_id)
 
 
 def dispatch_job_phase(job_id: str, pcap_label: str) -> None:
