@@ -1,3 +1,5 @@
+import pytest
+pytest.importorskip("yara", reason="Native YARA validation requires the Task 10 Linux app image")
 import json
 from backend.app.pipeline.sensor_handlers import handle_file_triage
 from backend.app.normalize.correlate import correlate_job
@@ -17,6 +19,7 @@ def test_yara_scanning_logic(tmp_path, monkeypatch):
     
     job_root.mkdir()
     yara_dir.mkdir()
+    monkeypatch.setenv("AIPAM_YARA_RULES_DIR", str(yara_dir))
     
     settings = get_settings()
     monkeypatch.setattr(settings, "aipam_db_path", db_file)

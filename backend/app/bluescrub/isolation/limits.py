@@ -6,7 +6,6 @@ Reference: docs/BLUESCRUB_ISOLATION_CONTRACT.md §2.2
 from __future__ import annotations
 
 import os
-import resource
 from dataclasses import dataclass
 from typing import Callable
 
@@ -91,6 +90,7 @@ def build_preexec(
     """
 
     def _preexec() -> None:  # pragma: no cover - runs only in the forked child
+        import resource
         os.setsid()
 
         if gid is not None:

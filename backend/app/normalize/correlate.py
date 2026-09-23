@@ -17,6 +17,9 @@ Correlation keys (priority order):
 
 from __future__ import annotations
 
+from backend.app.pipeline.runtime_control import checkpoint
+from backend.app.pipeline.outcomes import PROPAGATE_ERRORS
+
 import json
 import logging
 import uuid
@@ -54,6 +57,8 @@ def _emit_finding_event(job_id: str, finding: Finding) -> None:
             "title": finding.title,
             "confidence": round(getattr(finding, "confidence", 0.0) or 0.0, 2),
         })
+    except PROPAGATE_ERRORS:
+        raise
     except Exception:
         pass  # Best-effort — never block correlator
 
@@ -83,6 +88,7 @@ def _read_jsonl(path: Path) -> list[dict]:
     if not path.exists():
         return results
     for line in path.read_text().splitlines():
+        checkpoint()
         line = line.strip()
         if not line:
             continue
@@ -204,11 +210,13 @@ def _normalize_event(raw: dict) -> dict | None:
 
         # Apply field renames
         for old_key, new_key in _FIELD_RENAMES.items():
+            checkpoint()
             if old_key in evt and new_key not in evt:
                 evt[new_key] = evt.pop(old_key)
 
         # Preserve sensor attribution and pcap_label
         for key in ("sensor", "pcap_label"):
+            checkpoint()
             if key in raw and key not in evt:
                 evt[key] = raw[key]
 
@@ -227,12 +235,14 @@ def _collect_sensor_outputs(run_output_dir: Path) -> list[dict]:
     if not sensors_dir.exists():
         return all_events
     for sensor_dir in sorted(sensors_dir.iterdir()):
+        checkpoint()
         if not sensor_dir.is_dir():
             continue
         results_file = sensor_dir / "sensor.results.jsonl"
         raw_events = _read_jsonl(results_file)
         sensor_name = sensor_dir.name
         for raw in raw_events:
+            checkpoint()
             raw.setdefault("sensor", sensor_name)
             normalized = _normalize_event(raw)
             if normalized is not None:
@@ -255,6 +265,7 @@ def _classify_role(ip: str) -> str:
     try:
         addr = ipaddress.ip_address(ip)
         for net in _PRIVATE_NETS:
+            checkpoint()
             if addr in net:
                 return "internal"
         if addr.is_multicast or addr.is_reserved:
@@ -290,6 +301,7 @@ class HostAccumulator:
             }
         h = self._hosts[ip]
         for k, v in kwargs.items():
+            checkpoint()
             if k == "role" and v and v != "unknown":
                 h["role"] = v
             elif k == "conn_count":
@@ -318,6 +330,7 @@ class HostAccumulator:
         rows = []
         for ip, h in self._hosts.items():
             # For hosts seen in multiple PCAPs, store comma-separated labels
+            checkpoint()
             labels = sorted(h["pcap_labels"])
             pcap_label = ",".join(labels) if labels else None
             rows.append(Host(
@@ -644,6 +657,7 @@ def correlate_job(
     seen_iocs: set[tuple[str, str]] = set()
 
     for evt in events:
+        checkpoint()
         event_type = _EVENT_TYPE_MAP.get(evt.get("event_type", ""), "")
 
         row = None
@@ -699,6 +713,7 @@ def correlate_job(
     # Group alerts by signature to create one finding per distinct rule.
     alert_groups: dict[str, list[dict]] = {}
     for evt in events:
+        checkpoint()
         et = _EVENT_TYPE_MAP.get(evt.get("event_type", ""), "")
         if et == "alert":
             sig = evt.get("signature") or evt.get("title", "")
@@ -707,6 +722,7 @@ def correlate_job(
 
     for sig, alert_evts in alert_groups.items():
         # Determine highest severity across occurrences
+        checkpoint()
         sev_order = {"critical": 4, "high": 3, "medium": 2, "low": 1, "info": 0}
         best_sev = max(alert_evts, key=lambda e: sev_order.get(e.get("severity", "medium"), 2))
         severity = best_sev.get("severity", "medium")
@@ -714,7 +730,9 @@ def correlate_job(
         # Collect affected hosts
         affected_ips: set[str] = set()
         for ae in alert_evts:
+            checkpoint()
             for k in ("src_ip", "dest_ip", "host_ip"):
+                checkpoint()
                 ip = ae.get(k)
                 if ip:
                     affected_ips.add(ip)
@@ -767,11 +785,13 @@ def correlate_job(
 
         # Update host finding counts
         for ip in affected_ips:
+            checkpoint()
             hosts.observe_ip(ip, finding_count=1)
 
     # Persist host aggregates — use merge for re-analysis (same IP may exist)
     host_rows = hosts.to_db_rows(job_id)
     for h in host_rows:
+        checkpoint()
         existing = db.execute(
             sa_select(Host).where(Host.job_id == job_id, Host.ip == h.ip)
         ).scalar_one_or_none()

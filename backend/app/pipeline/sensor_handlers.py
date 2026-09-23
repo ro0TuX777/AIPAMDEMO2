@@ -1,8 +1,7 @@
 """
-In-process sensor handlers for the V2 pipeline.
+Registry handlers executed in isolated sensor processes.
 
-Each handler runs inside the Celery worker process instead of launching
-a Docker container.  They wrap the existing V1 analysis logic (parsers,
+Each handler runs inside a tracked child process.  They wrap the existing V1 analysis logic (parsers,
 anomaly detector, etc.) and write results to the standard sensor output
 directory layout so downstream pipeline stages can consume them.
 
@@ -21,6 +20,9 @@ into a ``SensorResult(status="failed")``.
 
 from __future__ import annotations
 
+from backend.app.pipeline.runtime_control import checkpoint
+from backend.app.pipeline.outcomes import PROPAGATE_ERRORS, public_failure
+
 import json
 import logging
 import os
@@ -31,7 +33,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
-from backend.app.config_v2 import get_settings
+from backend.app.config_v2 import SensorPaths as get_settings
 from backend.app.pipeline.job_dir import load_pcap_labels
 from backend.app.suricata_rules import build_runtime_suricata_bundle
 
@@ -39,7 +41,7 @@ logger = logging.getLogger("aipam.sensor_handlers")
 
 # How often the stall watchdog samples progress, and how long a capture-parsing
 # process may make no progress at all before it is treated as wedged.
-_WATCHDOG_POLL_SECONDS = 5.0
+_WATCHDOG_POLL_SECONDS = 2.0
 _DEFAULT_STALL_SECONDS = 300.0
 
 
@@ -51,6 +53,7 @@ def _find_pcap(input_root: Path) -> Path:
     """Locate the PCAP file inside ``input_root/input/``."""
     input_dir = input_root / "input"
     for ext in ("*.pcap", "*.pcapng"):
+        checkpoint()
         matches = list(input_dir.glob(ext))
         if matches:
             return matches[0]
@@ -66,7 +69,9 @@ def _find_all_pcaps(input_root: Path) -> list[Path]:
     input_dir = input_root / "input"
     results = []
     for ext in ("*.pcap", "*.pcapng"):
+        checkpoint()
         for p in sorted(input_dir.glob(ext)):
+            checkpoint()
             if not p.is_symlink():
                 results.append(p)
     if not results:
@@ -100,6 +105,7 @@ def _dir_bytes(path: Path) -> int:
     total = 0
     try:
         for p in path.rglob("*"):
+            checkpoint()
             if p.is_file():
                 try:
                     total += p.stat().st_size
@@ -121,6 +127,7 @@ def _read_progress(pid: int, output_dir: Path) -> int:
     try:
         with open(f"/proc/{pid}/io", encoding="utf-8") as f:
             for line in f:
+                checkpoint()
                 if line.startswith("rchar:"):
                     read_bytes = int(line.split()[1])
                     break
@@ -164,52 +171,58 @@ def run_capture_tool(
         # buffer and deadlock while we are polling instead of reading.
         proc = subprocess.Popen(cmd, cwd=str(cwd), stdout=out, stderr=err)
 
-        while True:
-            try:
-                proc.wait(timeout=_WATCHDOG_POLL_SECONDS)
-                break
-            except subprocess.TimeoutExpired:
-                pass
+        try:
+            while True:
+                checkpoint()
+                try:
+                    proc.wait(timeout=_WATCHDOG_POLL_SECONDS)
+                    break
+                except subprocess.TimeoutExpired:
+                    pass
 
-            now = time.monotonic()
-            progress = _read_progress(proc.pid, cwd)
-            if progress > best_progress:
-                best_progress = progress
-                last_advance = now
+                now = time.monotonic()
+                progress = _read_progress(proc.pid, cwd)
+                if progress > best_progress:
+                    best_progress = progress
+                    last_advance = now
 
-            elapsed = now - started
-            stalled_for = now - last_advance
+                elapsed = now - started
+                stalled_for = now - last_advance
 
-            if stalled_for >= stall_seconds:
+                if stalled_for >= stall_seconds:
+                    proc.kill()
+                    proc.wait()
+                    raise subprocess.TimeoutExpired(
+                        cmd, elapsed,
+                        output=(
+                            f"No progress for {stalled_for:.0f}s while processing "
+                            f"{label} ({best_progress / 1048576:.0f} MB processed in "
+                            f"{elapsed / 60:.1f} min) — treating as stalled"
+                        ).encode(),
+                    )
+
+                if elapsed >= ceiling_seconds:
+                    proc.kill()
+                    proc.wait()
+                    raise subprocess.TimeoutExpired(
+                        cmd, elapsed,
+                        output=(
+                            f"Hit the {ceiling_seconds}s ceiling on {label} while "
+                            f"still progressing ({best_progress / 1048576:.0f} MB in "
+                            f"{elapsed / 60:.1f} min) — raise the sensor timeout to "
+                            f"finish this capture"
+                        ).encode(),
+                    )
+
+                if int(elapsed) % 60 < _WATCHDOG_POLL_SECONDS:
+                    logger.info(
+                        "%s still running: %.1f min elapsed, %.0f MB processed",
+                        label, elapsed / 60, best_progress / 1048576,
+                    )
+        finally:
+            if proc.poll() is None:
                 proc.kill()
-                proc.wait()
-                raise subprocess.TimeoutExpired(
-                    cmd, elapsed,
-                    output=(
-                        f"No progress for {stalled_for:.0f}s while processing "
-                        f"{label} ({best_progress / 1048576:.0f} MB processed in "
-                        f"{elapsed / 60:.1f} min) — treating as stalled"
-                    ).encode(),
-                )
-
-            if elapsed >= ceiling_seconds:
-                proc.kill()
-                proc.wait()
-                raise subprocess.TimeoutExpired(
-                    cmd, elapsed,
-                    output=(
-                        f"Hit the {ceiling_seconds}s ceiling on {label} while "
-                        f"still progressing ({best_progress / 1048576:.0f} MB in "
-                        f"{elapsed / 60:.1f} min) — raise the sensor timeout to "
-                        f"finish this capture"
-                    ).encode(),
-                )
-
-            if int(elapsed) % 60 < _WATCHDOG_POLL_SECONDS:
-                logger.info(
-                    "%s still running: %.1f min elapsed, %.0f MB processed",
-                    label, elapsed / 60, best_progress / 1048576,
-                )
+            proc.wait()
 
     return subprocess.CompletedProcess(
         cmd, proc.returncode,
@@ -275,6 +288,7 @@ def handle_zeek(
         for pcap, pcap_label in pcaps:
             # Keyed on the staged filename, not the label — several captures can
             # share a phase label and would otherwise overwrite each other's logs.
+            checkpoint()
             if len(pcaps) == 1:
                 raw_dir = sensor_output_dir / "raw"
             else:
@@ -298,10 +312,11 @@ def handle_zeek(
             )
             if result.returncode != 0:
                 stderr = result.stderr.decode("utf-8", errors="replace")[:2000]
-                logger.warning("Zeek exited %d for %s: %s", result.returncode, pcap.name, stderr)
+                logger.warning("Zeek exited %d for %s: %s", result.returncode, pcap.name, public_failure())
 
             count = 0
             for rec in _iter_zeek_results(raw_dir):
+                checkpoint()
                 rec["pcap_label"] = pcap_label
                 sink.write(json.dumps(rec) + "\n")
                 count += 1
@@ -321,6 +336,7 @@ def _iter_zeek_log(path: Path) -> Iterator[dict]:
     """
     with open(path) as f:
         for line in f:
+            checkpoint()
             line = line.strip()
             if not line or line.startswith("#"):
                 continue
@@ -350,7 +366,9 @@ def _iter_zeek_results(raw_dir: Path) -> Iterator[dict]:
         for rec in _iter_zeek_log(conn_log):
             # One record at a time keeps the normalization logic in one place
             # without holding every flow in memory.
+            checkpoint()
             for flow in parse_zeek_conn((rec,)):
+                checkpoint()
                 flow_count += 1
                 yield {"type": "flow", "data": _flow_to_dict(flow)}
         logger.info("Zeek: parsed %d flows from conn.log", flow_count)
@@ -362,9 +380,11 @@ def _iter_zeek_results(raw_dir: Path) -> Iterator[dict]:
         "ssl.log": "tls",
     }
     for log_name, event_type in protocol_logs.items():
+        checkpoint()
         log_path = raw_dir / log_name
         if log_path.exists():
             for idx, rec in enumerate(_iter_zeek_log(log_path)):
+                checkpoint()
                 if event_type == "dns":
                     details = {
                         "query": rec.get("query", ""),
@@ -413,6 +433,7 @@ def _iter_zeek_results(raw_dir: Path) -> Iterator[dict]:
     x509_log = raw_dir / "x509.log"
     if x509_log.exists():
         for rec in _iter_zeek_log(x509_log):
+            checkpoint()
             yield {"type": "x509", "data": rec}
 
 
@@ -475,6 +496,7 @@ def handle_suricata(
 
     for pcap, pcap_label in pcaps:
         # Keyed on the staged filename, not the label — see handle_zeek.
+        checkpoint()
         if len(pcaps) == 1:
             raw_dir = sensor_output_dir / "raw"
         else:
@@ -493,11 +515,12 @@ def handle_suricata(
         )
         if result.returncode != 0:
             stderr = result.stderr.decode("utf-8", errors="replace")[:2000]
-            logger.warning("Suricata exited %d for %s: %s", result.returncode, pcap.name, stderr)
+            logger.warning("Suricata exited %d for %s: %s", result.returncode, pcap.name, public_failure())
 
         # Parse results and tag with pcap_label
         records = _parse_suricata_results(raw_dir)
         for rec in records:
+            checkpoint()
             rec["pcap_label"] = pcap_label
         all_results.extend(records)
         logger.info("Suricata: %d records from %s", len(records), pcap_label)
@@ -506,8 +529,16 @@ def handle_suricata(
     out = sensor_output_dir / "sensor.results.jsonl"
     with open(out, "w") as f:
         for r in all_results:
+            checkpoint()
             f.write(json.dumps(r) + "\n")
     logger.info("Suricata: wrote %d total result records across %d PCAP(s)", len(all_results), len(pcaps))
+
+
+def _checked_json_records(stream):
+    for line in stream:
+        checkpoint()
+        if line.strip() and not line.startswith("#"):
+            yield json.loads(line)
 
 
 def _parse_suricata_results(raw_dir: Path) -> list[dict]:
@@ -518,9 +549,9 @@ def _parse_suricata_results(raw_dir: Path) -> list[dict]:
     results: list[dict] = []
     if eve_json.exists():
         with open(eve_json) as f:
-            raw = [json.loads(line) for line in f if line.strip()]
-        alerts = parse_suricata_eve(raw)
+            alerts = parse_suricata_eve(_checked_json_records(f))
         for alert in alerts:
+            checkpoint()
             results.append({"type": "alert", "data": _alert_to_dict(alert)})
         logger.info("Suricata: parsed %d alerts from eve.json", len(alerts))
 
@@ -567,6 +598,7 @@ def handle_tls_enrich(
         if subdirs and any((d / "ssl.log").exists() or (d / "x509.log").exists() for d in subdirs):
             # Multi-PCAP: per-label subdirs
             for d in sorted(subdirs):
+                checkpoint()
                 raw_dirs.append((d, d.name))
         else:
             # Single PCAP: logs directly in raw/
@@ -574,10 +606,12 @@ def handle_tls_enrich(
 
     for raw_dir, pcap_label in raw_dirs:
         # Parse ssl.log for TLS session info
+        checkpoint()
         ssl_log = raw_dir / "ssl.log"
         if ssl_log.exists():
             with open(ssl_log) as f:
                 for line in f:
+                    checkpoint()
                     if line.strip() and not line.startswith("#"):
                         rec = json.loads(line)
                         results.append({
@@ -602,6 +636,7 @@ def handle_tls_enrich(
         if x509_log.exists():
             with open(x509_log) as f:
                 for line in f:
+                    checkpoint()
                     if line.strip() and not line.startswith("#"):
                         rec = json.loads(line)
                         results.append({
@@ -620,6 +655,7 @@ def handle_tls_enrich(
     out = sensor_output_dir / "sensor.results.jsonl"
     with open(out, "w") as f:
         for r in results:
+            checkpoint()
             f.write(json.dumps(r) + "\n")
     logger.info("tls_enrich: wrote %d TLS records", len(results))
 
@@ -653,6 +689,7 @@ def handle_beaconing(
     if zeek_results.exists():
         with open(zeek_results) as f:
             for line in f:
+                checkpoint()
                 if line.strip():
                     rec = json.loads(line)
                     group = _group_for(rec.get("pcap_label"))
@@ -697,21 +734,21 @@ def handle_beaconing(
                 raw_dirs = [(zeek_raw, fallback_label)]
 
         for raw_dir, pcap_label in raw_dirs:
+            checkpoint()
             group = _group_for(pcap_label)
             conn_log = raw_dir / "conn.log"
             if conn_log.exists():
                 with open(conn_log) as f:
-                    raw = [json.loads(line) for line in f
-                           if line.strip() and not line.startswith("#")]
+                    raw = list(_checked_json_records(f))
                 parsed = parse_zeek_conn(raw)
                 group["flows"].extend(_flow_to_dict(fl) for fl in parsed)
 
             dns_log = raw_dir / "dns.log"
             if dns_log.exists():
                 with open(dns_log) as f:
-                    raw_dns = [json.loads(line) for line in f
-                               if line.strip() and not line.startswith("#")]
+                    raw_dns = list(_checked_json_records(f))
                 for rec in raw_dns:
+                    checkpoint()
                     query = rec.get("query")
                     if query:
                         group["dns_queries"].append({
@@ -738,6 +775,7 @@ def handle_beaconing(
     if suri_results.exists():
         with open(suri_results) as f:
             for line in f:
+                checkpoint()
                 if line.strip():
                     try:
                         rec = json.loads(line)
@@ -745,17 +783,21 @@ def handle_beaconing(
                             ad = rec["data"]
                             group = _group_for(rec.get("pcap_label"))
                             group["alerts"].append(ad)
+                    except PROPAGATE_ERRORS:
+                        raise
                     except Exception:
                         continue
 
     results = []
     for group in grouped_inputs.values():
+        checkpoint()
         flows = group["flows"]
         if not flows:
             continue
 
         flow_objects = []
         for fd in flows:
+            checkpoint()
             try:
                 flow_objects.append(FlowRecord(
                     id=fd.get("id", ""),
@@ -774,11 +816,14 @@ def handle_beaconing(
                     packets_from_dst=int(fd.get("packets_from_dst", 0)),
                     state=fd.get("state"),
                 ))
+            except PROPAGATE_ERRORS:
+                raise
             except Exception:
                 continue
 
         alert_objects: list[AlertRecord] = []
         for ad in group["alerts"]:
+            checkpoint()
             try:
                 alert_objects.append(AlertRecord(
                     id=ad.get("id", ""),
@@ -792,6 +837,8 @@ def handle_beaconing(
                     signature_name=ad.get("signature_name", ad.get("signature", "")),
                     category=ad.get("category", ""),
                 ))
+            except PROPAGATE_ERRORS:
+                raise
             except Exception:
                 continue
 
@@ -803,6 +850,7 @@ def handle_beaconing(
         )
 
         for finding in report.findings:
+            checkpoint()
             result = {
                 "type": "anomaly",
                 "data": finding.to_dict(),
@@ -814,6 +862,7 @@ def handle_beaconing(
     out = sensor_output_dir / "sensor.results.jsonl"
     with open(out, "w") as f:
         for r in results:
+            checkpoint()
             f.write(json.dumps(r) + "\n")
     logger.info("beaconing: wrote %d anomaly findings (score=%.2f)",
                 len(results), report.overall_anomaly_score)
@@ -860,6 +909,7 @@ def _detect_file_type(data: bytes) -> tuple[str, str]:
     """Identify file type using magic bytes. Returns (mime, label)."""
     header = data[:16]
     for sig, mime, label in _MAGIC_SIGNATURES:
+        checkpoint()
         if header.startswith(sig):
             return mime, label
     # Heuristic: check if it looks like ASCII text
@@ -882,6 +932,7 @@ def _find_extracted_files(run_output_dir: Path) -> list[Path]:
     zeek_raw = run_output_dir / "sensors" / "zeek" / "raw"
     if zeek_raw.exists():
         for sub in zeek_raw.iterdir():
+            checkpoint()
             if sub.is_dir() and sub.name != "extract_files":
                 ef = sub / "extract_files"
                 if ef.exists():
@@ -889,6 +940,7 @@ def _find_extracted_files(run_output_dir: Path) -> list[Path]:
 
     found: list[Path] = []
     for d in search_dirs:
+        checkpoint()
         if d.exists():
             found.extend(f for f in d.iterdir() if f.is_file())
     return found
@@ -916,15 +968,18 @@ def _build_zeek_files_lookup(run_output_dir: Path) -> dict[str, dict]:
         files_logs.append((direct_files_log, "primary"))
 
     for sub in sorted(zeek_raw.iterdir()):
+        checkpoint()
         if sub.is_dir() and sub.name != "extract_files":
             fl = sub / "files.log"
             if fl.exists():
                 files_logs.append((fl, sub.name))
 
     for files_log_path, pcap_label in files_logs:
+        checkpoint()
         try:
             with open(files_log_path) as f:
                 for line in f:
+                    checkpoint()
                     line = line.strip()
                     if not line or line.startswith("#"):
                         continue
@@ -958,8 +1013,10 @@ def _build_zeek_files_lookup(run_output_dir: Path) -> dict[str, dict]:
                         "pcap_label": pcap_label,
                         "seen_bytes": rec.get("seen_bytes"),
                     }
+        except PROPAGATE_ERRORS:
+            raise
         except Exception as e:
-            logger.warning("file_triage: failed to parse %s: %s", files_log_path, e)
+            logger.warning("file_triage: failed to parse %s: %s", files_log_path, public_failure(e))
 
     logger.info("file_triage: built Zeek files.log lookup with %d entries", len(lookup))
     return lookup
@@ -974,7 +1031,7 @@ def handle_file_triage(
     *, run_output_dir: Path,
 ) -> None:
     """Triage extracted files from Zeek's file extraction."""
-    from backend.app.config_v2 import get_settings
+    from backend.app.config_v2 import SensorPaths as get_settings
     settings = get_settings()
 
     files = _find_extracted_files(run_output_dir)
@@ -991,6 +1048,7 @@ def handle_file_triage(
         if yara_dir.exists():
             rule_files = {}
             for p in yara_dir.glob("*.yar*"):
+                checkpoint()
                 rule_files[p.stem] = str(p)
 
             if rule_files:
@@ -998,13 +1056,14 @@ def handle_file_triage(
                     rules = yara.compile(filepaths=rule_files)
                     logger.info("file_triage: compiled %d YARA rule files", len(rule_files))
                 except yara.Error as e:
-                    logger.error("file_triage: failed to compile YARA rules: %s", e)
+                    logger.error("file_triage: failed to compile YARA rules: %s", public_failure(e))
     except ImportError:
         logger.warning("file_triage: yara-python not installed — skipping YARA scan")
 
     results = []
     import hashlib
     for fpath in files:
+        checkpoint()
         file_bytes = fpath.read_bytes()
         sha256 = hashlib.sha256(file_bytes).hexdigest()
         size = len(file_bytes)
@@ -1017,8 +1076,10 @@ def handle_file_triage(
             try:
                 matches = rules.match(data=file_bytes)
                 yara_matches = [m.rule for m in matches]
+            except PROPAGATE_ERRORS:
+                raise
             except Exception as e:
-                logger.warning("file_triage: YARA match failed for %s: %s", fpath.name, e)
+                logger.warning("file_triage: YARA match failed for %s: %s", fpath.name, public_failure(e))
 
         # Enrich with Zeek files.log metadata
         zeek_meta = zeek_lookup.get(fpath.name, {})
@@ -1089,6 +1150,7 @@ def handle_file_triage(
     out = sensor_output_dir / "sensor.results.jsonl"
     with open(out, "w") as f:
         for r in results:
+            checkpoint()
             f.write(json.dumps(r) + "\n")
 
     suspicious_count = sum(1 for r in results if r["data"].get("suspicious"))
@@ -1122,6 +1184,7 @@ def _load_file_triage_records(run_output_dir: Path) -> list[dict]:
     records: list[dict] = []
     with open(results_file) as f:
         for line in f:
+            checkpoint()
             line = line.strip()
             if not line:
                 continue
@@ -1167,6 +1230,7 @@ def _extract_capa_capabilities(payload: dict) -> list[dict]:
 
     capabilities: list[dict] = []
     for rule_name, rule_payload in rules.items():
+        checkpoint()
         if not isinstance(rule_payload, dict):
             continue
         meta = rule_payload.get("meta")
@@ -1204,6 +1268,7 @@ def _dedupe_preserve_order(values: list[str]) -> list[str]:
     seen: set[str] = set()
     results: list[str] = []
     for value in values:
+        checkpoint()
         if value and value not in seen:
             seen.add(value)
             results.append(value)
@@ -1277,6 +1342,7 @@ def handle_capa(
     results: list[dict] = []
     analyzed_count = 0
     for record in candidates:
+        checkpoint()
         file_id = str(record.get("file_id") or "").strip()
         if not file_id:
             continue
@@ -1296,8 +1362,10 @@ def handle_capa(
         except subprocess.TimeoutExpired:
             logger.warning("capa: timed out while analyzing %s", file_id)
             continue
+        except PROPAGATE_ERRORS:
+            raise
         except Exception as exc:
-            logger.warning("capa: failed to execute against %s: %s", file_id, exc)
+            logger.warning("capa: failed to execute against %s: %s", file_id, public_failure(exc))
             continue
 
         if completed.returncode != 0:
@@ -1306,14 +1374,14 @@ def handle_capa(
                 "capa: exited %d for %s: %s",
                 completed.returncode,
                 file_id,
-                stderr,
+                public_failure(),
             )
             continue
 
         try:
             payload = json.loads(completed.stdout or "{}")
         except json.JSONDecodeError as exc:
-            logger.warning("capa: invalid JSON for %s: %s", file_id, exc)
+            logger.warning("capa: invalid JSON for %s: %s", file_id, public_failure(exc))
             continue
 
         capabilities = _extract_capa_capabilities(payload)
@@ -1380,6 +1448,7 @@ def handle_capa(
 
     with open(out, "w") as f:
         for item in results:
+            checkpoint()
             f.write(json.dumps(item) + "\n")
 
     logger.info(
@@ -1426,6 +1495,7 @@ def handle_ti_matcher(
     try:
         if ti_base.exists():
             for bundle_dir in ti_base.iterdir():
+                checkpoint()
                 if not bundle_dir.is_dir():
                     continue
                 for fname, target_set, normalizer in [
@@ -1435,9 +1505,11 @@ def handle_ti_matcher(
                     ("ja3.txt", ti_ja3, _normalize_text_indicator),
                     ("ja3s.txt", ti_ja3s, _normalize_text_indicator),
                 ]:
+                    checkpoint()
                     fp = bundle_dir / fname
                     if fp.exists():
                         for line in fp.read_text().splitlines():
+                            checkpoint()
                             val = line.strip()
                             if val and not val.startswith("#"):
                                 target_set.add(normalizer(val))
@@ -1467,6 +1539,7 @@ def handle_ti_matcher(
     if zeek_results.exists():
         with open(zeek_results) as f:
             for line in f:
+                checkpoint()
                 if line.strip():
                     rec = json.loads(line)
                     rtype = rec.get("type")
@@ -1489,6 +1562,7 @@ def handle_ti_matcher(
     if tls_results.exists():
         with open(tls_results) as f:
             for line in f:
+                checkpoint()
                 if line.strip():
                     rec = json.loads(line)
                     if rec.get("type") != "tls_session":
@@ -1508,6 +1582,7 @@ def handle_ti_matcher(
     if file_results.exists():
         with open(file_results) as f:
             for line in f:
+                checkpoint()
                 if line.strip():
                     rec = json.loads(line)
                     if rec.get("type") != "extracted_file":
@@ -1521,12 +1596,14 @@ def handle_ti_matcher(
     if suri_results.exists():
         with open(suri_results) as f:
             for line in f:
+                checkpoint()
                 if line.strip():
                     rec = json.loads(line)
                     if rec.get("type") == "alert":
                         d = rec.get("data", {})
                         sig = d.get("signature_name") or d.get("signature", "")
                         for ip_key in ("src_ip", "dst_ip"):
+                            checkpoint()
                             ip = d.get(ip_key, "")
                             if ip:
                                 alert_ips.add(ip)
@@ -1571,6 +1648,7 @@ def handle_ti_matcher(
         seen_iocs.add((ioc_type, normalized_value))
 
     for ip_str in observed_ips:
+        checkpoint()
         try:
             addr = ipaddress.ip_address(ip_str)
             if addr.is_private or addr.is_loopback:
@@ -1595,28 +1673,34 @@ def handle_ti_matcher(
     # Domain matches against TI feeds
     if has_ti_feeds:
         for domain in observed_domains:
+            checkpoint()
             if domain in ti_domains:
                 _append_ioc("domain", domain, matched_feed="ti_bundle", confidence="high")
 
         for sha256 in observed_hashes:
+            checkpoint()
             if sha256 in ti_hashes:
                 _append_ioc("hash", sha256, matched_feed="ti_bundle", confidence="high")
 
         for sni in observed_snis:
+            checkpoint()
             if sni in ti_domains:
                 _append_ioc("sni", sni, matched_feed="ti_bundle", confidence="high")
 
         for ja3 in observed_ja3:
+            checkpoint()
             if ja3 in ti_ja3:
                 _append_ioc("ja3", ja3, matched_feed="ti_bundle", confidence="high")
 
         for ja3s in observed_ja3s:
+            checkpoint()
             if ja3s in ti_ja3s:
                 _append_ioc("ja3s", ja3s, matched_feed="ti_bundle", confidence="high")
 
     out = sensor_output_dir / "sensor.results.jsonl"
     with open(out, "w") as f:
         for r in results:
+            checkpoint()
             f.write(json.dumps(r) + "\n")
     logger.info("ti_matcher: produced %d IOCs (%d from TI feeds, %d from alert correlation)",
                 len(results),

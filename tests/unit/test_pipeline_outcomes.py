@@ -40,12 +40,16 @@ def runtime(tmp_path, monkeypatch):
         session = factory()
         sessions.append(session)
         return session
-    settings = SimpleNamespace(aipam_job_root=tmp_path/'jobs', aipam_upload_root=tmp_path/'uploads', aipam_sensor_config_dir=None, aipam_max_job_disk_bytes=1000000, aipam_preflight_multiplier=4)
+    settings = SimpleNamespace(aipam_job_root=tmp_path/'jobs', aipam_upload_root=tmp_path/'uploads', aipam_sensor_config_dir=None, aipam_max_job_disk_bytes=1000000, aipam_preflight_multiplier=4, aipam_heartbeat_seconds=15)
     monkeypatch.setattr(worker, 'get_settings', lambda: settings)
     monkeypatch.setattr(database_v2, 'init_v2_db', lambda: None)
     monkeypatch.setattr(database_v2, 'get_session_factory', lambda: session_factory)
     import docker
-    monkeypatch.setattr(docker, 'from_env', lambda: None)
+    monkeypatch.setattr(docker, 'from_env', lambda **kw: None)
+    monkeypatch.setattr(database_v2, 'get_engine', lambda: engine)
+    from backend.app.pipeline import runtime_control
+    from backend.app.services.job_runtime import ExecutorIdentity
+    monkeypatch.setattr(runtime_control, 'current_executor', lambda *a: ExecutorIdentity('node', 'a'*64, 42, 123, 'boot'))
     events, distilled = [], []
     import backend.app.events as event_module
     def emit(job_id, event, payload):
@@ -189,9 +193,9 @@ def pipeline_env(runtime, monkeypatch):
         row.source_type = 'other'
         db.commit()
     run_dir = create_run_output_dir(runtime.settings.aipam_job_root, 'job', claim.handle.run_token)
-    def run():
+    def run(**kwargs):
         with runtime.factory() as db:
-            return orchestrator.run_pipeline('job', db, docker_client=None, job_root=runtime.settings.aipam_job_root, upload_root=runtime.settings.aipam_upload_root, run_output_dir=run_dir)
+            return orchestrator.run_pipeline('job', db, docker_client=None, job_root=runtime.settings.aipam_job_root, upload_root=runtime.settings.aipam_upload_root, run_output_dir=run_dir, **kwargs)
     return run, runtime, run_dir
 
 
@@ -312,7 +316,8 @@ def test_production_dispatch_assigns_identity_before_delivery(runtime, monkeypat
             assert handle is not None
         delivered.append(args)
     monkeypatch.setattr(runtime.worker.run_job, 'apply_async', apply_async)
-    job_dispatch.dispatch_job('job')
+    with runtime.factory() as db:
+        job_dispatch.dispatch_job(db, 'job')
     assert delivered == [['job']]
     with runtime.factory() as db:
         assert db.get(Job, 'job').dispatched_at
@@ -352,12 +357,14 @@ def test_distillation_failure_never_changes_successful_analysis(runtime, monkeyp
         assert db.get(Job, 'job').status == 'completed'
 
 @pytest.mark.parametrize('kind', ['PipelineCanceled', 'OwnershipLost'])
-def test_sensor_handler_control_exceptions_are_not_sensor_failures(tmp_path, kind):
+def test_sensor_handler_control_exceptions_are_not_sensor_failures(tmp_path, monkeypatch, kind):
     from backend.app.pipeline.sensor_runner import run_sensor
     from backend.app.sensors.registry import SensorDef
     error = getattr(outcome_module(), kind)
     def handler(**kw):
         raise error('stop')
+    from backend.app.pipeline import sensor_process
+    monkeypatch.setattr(sensor_process, 'run_handler_process', lambda *a, **kw: handler(**kw))
     sensor = SensorDef(name='control', type='sensor', handler=handler)
     with pytest.raises(error):
         run_sensor(sensor, tmp_path, 'job', 'standard', run_output_dir=tmp_path)
@@ -466,7 +473,8 @@ def test_broker_and_distillation_logs_do_not_disclose_payload(runtime, monkeypat
             db.commit()
         monkeypatch.setattr(runtime.worker.run_job if path == 'job' else runtime.worker.run_job_phase, 'apply_async', fail)
         if path == 'job':
-            job_dispatch.dispatch_job('job')
+            with runtime.factory() as db, pytest.raises(job_dispatch.JobDispatchFailed):
+                job_dispatch.dispatch_job(db, 'job')
         else:
             from backend.app.services.job_lifecycle import reanalyze_job, JobLifecycleError
             from backend.app.models.job_pcap import JobPcap
@@ -474,7 +482,7 @@ def test_broker_and_distillation_logs_do_not_disclose_payload(runtime, monkeypat
                 db.get(Job, 'job').status = 'completed'
                 db.add(JobPcap(job_id='job', upload_id='upload', filename='a', label='after', ordinal=0))
                 db.commit()
-                with pytest.raises(JobLifecycleError):
+                with pytest.raises(job_dispatch.JobDispatchFailed):
                     reanalyze_job(db.get(Job, 'job'), db, 'after', job_dispatch.dispatch_job_phase)
     elif path == 'distill_dispatch':
         monkeypatch.setattr(runtime.worker.distill_job, 'delay', fail)
@@ -527,12 +535,14 @@ def test_cancellation_between_recovery_read_and_failed_cas_terminalizes(runtime,
     assert runtime.events == [('job.complete', 'canceled')]
 
 
-def test_real_inprocess_sensor_database_failure_propagates(tmp_path, caplog):
+def test_sensor_process_database_failure_propagates(tmp_path, monkeypatch, caplog):
     from backend.app.pipeline.sensor_runner import run_sensor
     from backend.app.sensors.registry import SensorDef
     error = IntegrityError('INSERT secret', {'value': SECRET}, RuntimeError(SECRET))
     def handler(**kw):
         raise error
+    from backend.app.pipeline import sensor_process
+    monkeypatch.setattr(sensor_process, 'run_handler_process', lambda *a, **kw: handler(**kw))
     with pytest.raises(IntegrityError) as caught:
         run_sensor(SensorDef(name='db_sensor', type='sensor', handler=handler), tmp_path, 'job', 'standard', run_output_dir=tmp_path)
     assert caught.value is error
@@ -686,3 +696,33 @@ def test_sensor_container_catches_preserve_runtime_exceptions(tmp_path, monkeypa
     with pytest.raises(type(error)) as caught:
         sensor_runner.run_sensor(sensor, tmp_path, 'job', 'standard', docker, run_output_dir=tmp_path)
     assert caught.value is error
+
+
+
+def test_phase_cancellation_never_hides_shared_input(pipeline_env, monkeypatch):
+    from backend.app.sensors.registry import SensorDef
+    from backend.app.pipeline.runtime_control import JobCancellationRequested
+    run, h, run_dir = pipeline_env
+    with h.factory() as db:
+        row = db.get(Job, 'job')
+        row.source_type, row.upload_id = 'pcap', 'upload'
+        db.commit()
+    upload = h.settings.aipam_upload_root/'upload'
+    upload.mkdir(parents=True)
+    (upload/'capture.pcap').write_bytes(b'capture')
+    stable = h.settings.aipam_job_root/'job'/'input'
+    stable.mkdir(parents=True, exist_ok=True)
+    (stable/'before.pcap').write_bytes(b'before')
+    (stable/'after.pcap').write_bytes(b'after')
+    monkeypatch.setattr(orchestrator, 'get_stages_for_profile', lambda _: [SensorDef(name='zeek',type='stage')])
+    def stage(**kw):
+        assert (stable/'before.pcap').exists()
+        assert kw['input_root'] == run_dir/'phase_input'
+        assert (kw['input_root']/'input'/'after.pcap').read_bytes() == b'after'
+        assert not (kw['input_root']/'input'/'before.pcap').exists()
+        raise JobCancellationRequested()
+    monkeypatch.setattr(orchestrator, 'run_sensor', stage)
+    with pytest.raises(JobCancellationRequested):
+        run(pcap_label='after')
+    assert (stable/'before.pcap').exists()
+    assert not list(stable.glob('*.hidden'))

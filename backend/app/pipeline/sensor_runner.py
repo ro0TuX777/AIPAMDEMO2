@@ -57,23 +57,25 @@ def run_sensor(
     execution_profile: str,
     docker_client: Any = None,
     sensor_config_dir: Path | None = None,
-    *, run_output_dir: Path,
+    *, run_output_dir: Path, control=None,
 ) -> SensorResult:
-    """Launch a sensor (in-process handler or Docker container) and wait for completion.
+    """Launch a registry handler process or Docker sensor and wait for completion.
 
-    If ``sensor_def.handler`` is set, the sensor runs in-process.
+    If ``sensor_def.handler`` is set, the sensor runs in a tracked child process.
     Otherwise it falls back to launching a Docker container.
 
     Returns:
         SensorResult with status, exit code, duration, and logs.
     """
+    if control is not None:
+        control.checkpoint()
     name = sensor_def.name
     started_at = datetime.now(timezone.utc)
     started_str = started_at.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
     # --- In-process handler path ---
     if sensor_def.handler is not None:
-        return _run_handler(sensor_def, input_root, run_output_dir, job_id, execution_profile, started_at)
+        return _run_handler(sensor_def, input_root, run_output_dir, job_id, execution_profile, started_at, control=control)
 
     # --- Docker pre-checks ---
     if sensor_def.image is None:
@@ -119,6 +121,7 @@ def run_sensor(
     # --- Build container kwargs ---
     container_kwargs: dict[str, Any] = {
         "image": sensor_def.image,
+        "labels": {"aipam.job_id": job_id, "aipam.run_token": control.handle.run_token, "aipam.celery_task_id": control.handle.task_id} if control else {},
         "volumes": volumes,
         "mem_limit": sensor_def.mem_limit,
         "network_mode": "none",
@@ -239,8 +242,9 @@ def _run_handler(
     job_id: str,
     execution_profile: str,
     started_at: datetime,
+    control=None,
 ) -> SensorResult:
-    """Execute an in-process handler function for a sensor."""
+    """Execute a registry handler through the mandatory process boundary."""
     name = sensor_def.name
     started_str = started_at.strftime("%Y-%m-%dT%H:%M:%S.%fZ")
 
@@ -249,14 +253,11 @@ def _run_handler(
     (sensor_output_dir / "raw").mkdir(exist_ok=True)
 
     try:
-        logger.info("Running in-process handler for sensor %s", name)
-        sensor_def.handler(  # type: ignore[misc]
-            input_root=input_root,
-            run_output_dir=run_output_dir,
-            sensor_output_dir=sensor_output_dir,
-            job_id=job_id,
-            execution_profile=execution_profile,
-        )
+        from backend.app.pipeline.sensor_process import run_handler_process
+        run_handler_process(sensor_def, input_root=input_root, run_output_dir=run_output_dir,
+                            sensor_output_dir=sensor_output_dir, job_id=job_id,
+                            execution_profile=execution_profile,
+                            cancel_path=run_output_dir / "control" / "cancel.requested", control=control)
         status = "completed"
         exit_code = 0
         error_msg = None
@@ -264,9 +265,10 @@ def _run_handler(
         raise
     except Exception as exc:
         logger.warning("Handler for sensor %s failed: %s", name, public_failure(exc))
-        status = "failed"
+        import subprocess
+        status = "timeout" if isinstance(exc, subprocess.TimeoutExpired) else "failed"
         exit_code = 1
-        error_msg = public_failure(exc)
+        error_msg = public_failure("timed_out") if status == "timeout" else public_failure(exc)
 
     ended_at = datetime.now(timezone.utc)
     duration_ms = int((ended_at - started_at).total_seconds() * 1000)

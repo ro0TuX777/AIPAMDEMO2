@@ -186,25 +186,32 @@ def run_analyzer(
     )
 
 
-def _kill_group(proc: subprocess.Popen, grace_seconds: int) -> None:
-    """SIGTERM the process group, then SIGKILL it.
-
-    ``proc.kill()`` signals only the direct child, leaving grandchildren alive
-    and holding the pipe open. The child called ``setsid``, so its pid is the
-    group id.
-    """
+def signal_process_group(pgid: int, sig: int) -> None:
+    """Shared Linux process-group primitive; callers verify execution identity."""
     try:
-        pgid = os.getpgid(proc.pid)
+        os.killpg(pgid, sig)
     except ProcessLookupError:
-        return
+        pass
 
-    for sig in (signal.SIGTERM, signal.SIGKILL):
+
+def _kill_group(proc: subprocess.Popen, grace_seconds: float) -> None:
+    """Reap the leader and kill surviving descendants even if TERM exits it."""
+    if os.name == 'nt':
+        if proc.poll() is None:
+            proc.kill()
+        proc.wait(timeout=3)
+        return
+    # Every caller starts a new session. Never discover a possibly reused PID's
+    # current group after the leader exits: the assigned PGID is the child PID.
+    pgid = proc.pid
+    signal_process_group(pgid, signal.SIGTERM)
+    deadline = time.monotonic() + grace_seconds
+    while time.monotonic() < deadline:
         try:
-            os.killpg(pgid, sig)
+            os.killpg(pgid, 0)
         except ProcessLookupError:
-            return
-        deadline = time.monotonic() + (grace_seconds if sig == signal.SIGTERM else 2)
-        while time.monotonic() < deadline:
-            if proc.poll() is not None:
-                return
-            time.sleep(0.05)
+            break
+        proc.poll()
+        time.sleep(0.05)
+    signal_process_group(pgid, signal.SIGKILL)
+    proc.wait(timeout=3)

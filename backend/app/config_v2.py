@@ -10,6 +10,14 @@ from pathlib import Path
 from typing import Optional
 
 from pydantic_settings import BaseSettings
+from pydantic import Field, model_validator
+
+
+class SensorPaths(BaseSettings):
+    """Non-secret handler configuration; child processes never need API credentials."""
+    aipam_suricata_rules_dir: Path = Path("/opt/aipam/rules/suricata")
+    aipam_yara_rules_dir: Path = Path("/opt/aipam/rules/yara")
+    model_config = {"env_file": None, "extra": "ignore"}
 
 
 class Settings(BaseSettings):
@@ -24,8 +32,24 @@ class Settings(BaseSettings):
     aipam_kb_admin_token: str | None = None
 
     # --- Concurrency ---
-    aipam_max_concurrent_jobs: int = 1
+    aipam_max_concurrent_jobs: int = Field(default=1, ge=1, le=1)
     aipam_sensor_parallelism: int = 1
+
+    # Runtime safety: SQLite remains a single whole-job writer.
+    aipam_heartbeat_seconds: int = Field(default=15, gt=0, le=15)
+    aipam_stale_seconds: int = Field(default=120, ge=120)
+    aipam_cancel_poll_seconds: int = Field(default=2, gt=0, le=2)
+    aipam_reconcile_seconds: int = Field(default=15, gt=0, le=15)
+    aipam_undispatched_grace_seconds: int = Field(default=30, ge=30)
+    aipam_task_soft_time_limit: int = Field(default=21300, gt=0)
+    aipam_task_time_limit: int = Field(default=21600, gt=0)
+    aipam_visibility_timeout: int = Field(default=25200, gt=0)
+
+    @model_validator(mode="after")
+    def runtime_limits(self):
+        if not self.aipam_task_soft_time_limit < self.aipam_task_time_limit < self.aipam_visibility_timeout:
+            raise ValueError("Require soft time limit < hard time limit < visibility timeout")
+        return self
 
     # --- Disk Guardrails ---
     aipam_max_job_disk_bytes: int = 53_687_091_200  # 50 GB

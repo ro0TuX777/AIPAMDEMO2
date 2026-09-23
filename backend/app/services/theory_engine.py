@@ -7,6 +7,8 @@ is pure Python. LLM explanation is added later via a separate call.
 """
 from __future__ import annotations
 
+from backend.app.pipeline.runtime_control import checkpoint
+
 import json
 import logging
 import re
@@ -145,6 +147,7 @@ def _score_hypothesis(
 
     # Score findings
     for f in evidence["findings"]:
+        checkpoint()
         text = f"{f.title} {f.summary or ''} {f.category or ''}"
         matched = any(rx.search(text) for rx in compiled)
         if matched:
@@ -160,6 +163,7 @@ def _score_hypothesis(
 
     # Score alerts
     for a in evidence["alerts"]:
+        checkpoint()
         text = f"{a.signature} {a.category or ''}"
         matched = any(rx.search(text) for rx in compiled)
         if matched:
@@ -171,6 +175,7 @@ def _score_hypothesis(
 
     # Score IOCs
     for ioc in evidence["iocs"]:
+        checkpoint()
         text = f"{ioc.ioc_type} {ioc.context or ''} {ioc.value}"
         matched = any(rx.search(text) for rx in compiled)
         if matched:
@@ -184,6 +189,7 @@ def _score_hypothesis(
     telemetry_score = 0.0
     telemetry_count = 0
     for evt in evidence.get("telemetry", []):
+        checkpoint()
         text = f"{evt.event_type} {evt.source_system or ''} {evt.data_json or ''}"
         matched = any(rx.search(text) for rx in compiled)
         if matched:
@@ -296,6 +302,7 @@ def generate_theories(
     scored: list[tuple[str, float, list[str], list[str], dict[str, Any]]] = []
 
     for hyp_type, patterns in _HYPOTHESIS_PATTERNS.items():
+        checkpoint()
         score, supporting, contradicting, breakdown = _score_hypothesis(hyp_type, patterns, evidence)
         if score > 0.01:  # skip zero-score hypotheses
             scored.append((hyp_type, score, supporting, contradicting, breakdown))
@@ -319,6 +326,7 @@ def generate_theories(
     now = datetime.now(timezone.utc).isoformat()
     theories: list[Theory] = []
     for rank, (hyp_type, score, supporting, contradicting, breakdown) in enumerate(scored, 1):
+        checkpoint()
         label = _HYPOTHESIS_LABELS.get(hyp_type, hyp_type.replace("_", " ").title())
         theory = Theory(
             job_id=job_id,
@@ -365,6 +373,7 @@ def generate_all_theories(db: Session, job_id: str, pcap_label: str | None = Non
 
     host_theory_count = 0
     for ip in hosts:
+        checkpoint()
         host_theories = generate_theories(db, job_id, host_ip=ip, pcap_label=pcap_label)
         host_theory_count += len(host_theories)
 

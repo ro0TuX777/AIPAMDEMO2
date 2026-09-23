@@ -20,6 +20,8 @@ Detection Categories:
 
 from __future__ import annotations
 
+from backend.app.pipeline.runtime_control import checkpoint
+
 import math
 import statistics
 from collections import Counter, defaultdict
@@ -153,6 +155,7 @@ class AnomalyDetector:
         dst_to_srcs = defaultdict(set)
         
         for flow in flows:
+            checkpoint()
             src_to_dsts[flow.src_ip].add(flow.dst_ip)
             dst_to_srcs[flow.dst_ip].add(flow.src_ip)
             
@@ -190,10 +193,12 @@ class AnomalyDetector:
         # Group flows by src_ip -> dst_ip:dst_port
         connections: Dict[str, List[FlowRecord]] = defaultdict(list)
         for flow in flows:
+            checkpoint()
             key = f"{flow.src_ip}->{flow.dst_ip}:{flow.dst_port}"
             connections[key].append(flow)
         
         for conn_key, conn_flows in connections.items():
+            checkpoint()
             if len(conn_flows) < self.MIN_FLOWS_FOR_BEACON:
                 continue
                 
@@ -201,6 +206,7 @@ class AnomalyDetector:
             sorted_flows = sorted(conn_flows, key=lambda f: f.start_time)
             intervals = []
             for i in range(1, len(sorted_flows)):
+                checkpoint()
                 delta = (sorted_flows[i].start_time - sorted_flows[i-1].start_time).total_seconds()
                 if delta > 0:
                     intervals.append(delta)
@@ -285,10 +291,12 @@ This is a potential ZERO-DAY indicator if the destination is not a known threat.
         dest_diversity: Dict[str, set] = defaultdict(set)
 
         for flow in flows:
+            checkpoint()
             outbound_by_host[flow.src_ip] += flow.bytes_from_src
             dest_diversity[flow.src_ip].add(flow.dst_ip)
 
         for host, total_bytes in outbound_by_host.items():
+            checkpoint()
             if total_bytes > self.EXFIL_BYTES_THRESHOLD:
                 num_dests = len(dest_diversity[host])
 
@@ -336,6 +344,7 @@ If this exceeds normal baseline by >200%, treat as HIGH priority."""
 
         for flow in flows:
             # High ephemeral ports as destination (unusual for servers)
+            checkpoint()
             if flow.dst_port > 49152:
                 high_ports[flow.dst_ip].append(flow.dst_port)
 
@@ -345,6 +354,7 @@ If this exceeds normal baseline by >200%, treat as HIGH priority."""
 
         # Alert on hosts with many high-port connections (potential reverse shells)
         for dst_ip, ports in high_ports.items():
+            checkpoint()
             if len(ports) > 10:
                 unique_ports = len(set(ports))
                 self.findings.append(AnomalyFinding(
@@ -376,6 +386,7 @@ RECOMMENDED ACTIONS:
 
         # Alert on hosts with many failed connections (scanning/probing)
         for src_ip, fail_count in failed_connections.items():
+            checkpoint()
             if fail_count > 20:
                 self.findings.append(AnomalyFinding(
                     category="connection",
@@ -411,19 +422,23 @@ RECOMMENDED ACTIONS:
         port_scan_matrix: Dict[str, Dict[str, set]] = defaultdict(lambda: defaultdict(set))
 
         for flow in flows:
+            checkpoint()
             port_scan_matrix[flow.src_ip][flow.dst_ip].add(flow.dst_port)
 
         # Detect scanners: source hitting many ports on one or more targets
         for src_ip, targets in port_scan_matrix.items():
+            checkpoint()
             total_unique_ports = sum(len(ports) for ports in targets.values())
 
             for dst_ip, ports in targets.items():
+                checkpoint()
                 if len(ports) >= 15:  # 15+ different ports on same target = likely scan
                     port_list = sorted(ports)[:20]
 
                     # Check if it's sequential scanning (more suspicious)
                     sequential = 0
                     for i in range(1, len(port_list)):
+                        checkpoint()
                         if port_list[i] - port_list[i-1] <= 2:
                             sequential += 1
 
@@ -493,6 +508,7 @@ RECOMMENDED ACTIONS:
         internal_ports: Dict[str, Dict[str, set]] = defaultdict(lambda: defaultdict(set))
 
         for flow in flows:
+            checkpoint()
             if is_internal(flow.src_ip) and is_internal(flow.dst_ip):
                 if flow.src_ip != flow.dst_ip:  # Exclude self-connections
                     internal_connections[flow.src_ip][flow.dst_ip] += 1
@@ -500,6 +516,7 @@ RECOMMENDED ACTIONS:
 
         # Detect lateral movement: internal host connecting to many other internal hosts
         for src_ip, targets in internal_connections.items():
+            checkpoint()
             if len(targets) >= 5:  # Connecting to 5+ different internal hosts
                 total_connections = sum(targets.values())
                 admin_ports_hit = set()
@@ -507,6 +524,7 @@ RECOMMENDED ACTIONS:
 
                 for dst_ip, ports in internal_ports[src_ip].items():
                     # Check for administrative/sensitive ports
+                    checkpoint()
                     admin_ports = {22, 23, 135, 139, 445, 3389, 5985, 5986}  # SSH, Telnet, SMB, RDP, WinRM
                     hit_admin = ports & admin_ports
                     if hit_admin:
@@ -566,6 +584,7 @@ RECOMMENDED ACTIONS:
         # Group flows by hour
         hour_counts: Counter = Counter()
         for flow in flows:
+            checkpoint()
             hour_counts[flow.start_time.hour] += 1
 
         total_flows = sum(hour_counts.values())
@@ -615,6 +634,7 @@ CONTEXT NEEDED:
         subdomain_counts: Dict[str, int] = defaultdict(int)
 
         for query in dns_queries:
+            checkpoint()
             domain = query.get("query", query.get("domain", ""))
             if not domain:
                 continue
@@ -666,6 +686,7 @@ RECOMMENDED ACTIONS:
 
         # Alert on domains with many unique subdomains (potential DGA or tunneling)
         for base_domain, count in subdomain_counts.items():
+            checkpoint()
             if count > 50:  # Many unique subdomains
                 self.findings.append(AnomalyFinding(
                     category="dns",
@@ -706,6 +727,7 @@ RECOMMENDED ACTIONS:
         query_times: Dict[Tuple[str, str], List[float]] = defaultdict(list)
 
         for query in dns_queries:
+            checkpoint()
             domain = query.get("query", query.get("domain", ""))
             src_ip = query.get("src_ip", query.get("client", "unknown"))
             timestamp = query.get("timestamp", query.get("ts"))
@@ -735,6 +757,7 @@ RECOMMENDED ACTIONS:
 
         # Analyze each (source, domain) pair for periodic patterns
         for (src_ip, domain), timestamps in query_times.items():
+            checkpoint()
             if len(timestamps) < 5:  # Need at least 5 queries to detect periodicity
                 continue
 
@@ -814,6 +837,7 @@ RECOMMENDED ACTIONS:
         standard_tls_ports = {443, 8443, 993, 995, 465, 636, 989, 990, 5061}
 
         for flow in flows:
+            checkpoint()
             app_proto = (flow.app_proto or "").lower()
 
             # TLS on non-standard port
@@ -832,6 +856,7 @@ RECOMMENDED ACTIONS:
 
         # Alert on TLS to non-standard ports
         for dst_ip, ports in tls_nonstandard_ports.items():
+            checkpoint()
             if len(ports) >= 3:  # Multiple TLS connections to unusual ports
                 unique_ports = sorted(set(ports))
                 self.findings.append(AnomalyFinding(
@@ -918,6 +943,7 @@ RECOMMENDED ACTIONS:
         sample_entropies = []
 
         for payload in payload_samples:
+            checkpoint()
             if len(payload) < 16:
                 continue
             entropy = self._calculate_entropy(payload)
@@ -996,6 +1022,7 @@ RECOMMENDED ACTIONS:
         length = len(data)
         entropy = 0.0
         for count in byte_counts.values():
+            checkpoint()
             if count > 0:
                 p = count / length
                 entropy -= p * math.log2(p)
@@ -1011,6 +1038,7 @@ RECOMMENDED ACTIONS:
         weighted_sum = 0.0
 
         for finding in self.findings:
+            checkpoint()
             weight = severity_weights.get(finding.severity, 0.3)
             weighted_sum += finding.confidence * weight
             total_weight += weight
@@ -1045,6 +1073,7 @@ RECOMMENDED ACTIONS:
 
         parts = [f"Detected {len(self.findings)} anomalies:"]
         for cat, count in categories.most_common():
+            checkpoint()
             parts.append(f"  - {cat}: {count}")
 
         if severities.get("high", 0) + severities.get("critical", 0) > 0:

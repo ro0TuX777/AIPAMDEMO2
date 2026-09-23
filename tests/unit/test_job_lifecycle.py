@@ -68,13 +68,14 @@ def test_cancel_transitions_an_active_job_to_canceled(lifecycle, status):
         job = seed_job(db, status=status)
         db.commit()
         cancel_job(job, db)
-        assert job.status == "canceled"
-        assert job.completed_at.endswith("Z")
+        expected = "canceled" if status == "queued" else "canceling"
+        assert job.status == expected
+        assert bool(job.completed_at) == (status == "queued")
     with Session(engine) as db:
-        assert db.get(Job, "job").status == "canceled"
+        assert db.get(Job, "job").status == expected
 
 
-@pytest.mark.parametrize("status", ["completed", "completed_with_errors", "failed", "canceled", "deleted"])
+@pytest.mark.parametrize("status", ["completed", "completed_with_errors", "failed", "deleted"])
 def test_cancel_rejects_non_active_jobs(lifecycle, status):
     engine, _ = lifecycle
     with Session(engine) as db:
@@ -134,7 +135,7 @@ def test_reanalysis_queues_and_dispatches_only_the_requested_label(lifecycle, st
         ])
         db.commit()
 
-        def dispatch(job_id, label):
+        def dispatch(session, job_id, label):
             with Session(engine) as observer:
                 assert observer.get(Job, job_id).status == "queued"
             dispatched.append((job_id, label))
@@ -177,9 +178,8 @@ def test_reanalysis_does_not_write_terminal_state_if_dispatch_callback_fails(lif
         job = seed_job(db, status="completed")
         db.add(JobPcap(job_id=job.job_id, upload_id="after", label="after", filename="after.pcap", ordinal=0))
         db.commit()
-        with pytest.raises(JobLifecycleError) as exc:
+        with pytest.raises(RuntimeError):
             reanalyze_job(job, db, "after", lambda *_: (_ for _ in ()).throw(RuntimeError("Queue unavailable")))
-        assert (exc.value.status_code, exc.value.detail) == (500, "Failed to dispatch re-analysis task")
     with Session(engine) as db:
         failed = db.get(Job, "job")
         assert failed.status == "queued"
@@ -210,7 +210,8 @@ def test_routes_preserve_lifecycle_statuses_headers_and_phase_dispatch(app_clien
     ))
     db.commit()
     dispatched = []
-    monkeypatch.setattr(jobs, "dispatch_job_phase", lambda job_id, label: dispatched.append((job_id, label)))
+    monkeypatch.setattr(jobs, "dispatch_job_phase", lambda session, job_id, label: dispatched.append((job_id, label)))
+    monkeypatch.setattr(jobs, "_dispatch_job", lambda session, job_id: None)
     headers = {"Authorization": "Bearer test-token-v2", "X-Request-Id": "lifecycle-request"}
 
     canceled = client.post("/api/v1/jobs/completed/cancel", headers=headers)

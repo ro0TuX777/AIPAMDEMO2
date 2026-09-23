@@ -144,6 +144,7 @@ def mark_dispatched(db: Session, job_id: str, task_id: str) -> bool:
             Job.job_id == job_id,
             Job.celery_task_id == task_id,
             Job.dispatched_at.is_(None),
+            Job.status.in_(("queued", "running")),
         )
         .values(dispatched_at=_now()),
     )
@@ -159,6 +160,7 @@ def mark_dispatch_failed(
             Job.job_id == job_id,
             Job.celery_task_id == task_id,
             Job.status == "queued",
+            Job.dispatched_at.is_(None),
         )
         .values(
             status="failed",
@@ -408,11 +410,12 @@ def finalize_owned_job(
 
 
 def reconcile_stale_jobs(
-    db: Session, *, stale_seconds: int, undispatched_grace_seconds: int
+    db: Session, *, stale_seconds: int, undispatched_grace_seconds: int, emit=None
 ) -> ReconcileStats:
     if stale_seconds <= 0 or undispatched_grace_seconds <= 0:
         raise ValueError("Reconciliation thresholds must be positive")
     counts = []
+    terminal_rows = []
     for status, outcome, cutoff, age, error in (
         (
             "running",
@@ -442,6 +445,9 @@ def reconcile_stale_jobs(
         ]
         if status == "queued":
             conditions.append(Job.dispatched_at.is_(None))
+        if status == "canceling":
+            # The supervisor must prove any recorded writer has stopped.
+            conditions.extend((Job.executor_pid.is_(None), Job.error_summary.is_(None)))
         result = db.execute(
             update(Job)
             .where(*conditions)
@@ -452,9 +458,15 @@ def reconcile_stale_jobs(
                 accepted_run_manifest_json=None,
                 **_clear_executor(),
             )
+            .returning(Job.job_id, Job.status)
             .execution_options(synchronize_session=False)
         )
-        counts.append(result.rowcount)
+        rows = result.all()
+        counts.append(len(rows))
+        terminal_rows.extend(rows)
     db.commit()
     db.expire_all()
+    if emit is not None:
+        for job_id, status in terminal_rows:
+            emit(job_id, status)
     return ReconcileStats(*counts)

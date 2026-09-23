@@ -7,6 +7,7 @@ while the LLM analysis is still running.
 
 from __future__ import annotations
 
+from contextlib import nullcontext
 import logging
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
@@ -19,9 +20,9 @@ from .db_models import PartialJobResultDB
 logger = logging.getLogger(__name__)
 
 
-def save_partial_result(job_id: str, data: Dict[str, Any]) -> None:
+def save_partial_result(job_id: str, data: Dict[str, Any], *, db=None) -> None:
     """Upsert a partial result row for the given job."""
-    with Session(engine) as session:
+    with (nullcontext(db) if db is not None else Session(engine)) as session:
         existing = session.get(PartialJobResultDB, job_id)
         now = datetime.now(timezone.utc)
         if existing:
@@ -37,18 +38,18 @@ def save_partial_result(job_id: str, data: Dict[str, Any]) -> None:
     logger.info(f"Saved partial result for job {job_id}")
 
 
-def get_partial_result(job_id: str) -> Optional[Dict[str, Any]]:
+def get_partial_result(job_id: str, *, db=None) -> Optional[Dict[str, Any]]:
     """Return the partial result dict for a job, or None if not available."""
-    with Session(engine) as session:
+    with (nullcontext(db) if db is not None else Session(engine)) as session:
         row = session.get(PartialJobResultDB, job_id)
         if row:
             return row.result
     return None
 
 
-def delete_partial_result(job_id: str) -> None:
+def delete_partial_result(job_id: str, *, db=None) -> None:
     """Remove the partial result once the full result is available."""
-    with Session(engine) as session:
+    with (nullcontext(db) if db is not None else Session(engine)) as session:
         row = session.get(PartialJobResultDB, job_id)
         if row:
             session.delete(row)

@@ -57,11 +57,11 @@ def _get_redis():
     try:
         import redis as _redis_mod
         url = os.getenv("AIPAM_REDIS_URL", "redis://redis:6379/0")
-        _redis_client = _redis_mod.Redis.from_url(url, decode_responses=True)
+        _redis_client = _redis_mod.Redis.from_url(url, decode_responses=True, socket_connect_timeout=.5, socket_timeout=.5, retry_on_timeout=False)
         _redis_client.ping()
-        logger.info("Event bus connected to Redis at %s", url)
+        logger.info("Event bus connected")
     except Exception as exc:
-        logger.warning("Event bus: Redis unavailable (%s) — events disabled", exc)
+        logger.warning("Event bus unavailable; events disabled")
         _redis_client = None
     return _redis_client
 
@@ -94,7 +94,7 @@ def publish_job_event(
     try:
         r.publish(_channel(job_id), json.dumps(envelope))
     except Exception as exc:
-        logger.debug("Event publish failed for job %s: %s", job_id, exc)
+        logger.debug("Event publish failed for job %s", job_id)
 
 
 # ---------------------------------------------------------------------------
@@ -114,6 +114,6 @@ def subscribe_job_events(job_id: str):
         ps.subscribe(_channel(job_id))
         return ps
     except Exception as exc:
-        logger.debug("Event subscribe failed for job %s: %s", job_id, exc)
+        logger.debug("Event subscribe failed for job %s", job_id)
         return None
 

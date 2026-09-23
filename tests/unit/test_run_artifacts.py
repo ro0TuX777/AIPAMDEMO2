@@ -234,7 +234,7 @@ def test_active_jobs_reject_api_artifact_writes(isolated_job, endpoint):
     assert client.post(f"/api/v1/jobs/{job.job_id}/{endpoint}", content=b"binary", headers=AUTH).status_code == 409
 
 
-def test_active_pipeline_sensor_receives_separate_input_and_output(tmp_path):
+def test_active_pipeline_sensor_receives_separate_input_and_output(tmp_path, monkeypatch):
     from backend.app.pipeline.sensor_runner import run_sensor
     from backend.app.sensors.registry import SensorDef
     input_root, output = tmp_path / "job", tmp_path / "run"
@@ -246,6 +246,8 @@ def test_active_pipeline_sensor_receives_separate_input_and_output(tmp_path):
         (sensor_output_dir / "sensor.results.jsonl").write_text(text)
         assert run_output_dir == output
 
+    from backend.app.pipeline import sensor_process
+    monkeypatch.setattr(sensor_process, "run_handler_process", lambda *a, **kw: handler(**kw))
     sensor = SensorDef(name="test", type="sensor", handler=handler)
     result = run_sensor(sensor, input_root=input_root, run_output_dir=output, job_id=token(), execution_profile="standard")
     assert result.status == "completed"

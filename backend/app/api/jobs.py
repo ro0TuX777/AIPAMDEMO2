@@ -130,7 +130,7 @@ async def create_job(
     except job_creation.JobCreationError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
-    _dispatch_job(result.job_id)
+    _dispatch_job(db, result.job_id)
     return result
 
 
@@ -152,7 +152,7 @@ async def create_job_from_arkime(
     except job_creation.JobCreationError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
-    _dispatch_job(result.job_id)
+    _dispatch_job(db, result.job_id)
     return result
 
 
@@ -174,7 +174,7 @@ async def create_job_from_security_onion(
     except job_creation.JobCreationError as exc:
         raise HTTPException(status_code=exc.status_code, detail=exc.detail) from exc
 
-    _dispatch_job(result.job_id)
+    _dispatch_job(db, result.job_id)
     return result
 
 
@@ -366,8 +366,8 @@ async def delete_job(
     job = _require_job(db, job_id)
     response.headers["X-Request-Id"] = request_id
 
-    if job.status in ("running",):
-        raise HTTPException(status_code=409, detail="Cannot delete a running job; cancel it first")
+    if job.status in ("running", "canceling"):
+        raise HTTPException(status_code=409, detail="Cannot delete an active job; wait for cancellation to finish")
 
     job.status = "deleted"
     db.commit()
@@ -412,7 +412,7 @@ async def rerun_job(
     result = job_lifecycle.rerun_job(old, db, settings)
 
     # Dispatch the pipeline to the Celery worker
-    _dispatch_job(result.job_id)
+    _dispatch_job(db, result.job_id)
 
     return result
 
@@ -537,18 +537,17 @@ async def batch_jobs(
             continue
 
         if body.action == "cancel":
-            if job.status in ("queued", "running"):
-                job.status = "canceled"
-                job.completed_at = _now_iso()
+            try:
+                job_lifecycle.cancel_job(job, db)
                 accepted.append(jid)
-            else:
-                rejected.append(RejectedJob(job_id=jid, reason=f"Cannot cancel: status={job.status}"))
+            except job_lifecycle.JobLifecycleError as exc:
+                rejected.append(RejectedJob(job_id=jid, reason=exc.detail))
         elif body.action == "delete":
-            if job.status != "running":
+            if job.status not in ("running", "canceling"):
                 job.status = "deleted"
                 accepted.append(jid)
             else:
-                rejected.append(RejectedJob(job_id=jid, reason="Cannot delete running job"))
+                rejected.append(RejectedJob(job_id=jid, reason="Cannot delete active job"))
         elif body.action == "export_iocs":
             accepted.append(jid)
             iocs = db.execute(select(Ioc).where(Ioc.job_id == jid)).scalars().all()

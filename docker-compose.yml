@@ -140,6 +140,33 @@ services:
       retries: 3
       start_period: 30s
 
+  runtime-supervisor:
+    image: aipam-app:latest
+    command: ["python", "-m", "backend.app.runtime_supervisor"]
+    env_file: .env
+    environment:
+      AIPAM_DB_PATH: /data/aipam.db
+      AIPAM_JOB_ROOT: /jobs
+      AIPAM_REDIS_URL: redis://redis:6379/0
+    volumes:
+      - aipam-data:/data
+      - aipam-jobs:/jobs
+      - /var/run/docker.sock:/var/run/docker.sock
+    # Same restricted host/root boundary as the worker for exact container cleanup.
+    user: "0:0"
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - aipam-net
+    healthcheck:
+      test: ["CMD", "python", "-m", "backend.app.runtime_supervisor", "--health"]
+      interval: 15s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
+
   # ============================================
   # Frontend (Vite build served by nginx)
   # ============================================

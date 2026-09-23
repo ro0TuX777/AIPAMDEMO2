@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from backend.app.pipeline.runtime_control import checkpoint
+
 import logging
 import shutil
 from pathlib import Path
@@ -17,6 +19,7 @@ _RUNTIME_BUNDLE_NAME = "aipam-ui.rules"
 
 def _find_installed_suricata_rules() -> Path | None:
     for candidate in INSTALLED_SURICATA_RULES_CANDIDATES:
+        checkpoint()
         if candidate.is_file():
             return candidate
     return None
@@ -52,6 +55,7 @@ def build_runtime_suricata_bundle(rules_dir: Path) -> Path | None:
 
     with bundle_path.open("w", encoding="utf-8") as bundle:
         for index, rule_file in enumerate(rule_files):
+            checkpoint()
             if index:
                 bundle.write("\n")
             bundle.write(f"# Source: {rule_file.name}\n")

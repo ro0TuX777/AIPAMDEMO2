@@ -14,6 +14,9 @@ Execution order (mandatory):
 
 from __future__ import annotations
 
+from backend.app.pipeline.runtime_control import checkpoint
+from backend.app.pipeline.outcomes import PROPAGATE_ERRORS
+
 import json
 import logging
 from datetime import datetime, timezone
@@ -54,8 +57,11 @@ logger = logging.getLogger("aipam.orchestrator")
 
 def _emit(job_id: str, event_type: str, **payload: Any) -> None:
     """Fire-and-forget event publish (never fails the pipeline)."""
+    checkpoint()
     try:
         publish_job_event(job_id, event_type, {"job_id": job_id, **payload})
+    except PROPAGATE_ERRORS:
+        raise
     except Exception:
         pass
 
@@ -66,6 +72,7 @@ def _publish_partial_result(
     data: dict[str, Any],
     completed_stages: list[str],
     current_stage: str | None = None,
+    db=None,
 ) -> None:
     """Persist partial results and emit SSE event (fire-and-forget).
 
@@ -84,7 +91,7 @@ def _publish_partial_result(
 
         # Read existing partial to accumulate across stages
         from backend.app.partial_results import get_partial_result
-        existing = get_partial_result(job_id)
+        existing = get_partial_result(job_id, db=db)
         if existing and "partial_data" in existing:
             merged = existing["partial_data"]
             merged.update(data)
@@ -92,11 +99,13 @@ def _publish_partial_result(
 
         partial_payload["completed_stages"] = completed_stages
         partial_payload["current_stage"] = current_stage
-        save_partial_result(job_id, partial_payload)
+        save_partial_result(job_id, partial_payload, db=db)
 
         # Emit SSE event so frontend updates immediately
         _emit(job_id, "partial_result", stage=stage, partial_data=data,
               completed_stages=completed_stages, current_stage=current_stage)
+    except PROPAGATE_ERRORS:
+        raise
     except Exception as exc:
         logger.debug("Failed to publish partial result for job %s stage %s: %s",
                       job_id, stage, public_failure(exc))
@@ -111,6 +120,7 @@ def _finish_outcome(
     metrics: dict[str, Any] | None = None, pcap_label: str | None = None,
 ) -> PipelineOutcome:
     """Build the candidate manifest; only the worker may accept it."""
+    checkpoint()
     required = list(required)
     manifest = "[]"
     try:
@@ -119,6 +129,8 @@ def _finish_outcome(
                                                run_output_dir.name, pcap_label)
         elif job.artifact_layout_version != 1:
             raise ValueError("Layout 2 requires an owned run directory")
+    except PROPAGATE_ERRORS:
+        raise
     except Exception as exc:
         required.append(stage_failure("manifest", exc))
     return derive_outcome(required=required, optional=optional, metrics=metrics,
@@ -151,6 +163,8 @@ def _run_binary_pipeline(
         _emit(job_id, "stage.status", stage="binary", status="completed")
         optional = [] if analysis.yara_available else [StageFailure("yara", "YARA unavailable")]
         return _finish_outcome(job, run_output_dir, metrics=metrics, optional=optional)
+    except PROPAGATE_ERRORS:
+        raise
     except Exception as exc:
         return _finish_outcome(job, run_output_dir, required=[stage_failure("binary", exc)])
 
@@ -183,6 +197,8 @@ def _run_code_artifact_pipeline(
         if dacv.get("partial") and not optional:
             optional.append(StageFailure("bluescrub", "Partial scanner coverage"))
         return _finish_outcome(job, run_output_dir, metrics=metrics, optional=optional)
+    except PROPAGATE_ERRORS:
+        raise
     except Exception as exc:
         return _finish_outcome(job, run_output_dir, required=[stage_failure("bluescrub", exc)])
 
@@ -238,6 +254,7 @@ def _write_job_metrics(
         # Gather stage runtimes from sensor.meta.json files
         stage_runtimes: dict[str, float] = {}
         for stage_def in stages:
+            checkpoint()
             meta_path = job_dir / "sensors" / stage_def.name / "sensor.meta.json"
             if meta_path.exists():
                 meta = json.loads(meta_path.read_text())
@@ -246,6 +263,7 @@ def _write_job_metrics(
         # Gather sensor runtimes from results
         sensor_runtimes: dict[str, float] = {}
         for r in sensor_results:
+            checkpoint()
             if r.duration_ms is not None:
                 sensor_runtimes[r.sensor] = r.duration_ms / 1000.0
 
@@ -259,6 +277,7 @@ def _write_job_metrics(
         ft_results = job_dir / "sensors" / "file_triage" / "sensor.results.jsonl"
         if ft_results.exists():
             for line in ft_results.read_text().splitlines():
+                checkpoint()
                 if line.strip():
                     try:
                         rec = json.loads(line)
@@ -290,6 +309,8 @@ def _write_job_metrics(
         metrics_path = metrics_dir / "job_metrics.json"
         metrics_path.write_text(json.dumps(metrics_data, indent=2), encoding="utf-8")
         logger.info("Wrote job_metrics.json for job %s", job.job_id)
+    except PROPAGATE_ERRORS:
+        raise
     except Exception as exc:
         logger.warning("Failed to write job_metrics.json: %s", public_failure(exc))
 
@@ -303,6 +324,7 @@ def _write_extraction_manifest(job_dir: Path) -> None:
 
         entries: list[dict] = []
         for line in ft_results.read_text().splitlines():
+            checkpoint()
             if not line.strip():
                 continue
             try:
@@ -339,6 +361,8 @@ def _write_extraction_manifest(job_dir: Path) -> None:
         manifest_path = manifest_dir / "manifest.json"
         manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")
         logger.info("Wrote extracted_files/manifest.json with %d entries", len(entries))
+    except PROPAGATE_ERRORS:
+        raise
     except Exception as exc:
         logger.warning("Failed to write extraction manifest: %s", public_failure(exc))
 
@@ -356,6 +380,7 @@ def run_pipeline(
     pcap_label: str | None = None,
     input_root: Path | None = None,
     run_output_dir: Path | None = None,
+    control=None,
 ) -> PipelineOutcome:
     """Execute the full analysis pipeline for a job.
 
@@ -373,6 +398,7 @@ def run_pipeline(
     Returns:
         One outcome for the worker to finalize under durable ownership.
     """
+    checkpoint()
     job: Job | None = db.get(Job, job_id)
     if job is None:
         raise ValueError(f"Job {job_id} not found")
@@ -432,6 +458,7 @@ def run_pipeline(
             if pcap_records:
                 # Multi-PCAP path: link each PCAP with its label
                 for rec in pcap_records:
+                    checkpoint()
                     upload_dir = upload_root / rec.upload_id
                     found = list(upload_dir.glob("*.pcap")) + list(upload_dir.glob("*.pcapng"))
                     if not found:
@@ -486,257 +513,244 @@ def run_pipeline(
                         execution_profile=profile,
                     )
 
+    except PROPAGATE_ERRORS:
+        raise
     except Exception as exc:
         logger.error("Pipeline setup failed for job %s: %s", job_id, public_failure(exc))
         return _finish_outcome(job, run_output_dir, required=[stage_failure("input", exc)], pcap_label=pcap_label)
 
     # --- Re-analysis isolation (PCAP only) ---
-    _hidden_pcaps: list[tuple[Path, Path]] = []
     stages: list[Any] = []
     sensors: list[Any] = []
     sensor_results: list[SensorResult] = []
+    sensor_input_root = input_root
+    if has_pcaps and pcap_label:
+        # Forced cancellation cannot run a restore-finally. Keep stable evidence
+        # untouched and stage the selected phase inside this private run.
+        # The existing stem predicate is intentionally unchanged in this task.
+        import os
+        import shutil
+        from backend.app.pipeline.job_dir import load_pcap_labels, PCAP_LABEL_MANIFEST
+        sensor_input_root = run_output_dir / "phase_input"
+        selected = sensor_input_root / "input"
+        selected.mkdir(parents=True, exist_ok=True)
+        safe_label = "".join(c if c.isalnum() or c in "-_" else "_" for c in pcap_label)
+        labels = load_pcap_labels(input_root)
+        selected_labels = {}
+        for path in sorted((input_root / "input").iterdir()):
+            checkpoint()
+            if path.is_symlink() or path.suffix.lower() not in (".pcap", ".pcapng") or path.stem != safe_label:
+                continue
+            destination = selected / path.name
+            try:
+                os.link(path, destination)
+            except OSError:
+                shutil.copy2(path, destination)
+            if path.name in labels:
+                selected_labels[path.name] = labels[path.name]
+        (selected / PCAP_LABEL_MANIFEST).write_text(json.dumps(selected_labels), encoding="utf-8")
 
-    def _restore_hidden_pcaps() -> None:
-        """Un-hide PCAPs hidden for single-phase re-analysis isolation.
+    # --- Step 2-3: Run stages (Zeek, Suricata) — PCAP only ---
+    stages = get_stages_for_profile(profile) if has_pcaps else []
+    sensors = get_sensors_for_profile(profile) if has_pcaps else []
+    # +6 for telemetry + correlate + index + theories + slices + annotations
+    total_steps = len(stages) + len(sensors) + 6
+    step_num = 0
+    failed_stages: set[str] = set()
+    for stage_def in stages:
+        checkpoint()
+        step_num += 1
+        logger.info("Running stage %s for job %s", stage_def.name, job_id)
+        _emit(job_id, "stage.status", stage=stage_def.name, status="running",
+              step=step_num, total_steps=total_steps)
+        create_sensor_output_dir(run_output_dir, stage_def.name)
 
-        Idempotent (pops as it restores) so it is safe to call from the
-        ``finally`` below whether the pipeline finished normally, returned
-        early on a stage failure, or raised. Without this a mid-pipeline
-        failure would leave evidence PCAPs renamed to ``*.hidden`` on disk
-        permanently.
-        """
-        while _hidden_pcaps:
-            hidden, original = _hidden_pcaps.pop()
-            if hidden.exists():
-                try:
-                    hidden.rename(original)
-                    logger.info("Restored hidden PCAP %s", original.name)
-                except OSError as exc:
-                    logger.warning(
-                        "Failed to restore hidden PCAP %s: %s", original.name, public_failure(exc)
-                    )
+        # Stages are run as Docker containers just like sensors
+        result = run_sensor(
+            sensor_def=stage_def,
+            input_root=sensor_input_root,
+            run_output_dir=run_output_dir,
+            job_id=job_id,
+            execution_profile=profile,
+            docker_client=docker_client,
+            sensor_config_dir=sensor_config_dir,
+            control=control,
+        )
+        _record_sensor_result(db, job_id, result)
+        _emit(job_id, "stage.status", stage=stage_def.name, status=result.status,
+              step=step_num, total_steps=total_steps,
+              duration_ms=result.duration_ms)
 
-    if has_pcaps:
-        # When re-analysing a single phase:
-        #   1. Hide non-target PCAPs so sensors only process the target file
-        #   2. Clean old sensor output dirs so the correlator doesn't re-ingest
-        #      "before" data that's already persisted in the DB
-        if pcap_label:
-            import shutil as _shutil
+        if result.status in ("failed", "timeout") or (stage_def.required and result.status != "completed"):
+            # Not fatal. Zeek and Suricata are independent of each other, and
+            # neither is needed by the uploaded-log telemetry pipeline — so a
+            # Zeek timeout used to throw away perfectly good Suricata alerts,
+            # every uploaded log, and all downstream correlation. Record the
+            # failure, skip only what genuinely depended on this stage, and
+            # let the rest of the job produce what it still can.
+            failed_stages.add(stage_def.name)
+            (required_failures if stage_def.required else optional_failures).append(StageFailure(stage_def.name, result.error or result.status))
+            logger.error(
+                "Stage %s %s for job %s — continuing without it: %s",
+                stage_def.name, result.status, job_id, public_failure(result.error),
+            )
 
-            input_dir = input_root / "input"
-            safe_label = "".join(c if c.isalnum() or c in "-_" else "_" for c in pcap_label)
-            for p in sorted(input_dir.iterdir()):
-                if p.is_symlink():
-                    continue
-                if p.suffix.lower() in (".pcap", ".pcapng") and p.stem != safe_label:
-                    hidden = p.with_suffix(p.suffix + ".hidden")
-                    p.rename(hidden)
-                    _hidden_pcaps.append((hidden, p))
-                    logger.info("Hid non-target PCAP %s during re-analysis", p.name)
-
-            # Clean old sensor output directories so correlator only sees new data
-            sensors_dir = run_output_dir / "sensors"
-            if sensors_dir.exists():
-                for sd in sensors_dir.iterdir():
-                    if sd.is_dir():
-                        _shutil.rmtree(sd)
-                        logger.info("Cleaned old sensor output: %s", sd.name)
-
+    # --- Publish partial result: ingest/parse stage data ---
+    _completed_stages: list[str] = [s.name for s in stages]
+    _pcap_stats: dict[str, Any] = {}
     try:
-        # --- Step 2-3: Run stages (Zeek, Suricata) — PCAP only ---
-        stages = get_stages_for_profile(profile) if has_pcaps else []
-        sensors = get_sensors_for_profile(profile) if has_pcaps else []
-        # +6 for telemetry + correlate + index + theories + slices + annotations
-        total_steps = len(stages) + len(sensors) + 6
-        step_num = 0
-        failed_stages: set[str] = set()
-        for stage_def in stages:
-            step_num += 1
-            logger.info("Running stage %s for job %s", stage_def.name, job_id)
-            _emit(job_id, "stage.status", stage=stage_def.name, status="running",
-                  step=step_num, total_steps=total_steps)
-            create_sensor_output_dir(run_output_dir, stage_def.name)
-
-            # Stages are run as Docker containers just like sensors
-            result = run_sensor(
-                sensor_def=stage_def,
-                input_root=input_root,
-                run_output_dir=run_output_dir,
-                job_id=job_id,
-                execution_profile=profile,
-                docker_client=docker_client,
-                sensor_config_dir=sensor_config_dir,
-            )
-            _record_sensor_result(db, job_id, result)
-            _emit(job_id, "stage.status", stage=stage_def.name, status=result.status,
-                  step=step_num, total_steps=total_steps,
-                  duration_ms=result.duration_ms)
-
-            if result.status in ("failed", "timeout") or (stage_def.required and result.status != "completed"):
-                # Not fatal. Zeek and Suricata are independent of each other, and
-                # neither is needed by the uploaded-log telemetry pipeline — so a
-                # Zeek timeout used to throw away perfectly good Suricata alerts,
-                # every uploaded log, and all downstream correlation. Record the
-                # failure, skip only what genuinely depended on this stage, and
-                # let the rest of the job produce what it still can.
-                failed_stages.add(stage_def.name)
-                (required_failures if stage_def.required else optional_failures).append(StageFailure(stage_def.name, result.error or result.status))
-                logger.error(
-                    "Stage %s %s for job %s — continuing without it: %s",
-                    stage_def.name, result.status, job_id, public_failure(result.error),
-                )
-
-        # --- Publish partial result: ingest/parse stage data ---
-        _completed_stages: list[str] = [s.name for s in stages]
-        _pcap_stats: dict[str, Any] = {}
-        try:
-            # Gather PCAP stats from input files
-            input_dir = input_root / "input"
-            pcap_files_on_disk = list(input_dir.glob("*.pcap")) + list(input_dir.glob("*.pcapng"))
-            _pcap_stats = {
-                "file_count": len(pcap_files_on_disk),
-                "total_bytes": sum(f.stat().st_size for f in pcap_files_on_disk if f.exists()),
-            }
-            # Try to read Zeek conn.log for top hosts
-            _top_hosts: list[dict[str, Any]] = []
-            _protocol_dist: dict[str, int] = {}
-            conn_log = run_output_dir / "sensors" / "zeek" / "conn.log"
-            if conn_log.exists():
-                host_bytes: dict[str, int] = {}
-                for line in conn_log.read_text().splitlines():
-                    if line.startswith("#"):
-                        continue
-                    parts = line.split("\t")
-                    if len(parts) >= 10:
-                        src, dst = parts[2], parts[4]
-                        proto = parts[6] if len(parts) > 6 else "unknown"
-                        bsrc = int(parts[9]) if parts[9].isdigit() else 0
-                        host_bytes[src] = host_bytes.get(src, 0) + bsrc
-                        host_bytes[dst] = host_bytes.get(dst, 0) + bsrc
-                        _protocol_dist[proto] = _protocol_dist.get(proto, 0) + 1
-                _top_hosts = [
-                    {"ip": ip, "total_bytes": b}
-                    for ip, b in sorted(host_bytes.items(), key=lambda x: -x[1])[:10]
-                ]
-
-            # Try to read Suricata alert summary
-            _alert_summary: dict[str, Any] = {"total": 0, "by_severity": {}}
-            eve_json = run_output_dir / "sensors" / "suricata" / "eve.json"
-            if eve_json.exists():
-                sev_counts: dict[str, int] = {}
-                alert_total = 0
-                for line in eve_json.read_text().splitlines():
-                    if not line.strip():
-                        continue
-                    try:
-                        rec = json.loads(line)
-                        if rec.get("event_type") == "alert":
-                            alert_total += 1
-                            sev = str(rec.get("alert", {}).get("severity", "unknown"))
-                            sev_counts[sev] = sev_counts.get(sev, 0) + 1
-                            # Emit early_alert for high severity (1 = highest in Suricata)
-                            if sev in ("1", "2"):
-                                sig_name = rec.get("alert", {}).get("signature", "Unknown alert")
-                                _emit(job_id, "early_alert",
-                                      title=sig_name,
-                                      severity="critical" if sev == "1" else "high",
-                                      src_ip=rec.get("src_ip"),
-                                      dst_ip=rec.get("dest_ip"))
-                    except json.JSONDecodeError:
-                        pass
-                _alert_summary = {"total": alert_total, "by_severity": sev_counts}
-
-            _publish_partial_result(
-                job_id, "parse",
-                {
-                    "pcap_stats": _pcap_stats,
-                    "top_hosts": _top_hosts,
-                    "protocol_distribution": _protocol_dist,
-                    "alert_summary": _alert_summary,
-                },
-                completed_stages=_completed_stages,
-                current_stage="sensors",
-            )
-        except Exception as exc:
-            logger.debug("Failed to publish parse partial result: %s", public_failure(exc))
-
-        # --- Step 4: File extraction manifest ---
-        # The actual extraction happens in file_triage sensor (Step 5).
-        # We write the manifest after sensors complete (see below).
-
-        # --- Step 5: Run sensors in deterministic order (PCAP only) ---
-        for sensor_def in sensors:
-            # Check skip conditions — resolve required inputs to sensor output dirs
-            if sensor_def.skip_if_missing_inputs:
-                missing = False
-                reason = "Required inputs missing"
-                # A stage that failed still has an output directory — it is
-                # created before the stage runs — so directory existence alone
-                # would let dependents run against empty or partial input.
-                broken = sorted(set(sensor_def.inputs_required) & failed_stages)
-                if broken:
-                    missing = True
-                    reason = f"Upstream stage(s) did not complete: {', '.join(broken)}"
-                for req in sensor_def.inputs_required:
-                    # Requirements refer to a previously-run sensor whose output lives
-                    # under  run_output_dir / "sensors" / <req>  (e.g. "zeek", "suricata").
-                    req_dir = run_output_dir / "sensors" / req
-                    if not req_dir.exists():
-                        missing = True
-                        break
-                if missing:
-                    logger.info(
-                        "Skipping sensor %s for job %s: %s",
-                        sensor_def.name, job_id, reason,
-                    )
-                    skip_result = SensorResult(
-                        sensor=sensor_def.name, status="skipped",
-                        error=reason,
-                        started_at=_now_iso(),
-                    )
-                    _record_sensor_result(db, job_id, skip_result)
-                    sensor_results.append(skip_result)
-                    if sensor_def.required:
-                        required_failures.append(StageFailure(sensor_def.name, reason))
+        # Gather PCAP stats from input files
+        input_dir = input_root / "input"
+        pcap_files_on_disk = list(input_dir.glob("*.pcap")) + list(input_dir.glob("*.pcapng"))
+        _pcap_stats = {
+            "file_count": len(pcap_files_on_disk),
+            "total_bytes": sum(f.stat().st_size for f in pcap_files_on_disk if f.exists()),
+        }
+        # Try to read Zeek conn.log for top hosts
+        _top_hosts: list[dict[str, Any]] = []
+        _protocol_dist: dict[str, int] = {}
+        conn_log = run_output_dir / "sensors" / "zeek" / "conn.log"
+        if conn_log.exists():
+            host_bytes: dict[str, int] = {}
+            for line in conn_log.read_text().splitlines():
+                checkpoint()
+                if line.startswith("#"):
                     continue
+                parts = line.split("\t")
+                if len(parts) >= 10:
+                    src, dst = parts[2], parts[4]
+                    proto = parts[6] if len(parts) > 6 else "unknown"
+                    bsrc = int(parts[9]) if parts[9].isdigit() else 0
+                    host_bytes[src] = host_bytes.get(src, 0) + bsrc
+                    host_bytes[dst] = host_bytes.get(dst, 0) + bsrc
+                    _protocol_dist[proto] = _protocol_dist.get(proto, 0) + 1
+            _top_hosts = [
+                {"ip": ip, "total_bytes": b}
+                for ip, b in sorted(host_bytes.items(), key=lambda x: -x[1])[:10]
+            ]
 
-            step_num += 1
-            logger.info("Running sensor %s for job %s", sensor_def.name, job_id)
-            _emit(job_id, "sensor.status", sensor=sensor_def.name, status="running",
-                  step=step_num, total_steps=total_steps)
-            create_sensor_output_dir(run_output_dir, sensor_def.name)
+        # Try to read Suricata alert summary
+        _alert_summary: dict[str, Any] = {"total": 0, "by_severity": {}}
+        eve_json = run_output_dir / "sensors" / "suricata" / "eve.json"
+        if eve_json.exists():
+            sev_counts: dict[str, int] = {}
+            alert_total = 0
+            for line in eve_json.read_text().splitlines():
+                checkpoint()
+                if not line.strip():
+                    continue
+                try:
+                    rec = json.loads(line)
+                    if rec.get("event_type") == "alert":
+                        alert_total += 1
+                        sev = str(rec.get("alert", {}).get("severity", "unknown"))
+                        sev_counts[sev] = sev_counts.get(sev, 0) + 1
+                        # Emit early_alert for high severity (1 = highest in Suricata)
+                        if sev in ("1", "2"):
+                            sig_name = rec.get("alert", {}).get("signature", "Unknown alert")
+                            _emit(job_id, "early_alert",
+                                  title=sig_name,
+                                  severity="critical" if sev == "1" else "high",
+                                  src_ip=rec.get("src_ip"),
+                                  dst_ip=rec.get("dest_ip"))
+                except json.JSONDecodeError:
+                    pass
+            _alert_summary = {"total": alert_total, "by_severity": sev_counts}
 
-            result = run_sensor(
-                sensor_def=sensor_def,
-                input_root=input_root,
-                run_output_dir=run_output_dir,
-                job_id=job_id,
-                execution_profile=profile,
-                docker_client=docker_client,
-                sensor_config_dir=sensor_config_dir,
-            )
-            _record_sensor_result(db, job_id, result)
-            sensor_results.append(result)
-            _emit(job_id, "sensor.status", sensor=sensor_def.name, status=result.status,
-                  step=step_num, total_steps=total_steps,
-                  duration_ms=result.duration_ms)
+        _publish_partial_result(
+            job_id, "parse",
+            {
+                "pcap_stats": _pcap_stats,
+                "top_hosts": _top_hosts,
+                "protocol_distribution": _protocol_dist,
+                "alert_summary": _alert_summary,
+            },
+            completed_stages=_completed_stages,
+            current_stage="sensors",
+            db=db,
+        )
+    except PROPAGATE_ERRORS:
+        raise
+    except Exception as exc:
+        logger.debug("Failed to publish parse partial result: %s", public_failure(exc))
 
-            if result.status in ("failed", "timeout") or (sensor_def.required and result.status != "completed"):
-                (required_failures if sensor_def.required else optional_failures).append(StageFailure(sensor_def.name, result.error or result.status))
-                logger.warning(
-                    "Sensor %s %s for job %s: %s",
-                    sensor_def.name, result.status, job_id, public_failure(result.error),
+    # --- Step 4: File extraction manifest ---
+    # The actual extraction happens in file_triage sensor (Step 5).
+    # We write the manifest after sensors complete (see below).
+
+    # --- Step 5: Run sensors in deterministic order (PCAP only) ---
+    for sensor_def in sensors:
+        # Check skip conditions — resolve required inputs to sensor output dirs
+        checkpoint()
+        if sensor_def.skip_if_missing_inputs:
+            missing = False
+            reason = "Required inputs missing"
+            # A stage that failed still has an output directory — it is
+            # created before the stage runs — so directory existence alone
+            # would let dependents run against empty or partial input.
+            broken = sorted(set(sensor_def.inputs_required) & failed_stages)
+            if broken:
+                missing = True
+                reason = f"Upstream stage(s) did not complete: {', '.join(broken)}"
+            for req in sensor_def.inputs_required:
+                # Requirements refer to a previously-run sensor whose output lives
+                # under  run_output_dir / "sensors" / <req>  (e.g. "zeek", "suricata").
+                checkpoint()
+                req_dir = run_output_dir / "sensors" / req
+                if not req_dir.exists():
+                    missing = True
+                    break
+            if missing:
+                logger.info(
+                    "Skipping sensor %s for job %s: %s",
+                    sensor_def.name, job_id, reason,
                 )
+                skip_result = SensorResult(
+                    sensor=sensor_def.name, status="skipped",
+                    error=reason,
+                    started_at=_now_iso(),
+                )
+                _record_sensor_result(db, job_id, skip_result)
+                sensor_results.append(skip_result)
+                if sensor_def.required:
+                    required_failures.append(StageFailure(sensor_def.name, reason))
+                continue
 
-            # Check job disk quota
-            if check_job_quota(input_root, max_job_disk_bytes):
-                logger.warning("Job %s exceeded disk quota", job_id)
-                required_failures.append(StageFailure("quota", "quota_exceeded"))
-                break
+        step_num += 1
+        logger.info("Running sensor %s for job %s", sensor_def.name, job_id)
+        _emit(job_id, "sensor.status", sensor=sensor_def.name, status="running",
+              step=step_num, total_steps=total_steps)
+        create_sensor_output_dir(run_output_dir, sensor_def.name)
 
-    finally:
-        _restore_hidden_pcaps()
+        result = run_sensor(
+            sensor_def=sensor_def,
+            input_root=sensor_input_root,
+            run_output_dir=run_output_dir,
+            job_id=job_id,
+            execution_profile=profile,
+            docker_client=docker_client,
+            sensor_config_dir=sensor_config_dir,
+            control=control,
+        )
+        _record_sensor_result(db, job_id, result)
+        sensor_results.append(result)
+        _emit(job_id, "sensor.status", sensor=sensor_def.name, status=result.status,
+              step=step_num, total_steps=total_steps,
+              duration_ms=result.duration_ms)
+
+        if result.status in ("failed", "timeout") or (sensor_def.required and result.status != "completed"):
+            (required_failures if sensor_def.required else optional_failures).append(StageFailure(sensor_def.name, result.error or result.status))
+            logger.warning(
+                "Sensor %s %s for job %s: %s",
+                sensor_def.name, result.status, job_id, public_failure(result.error),
+            )
+
+        # Check job disk quota
+        if check_job_quota(input_root, max_job_disk_bytes):
+            logger.warning("Job %s exceeded disk quota", job_id)
+            required_failures.append(StageFailure("quota", "quota_exceeded"))
+            break
+
 
     # --- Write extraction manifest (§3.3) ---
     _write_extraction_manifest(run_output_dir)
@@ -759,7 +773,10 @@ def run_pipeline(
             {"sensor_summary": sensor_summary},
             completed_stages=_completed_stages,
             current_stage="correlate",
+            db=db,
         )
+    except PROPAGATE_ERRORS:
+        raise
     except Exception as exc:
         logger.debug("Failed to publish sensor partial result: %s", public_failure(exc))
 
@@ -802,6 +819,8 @@ def run_pipeline(
                   step=step_num, total_steps=total_steps,
                   message=f"files={parsed} events={events} corroborated={corroborated}")
             _completed_stages.append("telemetry")
+        except PROPAGATE_ERRORS:
+            raise
         except Exception as exc:
             logger.error("Telemetry pipeline failed for job %s: %s", job_id, public_failure(exc))
             optional_failures.append(stage_failure("telemetry", exc))
@@ -822,6 +841,8 @@ def run_pipeline(
               step=step_num, total_steps=total_steps,
               message=f"findings={corr_counts.get('findings', 0)}")
 
+    except PROPAGATE_ERRORS:
+        raise
     except Exception as exc:
         logger.error("Correlation failed for job %s: %s", job_id, public_failure(exc))
         required_failures.append(stage_failure("correlate", exc))
@@ -831,6 +852,8 @@ def run_pipeline(
         try:
             from backend.app.normalize.post_process import update_global_host_stats
             update_global_host_stats(db, job_id)
+        except PROPAGATE_ERRORS:
+            raise
         except Exception as exc:
             optional_failures.append(stage_failure("host_stats", exc))
 
@@ -843,6 +866,8 @@ def run_pipeline(
             from backend.app.normalize.network_events import normalize_network_events
             n_events = normalize_network_events(job_id, run_output_dir, db)
             logger.info("Raw network events for job %s: %d", job_id, n_events)
+        except PROPAGATE_ERRORS:
+            raise
         except Exception as exc:
             optional_failures.append(stage_failure("network_events", exc))
             logger.warning("PCAP network-event normalization failed for job %s", job_id)
@@ -870,7 +895,10 @@ def run_pipeline(
             _corr_data,
             completed_stages=_completed_stages,
             current_stage="index",
+            db=db,
         )
+    except PROPAGATE_ERRORS:
+        raise
     except Exception as exc:
         logger.debug("Failed to publish correlate partial result: %s", public_failure(exc))
 
@@ -886,6 +914,8 @@ def run_pipeline(
             _emit(job_id, "stage.status", stage="temporal_correlate", status="completed",
                   step=step_num, total_steps=total_steps,
                   message=f"matches={tc_result.get('matches', 0)} upgraded={tc_result.get('upgraded_events', 0)}")
+        except PROPAGATE_ERRORS:
+            raise
         except Exception as exc:
             optional_failures.append(stage_failure("temporal_correlate", exc))
             logger.error("Temporal correlation failed for job %s: %s", job_id, public_failure(exc))
@@ -925,6 +955,8 @@ def run_pipeline(
             _emit(job_id, "stage.status", stage="index", status="completed",
                   step=step_num, total_steps=total_steps)
 
+    except PROPAGATE_ERRORS:
+        raise
     except Exception as exc:
         optional_failures.append(stage_failure("index", exc))
         logger.warning("Auto-indexing failed for job %s (non-fatal): %s", job_id, public_failure(exc))
@@ -943,6 +975,8 @@ def run_pipeline(
         _emit(job_id, "stage.status", stage="theories", status="completed",
               step=step_num, total_steps=total_steps,
               message=f"theories={theory_counts.get('total', 0)}")
+    except PROPAGATE_ERRORS:
+        raise
     except Exception as exc:
         optional_failures.append(stage_failure("theories", exc))
         logger.warning("Theory generation failed for job %s (non-fatal): %s", job_id, public_failure(exc))
@@ -961,6 +995,8 @@ def run_pipeline(
         _emit(job_id, "stage.status", stage="slices", status="completed",
               step=step_num, total_steps=total_steps,
               message=f"slices={len(slices)}")
+    except PROPAGATE_ERRORS:
+        raise
     except Exception as exc:
         optional_failures.append(stage_failure("slices", exc))
         logger.warning("Slice generation failed for job %s (non-fatal): %s", job_id, public_failure(exc))
@@ -979,6 +1015,8 @@ def run_pipeline(
         _emit(job_id, "stage.status", stage="annotations", status="completed",
               step=step_num, total_steps=total_steps,
               message=f"annotations={len(anns)}")
+    except PROPAGATE_ERRORS:
+        raise
     except Exception as exc:
         optional_failures.append(stage_failure("annotations", exc))
         logger.warning("Annotation generation failed for job %s (non-fatal): %s", job_id, public_failure(exc))
@@ -1000,7 +1038,9 @@ def run_pipeline(
     # --- Clean up partial results (full results now available) ---
     try:
         from backend.app.partial_results import delete_partial_result
-        delete_partial_result(job_id)
+        delete_partial_result(job_id, db=db)
+    except PROPAGATE_ERRORS:
+        raise
     except Exception:
         pass
 

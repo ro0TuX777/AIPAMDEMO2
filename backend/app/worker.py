@@ -32,6 +32,8 @@ celery_app = Celery(
     backend=_redis_url,
 )
 
+_runtime_settings = get_settings()
+
 celery_app.conf.update(
     task_serializer="json",
     accept_content=["json"],
@@ -41,7 +43,12 @@ celery_app.conf.update(
     task_track_started=True,
     task_acks_late=True,
     worker_prefetch_multiplier=1,
-    worker_max_tasks_per_child=50,
+    worker_concurrency=1,
+    worker_max_tasks_per_child=1,
+    task_reject_on_worker_lost=True,
+    task_soft_time_limit=_runtime_settings.aipam_task_soft_time_limit,
+    task_time_limit=_runtime_settings.aipam_task_time_limit,
+    broker_transport_options={"visibility_timeout": _runtime_settings.aipam_visibility_timeout},
 )
 
 celery_app.conf.beat_schedule = {
@@ -85,12 +92,13 @@ def _cleanup_private_run(settings, handle, job) -> None:
 def _resolve_interrupted(factory, settings, handle, error=None) -> str:
     from backend.app.models.job import Job
     from backend.app.services.job_runtime import finalize_owned_job
+    from backend.app.pipeline.outcomes import OwnershipLost
     with factory() as db:
         job = db.get(Job, handle.job_id)
         owned = job is not None and (job.celery_task_id, job.run_token, job.execution_attempt) == (
             handle.task_id, handle.run_token, handle.execution_attempt)
         status = "superseded"
-        if owned and job.status in ("running", "canceling"):
+        if owned and (job.status == "canceling" or (job.status == "running" and not isinstance(error, OwnershipLost))):
             status = "canceled" if job.status == "canceling" else "failed"
             if finalize_owned_job(db, handle, status, error_summary=public_failure(error) if error else None):
                 _emit_complete(handle.job_id, status)
@@ -112,35 +120,47 @@ def _resolve_interrupted(factory, settings, handle, error=None) -> str:
         return status
 
 
-def execute_job(job_id: str, task_id: str, pcap_label: str | None = None) -> str:
+def execute_job(job_id: str, task_id: str, pcap_label: str | None = None, *, worker_node: str | None = None) -> str:
     """Own exactly one run; terminal persistence occurs only through Task 1 CAS."""
     import json
     import socket
     import uuid
     import docker
-    from backend.app.database_v2 import get_session_factory, init_v2_db
+    from backend.app.database_v2 import get_session_factory, get_fenced_session_factory, init_v2_db
     from backend.app.pipeline.orchestrator import run_pipeline
     from backend.app.pipeline.outcomes import PipelineCanceled, OwnershipLost
     from backend.app.pipeline.run_artifacts import create_run_output_dir
-    from backend.app.services.job_runtime import claim_job, finalize_owned_job
+    from backend.app.services.job_runtime import claim_job, finalize_owned_job, register_executor
+    from backend.app.pipeline.runtime_control import ExecutionControl, current_executor, JobOwnershipLost, atomic_json
 
     settings = get_settings()
     init_v2_db()
     factory = get_session_factory()
     with factory() as lifecycle:
-        claim = claim_job(lifecycle, job_id, task_id, str(uuid.uuid4()), socket.gethostname())
+        claim = claim_job(lifecycle, job_id, task_id, str(uuid.uuid4()), worker_node or socket.gethostname())
     if claim.handle is None:
         return claim.disposition.value
     handle = claim.handle
     db = None
+    control = None
     try:
         run_output_dir = create_run_output_dir(settings.aipam_job_root, job_id, handle.run_token)
         try:
-            docker_client = docker.from_env()
+            docker_client = docker.from_env(timeout=3)
         except Exception:
             logger.warning("Docker unavailable; container sensors may fail")
             docker_client = None
-        db = factory()
+        identity = current_executor(worker_node or socket.gethostname(), docker_client)
+        from dataclasses import asdict
+        atomic_json(run_output_dir / "control" / "executor.json",
+                    {"handle": asdict(handle), "identity": asdict(identity)})
+        with factory() as lifecycle:
+            if not register_executor(lifecycle, handle, identity):
+                raise JobOwnershipLost()
+        control = ExecutionControl(handle, run_output_dir, factory,
+                                   heartbeat_seconds=settings.aipam_heartbeat_seconds)
+        control.start()
+        db = get_fenced_session_factory(handle)()
         outcome = run_pipeline(
             job_id=job_id, db=db, docker_client=docker_client,
             job_root=settings.aipam_job_root, upload_root=settings.aipam_upload_root,
@@ -148,6 +168,7 @@ def execute_job(job_id: str, task_id: str, pcap_label: str | None = None) -> str
             max_job_disk_bytes=settings.aipam_max_job_disk_bytes,
             preflight_multiplier=settings.aipam_preflight_multiplier,
             pcap_label=pcap_label, run_output_dir=run_output_dir,
+            control=control,
         )
         db.commit()
         db.close()
@@ -170,10 +191,15 @@ def execute_job(job_id: str, task_id: str, pcap_label: str | None = None) -> str
                     db.close()
                 except Exception:
                     logger.warning("Pipeline session close failed for %s", job_id)
+        if control is not None:
+            control.stop()
         status = _resolve_interrupted(factory, settings, handle, exc)
         if isinstance(exc, (PipelineCanceled, OwnershipLost)):
             return status
         raise
+    finally:
+        if control is not None:
+            control.stop()
 
     if not finalized:
         return _resolve_interrupted(factory, settings, handle)
@@ -192,12 +218,12 @@ def execute_job(job_id: str, task_id: str, pcap_label: str | None = None) -> str
 
 @celery_app.task(bind=True, name="aipam.run_job", max_retries=0)
 def run_job(self, job_id: str) -> str:
-    return execute_job(job_id, self.request.id)
+    return execute_job(job_id, self.request.id, worker_node=self.request.hostname)
 
 
 @celery_app.task(bind=True, name="aipam.run_job_phase", max_retries=0)
 def run_job_phase(self, job_id: str, pcap_label: str) -> str:
-    return execute_job(job_id, self.request.id, pcap_label)
+    return execute_job(job_id, self.request.id, pcap_label, worker_node=self.request.hostname)
 
 
 @celery_app.task(name="aipam.distill_job", max_retries=0)

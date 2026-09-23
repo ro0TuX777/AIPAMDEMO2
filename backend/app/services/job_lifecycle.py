@@ -33,14 +33,13 @@ def _now_iso() -> str:
 
 
 def cancel_job(job: Job, db: Session) -> Job:
-    """Cancel an active job and persist its terminal timestamp."""
-    if job.status not in ("queued", "running"):
-        raise JobLifecycleError(409, f"Cannot cancel job in '{job.status}' state")
-
-    job.status = "canceled"
-    job.completed_at = _now_iso()
-    db.commit()
+    """Queued work cancels immediately; running work remains fenced until stopped."""
+    from backend.app.services.job_runtime import request_cancel
+    from backend.app.worker import _emit_complete
+    result = request_cancel(db, job.job_id)
     db.refresh(job)
+    if result.changed and result.status == "canceled":
+        _emit_complete(job.job_id, "canceled")
     return job
 
 
@@ -132,13 +131,7 @@ def reanalyze_job(
     if changed != 1:
         raise JobLifecycleError(409, "Job state changed before re-analysis")
 
-    try:
-        dispatch_phase(job.job_id, pcap_label)
-    except Exception as exc:
-        _logger.warning("Failed to dispatch reanalyze for job %s", job.job_id)
-        # The dispatcher owns dispatch-failure CAS; do not overwrite a worker.
-        db.rollback()
-        raise JobLifecycleError(500, "Failed to dispatch re-analysis task") from exc
+    dispatch_phase(db, job_id, pcap_label)
 
     return {
         "job_id": job.job_id,

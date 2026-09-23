@@ -30,6 +30,15 @@ def _make_pcap(tmp_path: Path, name: str, size: int = 64) -> Path:
 # ── 1. Label collision ──────────────────────────────────────────────────────
 
 class TestLabelledStaging:
+    @pytest.fixture(autouse=True)
+    def _require_symlinks(self, tmp_path):
+        target = tmp_path / "symlink-target"
+        target.touch()
+        try:
+            (tmp_path / "symlink-probe").symlink_to(target)
+        except OSError:
+            pytest.skip("Staging alias requires symlink privileges; Linux Task 10 gate")
+
     def test_captures_sharing_a_label_are_all_staged(self, tmp_path):
         """Three "during" captures must produce three files, not one."""
         job_dir = _legacy_job_directory(tmp_path / "jobs", "job-1")

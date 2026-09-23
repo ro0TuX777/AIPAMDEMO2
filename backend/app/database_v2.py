@@ -78,6 +78,32 @@ def get_session_factory() -> sessionmaker[Session]:
     return _SessionLocal
 
 
+class FencedSession(Session):
+    """Only analysis writers use this subclass; lifecycle/API sessions do not."""
+
+
+@event.listens_for(FencedSession, 'before_commit')
+def _fence_commit(session):
+    from sqlalchemy import select, update
+    from backend.app.models.job import Job
+    from backend.app.services.job_runtime import _owned
+    from backend.app.pipeline.runtime_control import JobCancellationRequested, JobOwnershipLost
+    handle = session.info['run_handle']
+    connection = session.connection()
+    # Serialize classification and flush against cancellation on this transaction.
+    connection.execute(update(Job).where(*_owned(handle)).values(heartbeat_at=Job.heartbeat_at))
+    status = connection.scalar(select(Job.status).where(*_owned(handle)))
+    if status == 'canceling':
+        raise JobCancellationRequested()
+    if status != 'running':
+        raise JobOwnershipLost()
+
+
+def get_fenced_session_factory(handle, *, bind=None):
+    return sessionmaker(bind=bind if bind is not None else get_engine(),
+                        class_=FencedSession, autoflush=False, info={'run_handle': handle})
+
+
 def get_db() -> Session:
     """FastAPI dependency: yields a DB session, auto-closes after request.
 
@@ -259,4 +285,3 @@ def reset_engine() -> None:
         _engine.dispose()
     _engine = None
     _SessionLocal = None
-
