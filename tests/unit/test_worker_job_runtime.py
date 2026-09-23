@@ -154,6 +154,7 @@ def test_worker_cannot_finalize_or_remove_pending_escape_receipt(worker_harness,
     import json
     from backend.app.pipeline.outcomes import derive_outcome
     from backend.app.bluescrub.isolation.runner import ProcessCleanupIncomplete
+    from backend.app.pipeline.runtime_control import JobCancellationRequested
     h = worker_harness
     receipts = []
     def pipeline(**kw):
@@ -165,7 +166,7 @@ def test_worker_cannot_finalize_or_remove_pending_escape_receipt(worker_harness,
                 runtime.request_cancel(db, 'job')
         return derive_outcome()
     monkeypatch.setattr(h.pipeline, 'run_pipeline', pipeline)
-    with pytest.raises(ProcessCleanupIncomplete):
+    with pytest.raises(JobCancellationRequested if cancel else ProcessCleanupIncomplete):
         h.worker.execute_job('job', 'task')
     assert receipts[0].exists() and h.events == []
     with h.factory() as db:
@@ -926,3 +927,227 @@ def test_stopped_control_refuses_submissions_after_private_cleanup(owned):
     control.cancel_path.unlink()
     with pytest.raises(JobOwnershipLost):
         control.checkpoint()
+
+
+def interrupt_cleanup(monkeypatch, control, stage, observe=lambda: None):
+    """Raise the real Celery timeout once at a real cleanup boundary."""
+    from billiard.exceptions import SoftTimeLimitExceeded
+    from backend.app.pipeline import sensor_process, runtime_control
+    if stage == 'context':
+        original_context = runtime_control._current_control
+        class Context:
+            def get(self):
+                return original_context.get()
+            def set(self, value):
+                return interrupted(value)
+            def reset(self, token):
+                return interrupted(None)
+        original = original_context.set
+        calls = []
+        def interrupted(value):
+            calls.append(stage)
+            # Interrupt after restoration, before stop records it. Retrying a
+            # single-use ContextVar token would fail here.
+            result = original(value)
+            observe()
+            if len(calls) == 1:
+                raise SoftTimeLimitExceeded()
+            return result
+        monkeypatch.setattr(runtime_control, '_current_control', Context())
+        return calls
+    if stage == 'join':
+        target, name = control._thread, 'join'
+    elif stage == 'reaper':
+        target, name = sensor_process, 'reap_run_processes'
+    else:
+        target, name = runtime_control, 'request_cancel_file'
+    original = getattr(target, name)
+    calls = []
+    def interrupted(*args, **kwargs):
+        calls.append(stage)
+        observe()
+        if len(calls) == 1:
+            raise SoftTimeLimitExceeded()
+        return original(*args, **kwargs)
+    monkeypatch.setattr(target, name, interrupted)
+    return calls
+
+
+@pytest.mark.parametrize('stage', ['join', 'reaper', 'cancel_file', 'context'])
+def test_stop_retries_soft_timeout_and_success_is_idempotent(owned, monkeypatch, stage):
+    from billiard.exceptions import SoftTimeLimitExceeded
+    from backend.app.pipeline.runtime_control import ExecutionControl, JobOwnershipLost
+    factory, handle, root = owned
+    control = ExecutionControl(handle, root, factory).start()
+    calls = interrupt_cleanup(monkeypatch, control, stage)
+    try:
+        with pytest.raises(SoftTimeLimitExceeded):
+            control.stop()
+        with pytest.raises(JobOwnershipLost):
+            control.checkpoint()
+        assert not control.cleanup_complete
+        control.stop()
+        assert control.cleanup_complete
+        assert control.cancel_path.exists()
+        assert len(calls) == 2
+        control.stop()
+        control.stop()
+        assert len(calls) == 2
+    finally:
+        control._stop.set()
+        control._thread.join(timeout=2)
+
+
+@pytest.mark.parametrize('stage', ['join', 'reaper', 'cancel_file'])
+@pytest.mark.parametrize('mode', ['success', 'failed', 'canceling', 'cancel_race', 'lost'])
+def test_soft_timeout_preserves_unresolved_worker_receipts_and_original_error(
+        worker_harness, monkeypatch, caplog, stage, mode):
+    import json
+    from billiard.exceptions import SoftTimeLimitExceeded
+    from backend.app.pipeline.runtime_control import JobCancellationRequested, JobOwnershipLost
+    from backend.app.pipeline.outcomes import derive_outcome
+    h = worker_harness
+    saved, terminal_calls = {}, []
+    original_error = {'success': SoftTimeLimitExceeded, 'cancel_race': SoftTimeLimitExceeded, 'failed': RuntimeError,
+                      'canceling': JobCancellationRequested, 'lost': JobOwnershipLost}[mode]
+    error = original_error('pipeline-private-detail') if mode not in ('success', 'cancel_race') else None
+    original_finalize = runtime.finalize_owned_job
+    def finalize(*args, **kwargs):
+        terminal_calls.append(args)
+        return original_finalize(*args, **kwargs)
+    monkeypatch.setattr(runtime, 'finalize_owned_job', finalize)
+    def pipeline(**kw):
+        receipt = kw['run_output_dir']/'control'/'handler-pending.json'
+        receipt.write_text(json.dumps({'state': 'launching', 'group_nonce': 'pending'}))
+        saved.update(receipt=receipt, control=kw['control'])
+        def observe():
+            if mode == 'cancel_race':
+                with h.factory() as db:
+                    runtime.request_cancel(db, 'job')
+        interrupt_cleanup(monkeypatch, kw['control'], stage, observe)
+        if mode == 'canceling':
+            with h.factory() as db:
+                runtime.request_cancel(db, 'job')
+        if error is not None:
+            raise error
+        return derive_outcome()
+    monkeypatch.setattr(h.pipeline, 'run_pipeline', pipeline)
+    with pytest.raises(original_error) as raised:
+        h.worker.execute_job('job', 'task')
+    if error is not None:
+        assert raised.value is error
+    assert saved['receipt'].exists()
+    assert terminal_calls == [] and h.events == []
+    assert not saved['control'].cleanup_complete
+    assert 'JOB_CLEANUP_INCOMPLETE' in caplog.text
+    assert 'pipeline-private-detail' not in caplog.text
+    with h.factory() as db:
+        row = db.get(Job, 'job')
+        assert row.status == ('canceling' if mode in ('canceling', 'cancel_race') else 'running')
+        assert row.completed_at is None
+    # The fixture never launched a child. Resolve its synthetic pending intent,
+    # then prove a later stop really reconciles instead of caching the failure.
+    saved['receipt'].unlink()
+    saved['control'].stop()
+    assert saved['control'].cleanup_complete
+    assert saved['control'].cancel_path.exists()
+    assert terminal_calls == [] and h.events == []
+
+
+@pytest.mark.parametrize('stage', ['join', 'reaper', 'cancel_file', 'context'])
+@pytest.mark.parametrize('mode', ['success', 'failed', 'canceling', 'cancel_race', 'lost'])
+def test_worker_soft_timeout_retry_proves_cleanup_before_terminal_cas(
+        worker_harness, monkeypatch, stage, mode):
+    from billiard.exceptions import SoftTimeLimitExceeded
+    from backend.app.pipeline.runtime_control import JobCancellationRequested, JobOwnershipLost
+    from backend.app.pipeline.outcomes import derive_outcome
+    h = worker_harness
+    saved, terminal_proofs = {}, []
+    original_error = {'success': SoftTimeLimitExceeded, 'cancel_race': SoftTimeLimitExceeded, 'failed': RuntimeError,
+                      'canceling': JobCancellationRequested, 'lost': JobOwnershipLost}[mode]
+    error = original_error() if mode not in ('success', 'cancel_race') else None
+    original_finalize = runtime.finalize_owned_job
+    def finalize(*args, **kwargs):
+        # Observe the real CAS without blocking it: a false proof must still be
+        # detected even when the worker catches an exception from finalization.
+        terminal_proofs.append((getattr(saved['control'], 'cleanup_complete', False),
+                               saved['control'].cancel_path.exists(), len(saved['calls'])))
+        return original_finalize(*args, **kwargs)
+    monkeypatch.setattr(runtime, 'finalize_owned_job', finalize)
+    def pipeline(**kw):
+        saved['control'] = kw['control']
+        def observe():
+            assert h.events == []
+            with h.factory() as db:
+                assert db.get(Job, 'job').completed_at is None
+                if mode == 'cancel_race':
+                    runtime.request_cancel(db, 'job')
+        saved['calls'] = interrupt_cleanup(monkeypatch, kw['control'], stage, observe)
+        if mode == 'canceling':
+            with h.factory() as db:
+                runtime.request_cancel(db, 'job')
+        if error is not None:
+            raise error
+        return derive_outcome()
+    monkeypatch.setattr(h.pipeline, 'run_pipeline', pipeline)
+    if mode in ('success', 'failed', 'cancel_race'):
+        with pytest.raises(original_error) as raised:
+            h.worker.execute_job('job', 'task')
+        if error is not None:
+            assert raised.value is error
+    else:
+        assert h.worker.execute_job('job', 'task') == ('canceled' if mode == 'canceling' else 'superseded')
+    assert saved['control'].cleanup_complete
+    assert terminal_proofs == ([] if mode == 'lost' else [(True, True, 2)])
+    assert h.events == ([] if mode == 'lost' else ['canceled' if mode in ('canceling', 'cancel_race') else 'failed'])
+
+
+def test_stop_does_not_prove_cleanup_while_heartbeat_is_alive(owned, monkeypatch):
+    import threading
+    from backend.app.pipeline.runtime_control import ExecutionControl
+    from backend.app.bluescrub.isolation.runner import ProcessCleanupIncomplete
+    factory, handle, root = owned
+    control = ExecutionControl(handle, root, factory)
+    release = threading.Event()
+    control._thread = threading.Thread(target=release.wait, daemon=True)
+    control._thread.start()
+    original_join = control._thread.join
+    monkeypatch.setattr(control._thread, 'join', lambda **kwargs: original_join(timeout=0))
+    try:
+        with pytest.raises(ProcessCleanupIncomplete):
+            control.stop()
+        assert not control.cleanup_complete
+        assert not control.cancel_path.exists()
+    finally:
+        release.set()
+        original_join(timeout=2)
+    control.stop()
+    assert control.cleanup_complete and control.cancel_path.exists()
+
+
+def test_worker_requires_positive_cleanup_proof_even_if_stop_returns(worker_harness, monkeypatch):
+    from backend.app.bluescrub.isolation.runner import ProcessCleanupIncomplete
+    from backend.app.pipeline.outcomes import derive_outcome
+    h = worker_harness
+    saved, terminal_calls = {}, []
+    original_finalize = runtime.finalize_owned_job
+    def finalize(*args, **kwargs):
+        terminal_calls.append(args)
+        return original_finalize(*args, **kwargs)
+    monkeypatch.setattr(runtime, 'finalize_owned_job', finalize)
+    def pipeline(**kw):
+        control = kw['control']
+        saved.update(control=control, stop=control.stop, root=kw['run_output_dir'])
+        # Model a stop method that incorrectly returns without reconciling.
+        monkeypatch.setattr(control, 'stop', lambda: None)
+        return derive_outcome()
+    monkeypatch.setattr(h.pipeline, 'run_pipeline', pipeline)
+    try:
+        with pytest.raises(ProcessCleanupIncomplete):
+            h.worker.execute_job('job', 'task')
+        assert saved['root'].exists()
+        assert terminal_calls == [] and h.events == []
+        with h.factory() as db:
+            assert db.get(Job, 'job').status == 'running'
+    finally:
+        saved['stop']()

@@ -89,7 +89,31 @@ def _cleanup_private_run(settings, handle, job) -> None:
         logger.warning("Could not clean private run for %s", handle.job_id)
 
 
-def _resolve_interrupted(factory, settings, handle, error=None) -> str:
+def _require_cleanup_complete(control) -> None:
+    # None is possible only before the run control is constructed, before
+    # executor registration or pipeline work can create execution resources.
+    if control is not None and not control.cleanup_complete:
+        from backend.app.bluescrub.isolation.runner import ProcessCleanupIncomplete
+        raise ProcessCleanupIncomplete('JOB_CLEANUP_INCOMPLETE')
+
+
+def _stop_interrupted_execution(control, job_id) -> bool:
+    """Retry interrupted cleanup without replacing the original task error."""
+    for _ in range(2):
+        try:
+            if control is not None:
+                control.stop()
+            _require_cleanup_complete(control)
+            return True
+        except BaseException:
+            # Includes Celery soft timeouts. No provider/OS exception payloads.
+            logger.warning('JOB_CLEANUP_INCOMPLETE for job %s; retrying cleanup', job_id)
+    logger.error('JOB_CLEANUP_INCOMPLETE for job %s; receipts retained for recovery', job_id)
+    return False
+
+
+def _resolve_interrupted(factory, settings, handle, error=None, *, control) -> str:
+    _require_cleanup_complete(control)
     from backend.app.models.job import Job
     from backend.app.services.job_runtime import finalize_owned_job
     from backend.app.pipeline.outcomes import OwnershipLost
@@ -146,6 +170,8 @@ def execute_job(job_id: str, task_id: str, pcap_label: str | None = None, *, wor
     old_control_dir = os.environ.get('AIPAM_RUN_CONTROL_DIR')
     try:
         run_output_dir = create_run_output_dir(settings.aipam_job_root, job_id, handle.run_token)
+        control = ExecutionControl(handle, run_output_dir, factory,
+                                   heartbeat_seconds=settings.aipam_heartbeat_seconds)
         try:
             docker_client = docker.from_env(timeout=3)
         except Exception:
@@ -159,8 +185,6 @@ def execute_job(job_id: str, task_id: str, pcap_label: str | None = None, *, wor
             if not register_executor(lifecycle, handle, identity):
                 raise JobOwnershipLost()
         os.environ['AIPAM_RUN_CONTROL_DIR'] = str((run_output_dir / 'control').resolve())
-        control = ExecutionControl(handle, run_output_dir, factory,
-                                   heartbeat_seconds=settings.aipam_heartbeat_seconds)
         control.start()
         db = get_fenced_session_factory(handle)()
         outcome = run_pipeline(
@@ -177,6 +201,7 @@ def execute_job(job_id: str, task_id: str, pcap_label: str | None = None, *, wor
         db = None
         # Receipt cleanup must win before any terminal CAS, including success.
         control.stop()
+        _require_cleanup_complete(control)
         with factory() as lifecycle:
             finalized = finalize_owned_job(
                 lifecycle, handle, outcome.status,
@@ -188,31 +213,27 @@ def execute_job(job_id: str, task_id: str, pcap_label: str | None = None, *, wor
         if db is not None:
             try:
                 db.rollback()
-            except Exception:
+            except BaseException:
                 logger.warning("Pipeline rollback failed for %s", job_id)
             finally:
                 try:
                     db.close()
-                except Exception:
+                except BaseException:
                     logger.warning("Pipeline session close failed for %s", job_id)
-        if control is not None:
-            control.stop()
-        status = _resolve_interrupted(factory, settings, handle, exc)
+        if not _stop_interrupted_execution(control, job_id):
+            raise
+        status = _resolve_interrupted(factory, settings, handle, exc, control=control)
         if isinstance(exc, (PipelineCanceled, OwnershipLost)):
             return status
         raise
     finally:
-        try:
-            if control is not None:
-                control.stop()
-        finally:
-            if old_control_dir is None:
-                os.environ.pop('AIPAM_RUN_CONTROL_DIR', None)
-            else:
-                os.environ['AIPAM_RUN_CONTROL_DIR'] = old_control_dir
+        if old_control_dir is None:
+            os.environ.pop('AIPAM_RUN_CONTROL_DIR', None)
+        else:
+            os.environ['AIPAM_RUN_CONTROL_DIR'] = old_control_dir
 
     if not finalized:
-        return _resolve_interrupted(factory, settings, handle)
+        return _resolve_interrupted(factory, settings, handle, control=control)
     _emit_complete(job_id, outcome.status)
     if outcome.status in ("completed", "completed_with_errors"):
         try:

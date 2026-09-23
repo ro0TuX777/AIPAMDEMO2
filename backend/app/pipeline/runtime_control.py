@@ -1,6 +1,6 @@
 """Per-execution cooperative channel and independent database heartbeat."""
 from __future__ import annotations
-from contextvars import ContextVar
+from contextvars import ContextVar, Token
 from dataclasses import dataclass
 import json
 import logging
@@ -68,7 +68,10 @@ class ExecutionControl(SensorExecutionContext):
         self.heartbeat_seconds = heartbeat_seconds
         self._stop, self._lost = threading.Event(), threading.Event()
         self._thread = None
-        self._cleanup_error = None
+        self._cleanup_lock = threading.Lock()
+        # Active -> stop requested -> cleanup complete. A stop request fences
+        # submissions, but only reconciliation grants permission to finalize.
+        self.cleanup_complete = False
 
     def heartbeat_once(self):
         try:
@@ -104,23 +107,27 @@ class ExecutionControl(SensorExecutionContext):
         return self
 
     def stop(self):
-        if self._stop.is_set():
-            if self._cleanup_error is not None:
-                raise self._cleanup_error
-            return
-        self._stop.set()
-        if self._thread is not None:
-            self._thread.join(timeout=16)
-        from backend.app.pipeline.sensor_process import reap_run_processes
-        try:
-            reap_run_processes(self.cancel_path.parent.parent)
-        except BaseException as exc:
-            self._cleanup_error = exc
-            raise
-        finally:
-            if getattr(self, '_context_token', None) is not None:
-                _current_control.reset(self._context_token)
-                self._context_token = None
+        with self._cleanup_lock:
+            if self.cleanup_complete:
+                return
+            self._stop.set()
+            try:
+                if self._thread is not None:
+                    self._thread.join(timeout=16)
+                    if self._thread.is_alive():
+                        from backend.app.bluescrub.isolation.runner import ProcessCleanupIncomplete
+                        raise ProcessCleanupIncomplete('Heartbeat shutdown incomplete')
+                from backend.app.pipeline.sensor_process import reap_run_processes
+                reap_run_processes(self.cancel_path.parent.parent)
+            finally:
+                token = getattr(self, '_context_token', None)
+                if token is not None:
+                    # Setting the saved value is retryable even if interrupted
+                    # before clearing the token; ContextVar.reset is single-use.
+                    _current_control.set(None if token.old_value is Token.MISSING else token.old_value)
+                    self._context_token = None
+            # An interruption anywhere above leaves the whole stop retryable.
+            self.cleanup_complete = True
 
 def process_identity(pid: int, proc_root=Path('/proc')):
     """Linux field 22; comm can contain spaces and parentheses."""
