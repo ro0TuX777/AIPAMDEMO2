@@ -5,6 +5,7 @@
 from backend.app.domain_models import *  # noqa: F401,F403
 
 from backend.app.models.job import Job, TERMINAL_JOB_STATUSES
+from backend.app.models.partial_result import PartialResult
 from backend.app.models.sensor import JobSensor
 from backend.app.models.finding import Finding
 from backend.app.models.host import Host
@@ -56,6 +57,7 @@ __all__ = [
     "JobStatus",
     "JobStepStatus",
     "Job",
+    "PartialResult",
     "JobSensor",
     "JobPcap",
     "JobLogSource",

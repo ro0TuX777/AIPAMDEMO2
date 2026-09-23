@@ -443,17 +443,16 @@ def test_real_cooperative_child_cancels_under_thirty_seconds(tmp_path):
 
 def test_partial_results_use_owned_transaction(owned):
     from backend.app.partial_results import save_partial_result
-    from backend.app.db_models import PartialJobResultDB
+    from backend.app.models.partial_result import PartialResult
     from backend.app.pipeline.runtime_control import JobCancellationRequested
     factory, handle, _ = owned
-    PartialJobResultDB.__table__.create(factory.kw['bind'], checkfirst=True)
     with factory() as db:
         runtime.request_cancel(db, 'job')
     with database_v2.get_fenced_session_factory(handle, bind=factory.kw['bind'])() as db:
         with pytest.raises(JobCancellationRequested):
             save_partial_result('job', {'stage': 'parse'}, db=db)
     with factory() as db:
-        assert db.get(PartialJobResultDB, 'job') is None
+        assert db.get(PartialResult, 'job') is None
 
 
 

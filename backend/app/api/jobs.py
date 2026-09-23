@@ -614,7 +614,7 @@ async def get_partial_results(
     response.headers["X-Request-Id"] = request_id
 
     from backend.app.partial_results import get_partial_result
-    data = get_partial_result(job_id)
+    data = get_partial_result(job_id, db=db)
     if data is None:
         return PartialResultsResponse(job_id=job_id)
     return PartialResultsResponse(

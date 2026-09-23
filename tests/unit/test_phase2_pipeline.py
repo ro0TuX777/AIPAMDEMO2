@@ -5,7 +5,7 @@ Phase 2 tests — Sensor Registry, Job Directory, Preflight, SensorRunner, Orche
 import json
 import os
 import uuid
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -669,8 +669,11 @@ class TestSensorRunner:
 # ========================================================================
 
 class TestRecovery:
-    def test_recover_running_jobs(self, db_session):
-        """Running jobs should be marked failed with interrupted_by_restart."""
+    @pytest.mark.parametrize("stale", [False, True])
+    @patch("backend.app.worker._emit_complete")
+    def test_recover_running_jobs(self, mock_emit, db_session, stale):
+        """Recovery fails only expired leases, preserving healthy running jobs."""
+        started = datetime.now(timezone.utc) - timedelta(minutes=10 if stale else 0)
         job = Job(
             job_id=_uuid(),
             job_name="Running Job",
@@ -678,18 +681,19 @@ class TestRecovery:
             execution_profile="standard",
             priority="normal",
             created_at=_now_iso(),
-            started_at=_now_iso(),
+            started_at=started.strftime("%Y-%m-%dT%H:%M:%S.%fZ"),
         )
         db_session.add(job)
         db_session.commit()
 
         recovered = recover_interrupted_jobs(db_session)
-        assert recovered == 1
+        assert recovered == int(stale)
 
         db_session.refresh(job)
-        assert job.status == "failed"
-        assert job.error_summary == "interrupted_by_restart"
-        assert job.completed_at is not None
+        assert job.status == ("failed" if stale else "running")
+        assert job.error_summary == ("Worker heartbeat expired" if stale else None)
+        assert (job.completed_at is not None) == stale
+        assert mock_emit.call_count == int(stale)
 
     def test_queued_jobs_left_alone(self, db_session):
         """Queued jobs should NOT be marked failed."""
@@ -753,6 +757,7 @@ class TestOrchestrator:
     @pytest.mark.parametrize("separate_output", [False, True])
     @patch("backend.app.pipeline.orchestrator.check_disk_space")
     def test_pipeline_happy_path(self, mock_preflight, db_session, tmp_path, separate_output):
+        from backend.app.models.partial_result import PartialResult
         from backend.app.pipeline.orchestrator import run_pipeline
 
         mock_preflight.return_value = PreflightResult(
@@ -764,23 +769,15 @@ class TestOrchestrator:
         input_root = tmp_path / "jobs" / job_id
         run_output_dir = input_root / ".runs" / _uuid() if separate_output else input_root
 
-        # Patch all handlers to no-ops since Zeek/Suricata aren't installed in test env
-        def noop_handler(**kwargs):
+        # Mock the process boundary: parent-process handler patches cannot
+        # affect the child interpreter used by the runtime.
+        def noop_handler(sensor_def, **kwargs):
             out = kwargs.get("sensor_output_dir")
             if out:
                 (out / "sensor.results.jsonl").write_text("")
 
-        with patch("backend.app.pipeline.sensor_handlers.handle_zeek", noop_handler), \
-             patch("backend.app.pipeline.sensor_handlers.handle_suricata", noop_handler), \
-             patch("backend.app.pipeline.sensor_handlers.handle_tls_enrich", noop_handler), \
-             patch("backend.app.pipeline.sensor_handlers.handle_beaconing", noop_handler), \
-             patch("backend.app.pipeline.sensor_handlers.handle_file_triage", noop_handler), \
-             patch("backend.app.pipeline.sensor_handlers.handle_capa", noop_handler), \
-             patch("backend.app.pipeline.sensor_handlers.handle_ti_matcher", noop_handler):
-            # Clear handler cache so patches take effect
-            import backend.app.sensors.registry as reg
-            reg._handlers_cache = None
-
+        with patch("backend.app.pipeline.sensor_process.run_handler_process", noop_handler), \
+             patch("backend.app.pipeline.orchestrator.publish_job_event"):
             status = run_pipeline(
                 job_id,
                 db_session,
@@ -791,13 +788,12 @@ class TestOrchestrator:
                 run_output_dir=run_output_dir,
             )
 
-            # Reset cache after test
-            reg._handlers_cache = None
-
         assert status.status in ("completed", "completed_with_errors")
         job = db_session.get(Job, job_id)
         assert job.status == "queued"
         assert job.started_at is None
+        # Final results replace the progressive snapshot at pipeline completion.
+        assert db_session.get(PartialResult, job_id) is None
         assert (run_output_dir / "metrics" / "job_metrics.json").is_file()
         assert (input_root / "input" / "pcap.pcap").is_file()
         if separate_output:
