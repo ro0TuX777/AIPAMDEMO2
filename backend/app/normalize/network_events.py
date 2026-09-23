@@ -24,6 +24,7 @@ from sqlalchemy import delete
 from sqlalchemy.orm import Session
 
 from backend.app.models.normalized_event import NormalizedEvent
+from backend.app.pipeline.runtime_control import checkpoint, checked_iter
 
 logger = logging.getLogger("aipam.normalize.network")
 
@@ -60,17 +61,19 @@ def _map_event_type(record: dict) -> str | None:
 
 
 def _read_jsonl(path: Path) -> list[dict]:
+    checkpoint()
     if not path.exists():
         return []
     out: list[dict] = []
-    for line in path.read_text(errors="replace").splitlines():
-        line = line.strip()
-        if not line:
-            continue
-        try:
-            out.append(json.loads(line))
-        except json.JSONDecodeError:
-            continue
+    with path.open(errors="replace") as stream:
+        for line in checked_iter(stream):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                out.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
     return out
 
 
@@ -108,25 +111,28 @@ def normalize_network_events(job_id: str, run_output_dir: Path, db: Session) -> 
     Idempotent: clears this job's previously-written network events first, so
     re-analysis replaces rather than duplicates them. Returns events written.
     """
+    checkpoint()
     sensors_dir = Path(run_output_dir) / "sensors"
     events: list[NormalizedEvent] = []
     if sensors_dir.exists():
-        for sensor_dir in sorted(sensors_dir.iterdir()):
+        for sensor_dir in checked_iter(sorted(sensors_dir.iterdir())):
             if not sensor_dir.is_dir() or sensor_dir.name not in _NETWORK_SENSORS:
                 continue
-            for record in _read_jsonl(sensor_dir / "sensor.results.jsonl"):
+            for record in checked_iter(_read_jsonl(sensor_dir / "sensor.results.jsonl")):
                 ev = _record_to_event(record, job_id, sensor_dir.name)
                 if ev is not None:
                     events.append(ev)
 
+    checkpoint()
     db.execute(
         delete(NormalizedEvent).where(
             NormalizedEvent.job_id == job_id,
             NormalizedEvent.parser_name == _PARSER_NAME,
         )
     )
-    if events:
-        db.add_all(events)
+    for offset in checked_iter(range(0, len(events), 500)):
+        db.add_all(events[offset:offset+500])
+    checkpoint()
     db.commit()
     logger.info("Normalized %d PCAP network events for job %s", len(events), job_id)
     return len(events)

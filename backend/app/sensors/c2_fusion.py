@@ -15,6 +15,8 @@ Matching strategies:
 
 from __future__ import annotations
 
+from backend.app.pipeline.runtime_control import checkpoint
+
 import json
 import logging
 import uuid
@@ -104,6 +106,7 @@ def fuse_c2_with_observed(
     observed: list[NormalizedEvent] = []
 
     for evt in events:
+        checkpoint()
         if evt.event_type == "c2_callback":
             c2_callbacks.append(evt)
         elif evt.event_type == "c2_task":
@@ -143,10 +146,12 @@ def _match_callbacks_to_connections(
     # Index observed connections by dest_ip for fast lookup
     obs_by_dest: dict[str, list[NormalizedEvent]] = defaultdict(list)
     for evt in observed:
+        checkpoint()
         if evt.event_type == "connection" and evt.dest_ip:
             obs_by_dest[evt.dest_ip].append(evt)
 
     for cb in c2_callbacks:
+        checkpoint()
         cb_data = {}
         if cb.data_json:
             try:
@@ -172,6 +177,7 @@ def _match_callbacks_to_connections(
         candidates = obs_by_dest.get(cb_dest, []) if cb_dest else []
 
         for obs_evt in candidates:
+            checkpoint()
             if obs_evt.event_id in confirmed_event_ids:
                 continue
             obs_ts = _parse_ts(obs_evt.timestamp)
@@ -235,6 +241,7 @@ def _match_tasks_to_host_events(
     agent_to_ip: dict[str, str] = {}
     for evt in observed:
         # Check if we have any c2_callback events we can cross-reference
+        checkpoint()
         pass
 
     # Also check c2_callbacks in the same job for agent→IP mapping
@@ -246,6 +253,7 @@ def _match_tasks_to_host_events(
     ).scalars().all())
 
     for evt in all_events:
+        checkpoint()
         data = {}
         if evt.data_json:
             try:
@@ -259,12 +267,14 @@ def _match_tasks_to_host_events(
     # Index observed process/auth events by src_ip
     obs_by_ip: dict[str, list[NormalizedEvent]] = defaultdict(list)
     for evt in observed:
+        checkpoint()
         if evt.event_type in ("process", "auth", "file") and evt.src_ip:
             obs_by_ip[evt.src_ip].append(evt)
         elif evt.event_type in ("process", "auth", "file") and evt.hostname:
             obs_by_ip[evt.hostname].append(evt)
 
     for task in c2_tasks:
+        checkpoint()
         task_data = {}
         if task.data_json:
             try:
@@ -284,6 +294,7 @@ def _match_tasks_to_host_events(
         # Look for observed events on this host within time window
         candidates = obs_by_ip.get(host_ip, [])
         for obs_evt in candidates:
+            checkpoint()
             if obs_evt.event_id in confirmed_event_ids:
                 continue
             obs_ts = _parse_ts(obs_evt.timestamp)
@@ -348,6 +359,7 @@ def _confirm_beaconing(
     # Collect C2 agent IPs and their sleep/jitter configs
     agent_configs: dict[str, dict] = {}
     for cb in c2_callbacks:
+        checkpoint()
         data = {}
         if cb.data_json:
             try:
@@ -376,6 +388,7 @@ def _confirm_beaconing(
     c2_ips = {cfg["src_ip"] for cfg in agent_configs.values()}
 
     for bf in beacon_findings:
+        checkpoint()
         evidence = {}
         if bf.evidence_json:
             try:
@@ -444,6 +457,7 @@ def run_c2_fusion(
     findings = fuse_c2_with_observed(db, job_id)
 
     for finding in findings:
+        checkpoint()
         db.add(finding)
     db.flush()
 

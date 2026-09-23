@@ -153,7 +153,7 @@ def execute_job(job_id: str, task_id: str, pcap_label: str | None = None, *, wor
         identity = current_executor(worker_node or socket.gethostname(), docker_client)
         from dataclasses import asdict
         atomic_json(run_output_dir / "control" / "executor.json",
-                    {"handle": asdict(handle), "identity": asdict(identity)})
+                    {"handle": asdict(handle), "identity": asdict(identity), "resource_protocol": 1})
         with factory() as lifecycle:
             if not register_executor(lifecycle, handle, identity):
                 raise JobOwnershipLost()

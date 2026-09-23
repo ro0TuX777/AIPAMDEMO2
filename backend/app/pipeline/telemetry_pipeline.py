@@ -22,6 +22,7 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 from backend.app.pipeline.outcomes import PROPAGATE_ERRORS, public_failure
+from backend.app.pipeline.runtime_control import checkpoint, checked_iter
 
 from backend.app.parsers import register_all_parsers
 from backend.app.parsers.base import ParserResult
@@ -124,12 +125,12 @@ def _parse_entry(
     results: list[ParserResult] = []
     t0 = time.monotonic()
     try:
-        for result in parser.parse(
+        for result in checked_iter(parser.parse(
             file_path,
             job_id=job_id,
             source_type=source_type,
             exercise_id=exercise_id,
-        ):
+        )):
             results.append(result)
         diag.status = "ok"
     except PROPAGATE_ERRORS:
@@ -168,8 +169,10 @@ def _phase_timer(diagnostics: PipelineDiagnostics, phase_name: str):
     """Context-manager-style helper returning a callable to record phase duration."""
     class _Timer:
         def __init__(self):
+            checkpoint()
             self.t0 = time.monotonic()
         def stop(self):
+            checkpoint()
             diagnostics.phase_durations_ms[phase_name] = round(
                 (time.monotonic() - self.t0) * 1000, 2
             )
@@ -196,6 +199,7 @@ def run_telemetry_pipeline(
     """
     from datetime import datetime, timezone
 
+    checkpoint()
     pipeline_t0 = time.monotonic()
     diagnostics = PipelineDiagnostics(
         job_id=job_id,
@@ -228,7 +232,7 @@ def run_telemetry_pipeline(
     parse_timer = _phase_timer(diagnostics, "parse")
     all_results: list[ParserResult] = []
 
-    for entry in manifest.entries:
+    for entry in checked_iter(manifest.entries):
         file_path = input_root / "input" / "telemetry" / entry.filename
         if not file_path.exists():
             logger.warning("Manifest entry not found on disk: %s", entry.filename)
@@ -258,7 +262,7 @@ def run_telemetry_pipeline(
                 break
 
         if results:
-            for r in results:
+            for r in checked_iter(results):
                 if r.source_system is None and entry.source_system:
                     r.source_system = entry.source_system
                 # Apply phase label from manifest entry
@@ -302,7 +306,7 @@ def run_telemetry_pipeline(
     if fingerprints:
         try:
             from backend.app.forensic_memory import store_behavioral_fingerprints
-            fp_dicts = [fp.to_dict() for fp in fingerprints]
+            fp_dicts = [fp.to_dict() for fp in checked_iter(fingerprints)]
             memory_indexed = store_behavioral_fingerprints(
                 job_id=job_id,
                 project_id="",
@@ -315,6 +319,7 @@ def run_telemetry_pipeline(
             logger.debug("Memory indexing unavailable; skipping")
     mt.stop()
 
+    checkpoint()
     db.commit()
 
     # Finalize diagnostics

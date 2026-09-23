@@ -150,6 +150,10 @@ def run_sensor(
             "Launching sensor %s (image=%s, timeout=%ds)",
             name, sensor_def.image, sensor_def.timeout_seconds,
         )
+        from backend.app.pipeline.runtime_control import request_cancel_file
+        request_cancel_file(run_output_dir / 'control' / 'containers.requested')
+        if control:
+            control.checkpoint()
         container = docker_client.containers.run(**container_kwargs)
 
         # Wait with timeout

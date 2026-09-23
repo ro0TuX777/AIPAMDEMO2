@@ -14,6 +14,9 @@ All detectors produce Finding records in the database.
 
 from __future__ import annotations
 
+from backend.app.pipeline.runtime_control import checkpoint
+from backend.app.pipeline.outcomes import PROPAGATE_ERRORS
+
 import json
 import logging
 import uuid
@@ -99,6 +102,7 @@ def detect_role_baseline_anomalies(
     global_dest_ports: Counter = Counter()
 
     for evt in events:
+        checkpoint()
         src = evt.src_ip or ""
         dest_port = evt.dest_port
         src_port = evt.src_port
@@ -110,6 +114,7 @@ def detect_role_baseline_anomalies(
 
     # Detect workstations using admin-style ports
     for host_ip, port_counts in host_dest_ports.items():
+        checkpoint()
         admin_ports_used = {p for p in port_counts if p in _ADMIN_PORTS}
         if admin_ports_used:
             # Check if this host is predominantly a client (many different dest ports)
@@ -144,6 +149,7 @@ def detect_role_baseline_anomalies(
     # Detect hosts connecting to globally rare destination ports
     rare_ports = {p for p, c in global_dest_ports.items() if c <= _RARE_DEST_PORT_THRESHOLD}
     for host_ip, port_counts in host_dest_ports.items():
+        checkpoint()
         host_rare = {p for p in port_counts if p in rare_ports and p not in _ADMIN_PORTS}
         if host_rare and len(host_rare) >= 2:
             findings.append(_make_finding(
@@ -201,6 +207,7 @@ def detect_auth_anomalies(
     # Parse data_json for auth details
     parsed: list[dict[str, Any]] = []
     for evt in auth_events:
+        checkpoint()
         data = {}
         if evt.data_json:
             try:
@@ -221,10 +228,12 @@ def detect_auth_anomalies(
     # Detect brute-force: many failed auths from same source IP
     source_failures: dict[str, list[dict]] = defaultdict(list)
     for p in parsed:
+        checkpoint()
         if p["action"] in ("failed", "failure", "failed_login") or "fail" in p["status"].lower():
             source_failures[p["src_ip"]].append(p)
 
     for src_ip, failures in source_failures.items():
+        checkpoint()
         if not src_ip or len(failures) < _FAILED_AUTH_THRESHOLD:
             continue
         unique_users = {f["username"] for f in failures if f["username"]}
@@ -257,10 +266,12 @@ def detect_auth_anomalies(
     # Detect lateral auth: same username from multiple source IPs
     user_sources: dict[str, set[str]] = defaultdict(set)
     for p in parsed:
+        checkpoint()
         if p["username"] and p["src_ip"]:
             user_sources[p["username"]].add(p["src_ip"])
 
     for username, sources in user_sources.items():
+        checkpoint()
         if len(sources) >= _MULTI_SOURCE_AUTH_THRESHOLD:
             findings.append(_make_finding(
                 job_id=job_id,
@@ -284,10 +295,12 @@ def detect_auth_anomalies(
     # Detect privilege escalation patterns
     user_actions: dict[str, list[str]] = defaultdict(list)
     for p in parsed:
+        checkpoint()
         if p["username"]:
             user_actions[p["username"]].append(p["action"])
 
     for username, actions in user_actions.items():
+        checkpoint()
         has_normal = any(a in ("login", "success", "logon") for a in actions)
         has_priv = any(a in ("sudo", "su", "runas", "privilege_escalation") for a in actions)
         if has_normal and has_priv:
@@ -347,6 +360,7 @@ def detect_netflow_anomalies(
     host_bytes_out: dict[str, int] = defaultdict(int)
 
     for evt in events:
+        checkpoint()
         src = evt.src_ip or ""
         dest = evt.dest_ip or ""
         if src and dest:
@@ -363,12 +377,14 @@ def detect_netflow_anomalies(
 
     # Detect beacon-like patterns: regular intervals between connections
     for (src, dest), evts in pair_events.items():
+        checkpoint()
         if len(evts) < _MIN_CONNECTIONS_FOR_BEACON:
             continue
 
         # Extract timestamps and compute intervals
         timestamps: list[float] = []
         for e in evts:
+            checkpoint()
             try:
                 dt = datetime.fromisoformat(e.timestamp.replace("Z", "+00:00"))
                 timestamps.append(dt.timestamp())
@@ -421,6 +437,7 @@ def detect_netflow_anomalies(
     # Detect scanning: host connecting to many unique destinations
     scan_threshold = max(10, len(events) * 0.1)
     for host, dests in host_dest_ips.items():
+        checkpoint()
         if len(dests) >= scan_threshold:
             findings.append(_make_finding(
                 job_id=job_id,
@@ -475,6 +492,7 @@ def detect_cross_source_inconsistencies(
     hostname_ips: dict[str, dict[str, set[str]]] = defaultdict(lambda: defaultdict(set))
 
     for evt in events:
+        checkpoint()
         src = evt.source_system or evt.source_type or "unknown"
         if evt.src_ip and evt.hostname:
             ip_hostnames[evt.src_ip][evt.hostname].add(src)
@@ -482,11 +500,14 @@ def detect_cross_source_inconsistencies(
 
     # Flag IPs with multiple hostnames from different sources
     for ip, hostname_map in ip_hostnames.items():
+        checkpoint()
         if len(hostname_map) > 1:
             # Collect which sources report which hostname
             source_claims: dict[str, list[str]] = {}
             for hn, sources in hostname_map.items():
+                checkpoint()
                 for s in sources:
+                    checkpoint()
                     source_claims.setdefault(s, []).append(hn)
 
             # Only flag if different sources disagree (not just one source seeing multiple)
@@ -520,6 +541,7 @@ def detect_cross_source_inconsistencies(
     # Group process events by process_guid
     process_events: dict[str, list[dict]] = defaultdict(list)
     for evt in events:
+        checkpoint()
         if evt.process_guid and evt.data_json:
             try:
                 data = json.loads(evt.data_json)
@@ -534,6 +556,7 @@ def detect_cross_source_inconsistencies(
                 pass
 
     for guid, proc_evts in process_events.items():
+        checkpoint()
         if len(proc_evts) < 2:
             continue
         # Check if different sources report different parents
@@ -654,6 +677,7 @@ def detect_attack_sequences(
     # Parse data_json once for all events
     event_data: dict[str, dict] = {}
     for evt in events:
+        checkpoint()
         data = {}
         if evt.data_json:
             try:
@@ -665,16 +689,19 @@ def detect_attack_sequences(
     # Group events by source host (src_ip or hostname)
     host_events: dict[str, list[NormalizedEvent]] = defaultdict(list)
     for evt in events:
+        checkpoint()
         key = evt.src_ip or evt.hostname or ""
         if key:
             host_events[key].append(evt)
 
     # Try to match each chain template per host
     for chain in _ATTACK_CHAINS:
+        checkpoint()
         steps = chain["steps"]
         window = chain["window_seconds"]
 
         for host, host_evts in host_events.items():
+            checkpoint()
             if len(host_evts) < len(steps):
                 continue
 
@@ -682,6 +709,7 @@ def detect_attack_sequences(
             matched_steps: list[tuple[int, NormalizedEvent]] = []
 
             for evt in host_evts:
+                checkpoint()
                 data = event_data.get(evt.event_id, {})
                 step_idx = len(matched_steps)
 
@@ -765,15 +793,19 @@ def run_behavioral_detectors(
     ]
 
     for name, detector_fn in detectors:
+        checkpoint()
         try:
             results = detector_fn(db, job_id)
             logger.info("Detector %s produced %d findings for job %s", name, len(results), job_id)
             all_findings.extend(results)
+        except PROPAGATE_ERRORS:
+            raise
         except Exception:
             logger.exception("Detector %s failed for job %s", name, job_id)
 
     # Persist all findings
     for finding in all_findings:
+        checkpoint()
         db.add(finding)
     db.flush()
 

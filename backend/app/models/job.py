@@ -1,6 +1,6 @@
 """Job model (§12.5)."""
 
-from sqlalchemy import BigInteger, Column, Index, String, Integer, Text
+from sqlalchemy import BigInteger, Column, Index, String, Integer, Text, text
 
 from backend.app.database_v2 import Base
 
@@ -31,6 +31,7 @@ class Job(Base):
     source_manifest_json = Column(Text, nullable=True)            # JSON SourceManifest
     error_summary = Column(Text, nullable=True)
     created_at = Column(String, nullable=False)
+    queued_at = Column(String, nullable=True, server_default=text("(strftime('%Y-%m-%dT%H:%M:%fZ', 'now'))"))
     started_at = Column(String, nullable=True)
     completed_at = Column(String, nullable=True)
     metrics_json = Column(Text, nullable=True)  # JSON blob
@@ -62,4 +63,3 @@ class Job(Base):
 
     def __repr__(self) -> str:
         return f"<Job {self.job_id} status={self.status}>"
-

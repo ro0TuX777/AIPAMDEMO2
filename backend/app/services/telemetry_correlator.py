@@ -9,6 +9,8 @@ keys, their EvidenceStatus is upgraded from observed → corroborated.
 
 from __future__ import annotations
 
+from backend.app.pipeline.runtime_control import checkpoint, checked_iter
+
 import json
 import logging
 import uuid
@@ -60,6 +62,7 @@ def parser_result_to_db(result: ParserResult, job_id: str) -> NormalizedEvent:
     # Build full correlation_keys dict from both explicit keys and top-level fields
     all_keys = dict(result.correlation_keys)
     for key_name in CORRELATION_KEY_NAMES:
+        checkpoint()
         val = getattr(result, key_name, None)
         if val and key_name not in all_keys:
             all_keys[key_name] = str(val)
@@ -103,6 +106,7 @@ def persist_parser_results(
     """Convert ParserResults to NormalizedEvent rows and persist them."""
     rows: list[NormalizedEvent] = []
     for r in results:
+        checkpoint()
         row = parser_result_to_db(r, job_id)
         db.add(row)
         rows.append(row)
@@ -123,7 +127,9 @@ def _build_key_index(events: list[NormalizedEvent]) -> dict[str, dict[str, list[
     """Build key_name → {key_value → [event_id, ...]} index."""
     index: dict[str, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
     for evt in events:
+        checkpoint()
         for key_name in CORRELATION_KEY_NAMES:
+            checkpoint()
             val = getattr(evt, key_name, None)
             if val:
                 index[key_name][val].append(evt.event_id)
@@ -132,7 +138,7 @@ def _build_key_index(events: list[NormalizedEvent]) -> dict[str, dict[str, list[
 
 def _build_source_map(events: list[NormalizedEvent]) -> dict[str, str]:
     """event_id → source_system."""
-    return {evt.event_id: (evt.source_system or evt.parser_name or "unknown") for evt in events}
+    return {evt.event_id: (evt.source_system or evt.parser_name or "unknown") for evt in checked_iter(events)}
 
 
 def build_correlation_clusters(
@@ -154,6 +160,7 @@ def build_correlation_clusters(
 
     def find(x: str) -> str:
         while parent.get(x, x) != x:
+            checkpoint()
             parent[x] = parent.get(parent[x], parent[x])
             x = parent[x]
         return x
@@ -165,26 +172,33 @@ def build_correlation_clusters(
 
     # Union events that share any key value
     for key_name, val_map in key_index.items():
+        checkpoint()
         for val, eids in val_map.items():
+            checkpoint()
             if len(eids) > 1:
                 anchor = eids[0]
                 for eid in eids[1:]:
+                    checkpoint()
                     union(anchor, eid)
 
     # Group by root
     groups: dict[str, set[str]] = defaultdict(set)
-    all_ids = {evt.event_id for evt in events}
+    all_ids = {evt.event_id for evt in checked_iter(events)}
     for eid in all_ids:
+        checkpoint()
         groups[find(eid)].add(eid)
 
     # Build cluster objects (skip singletons unless they have multi-source potential)
     clusters: list[CorrelationCluster] = []
     for root, members in groups.items():
+        checkpoint()
         sources = {source_map[eid] for eid in members}
         # Find which keys are shared
         shared_keys: dict[str, set[str]] = defaultdict(set)
         for key_name, val_map in key_index.items():
+            checkpoint()
             for val, eids in val_map.items():
+                checkpoint()
                 linked = members & set(eids)
                 if len(linked) > 1:
                     shared_keys[key_name].add(val)
@@ -220,9 +234,10 @@ def correlate_and_upgrade(
 
     Returns summary stats.
     """
-    events = list(db.execute(
+    checkpoint()
+    events = list(checked_iter(db.execute(
         select(NormalizedEvent).where(NormalizedEvent.job_id == job_id)
-    ).scalars().all())
+    ).scalars().yield_per(500)))
 
     if not events:
         return {"total_events": 0, "clusters": 0, "corroborated": 0}
@@ -233,10 +248,12 @@ def correlate_and_upgrade(
     multi_source_clusters = 0
 
     for cluster in clusters:
+        checkpoint()
         if len(cluster["sources"]) >= _MIN_SOURCES_FOR_CORROBORATION:
             multi_source_clusters += 1
             # Upgrade all events in this cluster
             for eid in cluster["event_ids"]:
+                checkpoint()
                 db.execute(
                     update(NormalizedEvent)
                     .where(

@@ -48,6 +48,19 @@ def checkpoint():
     if control is not None:
         control.checkpoint()
 
+
+def checked_iter(values):
+    """Check before advancing a parser/file iterator as well as after each item."""
+    iterator = iter(values)
+    while True:
+        checkpoint()
+        try:
+            value = next(iterator)
+        except StopIteration:
+            return
+        checkpoint()
+        yield value
+
 class ExecutionControl(SensorExecutionContext):
     def __init__(self, handle, run_output_dir, factory, *, heartbeat_seconds=15):
         super().__init__(Path(run_output_dir) / 'control' / 'cancel.requested')

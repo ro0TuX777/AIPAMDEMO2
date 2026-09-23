@@ -118,7 +118,8 @@ def reanalyze_job(
         update(Job).where(Job.job_id == job_id, Job.status.in_(
             ("completed", "completed_with_errors", "failed")
         )).values(
-            status="queued", artifact_layout_version=2, error_summary=None,
+            status="queued", queued_at=func.strftime('%Y-%m-%dT%H:%M:%fZ', 'now'),
+            artifact_layout_version=2, error_summary=None,
             celery_task_id=None, run_token=None, dispatched_at=None,
             started_at=None, completed_at=None, heartbeat_at=None,
             cancel_requested_at=None, cancel_force_at=None, cancel_deadline_at=None,

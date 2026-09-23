@@ -281,6 +281,7 @@ def test_reconciliation_canceling_and_undispatched_grace(
                 "%Y-%m-%dT%H:%M:%fZ", "now", f"-{age} seconds"
             ),
             created_at=sa.func.strftime("%Y-%m-%dT%H:%M:%fZ", "now", f"-{age} seconds"),
+            queued_at=sa.func.strftime("%Y-%m-%dT%H:%M:%fZ", "now", f"-{age} seconds"),
             dispatched_at="2026-01-01" if dispatched else None,
         )
     )

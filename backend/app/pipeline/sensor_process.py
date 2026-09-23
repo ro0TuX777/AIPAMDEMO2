@@ -9,9 +9,13 @@ import subprocess
 import sys
 import time
 import threading
+from uuid import uuid4
 
 from backend.app.pipeline.outcomes import PipelineCanceled, OwnershipLost
-from backend.app.bluescrub.isolation.runner import _kill_group, signal_process_group
+from backend.app.bluescrub.isolation.runner import (
+    _kill_group, ProcessGroup, ProcessIdentityConflict, read_process_identity,
+    signal_exact_process,
+)
 from backend.app.bluescrub.isolation.limits import build_env
 from backend.app.pipeline.runtime_control import (
     SensorExecutionContext, JobCancellationRequested, JobOwnershipLost,
@@ -33,7 +37,7 @@ class TrackedChild:
         with self.lock:
             if self.reaped:
                 return
-            _kill_group(self.proc, grace if self.proc.poll() is None else 0)
+            _kill_group(self.proc, grace)
             self.record.unlink(missing_ok=True)
             self.reaped = True
         with _children_lock:
@@ -73,8 +77,10 @@ def run_tracked_process(argv, *, run_output_dir, name, timeout_seconds, context,
     # reaper cannot remove a receipt before the launching thread writes it.
     with _children_lock:
         context.checkpoint()
+        nonce = uuid4().hex
         proc = subprocess.Popen(argv, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL,
-                                stderr=subprocess.DEVNULL, env=env,
+                                stderr=subprocess.DEVNULL,
+                                env={**(os.environ if env is None else env), 'AIPAM_PROCESS_GROUP_NONCE': nonce},
                                 start_new_session=os.name != 'nt',
                                 creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name == 'nt' else 0)
         child = TrackedChild(proc, record)
@@ -82,8 +88,9 @@ def run_tracked_process(argv, *, run_output_dir, name, timeout_seconds, context,
             if os.name == 'nt':
                 identity = {'pid': proc.pid, 'pgid': proc.pid, 'start_ticks': None, 'boot_id': None}
             else:
-                identity = process_identity(proc.pid)
-            atomic_json(record, {**identity, 'handler': name})
+                identity = read_process_identity(proc.pid)
+                proc.aipam_group = ProcessGroup(identity, nonce)
+            atomic_json(record, {**identity, 'handler': name, 'group_nonce': nonce})
             _children[proc.pid] = child
         except BaseException:
             _kill_group(proc, 0)
@@ -138,36 +145,23 @@ def _descendants(pid):
     parents = {}
     for path in Path('/proc').glob('[0-9]*/stat'):
         try:
-            fields = path.read_text().rsplit(')', 1)[1].split()
-            parents[int(path.parent.name)] = int(fields[1])
+            item = read_process_identity(int(path.parent.name))
+            if item:
+                parents[item['pid']] = item
         except (OSError, ValueError, IndexError):
             continue
     result = []
     def walk(parent):
-        for child, ppid in parents.items():
-            if ppid == parent:
+        for child, item in parents.items():
+            if item['ppid'] == parent:
                 walk(child)
-                identity = read_identity(child)
-                if identity:
-                    result.append(identity)
+                result.append(item)
     walk(pid)
     return result
 
 
 def _signal_exact(identity, sig):
-    # pidfd pins the process across the last identity check and signal.
-    try:
-        fd = os.pidfd_open(identity['pid'])
-    except ProcessLookupError:
-        return
-    try:
-        if classify_identity(identity, read_identity(identity['pid'])) == 'matching':
-            try:
-                signal.pidfd_send_signal(fd, sig)
-            except ProcessLookupError:
-                pass
-    finally:
-        os.close(fd)
+    signal_exact_process(identity, sig)
 
 
 def stop_executor(identity, run_dir, seconds, deadline=None):
@@ -178,49 +172,57 @@ def stop_executor(identity, run_dir, seconds, deadline=None):
     verdict = classify_identity(expected, read_identity(expected['pid']))
     if verdict == 'conflict':
         return verdict
-    tracked = []
+    groups = []
     for path in Path(run_dir).joinpath('control').glob('handler-*.json'):
         item = json.loads(path.read_text())
-        live = read_identity(item['pid'])
-        if classify_identity(item, live) == 'conflict':
+        if item['pgid'] != item['pid']:
             return 'conflict'
-        if live:
-            if live['pgid'] != item['pgid'] or item['pgid'] != item['pid']:
-                return 'conflict'
-            tracked.append(item)
+        groups.append(ProcessGroup(item, item.get('group_nonce')))
+    try:
+        tracked = [item for group in groups for item in group.snapshot()]
+    except ProcessIdentityConflict:
+        return 'conflict'
     children = _descendants(expected['pid']) if verdict == 'matching' else []
     for item in tracked:
         children.extend(_descendants(item['pid']))
     children = list({item['pid']: item for item in children}.values())
     if time.monotonic() >= deadline:
         return "unavailable"
-    for item in tracked:
-        if classify_identity(item, read_identity(item['pid'])) == 'matching':
-            signal_process_group(item['pgid'], signal.SIGTERM)
-    for item in children:
-        _signal_exact(item, signal.SIGTERM)
+    targets = list({i['pid']: i for i in [*children, *tracked]}.values())
     if verdict == 'matching':
-        _signal_exact(expected, signal.SIGTERM)
+        targets.append(expected)
+    try:
+        for item in targets:
+            _signal_exact(item, signal.SIGTERM)
+    except ProcessIdentityConflict:
+        return 'conflict'
     end_grace = min(max(time.monotonic(), deadline-.5), time.monotonic()+3)
     while time.monotonic() < end_grace:
         if not any(read_identity(i['pid']) for i in [*children, *tracked, expected]):
             break
         time.sleep(.05)
-    # Recorded group IDs are used only while a matching group leader remains.
-    for item in tracked:
-        if classify_identity(item, read_identity(item['pid'])) == 'matching':
-            signal_process_group(item['pgid'], signal.SIGKILL)
-    for item in children:
-        _signal_exact(item, signal.SIGKILL)
-    if verdict == 'matching':
-        _signal_exact(expected, signal.SIGKILL)
+    try:
+        if verdict == 'matching':
+            current = classify_identity(expected, read_identity(expected['pid']))
+            if current == 'conflict':
+                return 'conflict'
+            if current == 'matching':
+                targets.extend(_descendants(expected['pid']))
+        for group in groups:
+            targets.extend(group.snapshot())
+        for item in {i['pid']: i for i in targets}.values():
+            _signal_exact(item, signal.SIGKILL)
+    except ProcessIdentityConflict:
+        return 'conflict'
     # Reaping direct children belongs to their parent/Celery pool; only report
     # stopped once /proc reports absence or zombie (no further writes possible).
-    for item in [*children, *tracked, expected]:
+    for item in targets:
         while time.monotonic() < deadline:
             live = read_identity(item['pid'])
             if live is None:
                 break
+            if classify_identity(item, live) == 'conflict':
+                return 'conflict'
             try:
                 state = Path(f"/proc/{item['pid']}/stat").read_text().rsplit(')', 1)[1].split()[0]
             except FileNotFoundError:

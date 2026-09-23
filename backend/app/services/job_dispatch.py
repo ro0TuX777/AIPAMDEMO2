@@ -29,6 +29,11 @@ def dispatch_job(db, job_id: str, *, pcap_label=None, sender=None, task_id_facto
     except Exception:
         logger.warning('Job publication was not confirmed for %s', job_id)
         if mark_dispatch_failed(db, job_id, task_id, 'JOB_DISPATCH_FAILED'):
+            try:
+                from backend.app.worker import _emit_complete
+                _emit_complete(job_id, 'failed')
+            except Exception:
+                logger.warning('Terminal event publication unavailable for %s', job_id)
             raise JobDispatchFailed(job_id) from None
     else:
         mark_dispatched(db, job_id, task_id)

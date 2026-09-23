@@ -434,7 +434,7 @@ def reconcile_stale_jobs(
         (
             "queued",
             "failed",
-            Job.created_at,
+            func.coalesce(Job.queued_at, Job.created_at),
             undispatched_grace_seconds,
             "Job dispatch was not confirmed",
         ),

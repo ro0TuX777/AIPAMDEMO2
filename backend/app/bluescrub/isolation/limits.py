@@ -13,7 +13,7 @@ from typing import Callable
 #: deletions: a deletion list silently fails to cover variables added later,
 #: and the worker environment holds the API token, database URL, broker URL,
 #: the secret HMAC key, and Security Onion / Arkime passwords.
-ENV_ALLOWLIST: tuple[str, ...] = ("PATH", "LANG", "LC_ALL", "HOME", "TMPDIR")
+ENV_ALLOWLIST: tuple[str, ...] = ("PATH", "LANG", "LC_ALL", "HOME", "TMPDIR", "AIPAM_PROCESS_GROUP_NONCE")
 
 
 @dataclass(frozen=True)

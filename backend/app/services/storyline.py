@@ -14,6 +14,8 @@ Public API:
 
 from __future__ import annotations
 
+from backend.app.pipeline.runtime_control import checkpoint
+
 import logging
 import re
 from dataclasses import dataclass, field
@@ -184,6 +186,7 @@ def _classify_node(node: dict[str, Any], edges: list[dict[str, Any]]) -> str | N
     # Gather edge types touching this node
     node_edge_types: set[str] = set()
     for e in edges:
+        checkpoint()
         if e["source"] == nid or e["target"] == nid:
             node_edge_types.add(e["type"])
 
@@ -194,6 +197,7 @@ def _classify_node(node: dict[str, Any], edges: list[dict[str, Any]]) -> str | N
     best_score = 0
 
     for stage_name, classifier in _STAGE_CLASSIFIERS.items():
+        checkpoint()
         score = 0
 
         # Match by event_type (telemetry nodes)
@@ -207,6 +211,7 @@ def _classify_node(node: dict[str, Any], edges: list[dict[str, Any]]) -> str | N
 
         # Match by keywords in label/meta
         for kw in classifier["keywords"]:
+            checkpoint()
             if re.search(kw, search_text, re.IGNORECASE):
                 score += 1
 
@@ -231,6 +236,7 @@ def _extract_host_ips(node_ids: list[str], nodes_by_id: dict[str, dict]) -> list
     """Extract unique host IPs from a set of node IDs."""
     ips: set[str] = set()
     for nid in node_ids:
+        checkpoint()
         if nid.startswith("host:"):
             ips.add(nid.split(":", 1)[1])
         else:
@@ -248,6 +254,7 @@ def _extract_time_range(
     """Extract earliest and latest timestamps from nodes."""
     timestamps: list[str] = []
     for nid in node_ids:
+        checkpoint()
         node = nodes_by_id.get(nid, {})
         meta = node.get("meta", {}) or {}
         ts = meta.get("ts")
@@ -278,6 +285,7 @@ def _build_narrative(stages: list[AttackStage]) -> str:
         return "No attack stages identified from available evidence."
     lines: list[str] = ["## Attack Storyline\n"]
     for i, stage in enumerate(stages, 1):
+        checkpoint()
         lines.append(f"**Stage {i} — {stage.display_name}** (confidence: {stage.confidence:.0%})")
         lines.append(f"  {stage.summary}")
         lines.append("")
@@ -310,6 +318,7 @@ def reconstruct_storyline(
 
     for node in nodes:
         # Skip pure host nodes — they are context, not evidence
+        checkpoint()
         if node["type"] == "host":
             continue
         stage = _classify_node(node, edges)
@@ -321,6 +330,7 @@ def reconstruct_storyline(
     # Build AttackStage objects (only for stages with evidence)
     stages: list[AttackStage] = []
     for stage_name in STAGE_ORDER:
+        checkpoint()
         members = stage_members[stage_name]
         if not members:
             continue
@@ -358,7 +368,9 @@ def reconstruct_storyline(
     # Per-host timelines: list of stage names in order
     host_timelines: dict[str, list[str]] = {}
     for stage in stages:
+        checkpoint()
         for ip in stage.host_ips:
+            checkpoint()
             host_timelines.setdefault(ip, [])
             if stage.name not in host_timelines[ip]:
                 host_timelines[ip].append(stage.name)

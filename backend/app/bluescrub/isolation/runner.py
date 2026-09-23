@@ -19,6 +19,7 @@ import time
 from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
+from uuid import uuid4
 
 from backend.app.bluescrub.isolation.limits import ResourceLimits, build_env, build_preexec
 
@@ -117,6 +118,7 @@ def run_analyzer(
     started = time.monotonic()
     killed_by_us = False
 
+    group_nonce = uuid4().hex
     try:
         proc = subprocess.Popen(  # noqa: S603 - argv is constructed, never shell
             argv,
@@ -124,7 +126,7 @@ def run_analyzer(
             stdin=subprocess.PIPE if stdin_data is not None else subprocess.DEVNULL,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
-            env=build_env(env_extra),
+            env=build_env({**(env_extra or {}), 'AIPAM_PROCESS_GROUP_NONCE': group_nonce}),
             preexec_fn=build_preexec(limits, uid, gid),
             close_fds=True,
         )
@@ -136,6 +138,7 @@ def run_analyzer(
     except OSError as exc:
         return AnalyzerResult(status=AnalyzerStatus.crashed, reason=str(exc))
 
+    proc.aipam_group = ProcessGroup(read_process_identity(proc.pid), group_nonce)
     try:
         stdout, stderr = proc.communicate(input=stdin_data, timeout=limits.wall_clock_seconds)
     except subprocess.TimeoutExpired:
@@ -186,12 +189,104 @@ def run_analyzer(
     )
 
 
-def signal_process_group(pgid: int, sig: int) -> None:
-    """Shared Linux process-group primitive; callers verify execution identity."""
+class ProcessIdentityConflict(RuntimeError):
+    """A numeric PID/group no longer identifies the launched execution."""
+
+
+def read_process_identity(pid):
     try:
-        os.killpg(pgid, sig)
+        fields = Path(f'/proc/{pid}/stat').read_text().rsplit(')', 1)[1].split()
+        return dict(pid=pid, state=fields[0], ppid=int(fields[1]), pgid=int(fields[2]), sid=int(fields[3]),
+                    start_ticks=int(fields[19]),
+                    boot_id=Path('/proc/sys/kernel/random/boot_id').read_text().strip())
+    except FileNotFoundError:
+        return None
+
+
+def same_process(expected, live):
+    return live is not None and all(expected[k] == live[k] for k in ('pid', 'start_ticks', 'boot_id'))
+
+
+def group_members(pgid):
+    members = []
+    for path in Path('/proc').glob('[0-9]*/stat'):
+        item = read_process_identity(int(path.parent.name))
+        if item and item['pgid'] == pgid and item['state'] != 'Z':
+            members.append(item)
+    return members
+
+
+def process_group_nonce(pid):
+    try:
+        values = Path(f'/proc/{pid}/environ').read_bytes().split(b'\0')
+    except FileNotFoundError:
+        return None
+    prefix = b'AIPAM_PROCESS_GROUP_NONCE='
+    return next((v[len(prefix):].decode() for v in values if v.startswith(prefix)), None)
+
+
+def signal_exact_process(expected, sig):
+    """Pin the kernel task before checking /proc; never signal by numeric PID."""
+    try:
+        fd = os.pidfd_open(expected['pid'])
     except ProcessLookupError:
-        pass
+        return
+    try:
+        live = read_process_identity(expected['pid'])
+        if live is None:
+            return
+        if not same_process(expected, live):
+            raise ProcessIdentityConflict()
+        try:
+            signal.pidfd_send_signal(fd, sig)
+        except ProcessLookupError:
+            pass
+    finally:
+        os.close(fd)
+
+
+class ProcessGroup:
+    def __init__(self, leader, nonce):
+        self.leader, self.nonce = leader, nonce
+
+    def snapshot(self):
+        if self.leader is None:
+            raise ProcessIdentityConflict('Missing launch identity')
+        live = read_process_identity(self.leader['pid'])
+        if live is not None and not same_process(self.leader, live):
+            raise ProcessIdentityConflict()
+        members = group_members(self.leader['pgid'])
+        # An unreaped leader (including a zombie) anchors the kernel group and
+        # session. This also works after BlueScrub drops UID, where reading
+        # another UID's environ may be forbidden without CAP_SYS_PTRACE.
+        anchor = read_process_identity(self.leader['pid'])
+        if anchor is not None and not same_process(self.leader, anchor):
+            raise ProcessIdentityConflict()
+        verified = []
+        for item in members:
+            nonce = self.nonce if anchor is not None else process_group_nonce(item['pid'])
+            if nonce is None and anchor is None:
+                current = read_process_identity(item['pid'])
+                if current is None or (same_process(item, current) and current['state'] == 'Z'):
+                    continue
+            if (item['sid'] != self.leader.get('sid', self.leader['pgid'])
+                    or item['boot_id'] != self.leader['boot_id']
+                    or item['start_ticks'] < self.leader['start_ticks']
+                    or (anchor is None and (not self.nonce or nonce != self.nonce))):
+                raise ProcessIdentityConflict()
+            verified.append(item)
+        return verified
+
+    def stop(self, grace):
+        for item in self.snapshot():
+            signal_exact_process(item, signal.SIGTERM)
+        until = time.monotonic() + grace
+        while time.monotonic() < until and self.snapshot():
+            time.sleep(min(.05, max(0, until-time.monotonic())))
+        # Rescan after TERM: leaders can exit and descendants can fork. Every
+        # survivor needs the inherited launch nonce and its own pinned handle.
+        for item in self.snapshot():
+            signal_exact_process(item, signal.SIGKILL)
 
 
 def _kill_group(proc: subprocess.Popen, grace_seconds: float) -> None:
@@ -201,17 +296,5 @@ def _kill_group(proc: subprocess.Popen, grace_seconds: float) -> None:
             proc.kill()
         proc.wait(timeout=3)
         return
-    # Every caller starts a new session. Never discover a possibly reused PID's
-    # current group after the leader exits: the assigned PGID is the child PID.
-    pgid = proc.pid
-    signal_process_group(pgid, signal.SIGTERM)
-    deadline = time.monotonic() + grace_seconds
-    while time.monotonic() < deadline:
-        try:
-            os.killpg(pgid, 0)
-        except ProcessLookupError:
-            break
-        proc.poll()
-        time.sleep(0.05)
-    signal_process_group(pgid, signal.SIGKILL)
+    proc.aipam_group.stop(grace_seconds)
     proc.wait(timeout=3)

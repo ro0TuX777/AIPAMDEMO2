@@ -14,6 +14,9 @@ Fingerprint types:
 
 from __future__ import annotations
 
+from backend.app.pipeline.runtime_control import checkpoint
+from backend.app.pipeline.outcomes import PROPAGATE_ERRORS
+
 import json
 import logging
 from collections import defaultdict
@@ -69,6 +72,7 @@ def extract_beacon_profiles(
 
     fingerprints: list[BehavioralFingerprint] = []
     for f in findings:
+        checkpoint()
         evidence = _parse_evidence(f.evidence_json)
         if not evidence:
             continue
@@ -133,6 +137,7 @@ def extract_auth_abuse_patterns(
 
     fingerprints: list[BehavioralFingerprint] = []
     for f in findings:
+        checkpoint()
         evidence = _parse_evidence(f.evidence_json)
         meta: dict[str, Any] = {
             "category": f.category or "",
@@ -142,6 +147,7 @@ def extract_auth_abuse_patterns(
         if evidence:
             for key in ("src_ip", "target_hosts", "username", "attempt_count",
                         "unique_targets", "unique_users", "time_span_seconds"):
+                checkpoint()
                 if key in evidence:
                     meta[key] = evidence[key]
 
@@ -176,6 +182,7 @@ def extract_sequence_motifs(
 
     fingerprints: list[BehavioralFingerprint] = []
     for f in findings:
+        checkpoint()
         evidence = _parse_evidence(f.evidence_json)
         meta: dict[str, Any] = {
             "category": f.category or "",
@@ -185,6 +192,7 @@ def extract_sequence_motifs(
         if evidence:
             for key in ("chain_type", "steps", "hosts_involved",
                         "step_count", "time_span"):
+                checkpoint()
                 if key in evidence:
                     meta[key] = evidence[key]
 
@@ -223,20 +231,24 @@ def extract_operator_timing(
     # Group tasks by operator/user
     by_operator: dict[str, list[NormalizedEvent]] = defaultdict(list)
     for evt in c2_tasks:
+        checkpoint()
         operator = evt.username or "unknown"
         by_operator[operator].append(evt)
 
     fingerprints: list[BehavioralFingerprint] = []
     for operator, events in by_operator.items():
+        checkpoint()
         data = _parse_event_data(events)
         task_types = [d.get("task_type", "unknown") for d in data]
         task_type_counts = defaultdict(int)
         for tt in task_types:
+            checkpoint()
             task_type_counts[tt] += 1
 
         hours = _extract_hours(events)
         hour_counts = defaultdict(int)
         for h in hours:
+            checkpoint()
             hour_counts[h] += 1
         peak_hours = sorted(hour_counts, key=hour_counts.get, reverse=True)[:3]  # type: ignore[arg-type]
 
@@ -285,6 +297,7 @@ def extract_infrastructure_fingerprints(
     # Aggregate unique infrastructure signatures
     infra_sigs: dict[str, dict[str, Any]] = {}
     for evt in c2_callbacks:
+        checkpoint()
         data = _safe_json(evt.data_json)
         dest = evt.dest_ip or data.get("c2_ip", "")
         port = str(evt.dest_port or data.get("c2_port", ""))
@@ -302,6 +315,7 @@ def extract_infrastructure_fingerprints(
 
     fingerprints: list[BehavioralFingerprint] = []
     for sig_key, sig in infra_sigs.items():
+        checkpoint()
         text = f"Infrastructure: {sig['dest_ip']}:{sig['dest_port']}"
         if sig["framework"]:
             text += f" framework={sig['framework']}"
@@ -346,9 +360,12 @@ def extract_all_fingerprints(
     ]
 
     for name, fn in extractors:
+        checkpoint()
         try:
             fps = fn(db, job_id, exercise_id)
             all_fps.extend(fps)
+        except PROPAGATE_ERRORS:
+            raise
         except Exception:
             logger.exception("Fingerprint extractor %s failed for job %s", name, job_id)
 
@@ -396,6 +413,7 @@ def _extract_hours(events: list[NormalizedEvent]) -> list[int]:
     """Extract hour-of-day from event timestamps."""
     hours = []
     for e in events:
+        checkpoint()
         if e.timestamp:
             try:
                 ts = e.timestamp

@@ -429,18 +429,22 @@ def test_real_executor_exact_identity_and_conflict(tmp_path, identity_change):
 
 @pytest.mark.skipif(sys.platform != 'linux', reason='Linux orphan group cleanup gate; Task 10 app image')
 def test_absent_executor_reaps_tracked_handler_descendants(tmp_path):
-    import subprocess, time
+    import subprocess, time, os
+    from backend.app.bluescrub.isolation.runner import ProcessGroup, read_process_identity
     from backend.app.pipeline.runtime_control import process_identity, atomic_json
     from backend.app.pipeline.sensor_process import stop_executor
     child_file = tmp_path/'child.pid'
     code = "import subprocess,sys,time; p=subprocess.Popen([sys.executable,'-c','import signal,time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(90)']); open(sys.argv[1],'w').write(str(p.pid)); time.sleep(90)"
-    proc = subprocess.Popen([sys.executable, '-c', code, str(child_file)], start_new_session=True)
+    nonce = 'existing-orphan-test'
+    proc = subprocess.Popen([sys.executable, '-c', code, str(child_file)], start_new_session=True,
+                            env={**os.environ, 'AIPAM_PROCESS_GROUP_NONCE': nonce})
+    proc.aipam_group = ProcessGroup(read_process_identity(proc.pid), nonce)
     try:
         deadline = time.monotonic()+3
         while not child_file.exists() and time.monotonic()<deadline:
             time.sleep(.02)
         identity = process_identity(proc.pid)
-        atomic_json(tmp_path/'control'/'handler-stubborn.json', {**identity, 'handler': 'stubborn'})
+        atomic_json(tmp_path/'control'/'handler-stubborn.json', {**identity, 'handler': 'stubborn', 'group_nonce': nonce})
         result = stop_executor(dict(executor_pid=2147483647, executor_pid_start_ticks=1, executor_boot_id=identity['boot_id']), tmp_path, 5)
         assert result == 'absent'
         proc.wait(timeout=1)
@@ -586,6 +590,94 @@ def test_cancel_finalization_uses_reserved_deadline_and_post_commit_event(owned,
         events.append(status)
     m.RuntimeSupervisor(factory, root, transport=Transport(), emit=emit).cancel_once()
     assert events == ['canceled']
+
+
+@pytest.mark.parametrize('registered', [False, True])
+def test_exhausted_cleanup_budget_still_finalizes_proven_stopped_writer(owned, monkeypatch, registered):
+    from backend.app import runtime_supervisor as m
+    from dataclasses import asdict
+    from backend.app.pipeline.runtime_control import atomic_json
+    factory, handle, root = owned
+    with factory() as db:
+        if registered:
+            identity = runtime.ExecutorIdentity('node', 'a'*64, 42, 123, 'boot')
+            runtime.register_executor(db, handle, identity)
+            atomic_json(root/'job'/'.runs'/handle.run_token/'control'/'executor.json',
+                        dict(handle=asdict(handle), identity=asdict(identity), resource_protocol=1))
+        runtime.request_cancel(db, 'job')
+        db.execute(update(Job).values(cancel_force_at=runtime._now(-1), cancel_deadline_at=runtime._now(15)))
+        db.commit()
+    clock = [45.0]
+    budget_type = m.DeadlineBudget
+    monkeypatch.setattr(m, 'DeadlineBudget', lambda seconds: budget_type(seconds, clock=lambda: clock[0]))
+    class Transport(m.DockerTransport):
+        def stop_executor(self, identity, run_dir, budget):
+            clock[0] += 7
+            return 'matching' if registered else 'absent'
+        def _call(self, operation, payload, budget):
+            clock[0] += budget.remaining()
+            # Exercise the real transport's zero-budget branch.
+            return super()._call(operation, payload, budget)
+    events = []
+    def emit(job_id, status):
+        with factory() as db:
+            assert db.get(Job, job_id).status == 'canceled'
+        assert clock[0] <= 60
+        events.append(status)
+    m.RuntimeSupervisor(factory, root, transport=Transport(), emit=emit).cancel_once()
+    assert events == ['canceled']
+
+
+@pytest.mark.parametrize('remaining', [2, -2])
+def test_never_registered_executor_finalizes_with_real_zero_budget_transport(owned, remaining):
+    from backend.app import runtime_supervisor as m
+    factory, handle, root = owned
+    with factory() as db:
+        runtime.request_cancel(db, 'job')
+        db.execute(update(Job).values(cancel_force_at=runtime._now(-20), cancel_deadline_at=runtime._now(remaining)))
+        db.commit()
+    events = []
+    m.RuntimeSupervisor(factory, root, emit=lambda *args: events.append(args)).cancel_once()
+    with factory() as db:
+        assert db.get(Job, 'job').status == 'canceled'
+    assert len(events) == 1
+
+
+def test_unresolved_container_writer_prevents_finalization(owned):
+    from backend.app import runtime_supervisor as m
+    factory, handle, root = owned
+    marker = root/'job'/'.runs'/handle.run_token/'control'/'containers.requested'
+    marker.parent.mkdir(parents=True, exist_ok=True)
+    marker.touch()
+    with factory() as db:
+        runtime.register_executor(db, handle, runtime.ExecutorIdentity('node', 'a'*64, 42, 123, 'boot'))
+        runtime.request_cancel(db, 'job')
+        db.execute(update(Job).values(cancel_force_at=runtime._now(-1)))
+        db.commit()
+    class Transport:
+        def stop_executor(self, *args): return 'matching'
+        def cleanup_containers(self, *args): raise TimeoutError()
+    events = []
+    m.RuntimeSupervisor(factory, root, transport=Transport(), emit=lambda *a: events.append(a)).cancel_once()
+    with factory() as db:
+        assert db.get(Job, 'job').status == 'canceling'
+    assert events == []
+
+
+def test_second_supervisor_cannot_reclaim_during_stop_but_can_after_loss(owned, monkeypatch):
+    from backend.app import runtime_supervisor as m
+    from sqlalchemy import func
+    factory, handle, root = owned
+    with factory() as db:
+        runtime.request_cancel(db, 'job')
+        db.execute(update(Job).values(cancel_force_at=runtime._now(-1)))
+        db.commit()
+        assert runtime.claim_cancel_escalation(db, 'job', 'first', lease_seconds=m.ESCALATION_LEASE_SECONDS).claimed
+    original_now = runtime._now
+    for elapsed, expected in [(6, False), (14, False), (16, True)]:
+        monkeypatch.setattr(runtime, '_now', lambda offset=0, elapsed=elapsed: original_now(offset+elapsed))
+        with factory() as db:
+            assert runtime.claim_cancel_escalation(db, 'job', 'second', lease_seconds=m.ESCALATION_LEASE_SECONDS).claimed is expected
 
 
 

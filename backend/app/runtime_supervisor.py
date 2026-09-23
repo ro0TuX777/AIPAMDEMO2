@@ -19,6 +19,7 @@ from backend.app.pipeline.run_artifacts import safe_artifact_path
 
 logger = logging.getLogger(__name__)
 HEARTBEAT_PATH = Path('/tmp/aipam-runtime-supervisor.heartbeat')
+ESCALATION_LEASE_SECONDS = 15  # twelve seconds of transport plus the final CAS/event reserve
 
 
 def healthy(path=HEARTBEAT_PATH, *, now=None):
@@ -147,11 +148,16 @@ class RuntimeSupervisor:
             token = str(uuid4())
             with self.factory() as db:
                 db.connection().exec_driver_sql("PRAGMA busy_timeout=500")
-                claim = runtime.claim_cancel_escalation(db, job_id, token, lease_seconds=5)
+                claim = runtime.claim_cancel_escalation(db, job_id, token, lease_seconds=ESCALATION_LEASE_SECONDS)
                 if not claim.claimed:
                     continue
                 seconds = db.scalar(select((func.julianday(claim.cancel_deadline_at)-func.julianday(runtime._now()))*86400))
-            budget = DeadlineBudget(max(0, seconds - 3))  # final CAS/event reserve
+            # A late reclaim must still be able to establish writer absence.
+            # Never turn an exhausted deadline into a permanently stuck row.
+            work_seconds = max(0, seconds - 3)
+            if seconds <= 3 and claim.identity is not None:
+                work_seconds = 12
+            budget = DeadlineBudget(min(12, work_seconds))
             if not self.owns_cancel(claim.handle, token):
                 continue
             try:
@@ -162,7 +168,22 @@ class RuntimeSupervisor:
                     continue
                 if not self.owns_cancel(claim.handle, token):
                     continue
-                self.transport.cleanup_containers(claim.handle, budget)
+                # The marker is durable before every Docker submission. Once
+                # the executor/groups are stopped, its absence proves that no
+                # independent container writer could have been submitted.
+                receipt = run_dir/'control'/'executor.json'
+                protocol_known = claim.identity is None
+                if receipt.is_file():
+                    payload = json.loads(receipt.read_text())
+                    protocol_known = (payload.get('resource_protocol') == 1
+                                      and payload.get('handle') == asdict(claim.handle)
+                                      and payload.get('identity') == asdict(claim.identity)) if claim.identity else True
+                containers_possible = not protocol_known or (run_dir/'control'/'containers.requested').exists()
+                try:
+                    self.transport.cleanup_containers(claim.handle, budget)
+                except Exception:
+                    if containers_possible:
+                        raise
                 with self.factory() as db:
                     db.connection().exec_driver_sql("PRAGMA busy_timeout=1000")
                     won = runtime.complete_cancel_escalation(db, claim.handle, token)
