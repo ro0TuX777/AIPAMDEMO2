@@ -65,6 +65,16 @@ def alembic_db(tmp_path, monkeypatch):
     engine.dispose()
 
 
+# Canonical SQLite defaults for the explicit runtime metadata allowlist.
+EXPECTED_DEFAULTS = {
+    ("jobs", "execution_attempt"): "'0'",
+    ("jobs", "artifact_layout_version"): "'2'",
+    ("findings", "confidence"): "'0.0'",
+    ("findings", "evidence_status"): "'observed'",
+    ("findings", "corroboration_score"): "'0.0'",
+}
+
+
 def assert_metadata_parity(engine):
     inspector = sa.inspect(engine)
     for name in sorted(RUNTIME_TABLES):
@@ -77,6 +87,14 @@ def assert_metadata_parity(engine):
                 col.name,
             )
             assert actual[col.name]["nullable"] == col.nullable, (name, col.name)
+            if (name, col.name) == ("temporal_correlations", "clock_offset_seconds"):
+                # Historical enhancement migration and create_all differ here;
+                # convergence does not own or rewrite this existing column.
+                assert actual[col.name]["default"] in (None, "'0.0'", "0.0")
+            else:
+                assert actual[col.name]["default"] == EXPECTED_DEFAULTS.get(
+                    (name, col.name)
+                ), (name, col.name)
         assert set(inspector.get_pk_constraint(name)["constrained_columns"]) == {
             c.name for c in table.primary_key
         }, name
@@ -88,10 +106,28 @@ def assert_metadata_parity(engine):
             if isinstance(constraint, sa.UniqueConstraint)
         }, name
         assert {
-            (i["name"], tuple(i["column_names"]), bool(i["unique"]))
+            (
+                i["name"],
+                tuple(i["column_names"]),
+                bool(i["unique"]),
+                tuple(
+                    sorted(
+                        (key, str(value))
+                        for key, value in i.get("dialect_options", {}).items()
+                    )
+                ),
+            )
             for i in inspector.get_indexes(name)
         } == {
-            (i.name, tuple(c.name for c in i.columns), i.unique) for i in table.indexes
+            (
+                i.name,
+                tuple(c.name for c in i.columns),
+                i.unique,
+                tuple(
+                    sorted((key, str(value)) for key, value in i.dialect_kwargs.items())
+                ),
+            )
+            for i in table.indexes
         }, name
         assert {
             (
@@ -215,3 +251,115 @@ def test_convergence_refuses_unsupported_existing_metadata_table(alembic_db, dri
     table.create(engine)
     with pytest.raises(RuntimeError, match="Unsupported"):
         command.upgrade(config, CONVERGENCE)
+
+
+def schema_snapshot(engine):
+    with engine.connect() as db:
+        return db.exec_driver_sql(
+            "SELECT type, name, tbl_name, sql FROM sqlite_master ORDER BY type, name"
+        ).all()
+
+
+@pytest.mark.parametrize(
+    "table, column, declaration",
+    [
+        ("findings", "evidence_status", "VARCHAR NOT NULL DEFAULT 'unsupported'"),
+        ("findings", "confidence", "FLOAT DEFAULT 1.0"),
+        ("jobs", "source_type", "VARCHAR DEFAULT 'unsupported'"),
+        ("alerts", "analyst_status", "VARCHAR DEFAULT 'unsupported'"),
+        ("files", "filename", "VARCHAR DEFAULT 'unsupported'"),
+    ],
+)
+def test_convergence_rejects_additions_default_drift_before_mutation(
+    alembic_db, table, column, declaration
+):
+    config, engine = alembic_db
+    command.upgrade(config, PREDECESSOR)
+    with engine.begin() as db:
+        db.exec_driver_sql(f"ALTER TABLE {table} ADD COLUMN {column} {declaration}")
+    before = schema_snapshot(engine)
+    with pytest.raises(
+        RuntimeError, match=f"Unsupported column default: {table}.{column}"
+    ):
+        command.upgrade(config, CONVERGENCE)
+    assert schema_snapshot(engine) == before
+
+
+@pytest.mark.parametrize("defaults", ["compatibility", "absent"])
+def test_convergence_normalizes_only_supported_additions_defaults(alembic_db, defaults):
+    config, engine = alembic_db
+    command.upgrade(config, PREDECESSOR)
+    columns = [
+        ("findings", "confidence", "FLOAT", "0.0"),
+        ("findings", "corroboration_score", "FLOAT", "0.0"),
+        ("findings", "evidence_status", "VARCHAR", "'observed'"),
+        ("findings", "analyst_status", "VARCHAR", "'unreviewed'"),
+        ("alerts", "analyst_status", "VARCHAR", "'unreviewed'"),
+        ("jobs", "source_type", "VARCHAR", "'pcap'"),
+    ]
+    with engine.begin() as db:
+        for table, column, datatype, value in columns:
+            default = f" DEFAULT {value}" if defaults == "compatibility" else ""
+            db.exec_driver_sql(
+                f"ALTER TABLE {table} ADD COLUMN {column} {datatype}{default}"
+            )
+        db.exec_driver_sql(
+            "INSERT INTO jobs (job_id, status, execution_profile, priority, created_at, source_type) VALUES ('legacy', 'completed', 'standard', 'normal', '2026-01-01', NULL)"
+        )
+        db.exec_driver_sql(
+            "INSERT INTO findings (job_id, finding_id, sensor, severity, title, confidence, evidence_status, corroboration_score) VALUES ('legacy', 'f1', 'zeek', 'info', 'Retained', NULL, NULL, NULL)"
+        )
+    command.upgrade(config, "head")
+    assert_metadata_parity(engine)
+    with engine.begin() as db:
+        assert (
+            db.exec_driver_sql(
+                "SELECT source_type FROM jobs WHERE job_id='legacy'"
+            ).scalar()
+            == "pcap"
+        )
+        assert db.exec_driver_sql(
+            "SELECT confidence, evidence_status, corroboration_score FROM findings WHERE finding_id='f1'"
+        ).one() == (0.0, "observed", 0.0)
+        db.exec_driver_sql(
+            "INSERT INTO findings (job_id, finding_id, sensor, severity, title) VALUES ('legacy', 'f2', 'zeek', 'info', 'Uses canonical defaults')"
+        )
+        assert db.exec_driver_sql(
+            "SELECT confidence, evidence_status, corroboration_score FROM findings WHERE finding_id='f2'"
+        ).one() == (0.0, "observed", 0.0)
+
+
+@pytest.mark.parametrize(
+    "table, index, column, predicate",
+    [
+        ("job_log_sources", "idx_job_log_sources_job", "job_id", "ordinal = 0"),
+        (
+            "kb_documents",
+            "idx_kb_doc_sha",
+            "content_sha256",
+            "content_sha256 IS NOT NULL",
+        ),
+    ],
+)
+def test_convergence_rejects_partial_named_index_before_mutation(
+    alembic_db, table, index, column, predicate
+):
+    config, engine = alembic_db
+    command.upgrade(config, PREDECESSOR)
+    if table == "job_log_sources":
+        Base.metadata.tables[table].create(engine)
+        with engine.begin() as db:
+            db.exec_driver_sql(f"DROP INDEX {index}")
+    else:
+        with engine.begin() as db:
+            db.exec_driver_sql(
+                "ALTER TABLE kb_documents ADD COLUMN content_sha256 VARCHAR"
+            )
+    with engine.begin() as db:
+        db.exec_driver_sql(
+            f"CREATE INDEX {index} ON {table} ({column}) WHERE {predicate}"
+        )
+    before = schema_snapshot(engine)
+    with pytest.raises(RuntimeError, match=f"Unsupported index shape: {table}.{index}"):
+        command.upgrade(config, CONVERGENCE)
+    assert schema_snapshot(engine) == before

@@ -450,16 +450,66 @@ BACKFILLS = {
 }
 
 
-def _ensure_indexes(name, expected):
+# Supported pre-convergence defaults are explicit, not evaluated as SQL.
+# None covers existing nullable columns without a database default. The other
+# variants are emitted by the frozen model declarations or the compatibility
+# ALTERs in database_v2.init_v2_db (numeric 0.0, 'pcap', and 'unreviewed').
+# All accepted variants converge to the frozen ADDITIONS declarations above;
+# Other ADDITIONS columns accept only the absence of a server default.
+SUPPORTED_ADDITION_DEFAULTS = {
+    ("findings", "confidence"): (None, "0.0", "'0.0'"),
+    ("findings", "corroboration_score"): (None, "0.0", "'0.0'"),
+    ("findings", "evidence_status"): (None, "'observed'"),
+    ("findings", "analyst_status"): (None, "'unreviewed'"),
+    ("alerts", "analyst_status"): (None, "'unreviewed'"),
+    ("jobs", "source_type"): (None, "'pcap'"),
+}
+
+
+def _declared_default(column):
+    # These frozen declarations use only literal string server defaults.
+    return (
+        "'" + column.server_default.arg.replace("'", "''") + "'"
+        if column.server_default is not None
+        else None
+    )
+
+
+def _validate_additions():
+    inspector = sa.inspect(op.get_bind())
+    for name, columns in ADDITIONS.items():
+        actual = {c["name"]: c for c in inspector.get_columns(name)}
+        for column in columns:
+            found = actual.get(column.name)
+            if found is None:
+                continue
+            if found["type"]._type_affinity != column.type._type_affinity:
+                raise RuntimeError(f"Unsupported column type: {name}.{column.name}")
+            supported = SUPPORTED_ADDITION_DEFAULTS.get((name, column.name), (None,))
+            if found["default"] not in supported:
+                raise RuntimeError(f"Unsupported column default: {name}.{column.name}")
+
+
+def _validate_indexes(name, expected):
     actual = {i["name"]: i for i in sa.inspect(op.get_bind()).get_indexes(name)}
+    for index, columns in expected.items():
+        found = actual.get(index)
+        if found is not None and (
+            tuple(found["column_names"]) != tuple(columns)
+            or found["unique"]
+            # Every declared convergence index covers the whole table. A
+            # sqlite_where predicate (or any other option) is unsupported.
+            or found.get("dialect_options")
+        ):
+            raise RuntimeError(f"Unsupported index shape: {name}.{index}")
+    return actual
+
+
+def _ensure_indexes(name, expected):
+    actual = _validate_indexes(name, expected)
     for index, columns in expected.items():
         if index not in actual:
             op.create_index(index, name, list(columns), unique=False)
-        elif (
-            tuple(actual[index]["column_names"]) != tuple(columns)
-            or actual[index]["unique"]
-        ):
-            raise RuntimeError(f"Unsupported index shape: {name}.{index}")
 
 
 def _validate_table(table):
@@ -520,12 +570,24 @@ def _validate_table(table):
 
 def upgrade():
     bind = op.get_bind()
+    # Validate existing objects before any table or data mutation. Missing
+    # declared objects are created below; unsupported shapes are never rebuilt.
+    _validate_additions()
+    for name in METADATA_TABLES:
+        if sa.inspect(bind).has_table(name):
+            table = SCHEMA.tables[name]
+            _validate_table(table)
+            _validate_indexes(
+                name, {i.name: tuple(c.name for c in i.columns) for i in table.indexes}
+            )
+    for name, indexes in INDEXES.items():
+        _validate_indexes(name, indexes)
+
     for name in METADATA_TABLES:
         table = SCHEMA.tables[name]
         if not sa.inspect(bind).has_table(name):
             table.create(bind)
         else:
-            _validate_table(table)
             _ensure_indexes(
                 name, {i.name: tuple(c.name for c in i.columns) for i in table.indexes}
             )
@@ -544,8 +606,6 @@ def upgrade():
                         server_default=column.server_default,
                     ),
                 )
-            elif found["type"]._type_affinity != column.type._type_affinity:
-                raise RuntimeError(f"Unsupported column type: {name}.{column.name}")
             if not column.nullable:
                 table = sa.table(name, sa.column(column.name))
                 bind.execute(
@@ -553,10 +613,21 @@ def upgrade():
                     .where(table.c[column.name].is_(None))
                     .values({column.name: BACKFILLS[(name, column.name)]})
                 )
-            if found is None or found["nullable"] != column.nullable:
+            if (
+                found is None
+                or found["nullable"] != column.nullable
+                or found["default"] != _declared_default(column)
+            ):
                 with op.batch_alter_table(name) as batch:
                     batch.alter_column(
-                        column.name, existing_type=column.type, nullable=column.nullable
+                        column.name,
+                        existing_type=column.type,
+                        nullable=column.nullable,
+                        server_default=(
+                            column.server_default.arg
+                            if column.server_default is not None
+                            else None
+                        ),
                     )
         _ensure_indexes(name, INDEXES.get(name, {}))
     uniques = sa.inspect(bind).get_unique_constraints("hosts")
