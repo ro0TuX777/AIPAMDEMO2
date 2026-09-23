@@ -26,7 +26,8 @@ if config.config_file_name is not None:
 
 # Override sqlalchemy.url from env var if available
 db_path = os.environ.get("AIPAM_DB_PATH")
-if db_path:
+configured_url = config.get_main_option("sqlalchemy.url")
+if db_path and configured_url == "sqlite:///./aipam.db":
     config.set_main_option("sqlalchemy.url", f"sqlite:///{db_path}")
 
 # Target metadata already defined above
@@ -55,15 +56,18 @@ def run_migrations_online() -> None:
         poolclass=pool.NullPool,
     )
 
-    with connectable.connect() as connection:
-        context.configure(
-            connection=connection,
-            target_metadata=target_metadata,
-            render_as_batch=True,  # Required for SQLite ALTER TABLE support
-        )
+    try:
+        with connectable.connect() as connection:
+            context.configure(
+                connection=connection,
+                target_metadata=target_metadata,
+                render_as_batch=True,  # Required for SQLite ALTER TABLE support
+            )
 
-        with context.begin_transaction():
-            context.run_migrations()
+            with context.begin_transaction():
+                context.run_migrations()
+    finally:
+        connectable.dispose()
 
 
 if context.is_offline_mode():

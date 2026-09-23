@@ -589,28 +589,9 @@ class IntegrationSettingsPayload(BaseModel):
     arkime_api_password: Optional[str] = None
 
 
-def _ensure_settings_table() -> None:
-    """Create the V1 ``settingsdb`` table if it does not yet exist.
-
-    V2 deployments only run ``init_v2_db()`` which creates SQLAlchemy ``Base``
-    tables — the V1 SQLModel ``SettingsDB`` table is never created automatically,
-    even though both V1 and V2 share the same SQLite file. This helper is
-    idempotent and safe to call on every read/write.
-    """
-    try:
-        from sqlmodel import SQLModel
-        from backend.app.database import engine
-        from backend.app import db_models  # noqa: F401  ensure metadata registered
-        SQLModel.metadata.create_all(engine, tables=[db_models.SettingsDB.__table__])
-    except Exception:
-        # Best-effort: callers handle their own errors if the table is still missing.
-        pass
-
-
 def _get_settings_db_values() -> dict:
     """Read the singleton SettingsDB row (id=1) and return its values dict."""
     try:
-        _ensure_settings_table()
         from backend.app.database import get_session
         from backend.app.db_models import SettingsDB
         with get_session() as session:
@@ -622,7 +603,6 @@ def _get_settings_db_values() -> dict:
 
 def _save_settings_db_values(updates: dict) -> dict:
     """Merge *updates* into the SettingsDB singleton and return the full dict."""
-    _ensure_settings_table()
     from backend.app.database import get_session
     from backend.app.db_models import SettingsDB
     with get_session() as session:

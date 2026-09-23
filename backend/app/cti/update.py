@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import argparse
+import os
+from pathlib import Path
 from typing import Dict, List
 
 from sqlmodel import Session
 
-from ..database import engine, init_db
+from ..database import get_engine
 from .ingest import DEFAULT_SOURCES, ingest_domain
 
 
@@ -25,7 +27,8 @@ def _parse_args() -> argparse.Namespace:
 
 def main() -> None:
     args = _parse_args()
-    init_db()
+    from backend.app.schema_bootstrap import assert_schema_current
+    assert_schema_current(Path(os.environ.get("AIPAM_DB_PATH", "/data/aipam.db")))
 
     sources: Dict[str, str] = dict(DEFAULT_SOURCES)
     if args.enterprise:
@@ -44,7 +47,7 @@ def main() -> None:
     if not domains:
         raise SystemExit("No valid domains requested.")
 
-    with Session(engine) as session:
+    with Session(get_engine()) as session:
         for domain in domains:
             result = ingest_domain(session, domain, sources[domain])
             print(

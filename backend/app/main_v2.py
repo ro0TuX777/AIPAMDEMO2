@@ -9,6 +9,8 @@ Creates the app with:
 """
 
 import uuid
+import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request, Response
@@ -40,7 +42,7 @@ from backend.app.api import (
     uploads,
 )
 from backend.app.api._state import get_uptime_seconds  # noqa: F401
-from backend.app.database_v2 import init_v2_db
+from backend.app.schema_bootstrap import assert_schema_current, schema_lock
 
 _APP_VERSION = "2.0.0"
 
@@ -48,32 +50,17 @@ _APP_VERSION = "2.0.0"
 def create_app() -> FastAPI:
     """Build and return the AIPAM V2 FastAPI application."""
 
-    # Ensure all V2 tables exist (idempotent — safe to call on every startup).
-    # Wrapped in try/except so tests using in-memory SQLite are not affected.
-    try:
-        init_v2_db()
-    except Exception:
-        pass  # Tests override the DB; production DB dir may not exist yet
-
-    # Ensure the V1 SQLModel tables (settings, partial job results, chat, …)
-    # exist. They live in the same SQLite file but are declared via SQLModel, so
-    # init_v2_db()'s Base.metadata.create_all does not create them. Their table
-    # names are *db-suffixed and never collide with the V2 tables, so creating
-    # them here is safe. With DATABASE_URL pointed at the persistent /data DB
-    # (see docker-compose), this makes them persistent and shared between the
-    # API and the worker — partial job results in particular are written by the
-    # worker and polled by the API, so both must use the same database file.
-    try:
-        from sqlmodel import SQLModel
-        from backend.app.database import engine
-        from backend.app import db_models  # noqa: F401  ensure metadata registered
-        SQLModel.metadata.create_all(engine)
-    except Exception:
-        pass
+    @asynccontextmanager
+    async def lifespan(_app):
+        database_path = Path(os.environ.get("AIPAM_DB_PATH", "/data/aipam.db"))
+        with schema_lock(database_path, exclusive=False):
+            assert_schema_current(database_path)
+            yield
 
     app = FastAPI(
         title="AIPAM API",
         version=_APP_VERSION,
+        lifespan=lifespan,
         # Swagger UI is served by a custom route below using locally-vendored
         # assets so /api/v1/docs renders on an air-gapped host (no CDN access).
         docs_url=None,

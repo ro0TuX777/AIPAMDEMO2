@@ -113,7 +113,6 @@ def worker_harness(owned, monkeypatch):
     with factory() as db:
         db.execute(update(Job).values(status='queued', run_token=None))
         db.commit()
-    monkeypatch.setattr(database_v2, 'init_v2_db', lambda: None)
     monkeypatch.setattr(database_v2, 'get_session_factory', lambda: factory)
     monkeypatch.setattr(database_v2, 'get_engine', lambda: factory.kw['bind'])
     monkeypatch.setattr(worker, 'get_settings', lambda: Settings(aipam_api_token='test', aipam_job_root=root/'jobs', aipam_upload_root=root/'uploads', _env_file=None))

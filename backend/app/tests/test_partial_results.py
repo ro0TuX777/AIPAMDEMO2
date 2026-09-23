@@ -48,7 +48,7 @@ def _patch_engine(monkeypatch, tmp_path):
 
     # Patch the engine used by partial_results
     import backend.app.partial_results as pr_mod
-    monkeypatch.setattr(pr_mod, "engine", test_engine)
+    monkeypatch.setattr(pr_mod, "get_engine", lambda: test_engine)
 
     return test_engine
 

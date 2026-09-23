@@ -292,12 +292,16 @@ def main():
         return 0
     from backend.app.config_v2 import get_settings
     from backend.app.database_v2 import get_session_factory
+    from backend.app.schema_bootstrap import assert_schema_current, schema_lock
     settings = get_settings()
-    RuntimeSupervisor(get_session_factory(), settings.aipam_job_root,
-                      reconcile_seconds=settings.aipam_reconcile_seconds,
-                      cancel_poll_seconds=settings.aipam_cancel_poll_seconds,
-                      stale_seconds=settings.aipam_stale_seconds,
-                      undispatched_grace_seconds=settings.aipam_undispatched_grace_seconds).run()
+    database_path = Path(os.environ.get("AIPAM_DB_PATH", "/data/aipam.db"))
+    with schema_lock(database_path, exclusive=False):
+        assert_schema_current(database_path)
+        RuntimeSupervisor(get_session_factory(), settings.aipam_job_root,
+                          reconcile_seconds=settings.aipam_reconcile_seconds,
+                          cancel_poll_seconds=settings.aipam_cancel_poll_seconds,
+                          stale_seconds=settings.aipam_stale_seconds,
+                          undispatched_grace_seconds=settings.aipam_undispatched_grace_seconds).run()
 
 
 if __name__ == '__main__':

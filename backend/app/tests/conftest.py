@@ -16,8 +16,8 @@ def _ensure_db_tables(tmp_path_factory):
     """Redirect V1 database engine to a temp file and create tables."""
     db_path = tmp_path_factory.mktemp("db") / "test_v1.db"
     test_engine = create_engine(f"sqlite:///{db_path}", echo=False)
-    _v1_db.engine = test_engine
-    _v1_db.init_db()
+    _v1_db._engine = test_engine
+    _v1_db.create_test_schema()
 
 
 @pytest.fixture(scope="session", autouse=True)

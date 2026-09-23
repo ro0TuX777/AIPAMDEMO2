@@ -1284,6 +1284,29 @@ The flow response is structured as a Sankey diagram: `src_ip → dest_ip → des
 
 ---
 
+# SQLite schema adoption and recovery
+
+The API, worker, and runtime supervisor require the database to be at the Alembic head. Compose runs the one-shot `aipam-db-init` service before starting those processes. On the first rollout, stop the old API and worker first; older images do not participate in the schema lock.
+
+```powershell
+docker image tag aipam-app:latest aipam-app:pre-schema-rollback
+# Keep AIPAM_PREVIOUS_IMAGE=aipam-app:pre-schema-rollback in .env for the receipt.
+docker compose build backend
+docker compose stop backend worker runtime-supervisor
+docker compose run --rm aipam-db-init
+docker compose run --rm --no-deps aipam-db-init python -m backend.app.schema_cli verify
+docker compose up -d backend worker runtime-supervisor
+```
+
+The initializer refuses active jobs and unrecognized database layouts. It creates a read-only SQLite backup under `/data/schema-backups`, migrates a same-volume candidate, validates it, and atomically replaces `/data/aipam.db`. A JSON receipt under `/data/schema-receipts` records checksums, profile, revisions, row counts, primary-key fingerprints, and chat counts. Keep the backup and receipt together. Do not use Alembic downgrade against a live database.
+
+For a live rollback, stop every database writer and initializer and use the backup path and receipt path from the committed migration receipt. First run the restore verifier without `--commit`; it checks the backup checksum, schema profile, SQLite integrity, and foreign keys without changing the current database. Then repeat with `--commit` to save a separate backup of the migrated database, checkpoint writers, and atomically restore the candidate. The restore writes a `restored` receipt with both checksums. Set `AIPAM_APP_IMAGE` in `.env` to the `AIPAM_PREVIOUS_IMAGE` value from the migration receipt, then start the old API and worker with `docker compose up -d --no-deps backend worker runtime-supervisor`; bypass the new one-shot init service after restoring the old schema. If any checksum or profile differs, stop and retain both files for operator investigation.
+
+```powershell
+docker compose run --rm --no-deps aipam-db-init python -m backend.app.schema_cli restore --database /data/aipam.db --backup /data/schema-backups/<backup-file> --receipt /data/schema-receipts/<migration-operation>.json
+docker compose run --rm --no-deps aipam-db-init python -m backend.app.schema_cli restore --database /data/aipam.db --backup /data/schema-backups/<backup-file> --receipt /data/schema-receipts/<migration-operation>.json --commit
+```
+
 ## Support and Contributing
 
 ### Getting Help

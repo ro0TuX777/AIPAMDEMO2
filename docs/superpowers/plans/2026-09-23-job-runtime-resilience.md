@@ -899,7 +899,7 @@ git commit -m "perf: schedule independent sensors concurrently"
 - Produces: `inspect_schema_profile`, `adopt_legacy_database`, `assert_schema_current`, and CLI commands `python -m backend.app.schema_cli migrate|verify`.
 - Consumes: Alembic head after Tasks 1, 6, and 7.
 
-- [ ] **Step 1: Capture allowlisted legacy fixtures and fingerprints**
+- [x] **Step 1: Capture allowlisted legacy fixtures and fingerprints**
 
 Support only these exact profiles; all others fail closed:
 
@@ -907,12 +907,12 @@ Support only these exact profiles; all others fail closed:
 |---|---|---|
 | `fresh-empty-v1` | zero user objects and no `alembic_version` | run the repaired Alembic chain from base without stamping |
 | `alembic:<sorted-current-revisions>` | revisions known by Alembic `ScriptDirectory`, including branch states `c7d4f6a1e2b3`, `e2a9f4b71d83`, and their two-head set | prove every revision is a target-head ancestor and migrate candidate normally; never stamp |
-| `legacy-unversioned-precomparison-v1` | 48-table deployment layout at code boundary `f6583ecb4aa439f77296022cec91ed20ac92685b`; canonical SHA-256 `3f64e11ebef645a842b2c880396c5a52b9ad82dd16f72fd3a9d0fee2c855acb1` | exact fingerprint, stamp candidate `d4e5f6a7b8c9`, then upgrade |
-| `legacy-unversioned-partial-comparison-v1` | observed live 50-table layout at deployed commit `26170e2686504edce4d2f91a7ea345084382c3b7`; canonical SHA-256 `5e12805b3b8a9972bb20e5d26b6409cf0eb46d77bca02cdd3fb917e326a66e76` | require both comparison tables empty; remove their known indexes/trigger and tables only on candidate; stamp `d4e5f6a7b8c9`; upgrade |
+| `legacy-unversioned-precomparison-v1` | 48-table deployment layout at code boundary `f6583ecb4aa439f77296022cec91ed20ac92685b`; `aipam-schema-fingerprint-v1` SHA-256 `11eff09f2da25a1e9f838eaa8075c50af068b6df0ea2648b4c2f2aef848e45e1` | exact fingerprint, stamp candidate `d4e5f6a7b8c9`, then upgrade |
+| `legacy-unversioned-partial-comparison-v1` | observed live 50-table layout at deployed commit `26170e2686504edce4d2f91a7ea345084382c3b7`; `aipam-schema-fingerprint-v1` SHA-256 `d4858a0eda25c179786d1ac38b8616e8cf2e546e9242456286f7d04208fb9a2d` | require both comparison tables empty; remove their known indexes/trigger and tables only on candidate; stamp `d4e5f6a7b8c9`; upgrade |
 
 `legacy_partial_chat_populated.sql` is a refusal fixture, not a supported profile. An empty, malformed, ahead, unknown, or inconsistent `alembic_version` table is also unsupported. Use canonical format `aipam-schema-fingerprint-v1`: tables/columns, normalized types, nullability, defaults, primary-key position, semantic unique column sets, foreign keys/actions, named indexes/predicates, and normalized triggers; exclude row counts and generated `sqlite_autoindex_*` names. Store profile IDs, source commits, expected predecessors, and hashes in code; do not infer a closest match or allow an operator-supplied revision override.
 
-- [ ] **Step 2: Write failing adoption/refusal tests**
+- [x] **Step 2: Write failing adoption/refusal tests**
 
 ```python
 def test_empty_partial_chat_artifacts_are_adopted(tmp_path):
@@ -933,13 +933,13 @@ def test_populated_conflicting_table_refuses_without_source_change(tmp_path):
 
 Verify both fixture hashes exactly and prove one-column, index, foreign-key, or trigger drift rejects. Also cover unknown fingerprint, insufficient disk, active queued/running/canceling/deleting jobs, backup failure, Alembic failure, validation failure, multiprocess concurrent init, killed lock-holder reacquisition despite stale file contents, empty database, every supported versioned ancestor/branch state, committed content resident in WAL, interruption after backup/migration/validation/prepared receipt/checkpoint/replacement/receipt commit, all handles disposed at replacement, backup restore dry run, and API/worker refusal at behind/ahead revisions. Early refusals preserve byte SHA; later pre-replacement failures preserve logical schema/rows.
 
-- [ ] **Step 3: Run bootstrap tests and confirm they fail**
+- [x] **Step 3: Run bootstrap tests and confirm they fail**
 
 Run: `python -m pytest backend/app/tests/test_schema_bootstrap.py backend/app/tests/test_chat_comparison_migration.py -q`
 
 Expected: FAIL because startup uses `create_all()`, swallows errors, and has no legacy adoption command.
 
-- [ ] **Step 4: Implement candidate-based migration**
+- [x] **Step 4: Implement candidate-based migration**
 
 Use `/data/.aipam.db.schema.lock` with an OS advisory lock held on an open descriptor: `fcntl.flock` on POSIX and `msvcrt.locking` in Windows tests. Write PID, hostname/container ID, operation ID, start time, and database basename after acquisition. API, worker, and supervisor hold a shared lock for process lifetime; migration takes the exclusive lock. File contents may remain after a crash because OS ownership releases automatically; never infer ownership from age or delete/steal a live lock. A second initializer times out with `MigrationInProgress`. The first rollout still stops the old API/worker because that image does not participate in this protocol.
 
@@ -965,21 +965,21 @@ Use `/data/schema-backups/aipam.<UTC>.<operation-id>.sqlite3`, `/data/.aipam.db.
 
 If any step before the final checkpoint fails, source bytes remain unchanged; checkpoint failure may change page placement but not logical content after the verified backup exists. An interruption test must prove the source is either the complete old file or complete validated candidate, never a partial mix. Legacy source plus a prepared receipt means replacement did not occur: quarantine the candidate and retry with a new operation ID. Target-head source matching the prepared candidate checksum means replacement occurred: finish validation and commit the receipt. Any third checksum/revision state blocks operator recovery. The receipt contains paths, checksums, profile ID, revisions, row-count/primary-key/chat/non-content invariants, and timestamps without secrets or row content.
 
-- [ ] **Step 5: Remove production `create_all()` and swallowed startup errors**
+- [x] **Step 5: Remove production `create_all()` and swallowed startup errors**
 
 Keep metadata creation only in explicit test helpers. The startup order is mandatory for API, worker, and supervisor: acquire the process-lifetime shared schema lock, assert the schema is current, create the SQLAlchemy engine/session factories, and retain the lock descriptor until process exit. Refuse startup on absent, unversioned, behind, ahead, or inconsistent schema. Remove per-task `init_v2_db()` calls and broad startup `except: pass` behavior. Tests pause a process between lock acquisition and engine creation and prove an exclusive migration cannot pass it.
 
-- [ ] **Step 6: Add one-shot Compose schema init**
+- [x] **Step 6: Add one-shot Compose schema init**
 
 Add one-shot `aipam-db-init` using the app image and `/data` volume. API, worker, and supervisor depend on its successful completion. Document manual first adoption and the only supported live rollback: stop every writer/init service, acquire the exclusive lock, verify receipt/backup checksum/quick-check/source profile, back up the migrated database separately, build and validate a restore candidate from the retained backup with SQLite's backup API, close/checkpoint every handle, atomically replace the source, fsync the directory, write a `restored` receipt, and start the previous image recorded in the migration receipt. Alembic downgrades remain developer round-trip checks for the new feature revisions, not a production rollback path.
 
-- [ ] **Step 7: Run migration and chat regression tests**
+- [x] **Step 7: Run migration and chat regression tests**
 
 Run: `python -m pytest backend/app/tests/test_schema_bootstrap.py backend/app/tests/test_chat_comparison_migration.py backend/app/tests/test_api_chat_comparisons.py -q`
 
 Expected: PASS; a supported unversioned fixture reaches Alembic head and MNEMOS comparison columns/tables work without data loss.
 
-- [ ] **Step 8: Commit safe schema bootstrap**
+- [x] **Step 8: Commit safe schema bootstrap**
 
 ```powershell
 git add backend/app/schema_bootstrap.py backend/app/schema_cli.py backend/app/tests/fixtures/schema backend/app/tests/test_schema_bootstrap.py backend/app/database_v2.py backend/alembic/env.py backend/app/main_v2.py backend/app/worker.py backend/app/runtime_supervisor.py docker-compose.yml deploy/Dockerfile.app README.md

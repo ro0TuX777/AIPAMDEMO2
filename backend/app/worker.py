@@ -12,13 +12,40 @@ from __future__ import annotations
 
 import logging
 import os
+import sys
 
 from celery import Celery
+from celery.signals import worker_process_init, worker_process_shutdown
 
 from backend.app.config_v2 import get_settings
 from backend.app.pipeline.outcomes import public_failure, public_failure_summary
 
 logger = logging.getLogger("aipam.worker")
+_schema_lock_context = None
+
+
+@worker_process_init.connect(weak=False)
+def _acquire_schema_lock(**_kwargs):
+    global _schema_lock_context
+    from pathlib import Path
+    from backend.app.schema_bootstrap import assert_schema_current, schema_lock
+    path = Path(os.environ.get("AIPAM_DB_PATH", "/data/aipam.db"))
+    context = schema_lock(path, exclusive=False)
+    context.__enter__()
+    try:
+        assert_schema_current(path)
+    except BaseException:
+        context.__exit__(*sys.exc_info())
+        raise
+    _schema_lock_context = context
+
+
+@worker_process_shutdown.connect(weak=False)
+def _release_schema_lock(**_kwargs):
+    global _schema_lock_context
+    if _schema_lock_context is not None:
+        _schema_lock_context.__exit__(None, None, None)
+        _schema_lock_context = None
 
 # ---------------------------------------------------------------------------
 # Celery application
@@ -150,7 +177,7 @@ def execute_job(job_id: str, task_id: str, pcap_label: str | None = None, *, wor
     import socket
     import uuid
     import docker
-    from backend.app.database_v2 import get_session_factory, get_fenced_session_factory, init_v2_db
+    from backend.app.database_v2 import get_session_factory, get_fenced_session_factory
     from backend.app.pipeline.orchestrator import run_pipeline
     from backend.app.pipeline.outcomes import PipelineCanceled, OwnershipLost
     from backend.app.pipeline.run_artifacts import create_run_output_dir
@@ -158,7 +185,6 @@ def execute_job(job_id: str, task_id: str, pcap_label: str | None = None, *, wor
     from backend.app.pipeline.runtime_control import ExecutionControl, current_executor, JobOwnershipLost, atomic_json
 
     settings = get_settings()
-    init_v2_db()
     factory = get_session_factory()
     with factory() as lifecycle:
         claim = claim_job(lifecycle, job_id, task_id, str(uuid.uuid4()), worker_node or socket.gethostname())

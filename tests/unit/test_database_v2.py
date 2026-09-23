@@ -3,7 +3,7 @@ from sqlalchemy import inspect
 from backend.app import database_v2
 
 
-def test_init_v2_db_adds_missing_explanation_feedback_column(tmp_path, monkeypatch):
+def test_test_schema_helper_does_not_patch_existing_tables(tmp_path, monkeypatch):
     db_path = tmp_path / "legacy-aipam.db"
     engine = database_v2.create_v2_engine(f"sqlite:///{db_path}")
 
@@ -33,11 +33,9 @@ def test_init_v2_db_adds_missing_explanation_feedback_column(tmp_path, monkeypat
 
     monkeypatch.setattr(database_v2, "_engine", engine)
     monkeypatch.setattr(database_v2, "_SessionLocal", None)
+    database_v2.create_test_schema()
 
-    database_v2.init_v2_db()
-
-    assert "explanation_feedback" in {
+    assert "explanation_feedback" not in {
         column["name"] for column in inspect(engine).get_columns("findings")
     }
-
     database_v2.reset_engine()

@@ -136,23 +136,9 @@ def _normalize_llm_endpoint(value: str) -> str:
     return candidate
 
 
-def _ensure_settings_table() -> None:
-    try:
-        from sqlmodel import SQLModel
-
-        from backend.app import db_models
-        from backend.app.database import engine
-
-        SQLModel.metadata.create_all(engine, tables=[db_models.SettingsDB.__table__])
-    except Exception:
-        # The read/write helpers preserve their own failure semantics.
-        pass
-
-
 def _load_settings_values() -> dict[str, Any]:
     """Read persisted runtime settings without coupling callers to FastAPI."""
     try:
-        _ensure_settings_table()
         from backend.app.database import get_session
         from backend.app.db_models import SettingsDB
 
@@ -165,7 +151,6 @@ def _load_settings_values() -> dict[str, Any]:
 
 def _save_settings_values(updates: dict[str, Any]) -> dict[str, Any]:
     """Merge embedding configuration into the singleton settings record."""
-    _ensure_settings_table()
     from backend.app.database import get_session
     from backend.app.db_models import SettingsDB
 

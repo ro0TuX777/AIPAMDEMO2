@@ -26,6 +26,21 @@
 #   arkime-import-queue — PCAP import manifests (profile: arkime)
 
 services:
+  aipam-db-init:
+    image: ${AIPAM_APP_IMAGE:-aipam-app:latest}
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.app
+    command: ["python", "-m", "backend.app.schema_cli", "migrate"]
+    env_file: .env
+    environment:
+      AIPAM_DB_PATH: /data/aipam.db
+      DATABASE_URL: sqlite:////data/aipam.db
+      AIPAM_PREVIOUS_IMAGE: ${AIPAM_PREVIOUS_IMAGE:-aipam-app:pre-schema-rollback}
+    volumes:
+      - aipam-data:/data
+    restart: "no"
+
   # ============================================
   # API Server (FastAPI)
   # ============================================
@@ -33,7 +48,7 @@ services:
     build:
       context: .
       dockerfile: deploy/Dockerfile.app
-    image: aipam-app:latest
+    image: ${AIPAM_APP_IMAGE:-aipam-app:latest}
     container_name: aipam-api
     # Runs as root (image default) to match the Celery worker, which must be root
     # for Docker-socket access. Both share the /data volume — including the
@@ -71,6 +86,8 @@ services:
       - "so-standalone:172.16.0.15"
       - "host.docker.internal:host-gateway"
     depends_on:
+      aipam-db-init:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
       mnemos-service:
@@ -92,7 +109,7 @@ services:
     build:
       context: .
       dockerfile: deploy/Dockerfile.app
-    image: aipam-app:latest
+    image: ${AIPAM_APP_IMAGE:-aipam-app:latest}
     container_name: aipam-worker
     command: ["celery", "-A", "backend.app.worker", "worker", "--loglevel=info", "--concurrency=1"]
     env_file: .env
@@ -125,6 +142,8 @@ services:
       - "so-standalone:172.16.0.15"
       - "host.docker.internal:host-gateway"
     depends_on:
+      aipam-db-init:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
       mnemos-service:
@@ -141,7 +160,7 @@ services:
       start_period: 30s
 
   runtime-supervisor:
-    image: aipam-app:latest
+    image: ${AIPAM_APP_IMAGE:-aipam-app:latest}
     command: ["python", "-m", "backend.app.runtime_supervisor"]
     env_file: .env
     environment:
@@ -155,6 +174,8 @@ services:
     # Same restricted host/root boundary as the worker for exact container cleanup.
     user: "0:0"
     depends_on:
+      aipam-db-init:
+        condition: service_completed_successfully
       redis:
         condition: service_healthy
     restart: unless-stopped

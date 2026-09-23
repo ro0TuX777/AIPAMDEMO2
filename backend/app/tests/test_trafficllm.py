@@ -171,7 +171,7 @@ async def test_client(tmp_path, monkeypatch):
 
     # Reset the database engine
     database.engine = database.create_engine(f"sqlite:///{db_path}")
-    database.init_db()
+    database.create_test_schema()
 
     transport = httpx.ASGITransport(app=app)
     async with httpx.AsyncClient(transport=transport, base_url="http://testserver") as client:

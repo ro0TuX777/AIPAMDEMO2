@@ -1,7 +1,7 @@
 import shutil
 from datetime import datetime, timedelta, timezone
 from sqlalchemy import select
-from backend.app.database_v2 import get_session_factory, init_v2_db, reset_engine
+from backend.app.database_v2 import get_session_factory, create_test_schema, reset_engine
 from backend.app.models.job import Job
 from backend.app.config_v2 import get_settings
 from backend.app.worker import prune_old_jobs
@@ -19,7 +19,7 @@ def test_prune_old_jobs(monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "aipam_job_retention_days", 1)
     
     reset_engine()
-    init_v2_db()
+    create_test_schema()
     session_factory = get_session_factory()
     db = session_factory()
     
