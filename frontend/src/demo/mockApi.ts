@@ -5,6 +5,7 @@ const SCHEMA = "1.0";
 const COMPLETED_JOB_ID = "a7f3c2e1-9b04-4d17-8e62-3fc51a0d7b88";
 const RUNNING_JOB_ID = "c41d8b60-27ae-4f93-a5d1-6b7e90c2f314";
 const FAILED_JOB_ID = "5e8a1f77-33c2-4a0b-9d45-118cf6de2a90";
+const cancelPolls = new Map<string, number>();
 
 const nowIso = () => new Date().toISOString();
 
@@ -1110,6 +1111,15 @@ export async function handleDemoApiRequest(url: string, init: RequestInit, apiBa
 
   const jobGetMatch = path.match(/^\/jobs\/([^/]+)$/);
   if (method === "GET" && jobGetMatch) {
+    const record = getJob(jobGetMatch[1]);
+    if (record?.status === "canceling") {
+      const polls = (cancelPolls.get(jobGetMatch[1]) ?? 0) + 1;
+      if (polls >= 2) {
+        record.status = "canceled";
+        record.completed_at = nowIso();
+        cancelPolls.delete(jobGetMatch[1]);
+      } else cancelPolls.set(jobGetMatch[1], polls);
+    }
     const detail = getJobDetailPayload(jobGetMatch[1]);
     if (!detail) throw new Error("Not found");
     return mkJson({ schema_version: SCHEMA, job: detail });
@@ -1126,6 +1136,7 @@ export async function handleDemoApiRequest(url: string, init: RequestInit, apiBa
     if (record.status === "running") {
       record.status = "canceling";
       record.cancel_requested_at = nowIso();
+      cancelPolls.set(jobCancelMatch[1], 0);
     }
     return mkJson({ schema_version: SCHEMA, job: getJobDetailPayload(jobCancelMatch[1]) });
   }

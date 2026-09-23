@@ -58,7 +58,7 @@ export const ChatPage: React.FC = () => {
   const [conversationActionError, setConversationActionError] = useState("");
   const mnemosToggleRef = useRef<HTMLButtonElement>(null);
   const draftSequenceRef = useRef(0);
-  const hydratedJobRef = useRef<string | null>(null);
+  const hydratedJobRef = useRef<number | null>(null);
   const pageGenerationRef = useRef(0);
   const navigationIntentRef = useRef(0);
   const [baselineConversation, setBaselineConversation] = useState<ChatConversation>({ job_id: jobId ?? "", messages: [] });
@@ -85,6 +85,15 @@ export const ChatPage: React.FC = () => {
   });
   const job: JobDetail | undefined = jobQ.data?.job;
   const chatReady = !jobQ.isError && isChatReadyJobStatus(job?.status);
+  const readyOwnerRef = useRef({ jobId, ready: chatReady, epoch: 0 });
+  if (readyOwnerRef.current.jobId !== jobId || readyOwnerRef.current.ready !== chatReady) {
+    readyOwnerRef.current = { jobId, ready: chatReady, epoch: readyOwnerRef.current.epoch + 1 };
+  }
+  const readyEpoch = readyOwnerRef.current.epoch;
+  const isCurrentReadyEpoch = useCallback((epoch: number, ownerJobId: string | undefined) => {
+    const owner = readyOwnerRef.current;
+    return owner.ready && owner.jobId === ownerJobId && owner.epoch === epoch;
+  }, []);
 
   const storeAttempt = useCallback((next: ChatAttempt | null) => {
     activeAttemptRef.current = next;
@@ -94,7 +103,7 @@ export const ChatPage: React.FC = () => {
   const isCurrentAttempt = useCallback((owner: ChatAttempt) => {
     const live = pageOwnerRef.current;
     const current = activeAttemptRef.current;
-    return Boolean(current && owner.jobId === live.jobId && owner.rootConversationId === live.rootId
+    return Boolean(readyOwnerRef.current.ready && current && owner.jobId === live.jobId && owner.rootConversationId === live.rootId
       && owner.groupId === live.group?.group_id && owner.generation === pageGenerationRef.current
       && owner.requestId === current.requestId && owner.selectionToken === current.selectionToken
       && owner.branchId === current.branchId && owner.conversationId === current.conversationId);
@@ -113,31 +122,33 @@ export const ChatPage: React.FC = () => {
   }, []);
 
   const refreshConversations = useCallback(async () => {
-    if (!jobId || !chatReady) return;
+    if (!jobId || !chatReady || !isCurrentReadyEpoch(readyEpoch, jobId)) return;
     try {
       const conversations = await api.listConversations(jobId);
+      if (!isCurrentReadyEpoch(readyEpoch, jobId)) return;
       setConversationSummaries(conversations);
     } catch {
       // The user can still start a draft if conversation history is temporarily unavailable.
     }
-  }, [jobId, chatReady]);
+  }, [jobId, chatReady, readyEpoch, isCurrentReadyEpoch]);
 
   useEffect(() => { void refreshConversations(); }, [refreshConversations]);
 
   useEffect(() => {
-    if (!jobId || !chatReady || hydratedJobRef.current === jobId) return;
-    hydratedJobRef.current = jobId;
+    if (!jobId || !chatReady || !isCurrentReadyEpoch(readyEpoch, jobId) || hydratedJobRef.current === readyEpoch) return;
+    hydratedJobRef.current = readyEpoch;
     const generation = pageGenerationRef.current;
     const navigationIntent = navigationIntentRef.current;
     void (async () => {
       try {
         const conversations = await api.listConversations(jobId);
+        if (!isCurrentReadyEpoch(readyEpoch, jobId)) return;
         setConversationSummaries(conversations);
         const requestedId = searchParams.get("conversation");
         const selected = conversations.find(item => item.id === requestedId) ?? conversations[0];
         if (selected) {
           const history = await api.getConversation(jobId, selected.id);
-          if (generation !== pageGenerationRef.current || navigationIntent !== navigationIntentRef.current) return;
+          if (!isCurrentReadyEpoch(readyEpoch, jobId) || generation !== pageGenerationRef.current || navigationIntent !== navigationIntentRef.current) return;
           setBaselineConversation(history);
           selectBaselineToken(history.id);
           if (requestedId !== history.id) {
@@ -148,10 +159,10 @@ export const ChatPage: React.FC = () => {
         }
       } catch { /* Initial drafts remain usable while history is unavailable. */ }
     })();
-  }, [jobId, chatReady, searchParams, selectBaselineToken, setSearchParams]);
+  }, [jobId, chatReady, readyEpoch, isCurrentReadyEpoch, searchParams, selectBaselineToken, setSearchParams]);
 
   const selectBaselineConversation = useCallback(async (conversationId: string) => {
-    if (!jobId) return;
+    if (!jobId || !isCurrentReadyEpoch(readyEpoch, jobId)) return;
     const navigationIntent = ++navigationIntentRef.current;
     if (conversationId === baselineConversation.id) return;
     let history: Awaited<ReturnType<typeof api.getConversation>>;
@@ -161,7 +172,7 @@ export const ChatPage: React.FC = () => {
       // A failed navigation keeps the committed selection and its live attempt.
       return;
     }
-    if (navigationIntent !== navigationIntentRef.current || jobId !== pageOwnerRef.current.jobId) return;
+    if (!isCurrentReadyEpoch(readyEpoch, jobId) || navigationIntent !== navigationIntentRef.current || jobId !== pageOwnerRef.current.jobId) return;
     pageGenerationRef.current += 1;
     setBaselineConversation(history);
     selectBaselineToken(history.id);
@@ -173,7 +184,7 @@ export const ChatPage: React.FC = () => {
     setMnemosDraft("");
     setMnemosOpen(false);
     storeAttempt(null);
-  }, [baselineConversation.id, jobId, searchParams, selectBaselineToken, setSearchParams, storeAttempt]);
+  }, [baselineConversation.id, jobId, readyEpoch, isCurrentReadyEpoch, searchParams, selectBaselineToken, setSearchParams, storeAttempt]);
 
   const activeBranch = useMemo<ChatComparisonBranch | null>(() => {
     if (!comparisonGroup) return null;
@@ -183,32 +194,35 @@ export const ChatPage: React.FC = () => {
   }, [comparisonGroup]);
 
   const ensureComparison = useCallback(async () => {
-    if (!jobId || !chatReady || !baselineConversation.id) return null;
+    if (!jobId || !chatReady || !isCurrentReadyEpoch(readyEpoch, jobId) || !baselineConversation.id) return null;
     if (comparisonGroup?.root_conversation_id === baselineConversation.id) return comparisonGroup;
     const generation = pageGenerationRef.current;
     const rootId = baselineConversation.id;
     const group = await api.openComparison(jobId, baselineConversation.id);
-    if (generation !== pageGenerationRef.current || rootId !== baselineConversation.id) return null;
+    if (!isCurrentReadyEpoch(readyEpoch, jobId) || generation !== pageGenerationRef.current || rootId !== baselineConversation.id) return null;
     setComparisonGroup(group);
     return group;
-  }, [baselineConversation.id, chatReady, comparisonGroup, jobId]);
+  }, [baselineConversation.id, chatReady, comparisonGroup, jobId, readyEpoch, isCurrentReadyEpoch]);
 
   const openMnemos = useCallback(async () => {
+    if (!isCurrentReadyEpoch(readyEpoch, jobId)) return;
     const group = await ensureComparison();
-    if (group) setMnemosOpen(true);
-  }, [ensureComparison]);
+    if (group && isCurrentReadyEpoch(readyEpoch, jobId)) setMnemosOpen(true);
+  }, [ensureComparison, isCurrentReadyEpoch, readyEpoch, jobId]);
 
   const copyToMnemos = useCallback(async (messageId: string, content: string) => {
+    if (!isCurrentReadyEpoch(readyEpoch, jobId)) return;
     if (activeAttemptRef.current && activeAttemptRef.current.status !== "error") return;
     const group = await ensureComparison();
-    if (!group) return;
+    if (!group || !isCurrentReadyEpoch(readyEpoch, jobId)) return;
     if (mnemosDraft.trim() && mnemosDraft !== content && !window.confirm("Replace the unfinished MNEMOS message with the copied question?")) return;
     setCopiedPrompt({ messageId, content });
     setMnemosDraft(content);
     setMnemosOpen(true);
-  }, [ensureComparison, mnemosDraft]);
+  }, [ensureComparison, isCurrentReadyEpoch, readyEpoch, jobId, mnemosDraft]);
 
   const onBaselineChanged = useCallback((next: ChatConversation) => {
+    if (!isCurrentReadyEpoch(readyEpoch, jobId)) return;
     // A persisted conversation becoming saved is the same selection; only the
     // explicit transition from a persisted conversation to a new draft gets a
     // fresh controlled-selection identity.
@@ -225,9 +239,10 @@ export const ChatPage: React.FC = () => {
         setSearchParams(params, { replace: true });
       }
     }
-  }, [baselineConversation.id, refreshConversations, searchParams, selectBaselineToken, setSearchParams]);
+  }, [baselineConversation.id, refreshConversations, searchParams, selectBaselineToken, setSearchParams, isCurrentReadyEpoch, readyEpoch, jobId]);
 
   const startNewBaseline = useCallback(() => {
+    if (!isCurrentReadyEpoch(readyEpoch, jobId)) return;
     navigationIntentRef.current += 1;
     pageGenerationRef.current += 1;
     selectBaselineToken();
@@ -240,40 +255,40 @@ export const ChatPage: React.FC = () => {
     const next = new URLSearchParams(searchParams);
     next.delete("conversation");
     setSearchParams(next, { replace: true });
-  }, [jobId, searchParams, selectBaselineToken, setSearchParams, storeAttempt]);
+  }, [jobId, searchParams, selectBaselineToken, setSearchParams, storeAttempt, isCurrentReadyEpoch, readyEpoch]);
 
   const renameBaseline = async () => {
-    if (!jobId || !baselineConversation.id) return;
+    if (!jobId || !baselineConversation.id || !isCurrentReadyEpoch(readyEpoch, jobId)) return;
     const rootId = baselineConversation.id;
     const title = window.prompt("Rename conversation", conversationSummaries.find(item => item.id === rootId)?.title ?? "");
     if (!title?.trim()) return;
     setConversationActionError("");
     try {
       await api.renameConversation(jobId, rootId, title.trim());
-      if (pageOwnerRef.current.rootId !== rootId || pageOwnerRef.current.jobId !== jobId) return;
+      if (!isCurrentReadyEpoch(readyEpoch, jobId) || pageOwnerRef.current.rootId !== rootId || pageOwnerRef.current.jobId !== jobId) return;
       setComparisonGroup(current => current?.root_conversation_id === rootId ? { ...current, title: title.trim() } : current);
       await refreshConversations();
-    } catch { setConversationActionError("Could not rename the conversation. Try again."); }
+    } catch { if (isCurrentReadyEpoch(readyEpoch, jobId)) setConversationActionError("Could not rename the conversation. Try again."); }
   };
 
   const deleteBaseline = async () => {
-    if (!jobId || !baselineConversation.id) return;
+    if (!jobId || !baselineConversation.id || !isCurrentReadyEpoch(readyEpoch, jobId)) return;
     const rootId = baselineConversation.id;
     if (!window.confirm("Delete this original conversation and all saved MNEMOS comparisons? This cannot be undone.")) return;
     setConversationActionError("");
     try {
       await api.deleteConversation(jobId, rootId);
-      if (pageOwnerRef.current.rootId !== rootId || pageOwnerRef.current.jobId !== jobId) return;
+      if (!isCurrentReadyEpoch(readyEpoch, jobId) || pageOwnerRef.current.rootId !== rootId || pageOwnerRef.current.jobId !== jobId) return;
       const remaining = conversationSummaries.filter(item => item.id !== rootId);
       setConversationSummaries(remaining);
       startNewBaseline();
       if (remaining[0]) await selectBaselineConversation(remaining[0].id);
       await refreshConversations();
-    } catch { setConversationActionError("Could not delete the conversation. Try again."); }
+    } catch { if (isCurrentReadyEpoch(readyEpoch, jobId)) setConversationActionError("Could not delete the conversation. Try again."); }
   };
 
   const onMnemosChanged = useCallback((next: ChatConversation, owner?: ChatAttempt) => {
-    if (!owner || !isCurrentAttempt(owner)) return;
+    if (!owner || !isCurrentReadyEpoch(readyEpoch, jobId) || !isCurrentAttempt(owner)) return;
     setComparisonGroup(current => {
       if (!current || !next.id) return current;
       const branchIndex = current.branches.findIndex(branch => branch.conversation_id === next.id);
@@ -282,7 +297,7 @@ export const ChatPage: React.FC = () => {
       branches[branchIndex] = { ...branches[branchIndex], messages: next.messages, updated_at: next.updated_at ?? branches[branchIndex].updated_at };
       return { ...current, branches, updated_at: next.updated_at ?? current.updated_at };
     });
-  }, [isCurrentAttempt]);
+  }, [isCurrentAttempt, isCurrentReadyEpoch, readyEpoch, jobId]);
 
   const persistBranchSelection = useCallback((jobId: string, groupId: string, branchId: string) => {
     const key = JSON.stringify([jobId, groupId]);
@@ -299,7 +314,7 @@ export const ChatPage: React.FC = () => {
   }, []);
 
   const prepareMnemosSend = useCallback(async (message: string, requestId: string): Promise<ChatSendTarget | undefined> => {
-    if (!jobId || !comparisonGroup || !activeBranch) return undefined;
+    if (!jobId || !isCurrentReadyEpoch(readyEpoch, jobId) || !comparisonGroup || !activeBranch) return undefined;
     const live = pageOwnerRef.current;
     if (live.jobId !== jobId || live.rootId !== baselineConversation.id || live.group?.group_id !== comparisonGroup.group_id) return undefined;
     const previous = activeAttemptRef.current;
@@ -342,10 +357,10 @@ export const ChatPage: React.FC = () => {
       changeAttempt({ ...owner, status: "error" }, owner);
       return undefined;
     }
-  }, [activeBranch, baselineConversation.id, changeAttempt, comparisonGroup, copiedPrompt, isCurrentAttempt, jobId, persistBranchSelection, storeAttempt]);
+  }, [activeBranch, baselineConversation.id, changeAttempt, comparisonGroup, copiedPrompt, isCurrentAttempt, jobId, persistBranchSelection, storeAttempt, isCurrentReadyEpoch, readyEpoch]);
 
   const selectMnemosBranch = useCallback(async (branchId: string) => {
-    if (!jobId || !comparisonGroup || (activeAttemptRef.current && activeAttemptRef.current.status !== "error")) return;
+    if (!jobId || !comparisonGroup || !isCurrentReadyEpoch(readyEpoch, jobId) || (activeAttemptRef.current && activeAttemptRef.current.status !== "error")) return;
     const generation = pageGenerationRef.current;
     const selection = ++branchSelectionRef.current;
     const rootId = baselineConversation.id;
@@ -356,11 +371,11 @@ export const ChatPage: React.FC = () => {
     try {
       const selected = await persistBranchSelection(jobId, groupId, branchId);
       const live = pageOwnerRef.current;
-      if (generation !== pageGenerationRef.current || selection !== branchSelectionRef.current
+      if (!isCurrentReadyEpoch(readyEpoch, jobId) || generation !== pageGenerationRef.current || selection !== branchSelectionRef.current
         || jobId !== live.jobId || rootId !== live.rootId || groupId !== live.group?.group_id) return;
       setComparisonGroup(selected);
     } catch { /* Keep the user's local selection when persistence is unavailable. */ }
-  }, [baselineConversation.id, comparisonGroup, jobId, persistBranchSelection, storeAttempt]);
+  }, [baselineConversation.id, comparisonGroup, jobId, persistBranchSelection, storeAttempt, isCurrentReadyEpoch, readyEpoch]);
 
   // ── KB state ──
   const [kbDocs, setKbDocs] = useState<KBDocumentOut[]>([]);
@@ -378,9 +393,38 @@ export const ChatPage: React.FC = () => {
   const [kbAdminRequired, setKbAdminRequired] = useState(false);
   const [kbAdminToken, setKbAdminToken] = useState("");
 
+  const wasReadyRef = useRef(false);
+  useEffect(() => {
+    if (chatReady) { wasReadyRef.current = true; return; }
+    if (!wasReadyRef.current) return;
+    wasReadyRef.current = false;
+    hydratedJobRef.current = null;
+    pageGenerationRef.current += 1;
+    navigationIntentRef.current += 1;
+    branchSelectionRef.current += 1;
+    branchWritesRef.current.clear();
+    storeAttempt(null);
+    setBaselineConversation({ job_id: jobId ?? "", messages: [] });
+    selectBaselineToken();
+    setConversationSummaries([]);
+    setConversationActionError("");
+    setComparisonGroup(null);
+    setMnemosOpen(false);
+    setMnemosDraft("");
+    setCopiedPrompt(null);
+    setKbDocs([]);
+    setKbLoading(false);
+    setKbUploading(false);
+    setKbError(null);
+    setKbSuccess(null);
+    setKbOpen(false);
+    setKbAdminRequired(false);
+    setKbAdminToken("");
+  }, [chatReady, jobId, selectBaselineToken, storeAttempt]);
+
   // ── KB helpers ──
   const fetchKBDocs = useCallback(async () => {
-    if (!jobId || !chatReady) return;
+    if (!jobId || !chatReady || !isCurrentReadyEpoch(readyEpoch, jobId)) return;
     setKbLoading(true);
     setKbError(null);
     try {
@@ -390,14 +434,15 @@ export const ChatPage: React.FC = () => {
         api.listKBDocuments(jobId),
         api.listLibraryDocuments(),
       ]);
+      if (!isCurrentReadyEpoch(readyEpoch, jobId)) return;
       const lib = libRes.items.map((d) => ({ ...d, is_global: true }));
       setKbDocs([...jobRes.items, ...lib]);
     } catch {
-      setKbError("Failed to load knowledge base documents");
+      if (isCurrentReadyEpoch(readyEpoch, jobId)) setKbError("Failed to load knowledge base documents");
     } finally {
-      setKbLoading(false);
+      if (isCurrentReadyEpoch(readyEpoch, jobId)) setKbLoading(false);
     }
-  }, [jobId, chatReady]);
+  }, [jobId, chatReady, readyEpoch, isCurrentReadyEpoch]);
 
   useEffect(() => {
     fetchKBDocs();
@@ -406,10 +451,12 @@ export const ChatPage: React.FC = () => {
   // Does curating the shared library require an admin token on this server?
   useEffect(() => {
     if (!chatReady) return;
+    let canceled = false;
     api.getLibraryConfig()
-      .then((c) => setKbAdminRequired(!!c.admin_required))
-      .catch(() => setKbAdminRequired(false));
-  }, [chatReady]);
+      .then((c) => { if (!canceled && isCurrentReadyEpoch(readyEpoch, jobId)) setKbAdminRequired(!!c.admin_required); })
+      .catch(() => { if (!canceled && isCurrentReadyEpoch(readyEpoch, jobId)) setKbAdminRequired(false); });
+    return () => { canceled = true; };
+  }, [chatReady, readyEpoch, jobId, isCurrentReadyEpoch]);
 
   // While any document is still indexing (background task), poll until it
   // settles — capped so a stuck doc doesn't poll forever.
@@ -429,19 +476,21 @@ export const ChatPage: React.FC = () => {
   }, [chatReady, kbHasPending, fetchKBDocs]);
 
   const handleKBReindex = async (docId: string, isGlobal: boolean) => {
-    if (!jobId) return;
+    if (!jobId || !isCurrentReadyEpoch(readyEpoch, jobId)) return;
     setKbError(null);
     try {
       if (isGlobal) await api.reindexLibraryDocument(docId, kbAdminRequired ? kbAdminToken.trim() || undefined : undefined);
       else await api.reindexKBDocument(jobId, docId);
+      if (!isCurrentReadyEpoch(readyEpoch, jobId)) return;
       setKbSuccess("Re-indexing started…");
-      fetchKBDocs();
+      void fetchKBDocs();
     } catch (err: any) {
-      setKbError(err.message || "Failed to re-index document");
+      if (isCurrentReadyEpoch(readyEpoch, jobId)) setKbError(err.message || "Failed to re-index document");
     }
   };
 
   const handleKBUpload = async () => {
+    if (!isCurrentReadyEpoch(readyEpoch, jobId)) return;
     if (!jobId || !kbName.trim()) {
       setKbError("Name is required");
       return;
@@ -477,22 +526,23 @@ export const ChatPage: React.FC = () => {
           await api.uploadKBDocument(jobId, body);
         }
       }
+      if (!isCurrentReadyEpoch(readyEpoch, jobId)) return;
       setKbSuccess(`"${kbName}" uploaded${kbGlobal ? " to the library" : ""} — indexing…`);
       setKbName("");
       setKbDescription("");
       setKbContent("");
       setKbBinaryFile(null);
       setKbShowUpload(false);
-      fetchKBDocs();
+      void fetchKBDocs();
     } catch (err: any) {
-      setKbError(err.message || "Failed to upload document");
+      if (isCurrentReadyEpoch(readyEpoch, jobId)) setKbError(err.message || "Failed to upload document");
     } finally {
-      setKbUploading(false);
+      if (isCurrentReadyEpoch(readyEpoch, jobId)) setKbUploading(false);
     }
   };
 
   const handleKBDelete = async (docId: string, docName: string, isGlobal: boolean) => {
-    if (!jobId) return;
+    if (!jobId || !isCurrentReadyEpoch(readyEpoch, jobId)) return;
     const scopeMsg = isGlobal ? " from the shared library (affects all analyses)" : "";
     if (!window.confirm(`Delete "${docName}"${scopeMsg}?`)) return;
     try {
@@ -501,16 +551,18 @@ export const ChatPage: React.FC = () => {
       } else {
         await api.deleteKBDocument(jobId, docId);
       }
+      if (!isCurrentReadyEpoch(readyEpoch, jobId)) return;
       setKbDocs((prev) => prev.filter((d) => d.id !== docId));
       setKbSuccess(`"${docName}" deleted`);
     } catch (err: any) {
-      setKbError(err.message || "Failed to delete document");
+      if (isCurrentReadyEpoch(readyEpoch, jobId)) setKbError(err.message || "Failed to delete document");
     }
   };
 
   const BINARY_EXTENSIONS = [".pdf", ".docx", ".xlsx", ".xls", ".pptx"];
 
   const handleKBFileRead = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!isCurrentReadyEpoch(readyEpoch, jobId)) return;
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -536,7 +588,7 @@ export const ChatPage: React.FC = () => {
       // Read as text for plain-text files
       setKbBinaryFile(null);
       const reader = new FileReader();
-      reader.onload = () => setKbContent(reader.result as string);
+      reader.onload = () => { if (isCurrentReadyEpoch(readyEpoch, jobId)) setKbContent(reader.result as string); };
       reader.readAsText(file);
     }
   };

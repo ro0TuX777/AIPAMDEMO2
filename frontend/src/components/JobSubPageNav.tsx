@@ -136,7 +136,7 @@ export const JobSubPageNav: React.FC<JobSubPageNavProps> = ({
   // ChatPage owns its job query so its error state remains visible. Other
   // output pages can fetch status to explain when chat becomes available.
   const openGroupHasTemporalTab = openGroup.tabs.some((t) => t.temporalOnly);
-  const { isTemporal, chatReady } = useJobNavState(jobId, openGroupHasTemporalTab || (openGroup.id === "output" && currentPath !== "chat"));
+  const { isTemporal, chatReady } = useJobNavState(jobId, currentPath !== "chat" && (openGroupHasTemporalTab || openGroup.id === "output"));
   const visibleTabs = openGroup.tabs.filter((t) => !t.temporalOnly || isTemporal);
 
   return (

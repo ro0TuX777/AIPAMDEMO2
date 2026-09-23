@@ -264,3 +264,13 @@ test("demo requests and download methods retain offline behavior", async () => {
   await demo.api.downloadExtractedFile("job", "file");
   assert.equal(fetch.mock.calls.length, 0);
 });
+
+test("demo cancellation settles after a bounded number of job polls", async () => {
+  const jobId = "c41d8b60-27ae-4f93-a5d1-6b7e90c2f314";
+  const response = await demo.api.cancelJob(jobId);
+  assert.equal(response.job.status, "canceling");
+  const statuses = [];
+  for (let attempt = 0; attempt < 3; attempt++) statuses.push((await demo.api.getJobDetail(jobId)).job.status);
+  assert.ok(statuses.includes("canceled"), `demo remained ${statuses.join(", ")}`);
+  assert.equal(statuses.at(-1), "canceled");
+});
