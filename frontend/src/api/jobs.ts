@@ -46,8 +46,8 @@ export const jobsApi = {
     return del<void>(`/jobs/${jobId}`);
   },
 
-  cancelJob(jobId: string): Promise<void> {
-    return post<void>(`/jobs/${jobId}/cancel`);
+  cancelJob(jobId: string): Promise<JobGetResponse> {
+    return post<JobGetResponse>(`/jobs/${jobId}/cancel`);
   },
 
   rerunJob(jobId: string, body: { execution_profile: ExecutionProfile; priority?: Priority }): Promise<JobCreateResponse> {

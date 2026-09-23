@@ -2,6 +2,7 @@ import React from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { api } from "../api";
+import { isChatReadyJobStatus } from "../api/jobStatus";
 
 /**
  * Job sub-page navigation.
@@ -83,22 +84,17 @@ export function groupForPath(path: string): JobTabGroup {
 }
 
 /**
- * True when the job has more than one PCAP, which is what makes the phase
- * comparison view meaningful.
- *
- * Reads through the shared react-query cache, so it's free on any page that
- * already loaded the job. `enabled` gates the fetch to the only case that needs
- * the answer — a group with a temporal-only tab is open — so the ~18 sub-pages
- * whose open group has no such tab never issue this request at all.
+ * Read job status and PCAP count through the shared query cache. The caller
+ * enables a fetch only for navigation groups that need those values.
  */
-function useIsTemporalJob(jobId: string | undefined, enabled: boolean): boolean {
+function useJobNavState(jobId: string | undefined, enabled: boolean) {
   const { data } = useQuery({
     queryKey: ["job", jobId],
     queryFn: () => api.getJobDetail(jobId!),
     enabled: !!jobId && enabled,
     staleTime: 60_000,
   });
-  return (data?.job?.pcaps?.length ?? 0) > 1;
+  return { isTemporal: (data?.job?.pcaps?.length ?? 0) > 1, chatReady: isChatReadyJobStatus(data?.job?.status) };
 }
 
 interface JobSubPageNavProps {
@@ -137,11 +133,10 @@ export const JobSubPageNav: React.FC<JobSubPageNavProps> = ({
 
   const openGroup = JOB_TAB_GROUPS.find((g) => g.id === openGroupId) ?? activeGroup;
 
-  // Only the temporal-only tabs care whether the job is temporal, and they all
-  // live in one group — so the job-detail fetch is only worth making when that
-  // group is the one on screen.
+  // ChatPage owns its job query so its error state remains visible. Other
+  // output pages can fetch status to explain when chat becomes available.
   const openGroupHasTemporalTab = openGroup.tabs.some((t) => t.temporalOnly);
-  const isTemporal = useIsTemporalJob(jobId, openGroupHasTemporalTab);
+  const { isTemporal, chatReady } = useJobNavState(jobId, openGroupHasTemporalTab || (openGroup.id === "output" && currentPath !== "chat"));
   const visibleTabs = openGroup.tabs.filter((t) => !t.temporalOnly || isTemporal);
 
   return (
@@ -181,6 +176,7 @@ export const JobSubPageNav: React.FC<JobSubPageNavProps> = ({
           <Link
             key={path}
             to={`/jobs/${jobId}/${path}`}
+            title={path === "chat" && !chatReady ? "AI Chat opens after analysis completes" : undefined}
             className={`px-3 py-1.5 text-sm rounded transition-colors ${
               path === currentPath
                 ? "bg-blue-500/15 text-blue-300 font-medium"

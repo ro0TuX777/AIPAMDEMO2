@@ -58,6 +58,8 @@ const demoJobs: DemoRecord[] = [
     started_at: "2026-02-11T15:31:12.000Z",
     completed_at: null,
     status: "running",
+    heartbeat_at: "2026-02-11T15:31:20.000Z",
+    cancel_requested_at: null,
     execution_profile: "triage",
     priority: "high",
     pcap_filename: "security-onion://sensor-gte-01,sensor-gte-02",
@@ -1115,6 +1117,17 @@ export async function handleDemoApiRequest(url: string, init: RequestInit, apiBa
 
   if (method === "DELETE" && jobGetMatch) {
     return mkJson(undefined);
+  }
+
+  const jobCancelMatch = path.match(/^\/jobs\/([^/]+)\/cancel$/);
+  if (method === "POST" && jobCancelMatch) {
+    const record = getJob(jobCancelMatch[1]);
+    if (!record) throw new Error("Not found");
+    if (record.status === "running") {
+      record.status = "canceling";
+      record.cancel_requested_at = nowIso();
+    }
+    return mkJson({ schema_version: SCHEMA, job: getJobDetailPayload(jobCancelMatch[1]) });
   }
 
   const jobSummaryMatch = path.match(/^\/jobs\/([^/]+)\/summary$/);

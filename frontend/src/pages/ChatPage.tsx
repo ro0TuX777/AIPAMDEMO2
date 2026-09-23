@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useMemo, useRef } from "react";
-import { useParams, useSearchParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { JobSubPageNav } from "../components/JobSubPageNav";
 import { useQuery } from "@tanstack/react-query";
 import { ChatPanel } from "../components/ChatPanel";
@@ -17,6 +17,7 @@ import {
 } from "../api";
 import { HelpPanel, labelHint, usePageHelp } from "../components/HelpPanel";
 import { JobBreadcrumbs } from "../components/Breadcrumbs";
+import { isActiveJobStatus, isChatReadyJobStatus } from "../api/jobStatus";
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
@@ -74,6 +75,17 @@ export const ChatPage: React.FC = () => {
   const pageOwnerRef = useRef({ jobId, rootId: baselineConversation.id, group: comparisonGroup });
   pageOwnerRef.current = { jobId, rootId: baselineConversation.id, group: comparisonGroup };
 
+  const jobQ = useQuery({
+    queryKey: ["job", jobId],
+    queryFn: () => api.getJobDetail(jobId!),
+    enabled: !!jobId,
+    retry: false,
+    refetchInterval: query => isActiveJobStatus(query.state.data?.job.status) ? 2_000 : false,
+    refetchIntervalInBackground: true,
+  });
+  const job: JobDetail | undefined = jobQ.data?.job;
+  const chatReady = !jobQ.isError && isChatReadyJobStatus(job?.status);
+
   const storeAttempt = useCallback((next: ChatAttempt | null) => {
     activeAttemptRef.current = next;
     setActiveAttempt(next);
@@ -101,19 +113,19 @@ export const ChatPage: React.FC = () => {
   }, []);
 
   const refreshConversations = useCallback(async () => {
-    if (!jobId) return;
+    if (!jobId || !chatReady) return;
     try {
       const conversations = await api.listConversations(jobId);
       setConversationSummaries(conversations);
     } catch {
       // The user can still start a draft if conversation history is temporarily unavailable.
     }
-  }, [jobId]);
+  }, [jobId, chatReady]);
 
   useEffect(() => { void refreshConversations(); }, [refreshConversations]);
 
   useEffect(() => {
-    if (!jobId || hydratedJobRef.current === jobId) return;
+    if (!jobId || !chatReady || hydratedJobRef.current === jobId) return;
     hydratedJobRef.current = jobId;
     const generation = pageGenerationRef.current;
     const navigationIntent = navigationIntentRef.current;
@@ -136,7 +148,7 @@ export const ChatPage: React.FC = () => {
         }
       } catch { /* Initial drafts remain usable while history is unavailable. */ }
     })();
-  }, [jobId, searchParams, selectBaselineToken, setSearchParams]);
+  }, [jobId, chatReady, searchParams, selectBaselineToken, setSearchParams]);
 
   const selectBaselineConversation = useCallback(async (conversationId: string) => {
     if (!jobId) return;
@@ -171,7 +183,7 @@ export const ChatPage: React.FC = () => {
   }, [comparisonGroup]);
 
   const ensureComparison = useCallback(async () => {
-    if (!jobId || !baselineConversation.id) return null;
+    if (!jobId || !chatReady || !baselineConversation.id) return null;
     if (comparisonGroup?.root_conversation_id === baselineConversation.id) return comparisonGroup;
     const generation = pageGenerationRef.current;
     const rootId = baselineConversation.id;
@@ -179,7 +191,7 @@ export const ChatPage: React.FC = () => {
     if (generation !== pageGenerationRef.current || rootId !== baselineConversation.id) return null;
     setComparisonGroup(group);
     return group;
-  }, [baselineConversation.id, comparisonGroup, jobId]);
+  }, [baselineConversation.id, chatReady, comparisonGroup, jobId]);
 
   const openMnemos = useCallback(async () => {
     const group = await ensureComparison();
@@ -366,17 +378,9 @@ export const ChatPage: React.FC = () => {
   const [kbAdminRequired, setKbAdminRequired] = useState(false);
   const [kbAdminToken, setKbAdminToken] = useState("");
 
-  const jobQ = useQuery({
-    queryKey: ["job", jobId],
-    queryFn: () => api.getJobDetail(jobId!),
-    enabled: !!jobId,
-  });
-  const job: JobDetail | undefined = jobQ.data?.job;
-  const isTerminal = job?.status === "completed" || job?.status === "completed_with_errors";
-
   // ── KB helpers ──
   const fetchKBDocs = useCallback(async () => {
-    if (!jobId) return;
+    if (!jobId || !chatReady) return;
     setKbLoading(true);
     setKbError(null);
     try {
@@ -393,7 +397,7 @@ export const ChatPage: React.FC = () => {
     } finally {
       setKbLoading(false);
     }
-  }, [jobId]);
+  }, [jobId, chatReady]);
 
   useEffect(() => {
     fetchKBDocs();
@@ -401,16 +405,17 @@ export const ChatPage: React.FC = () => {
 
   // Does curating the shared library require an admin token on this server?
   useEffect(() => {
+    if (!chatReady) return;
     api.getLibraryConfig()
       .then((c) => setKbAdminRequired(!!c.admin_required))
       .catch(() => setKbAdminRequired(false));
-  }, []);
+  }, [chatReady]);
 
   // While any document is still indexing (background task), poll until it
   // settles — capped so a stuck doc doesn't poll forever.
   const kbHasPending = kbDocs.some((d) => d.status === "pending");
   useEffect(() => {
-    if (!kbHasPending) return;
+    if (!chatReady || !kbHasPending) return;
     let attempts = 0;
     const timer = setInterval(() => {
       attempts += 1;
@@ -421,7 +426,7 @@ export const ChatPage: React.FC = () => {
       fetchKBDocs();
     }, 2500);
     return () => clearInterval(timer);
-  }, [kbHasPending, fetchKBDocs]);
+  }, [chatReady, kbHasPending, fetchKBDocs]);
 
   const handleKBReindex = async (docId: string, isGlobal: boolean) => {
     if (!jobId) return;
@@ -547,18 +552,28 @@ export const ChatPage: React.FC = () => {
       <h1 className={`text-xl font-semibold ${labelHint("chat", activeHelpField)}`} onClick={() => toggleHelp("chat")}>AI Chat</h1>
       <HelpPanel activeField={activeHelpField} onClose={() => setActiveHelpField(null)} />
 
-      {/* Not ready state */}
-      {!isTerminal && (
-        <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-8 text-center">
-          <p className="text-slate-400 text-lg mb-2">AI Chat is available after analysis completes</p>
-          <p className="text-slate-500 text-sm">
-            Job status: <span className="capitalize font-medium text-slate-300">{job?.status ?? "loading…"}</span>
-          </p>
+      {!chatReady && (
+        <div className="bg-slate-900/50 border border-slate-800 rounded-lg p-8 text-center" role="status">
+          {jobQ.isError ? <>
+            <p className="text-slate-200 text-lg mb-2">Could not load job status</p>
+            <button type="button" onClick={() => void jobQ.refetch()} className="text-blue-300 underline">Retry</button>
+          </> : !job ? <p className="text-slate-400">Loading job status…</p> : <>
+            <p className="text-slate-200 text-lg mb-2">{{
+              queued: "Analysis queued", running: "Analysis in progress", canceling: "Cancellation requested",
+              deleting: "Job deletion in progress", failed: "Analysis failed", canceled: "Analysis canceled",
+              deleted: "Job deleted", completed: "AI Chat ready", completed_with_errors: "AI Chat ready",
+            }[job.status]}</p>
+            {job.status === "failed" && job.error_summary && <p className="text-amber-300 text-sm">{job.error_summary.slice(0, 240)}</p>}
+            {job.status === "canceled" && <Link to={`/jobs/${jobId}`} className="text-blue-300 underline">Rerun analysis from job details</Link>}
+            {isActiveJobStatus(job.status) && <p className="text-slate-400 text-sm">AI Chat will open when analysis completes.</p>}
+          </>}
         </div>
       )}
 
+      {chatReady && job?.status === "completed_with_errors" && <div role="alert" className="rounded-lg border border-amber-700/50 bg-amber-900/20 px-4 py-3 text-sm text-amber-200">Partial analysis: some stages did not complete. Chat is available using the results that were saved.</div>}
+
       {/* Main layout: Chat + KB sidebar */}
-      {isTerminal && (
+      {chatReady && (
         <div className="flex gap-4 items-start" style={{ height: "calc(100vh - 140px)" }}>
           {/* ── Chat (main area) ── */}
           <div className={`flex-1 min-w-0 h-full transition-all ${kbOpen ? "" : ""} flex flex-col gap-2`}>

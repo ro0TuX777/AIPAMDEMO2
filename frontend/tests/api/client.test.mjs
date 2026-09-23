@@ -131,6 +131,14 @@ test("JSON mutations and 204 responses preserve their request contracts", async 
   assert.equal(fetch.mock.calls[3].arguments[1].body, undefined);
 });
 
+test("cancelJob returns the updated job response from the cancel endpoint", async () => {
+  const updated = { schema_version: "2.0", job: { job_id: "job-1", status: "canceling", cancel_requested_at: "2026-09-23T00:00:00Z" } };
+  const fetch = interceptFetch(() => Response.json(updated));
+  assert.deepEqual(await live.api.cancelJob("job-1"), updated);
+  assert.equal(fetch.mock.calls[0].arguments[0], `${apiBase}/jobs/job-1/cancel`);
+  assert.equal(fetch.mock.calls[0].arguments[1].method, "POST");
+});
+
 test("API errors retain their public class, message, details, and retry delay", async () => {
   interceptFetch(() => Response.json(
     { code: "BUSY", detail: "Try later", details: { stage: "queued" } },

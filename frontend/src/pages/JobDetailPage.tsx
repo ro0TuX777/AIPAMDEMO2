@@ -22,6 +22,7 @@ import { DetailSkeleton } from "../components/SkeletonLoader";
 import { RelatedJobsSidebar } from "../components/RelatedJobsSidebar";
 import { jobStatusClass } from "../theme/colors";
 import { JobBreadcrumbs } from "../components/Breadcrumbs";
+import { isActiveJobStatus, isTerminalJobStatus } from "../api/jobStatus";
 
 // ─── Constants ──────────────────────────────────────────────────────────────
 
@@ -34,11 +35,6 @@ const SENSOR_STATUS_COLORS: Record<SensorStatus, string> = {
   timeout: "bg-amber-500",
   canceled: "bg-slate-500",
 };
-
-const TERMINAL_STATUSES = new Set<string>([
-  "completed", "completed_with_errors", "failed", "canceled", "deleted",
-]);
-
 
 export const JobDetailPage: React.FC = () => {
   const { jobId } = useParams<{ jobId: string }>();
@@ -67,7 +63,7 @@ export const JobDetailPage: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // ── Data fetching ──
-  const isTerminal = (s?: string) => TERMINAL_STATUSES.has(s ?? "");
+  const isTerminal = isTerminalJobStatus;
 
   const { activeHelpField, setActiveHelpField, toggleHelp } = usePageHelp();
 
@@ -77,8 +73,9 @@ export const JobDetailPage: React.FC = () => {
     enabled: !!jobId,
     refetchInterval: (query) => {
       const status = query.state.data?.job?.status;
-      return isTerminal(status) ? false : 5000;
+      return isActiveJobStatus(status) ? 2_000 : false;
     },
+    refetchIntervalInBackground: true,
   });
 
   const job: JobDetail | undefined = jobQ.data?.job;
@@ -141,9 +138,9 @@ export const JobDetailPage: React.FC = () => {
   // ── Mutations ──
   const cancelMut = useMutation({
     mutationFn: () => api.cancelJob(jobId!),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["job", jobId] });
-      addToast({ severity: "info", title: "Job cancelled", body: `Job ${jobId?.slice(0, 8)} has been cancelled.` });
+    onSuccess: (updatedJob) => {
+      queryClient.setQueryData(["job", jobId], updatedJob);
+      addToast({ severity: "info", title: "Cancellation requested", body: `Job ${jobId?.slice(0, 8)} is stopping.` });
     },
     onError: () => addToast({ severity: "high", title: "Failed to cancel job" }),
   });
@@ -838,7 +835,7 @@ export const JobDetailPage: React.FC = () => {
       )}
 
       {/* Related Jobs sidebar (Sprint 8) */}
-      {TERMINAL_STATUSES.has(job.status) && (
+      {isTerminal(job.status) && (
         <RelatedJobsSidebar jobId={jobId!} />
       )}
 

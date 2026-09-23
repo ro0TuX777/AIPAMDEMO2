@@ -4,7 +4,7 @@ export type ExecutionProfile = "triage" | "standard" | "deep";
 export type Priority = "low" | "normal" | "high";
 export type JobStatus =
   | "queued" | "running" | "completed" | "completed_with_errors"
-  | "failed" | "canceled" | "deleting" | "deleted";
+  | "failed" | "canceling" | "canceled" | "deleting" | "deleted";
 export type SensorStatus =
   | "pending" | "running" | "completed" | "failed"
   | "skipped" | "timeout" | "canceled";
@@ -212,6 +212,8 @@ export interface JobListItem {
   pcap_filename?: string;
   pcap_size_bytes?: number;
   error_summary?: string | null;
+  heartbeat_at?: string | null;
+  cancel_requested_at?: string | null;
 }
 
 export interface JobMetrics {
