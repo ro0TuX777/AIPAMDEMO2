@@ -574,6 +574,81 @@ def test_legacy_null_job_scope_keeps_review_on_regeneration(db_session, sample_j
         Theory.job_id == job, Theory.theory_key == "benign")) == 1
 
 
+@pytest.mark.parametrize("entrypoint", ["all", "single"])
+def test_coexisting_job_scope_keys_keep_reviewed_legacy_row(db_session, sample_job, entrypoint):
+    job = sample_job.job_id
+    common = dict(job_id=job, scope_type="job", phase_key="", theory_key="benign",
+                  label="Old benign", hypothesis_type="benign", score=0.2,
+                  confidence="low", rank=1, created_at=_now())
+    legacy = Theory(**common, theory_id="TH-reviewed-legacy", scope_id=None,
+                    scope_id_key="", analyst_status="confirmed",
+                    analyst_notes="analyst decision", reviewed_at="2026-09-22T10:00:00Z",
+                    reviewer_id="reviewer-a")
+    current = Theory(**common, theory_id="TH-unreviewed-current", scope_id=job,
+                     scope_id_key=job, analyst_status="unreviewed")
+    db_session.add_all([legacy, current])
+    db_session.commit()
+    if entrypoint == "all":
+        generate_all_theories(db_session, job)
+    else:
+        generate_theories(db_session, job)
+    rows = list(db_session.scalars(select(Theory).where(
+        Theory.job_id == job, Theory.scope_type == "job", Theory.theory_key == "benign")))
+    assert len(rows) == 1
+    assert rows[0].id == legacy.id
+    assert rows[0].theory_id == "TH-reviewed-legacy"
+    assert (rows[0].analyst_status, rows[0].analyst_notes, rows[0].reviewed_at, rows[0].reviewer_id) == (
+        "confirmed", "analyst decision", "2026-09-22T10:00:00Z", "reviewer-a")
+
+
+def test_coexisting_job_scope_keys_merge_latest_nonnull_review_fields(db_session, sample_job):
+    job = sample_job.job_id
+    common = dict(job_id=job, scope_type="job", phase_key="", theory_key="benign",
+                  label="Old benign", hypothesis_type="benign", score=0.2,
+                  confidence="low", rank=1, created_at=_now())
+    legacy = Theory(**common, theory_id="TH-reviewed-legacy", scope_id=None,
+                    scope_id_key="", analyst_status="confirmed", analyst_notes="old note",
+                    reviewed_at="2026-09-21T10:00:00Z", reviewer_id="reviewer-a")
+    current = Theory(**common, theory_id="TH-reviewed-current", scope_id=job,
+                     scope_id_key=job, analyst_status="false_positive", analyst_notes="new note",
+                     reviewed_at="2026-09-22T10:00:00Z")
+    db_session.add_all([legacy, current])
+    db_session.commit()
+    generate_all_theories(db_session, job)
+    rows = list(db_session.scalars(select(Theory).where(
+        Theory.job_id == job, Theory.scope_type == "job", Theory.theory_key == "benign")))
+    assert len(rows) == 1
+    assert rows[0].theory_id == "TH-reviewed-legacy"
+    assert (rows[0].analyst_status, rows[0].analyst_notes, rows[0].reviewed_at, rows[0].reviewer_id) == (
+        "false_positive", "new note", "2026-09-22T10:00:00Z", "reviewer-a")
+
+
+def test_cancel_after_final_flush_rolls_back_theories(db_engine, monkeypatch):
+    from sqlalchemy.orm import Session
+    from backend.app.models.job import Job
+    from backend.app.pipeline.runtime_control import JobCancellationRequested
+    with Session(db_engine) as db:
+        db.add(Job(job_id="cancel-final", status="running", execution_profile="standard", created_at=_now()))
+        db.commit()
+        cancelled = {"requested": False}
+        def request_after_flush(*args):
+            cancelled["requested"] = True
+        def cancellation_checkpoint():
+            if cancelled["requested"]:
+                raise JobCancellationRequested()
+        event.listen(db, "after_flush", request_after_flush)
+        monkeypatch.setattr(engine, "checkpoint", cancellation_checkpoint)
+        try:
+            with pytest.raises(JobCancellationRequested):
+                generate_all_theories(db, "cancel-final")
+        finally:
+            event.remove(db, "after_flush", request_after_flush)
+        assert db.is_active
+        assert db.scalar(select(func.count()).select_from(Theory)) == 0
+    with Session(db_engine) as observer:
+        assert observer.scalar(select(func.count()).select_from(Theory)) == 0
+
+
 def test_random_prefix_collision_cannot_break_generation(db_session, c2_job, monkeypatch):
     # The old random generator issued the same truncated prefix on retries.
     monkeypatch.setattr(engine, "uuid4", lambda: uuid.UUID("12345678-1111-4111-8111-111111111111"), raising=False)

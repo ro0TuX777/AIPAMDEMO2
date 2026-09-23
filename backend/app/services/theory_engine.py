@@ -311,6 +311,38 @@ def _score_benign(evidence: dict[str, Any]) -> tuple[float, list[str], list[str]
         return 0.1, [], contra, breakdown
 
 
+def _existing_by_semantic_key(db: Session, rows: list[Theory], job_id: str,
+                              *, consolidate_job: bool) -> tuple[list[Theory], dict[tuple[str, str, str], Theory]]:
+    """Treat legacy NULL and current job IDs as one logical job scope."""
+    if consolidate_job:
+        groups: dict[str, list[Theory]] = {}
+        for row in rows:
+            if row.scope_type == "job" and row.scope_id_key in ("", job_id):
+                groups.setdefault(row.theory_key, []).append(row)
+        losers: set[Theory] = set()
+        for group in groups.values():
+            if len(group) < 2:
+                continue
+            def reviewed(row: Theory) -> bool:
+                return (row.analyst_status not in (None, "unreviewed") or
+                        any(getattr(row, name) is not None for name in
+                            ("analyst_notes", "reviewed_at", "reviewer_id")))
+            survivor = min(group, key=lambda row: (not reviewed(row), row.id))
+            by_recency = sorted(group, key=lambda row: (row.reviewed_at or "", row.id), reverse=True)
+            for name in ("analyst_status", "analyst_notes", "reviewed_at", "reviewer_id"):
+                value = next((getattr(row, name) for row in by_recency
+                              if getattr(row, name) is not None and
+                              (name != "analyst_status" or getattr(row, name) != "unreviewed")), None)
+                if value is not None:
+                    setattr(survivor, name, value)
+            for row in group:
+                if row is not survivor:
+                    db.delete(row)
+                    losers.add(row)
+        rows = [row for row in rows if row not in losers]
+    return rows, {(row.scope_type, row.scope_id_key, row.theory_key): row for row in rows}
+
+
 def generate_theories(
     db: Session,
     job_id: str,
@@ -332,7 +364,8 @@ def generate_theories(
         evidence = _load_evidence(db, job_id, pcap_label)
         existing = list(db.scalars(select(Theory).where(
             Theory.job_id == job_id, Theory.phase_key == (pcap_label or ""))))
-        by_key = {(row.scope_type, row.scope_id_key, row.theory_key): row for row in existing}
+        existing, by_key = _existing_by_semantic_key(db, existing, job_id,
+                                                     consolidate_job=host_ip is None)
         rows = _build_scope(db, job_id, host_ip, pcap_label,
                             evidence.for_host(host_ip), by_key)
         active = {row.theory_key for row in rows}
@@ -341,6 +374,8 @@ def generate_theories(
         for row in existing:
             if row.scope_type == scope_type and row.scope_id_key in ({scope_id, ""} if host_ip is None else {scope_id}) and row.theory_key not in active:
                 db.delete(row)
+        db.flush()
+        checkpoint()
         db.commit()
         return rows
     except BaseException:
@@ -425,7 +460,8 @@ def generate_all_theories(db: Session, job_id: str, pcap_label: str | None = Non
         relevant = select_relevant_hosts(hosts, evidence)
         existing = list(db.scalars(select(Theory).where(
             Theory.job_id == job_id, Theory.phase_key == (pcap_label or ""))))
-        by_key = {(row.scope_type, row.scope_id_key, row.theory_key): row for row in existing}
+        existing, by_key = _existing_by_semantic_key(db, existing, job_id,
+                                                     consolidate_job=True)
         active: set[tuple[str, str, str]] = set()
         job_count = host_count = 0
         scopes = [None, *relevant]
@@ -446,6 +482,9 @@ def generate_all_theories(db: Session, job_id: str, pcap_label: str | None = Non
         for row in existing:
             if (row.scope_type, row.scope_id_key, row.theory_key) not in active:
                 db.delete(row)
+        if db.deleted:
+            db.flush()
+        checkpoint()
         db.commit()
         return {"job": job_count, "hosts": host_count, "total": job_count + host_count,
                 "discovered_hosts": len(hosts), "relevant_hosts": len(relevant),
