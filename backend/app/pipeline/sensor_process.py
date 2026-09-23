@@ -14,7 +14,8 @@ from uuid import uuid4
 from backend.app.pipeline.outcomes import PipelineCanceled, OwnershipLost
 from backend.app.bluescrub.isolation.runner import (
     _kill_group, ProcessGroup, ProcessIdentityConflict, read_process_identity,
-    signal_exact_process,
+    signal_exact_process, same_process, drain_processes, ProcessCleanupIncomplete,
+    require_process_control,
 )
 from backend.app.bluescrub.isolation.limits import build_env
 from backend.app.pipeline.runtime_control import (
@@ -70,6 +71,7 @@ def read_identity(pid):
 
 def run_tracked_process(argv, *, run_output_dir, name, timeout_seconds, context, env=None):
     context.checkpoint()
+    require_process_control()
     record = Path(run_output_dir) / 'control' / f'handler-{name}.json'
     record.parent.mkdir(parents=True, exist_ok=True)
     start = time.monotonic()
@@ -141,22 +143,48 @@ def run_handler_process(sensor_def, *, input_root, run_output_dir, sensor_output
                         context=control or SensorExecutionContext(Path(cancel_path)), env=build_env(extra))
 
 
-def _descendants(pid):
+def _descendants(expected):
+    """Discover children only under a continuously verified ancestry snapshot.
+
+    Validate every parent after reading all child relationships. A replacement
+    PID observed during enumeration can never grant authority over its children.
+    Once a child's identity is established this way, exact signalling retains
+    that authority even if the legitimate parent later exits.
+    """
+    live = read_identity(expected['pid'])
+    if live is None:
+        return []
+    if not same_process(expected, live):
+        raise ProcessIdentityConflict()
     parents = {}
     for path in Path('/proc').glob('[0-9]*/stat'):
         try:
             item = read_process_identity(int(path.parent.name))
             if item:
                 parents[item['pid']] = item
-        except (OSError, ValueError, IndexError):
-            continue
+        except (OSError, ValueError, IndexError) as exc:
+            raise ProcessCleanupIncomplete('Could not establish process ancestry') from exc
     result = []
+    authorities = [expected]
+    visited = {expected['pid']}
     def walk(parent):
         for child, item in parents.items():
-            if item['ppid'] == parent:
-                walk(child)
+            if item['ppid'] == parent['pid']:
+                if child in visited:
+                    raise ProcessIdentityConflict('Inconsistent ancestry snapshot')
+                visited.add(child)
+                authorities.append(parent)
+                walk(item)
                 result.append(item)
-    walk(pid)
+    walk(expected)
+    # Includes the root even when no child was found: disappearance/reuse while
+    # scanning must not silently authorize a later scan from its numeric PID.
+    for parent in authorities:
+        current = read_identity(parent['pid'])
+        if current is None:
+            raise ProcessCleanupIncomplete('Ancestry changed during discovery')
+        if not same_process(parent, current):
+            raise ProcessIdentityConflict()
     return result
 
 
@@ -178,60 +206,67 @@ def stop_executor(identity, run_dir, seconds, deadline=None):
         if item['pgid'] != item['pid']:
             return 'conflict'
         groups.append(ProcessGroup(item, item.get('group_nonce')))
-    try:
+    known = {expected['pid']: expected} if verdict == 'matching' else {}
+    def snapshot():
         tracked = [item for group in groups for item in group.snapshot()]
-    except ProcessIdentityConflict:
-        return 'conflict'
-    children = _descendants(expected['pid']) if verdict == 'matching' else []
-    for item in tracked:
-        children.extend(_descendants(item['pid']))
-    children = list({item['pid']: item for item in children}.values())
-    if time.monotonic() >= deadline:
-        return "unavailable"
-    targets = list({i['pid']: i for i in [*children, *tracked]}.values())
-    if verdict == 'matching':
-        targets.append(expected)
-    try:
-        for item in targets:
-            _signal_exact(item, signal.SIGTERM)
-    except ProcessIdentityConflict:
-        return 'conflict'
-    end_grace = min(max(time.monotonic(), deadline-.5), time.monotonic()+3)
-    while time.monotonic() < end_grace:
-        if not any(read_identity(i['pid']) for i in [*children, *tracked, expected]):
-            break
-        time.sleep(.05)
-    try:
-        if verdict == 'matching':
-            current = classify_identity(expected, read_identity(expected['pid']))
-            if current == 'conflict':
-                return 'conflict'
-            if current == 'matching':
-                targets.extend(_descendants(expected['pid']))
-        for group in groups:
-            targets.extend(group.snapshot())
-        for item in {i['pid']: i for i in targets}.values():
-            _signal_exact(item, signal.SIGKILL)
-    except ProcessIdentityConflict:
-        return 'conflict'
-    # Reaping direct children belongs to their parent/Celery pool; only report
-    # stopped once /proc reports absence or zombie (no further writes possible).
-    for item in targets:
-        while time.monotonic() < deadline:
+        # Retain independently verified identities so a legitimate parent's
+        # later exit/reparenting does not discard already authorized children.
+        for item in tracked:
+            previous = known.get(item['pid'])
+            if previous is not None and not same_process(previous, item):
+                raise ProcessIdentityConflict()
+            known[item['pid']] = item
+        discovered = []
+        for item in list(known.values()):
+            discovered.extend(_descendants(item))
+        for item in discovered:
+            previous = known.get(item['pid'])
+            if previous is not None and not same_process(previous, item):
+                raise ProcessIdentityConflict()
+            known[item['pid']] = item
+        live_items = []
+        for item in known.values():
             live = read_identity(item['pid'])
             if live is None:
-                break
-            if classify_identity(item, live) == 'conflict':
-                return 'conflict'
-            try:
-                state = Path(f"/proc/{item['pid']}/stat").read_text().rsplit(')', 1)[1].split()[0]
-            except FileNotFoundError:
-                break
-            if state == 'Z':
-                break
-            time.sleep(.02)
-        else:
+                continue
+            if not same_process(item, live):
+                raise ProcessIdentityConflict()
+            if live.get('state') != 'Z':
+                # read_identity is also the public, small executor identity
+                # seam; obtain state from the same exact process for freezing.
+                full = live if 'state' in live else read_process_identity(item['pid'])
+                if full is None:
+                    continue
+                if not same_process(item, full):
+                    raise ProcessIdentityConflict()
+                if full['state'] != 'Z':
+                    live_items.append(full)
+        def depth(item):
+            count, seen = 0, {item['pid']}
+            parent = known.get(item['pid'], {}).get('ppid')
+            while parent in known and parent not in seen:
+                count += 1
+                seen.add(parent)
+                parent = known[parent].get('ppid')
+            return count
+        live_items.sort(key=depth, reverse=True)
+        return live_items
+    try:
+        targets = snapshot()
+        if time.monotonic() >= deadline:
             return 'unavailable'
+        for item in targets:
+            _signal_exact(item, signal.SIGTERM)
+        end_grace = min(max(time.monotonic(), deadline-.5), time.monotonic()+3)
+        while time.monotonic() < end_grace:
+            if not snapshot():
+                break
+            time.sleep(.05)
+        drain_processes(snapshot, deadline, send=_signal_exact)
+    except ProcessIdentityConflict:
+        return 'conflict'
+    except (ProcessCleanupIncomplete, OSError, AttributeError):
+        return 'unavailable'
     return verdict
 
 

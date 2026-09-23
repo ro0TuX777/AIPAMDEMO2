@@ -118,6 +118,7 @@ def run_analyzer(
     started = time.monotonic()
     killed_by_us = False
 
+    require_process_control()
     group_nonce = uuid4().hex
     try:
         proc = subprocess.Popen(  # noqa: S603 - argv is constructed, never shell
@@ -191,6 +192,24 @@ def run_analyzer(
 
 class ProcessIdentityConflict(RuntimeError):
     """A numeric PID/group no longer identifies the launched execution."""
+
+
+class ProcessCleanupIncomplete(RuntimeError):
+    """Writers remain or their quiescence could not be proved before deadline."""
+
+
+def require_process_control():
+    """Refuse Linux work before launch if pinned signalling is unavailable."""
+    if os.name == 'nt':
+        return  # Popen retains the Windows kernel process handle.
+    try:
+        fd = os.pidfd_open(os.getpid())
+        try:
+            signal.pidfd_send_signal(fd, 0)
+        finally:
+            os.close(fd)
+    except (AttributeError, OSError) as exc:
+        raise ProcessCleanupIncomplete('Pinned process control is unavailable') from exc
 
 
 def read_process_identity(pid):
@@ -277,16 +296,47 @@ class ProcessGroup:
             verified.append(item)
         return verified
 
-    def stop(self, grace):
+    def stop(self, grace, deadline=None):
+        deadline = time.monotonic() + grace + 3 if deadline is None else deadline
         for item in self.snapshot():
             signal_exact_process(item, signal.SIGTERM)
-        until = time.monotonic() + grace
+        until = min(time.monotonic() + grace, deadline)
         while time.monotonic() < until and self.snapshot():
             time.sleep(min(.05, max(0, until-time.monotonic())))
-        # Rescan after TERM: leaders can exit and descendants can fork. Every
-        # survivor needs the inherited launch nonce and its own pinned handle.
-        for item in self.snapshot():
-            signal_exact_process(item, signal.SIGKILL)
+        drain_processes(self.snapshot, deadline)
+
+
+def drain_processes(snapshot, deadline, send=None):
+    """Freeze a stable membership, kill it, and prove no live members remain.
+
+    Two identical stopped snapshots close forks racing with delivery of STOP.
+    Re-enumeration after KILL also catches late members; exhaustion never counts
+    as success. The caller keeps its receipt when this raises.
+    """
+    send = send or signal_exact_process
+    stable = None
+    empty = False
+    while time.monotonic() < deadline:
+        items = snapshot()
+        if not items:
+            if empty:
+                return
+            empty = True
+            continue
+        empty = False
+        keys = frozenset((i['pid'], i['start_ticks'], i['boot_id']) for i in items)
+        stopped = all(i['state'] in ('T', 't') for i in items)
+        if stopped and stable == keys:
+            for item in items:
+                send(item, signal.SIGKILL)
+            stable = None
+        else:
+            stable = keys if stopped else None
+            for item in items:
+                if item['state'] not in ('T', 't'):
+                    send(item, signal.SIGSTOP)
+        time.sleep(min(.01, max(0, deadline-time.monotonic())))
+    raise ProcessCleanupIncomplete('Process cleanup deadline exhausted')
 
 
 def _kill_group(proc: subprocess.Popen, grace_seconds: float) -> None:

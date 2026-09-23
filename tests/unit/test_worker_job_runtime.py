@@ -286,6 +286,57 @@ def test_stale_owner_cannot_cleanup_new_run(owned):
     assert not supervisor.owns_cancel(handle, 'stale-escalation')
 
 
+@pytest.mark.parametrize('quiescent', [True, False])
+def test_supervisor_finalizes_only_after_group_quiescence(owned, monkeypatch, quiescent):
+    import json, signal
+    from backend.app import runtime_supervisor as supervisor
+    from backend.app.pipeline import sensor_process as process
+    from backend.app.bluescrub.isolation import runner
+    factory, handle, root = owned
+    leader = dict(pid=202, pgid=202, sid=202, start_ticks=100, boot_id='boot', state='S')
+    members = {202: dict(leader)}
+    run_dir = root/'job'/'.runs'/handle.run_token
+    receipt = run_dir/'control'/'handler-test.json'
+    receipt.parent.mkdir(parents=True)
+    receipt.write_text(json.dumps({**leader, 'group_nonce': 'nonce'}))
+    with factory() as db:
+        runtime.register_executor(db, handle, runtime.ExecutorIdentity('node', 'a'*64, 999, 1, 'boot'))
+        runtime.request_cancel(db, 'job')
+        db.execute(update(Job).values(cancel_force_at=runtime._now(-1)))
+        db.commit()
+    monkeypatch.setattr(signal, 'SIGSTOP', 19, raising=False)
+    monkeypatch.setattr(signal, 'SIGKILL', 9, raising=False)
+    monkeypatch.setattr(runner, 'read_process_identity', members.get)
+    monkeypatch.setattr(runner, 'group_members', lambda pgid: list(members.values()))
+    monkeypatch.setattr(runner, 'process_group_nonce', lambda pid: 'nonce')
+    monkeypatch.setattr(process, 'read_identity', members.get)
+    monkeypatch.setattr(process, '_descendants', lambda expected: [])
+    def send(item, sig):
+        if sig == signal.SIGSTOP and quiescent:
+            members[item['pid']]['state'] = 'T'
+        if sig == signal.SIGKILL:
+            members.pop(item['pid'], None)
+            if item['pid'] == 202:
+                members[303] = dict(leader, pid=303, start_ticks=101)
+    monkeypatch.setattr(process, '_signal_exact', send)
+    class Transport:
+        def stop_executor(self, identity, path, budget):
+            return process.stop_executor(dict(executor_pid=999, executor_pid_start_ticks=1,
+                                               executor_boot_id='boot'), path, .3)
+        def cleanup_containers(self, *args):
+            assert not members
+    events = []
+    def emit(*args):
+        assert not members
+        events.append(args)
+    supervisor.RuntimeSupervisor(factory, root, transport=Transport(), emit=emit).cancel_once()
+    with factory() as db:
+        assert db.get(Job, 'job').status == ('canceled' if quiescent else 'canceling')
+    assert len(events) == int(quiescent)
+    if not quiescent:
+        assert receipt.exists() and members
+
+
 def test_health_uses_45_second_freshness(tmp_path):
     m = importlib.import_module('backend.app.runtime_supervisor')
     path = tmp_path/'heartbeat'

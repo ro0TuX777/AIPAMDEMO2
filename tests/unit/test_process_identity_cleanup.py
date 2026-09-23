@@ -11,6 +11,136 @@ import pytest
 from backend.app.bluescrub.isolation import runner
 
 
+@pytest.mark.parametrize('stage', ['initial', 'post_term'])
+def test_executor_reuse_before_discovery_never_authorizes_replacement_child(tmp_path, monkeypatch, stage):
+    from backend.app.pipeline import sensor_process as m
+    original = dict(identity(pid=42), ppid=1)
+    replacement = dict(original, start_ticks=200)
+    unrelated = dict(identity(pid=88, ticks=201), ppid=42)
+    current = {42: original}
+    sent = []
+    term_seen = [False]
+    class Stat:
+        parent = SimpleNamespace(name='88')
+    class ProcRoot:
+        def glob(self, pattern):
+            if stage == 'initial' or term_seen[0]:
+                current.update({42: replacement, 88: unrelated})
+            return [Stat()]
+    actual_path = m.Path
+    monkeypatch.setattr(m, 'Path', lambda p: ProcRoot() if str(p) == '/proc' else actual_path(p))
+    monkeypatch.setattr(m, 'read_identity', lambda pid: current.get(pid))
+    monkeypatch.setattr(m, 'read_process_identity', lambda pid: current.get(pid))
+    def send(item, sig):
+        sent.append((item['pid'], sig))
+        term_seen[0] = True
+    monkeypatch.setattr(m, '_signal_exact', send)
+    monkeypatch.setattr(m.time, 'sleep', lambda seconds: None)
+    result = m.stop_executor(dict(executor_pid=42, executor_pid_start_ticks=100,
+                                 executor_boot_id='boot'), tmp_path, .1)
+    assert result == 'conflict'
+    assert all(pid != 88 for pid, sig in sent)
+
+
+@pytest.mark.parametrize('local', [True, False])
+def test_fork_at_kill_boundary_is_drained_before_success(tmp_path, monkeypatch, local):
+    from backend.app.pipeline import sensor_process as m
+    monkeypatch.setattr(signal, 'SIGKILL', 9, raising=False)
+    monkeypatch.setattr(signal, 'SIGSTOP', 19, raising=False)
+    leader = identity()
+    members = {202: dict(leader)}
+    monkeypatch.setattr(runner, 'read_process_identity', lambda pid: members.get(pid))
+    monkeypatch.setattr(runner, 'group_members', lambda pgid: list(members.values()))
+    monkeypatch.setattr(runner, 'process_group_nonce', lambda pid: 'nonce')
+    def send(item, sig):
+        if sig == signal.SIGSTOP:
+            members[item['pid']]['state'] = 'T'
+        if sig == signal.SIGKILL:
+            members.pop(item['pid'], None)
+            if item['pid'] == 202:
+                members[303] = identity(pid=303, ticks=101)
+    monkeypatch.setattr(runner, 'signal_exact_process', send)
+    if local:
+        record = tmp_path/'receipt'
+        record.touch()
+        proc = SimpleNamespace(pid=202, aipam_group=runner.ProcessGroup(leader, 'nonce'), wait=lambda **kw: 0)
+        monkeypatch.setattr(runner, 'os', SimpleNamespace(name='posix'))
+        m.TrackedChild(proc, record).reap(grace=0)
+        assert not record.exists()
+    else:
+        control = tmp_path/'control'
+        control.mkdir()
+        (control/'handler-test.json').write_text(json.dumps({**leader, 'group_nonce':'nonce'}))
+        monkeypatch.setattr(m, 'read_identity', lambda pid: members.get(pid))
+        monkeypatch.setattr(m, '_descendants', lambda expected: [])
+        monkeypatch.setattr(m, '_signal_exact', send)
+        assert m.stop_executor(dict(executor_pid=999, executor_pid_start_ticks=1,
+                                   executor_boot_id='boot'), tmp_path, .3) == 'absent'
+    assert members == {}
+
+
+@pytest.mark.parametrize('failure', ['missing_open', 'missing_signal', 'ENOSYS', 'EPERM', 'signal_EPERM'])
+def test_bluescrub_pidfd_unavailable_prevents_analyzer_launch(monkeypatch, failure):
+    import errno
+    launched = []
+    closed = []
+    def unavailable(*args):
+        raise OSError(errno.ENOSYS if failure == 'ENOSYS' else errno.EPERM, 'blocked')
+    fake_os = SimpleNamespace(name='posix', getpid=lambda: 1, close=closed.append,
+                              pidfd_open=unavailable if failure in ('ENOSYS', 'EPERM') else lambda pid: 77)
+    if failure == 'missing_open':
+        del fake_os.pidfd_open
+    monkeypatch.setattr(runner, 'os', fake_os)
+    monkeypatch.setattr(runner, 'signal', SimpleNamespace(**({} if failure == 'missing_signal' else
+        {'pidfd_send_signal': unavailable if failure == 'signal_EPERM' else lambda *a: None})))
+    monkeypatch.setattr(runner, 'resolve_drop_target', lambda user: (None, None))
+    def popen(*args, **kwargs):
+        launched.append(True)
+        raise AssertionError('analyzer work must not launch')
+    monkeypatch.setattr(runner.subprocess, 'Popen', popen)
+    try:
+        runner.run_analyzer(['analyzer'], require_privilege_drop=False)
+    except (RuntimeError, OSError, AttributeError):
+        pass
+    assert launched == []
+    assert closed == ([77] if failure in ('missing_signal', 'signal_EPERM') else [])
+
+
+def test_reused_intermediate_ancestor_does_not_authorize_new_children(monkeypatch):
+    from backend.app.pipeline import sensor_process as m
+    root = dict(identity(pid=42), ppid=1)
+    parent = dict(identity(pid=51, ticks=101), ppid=42)
+    child = dict(identity(pid=88, ticks=202), ppid=51)
+    current = {42: root, 51: dict(parent, start_ticks=200), 88: child}
+    rows = {51: parent, 88: child}
+    class ProcRoot:
+        def glob(self, pattern):
+            return [SimpleNamespace(parent=SimpleNamespace(name=str(pid))) for pid in rows]
+    monkeypatch.setattr(m, 'Path', lambda p: ProcRoot())
+    monkeypatch.setattr(m, 'read_process_identity', rows.get)
+    monkeypatch.setattr(m, 'read_identity', current.get)
+    with pytest.raises(runner.ProcessIdentityConflict):
+        m._descendants(root)
+
+
+def test_unresolved_local_group_retains_receipt(tmp_path, monkeypatch):
+    from backend.app.pipeline import sensor_process as m
+    monkeypatch.setattr(signal, 'SIGSTOP', 19, raising=False)
+    record = tmp_path/'receipt'
+    record.touch()
+    group = runner.ProcessGroup(identity(), 'nonce')
+    monkeypatch.setattr(group, 'snapshot', lambda: [identity()])
+    monkeypatch.setattr(runner, 'signal_exact_process', lambda *a: None)
+    actual_stop = group.stop
+    monkeypatch.setattr(group, 'stop', lambda grace: actual_stop(grace, deadline=time.monotonic()+.02))
+    monkeypatch.setattr(runner, 'os', SimpleNamespace(name='posix'))
+    proc = SimpleNamespace(pid=202, aipam_group=group, wait=lambda **kw: pytest.fail('unresolved group reaped'))
+    child = m.TrackedChild(proc, record)
+    with pytest.raises(runner.ProcessCleanupIncomplete):
+        child.reap(grace=0)
+    assert record.exists() and not child.reaped
+
+
 def identity(pid=202, ticks=100):
     return dict(pid=pid, pgid=202, sid=202, start_ticks=ticks, boot_id='boot', state='S')
 
