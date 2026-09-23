@@ -192,6 +192,78 @@ def _signal_exact(identity, sig):
     signal_exact_process(identity, sig)
 
 
+def _freeze_ancestry(expected, deadline):
+    """Retain a fully stopped tree before any ancestry anchor may terminate.
+
+    Stop parents before discovering/freezing their children. Every observed
+    identity must remain present, stopped, and attached until two complete
+    stopped-tree snapshots agree. Lost anchors never become an empty tree.
+    """
+    root_pid = expected['pid']
+    known = {}
+
+    def current(item, *, stopped=False):
+        live = read_process_identity(item['pid'])
+        if live is None or live['state'] == 'Z':
+            raise ProcessCleanupIncomplete('Ancestry anchor exited before freeze')
+        if not same_process(item, live):
+            raise ProcessIdentityConflict()
+        if item['pid'] != root_pid and live.get('ppid') != item.get('ppid'):
+            raise ProcessCleanupIncomplete('Ancestry changed before freeze')
+        if stopped and live['state'] not in ('T', 't'):
+            raise ProcessCleanupIncomplete('Ancestry anchor is no longer stopped')
+        return live
+
+    def freeze(item):
+        live = current(item)
+        if live['state'] not in ('T', 't'):
+            _signal_exact(item, signal.SIGSTOP)
+        while time.monotonic() < deadline:
+            live = current(item)
+            if live['state'] in ('T', 't'):
+                return dict(live)
+            time.sleep(min(.01, max(0, deadline-time.monotonic())))
+        raise ProcessCleanupIncomplete('Ancestry freeze deadline exhausted')
+
+    known[root_pid] = freeze(expected)
+    stable = None
+    while time.monotonic() < deadline:
+        for item in known.values():
+            current(item, stopped=True)
+        # Discovery returns deepest first. Reverse it so each new parent is
+        # stopped and retained before its children are allowed to terminate.
+        for item in reversed(_descendants(known[root_pid])):
+            previous = known.get(item['pid'])
+            if previous is not None:
+                if not same_process(previous, item):
+                    raise ProcessIdentityConflict()
+                current(previous, stopped=True)
+                continue
+            parent = known.get(item.get('ppid'))
+            if parent is None:
+                raise ProcessCleanupIncomplete('Missing frozen ancestry anchor')
+            current(parent, stopped=True)
+            known[item['pid']] = freeze(item)
+        observed = {root_pid: known[root_pid], **{i['pid']: i for i in _descendants(known[root_pid])}}
+        for item in known.values():
+            current(item, stopped=True)
+            live = observed.get(item['pid'])
+            if live is None:
+                raise ProcessCleanupIncomplete('Frozen ancestry member detached')
+            if not same_process(item, live):
+                raise ProcessIdentityConflict()
+        if set(observed) == set(known):
+            signature = frozenset((i['pid'], i['start_ticks'], i['boot_id'], i.get('ppid'))
+                                  for i in known.values())
+            if signature == stable:
+                return known
+            stable = signature
+        else:
+            stable = None
+        time.sleep(min(.01, max(0, deadline-time.monotonic())))
+    raise ProcessCleanupIncomplete('Ancestry freeze deadline exhausted')
+
+
 def stop_executor(identity, run_dir, seconds, deadline=None):
     """Runs inside the recorded worker namespace. Conflict means signal nothing."""
     deadline = min(time.monotonic() + max(0, seconds), deadline if deadline is not None else float("inf"))
@@ -200,13 +272,19 @@ def stop_executor(identity, run_dir, seconds, deadline=None):
     verdict = classify_identity(expected, read_identity(expected['pid']))
     if verdict == 'conflict':
         return verdict
+    freeze_marker = Path(run_dir)/'control'/'ancestry.freeze.pending'
+    if freeze_marker.exists():
+        # A previous helper lost its proof or was interrupted. Current parent
+        # links cannot prove that its reparented writers are gone. Fail closed
+        # across retries until an operator establishes containment/absence.
+        return 'unavailable'
     groups = []
     for path in Path(run_dir).joinpath('control').glob('handler-*.json'):
         item = json.loads(path.read_text())
         if item['pgid'] != item['pid']:
             return 'conflict'
         groups.append(ProcessGroup(item, item.get('group_nonce')))
-    known = {expected['pid']: expected} if verdict == 'matching' else {}
+    known = {}
     def snapshot():
         tracked = [item for group in groups for item in group.snapshot()]
         # Retain independently verified identities so a legitimate parent's
@@ -252,9 +330,29 @@ def stop_executor(identity, run_dir, seconds, deadline=None):
         live_items.sort(key=depth, reverse=True)
         return live_items
     try:
+        # Validate recorded group authorities before sending even STOP. Freeze
+        # the executor first: it must not fork or exit while membership is being
+        # established. Orphan recorded groups receive the same tree freeze.
+        tracked = [item for group in groups for item in group.snapshot()]
+        freeze_owned = False
+        if verdict == 'matching' or tracked:
+            freeze_marker.parent.mkdir(parents=True, exist_ok=True)
+            try:
+                fd = os.open(freeze_marker, os.O_CREAT | os.O_EXCL | os.O_WRONLY, 0o600)
+            except FileExistsError:
+                return 'unavailable'
+            os.close(fd)
+            freeze_owned = True
+        if verdict == 'matching':
+            known.update(_freeze_ancestry(expected, deadline))
+        for item in tracked:
+            if item['pid'] not in known:
+                known.update(_freeze_ancestry(item, deadline))
         targets = snapshot()
         if time.monotonic() >= deadline:
             return 'unavailable'
+        if any(item['state'] not in ('T', 't') for item in targets):
+            raise ProcessCleanupIncomplete('Membership changed after ancestry freeze')
         for item in targets:
             _signal_exact(item, signal.SIGTERM)
         end_grace = min(max(time.monotonic(), deadline-.5), time.monotonic()+3)
@@ -263,6 +361,8 @@ def stop_executor(identity, run_dir, seconds, deadline=None):
                 break
             time.sleep(.05)
         drain_processes(snapshot, deadline, send=_signal_exact)
+        if freeze_owned:
+            freeze_marker.unlink()
     except ProcessIdentityConflict:
         return 'conflict'
     except (ProcessCleanupIncomplete, OSError, AttributeError):

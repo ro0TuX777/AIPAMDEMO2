@@ -11,9 +11,122 @@ import pytest
 from backend.app.bluescrub.isolation import runner
 
 
+def _forking_executor(monkeypatch, behavior):
+    from backend.app.pipeline import sensor_process as m
+    monkeypatch.setattr(signal, 'SIGSTOP', 19, raising=False)
+    monkeypatch.setattr(signal, 'SIGKILL', 9, raising=False)
+    root = dict(identity(pid=42), ppid=1)
+    current = {42: dict(root)}
+    if behavior in ('child_anchor_exit', 'deep_fork_captured'):
+        current[51] = dict(identity(pid=51, ticks=101), ppid=42)
+    sent = []
+    class ProcRoot:
+        def glob(self, pattern):
+            return [SimpleNamespace(parent=SimpleNamespace(name=str(pid))) for pid in list(current)]
+    actual_path = m.Path
+    monkeypatch.setattr(m, 'Path', lambda p: ProcRoot() if str(p) == '/proc' else actual_path(p))
+    monkeypatch.setattr(m, 'read_identity', lambda pid: current.get(pid))
+    monkeypatch.setattr(m, 'read_process_identity', lambda pid: current.get(pid))
+    def send(item, sig):
+        pid = item['pid']
+        sent.append((pid, sig))
+        if pid not in current:
+            return
+        # Model a fork just before STOP takes effect (or, in the old code,
+        # immediately before the first TERM exits the still-running parent).
+        should_fork = ((pid == 42 and behavior not in ('child_anchor_exit', 'deep_fork_captured')) or
+                       (pid == 51 and behavior in ('child_anchor_exit', 'deep_fork_captured')))
+        if should_fork and current[pid]['state'] == 'S' and sig in (signal.SIGSTOP, signal.SIGTERM):
+            current[303] = dict(identity(pid=303, ticks=102), ppid=pid)
+            if behavior in ('before_freeze_exit', 'child_anchor_exit') or sig == signal.SIGTERM:
+                current.pop(pid)
+                current[303]['ppid'] = 1
+                return
+        if sig == signal.SIGSTOP:
+            current[pid]['state'] = 'T'
+        elif sig == signal.SIGTERM:
+            if current[pid]['state'] != 'T':
+                current.pop(pid)
+        elif sig == signal.SIGKILL:
+            current.pop(pid)
+    monkeypatch.setattr(m, '_signal_exact', send)
+    return m, current, sent
+
+
+@pytest.mark.parametrize('behavior', ['before_freeze_exit', 'freeze_captures_fork', 'child_anchor_exit', 'deep_fork_captured'])
+def test_no_receipt_fork_and_reparent_requires_frozen_ancestry(tmp_path, monkeypatch, behavior):
+    m, current, sent = _forking_executor(monkeypatch, behavior)
+    result = m.stop_executor(dict(executor_pid=42, executor_pid_start_ticks=100,
+                                 executor_boot_id='boot'), tmp_path, .3)
+    if behavior in ('freeze_captures_fork', 'deep_fork_captured'):
+        assert result == 'matching'
+        assert not current
+        first_term = next(i for i, (_, sig) in enumerate(sent) if sig == signal.SIGTERM)
+        assert (42, signal.SIGSTOP) in sent[:first_term]
+        assert (303, signal.SIGSTOP) in sent[:first_term]
+        if behavior == 'deep_fork_captured':
+            assert sent.index((42, signal.SIGSTOP)) < sent.index((51, signal.SIGSTOP)) < sent.index((303, signal.SIGSTOP))
+    else:
+        assert result == 'unavailable'
+        assert 303 in current
+        assert all(sig not in (signal.SIGTERM, signal.SIGKILL) for _, sig in sent)
+        if 42 in current:
+            assert current[42]['state'] == 'T'
+        # A retry must not reinterpret lost ancestry as an empty, safe tree.
+        assert m.stop_executor(dict(executor_pid=42, executor_pid_start_ticks=100,
+                                    executor_boot_id='boot'), tmp_path, .3) == 'unavailable'
+        assert 303 in current
+        assert all(sig not in (signal.SIGTERM, signal.SIGKILL) for _, sig in sent)
+
+
+def test_supervisor_does_not_cas_when_unrecorded_child_reparents(tmp_path, monkeypatch):
+    from sqlalchemy import create_engine, update
+    from sqlalchemy.orm import sessionmaker
+    from backend.app.database_v2 import Base
+    from backend.app.models.job import Job
+    from backend.app.services import job_runtime as runtime
+    from backend.app import runtime_supervisor as supervisor
+    engine = create_engine(f"sqlite:///{tmp_path/'freeze.db'}")
+    Base.metadata.create_all(engine)
+    factory = sessionmaker(engine)
+    with factory() as db:
+        db.add(Job(job_id='job', status='queued', execution_profile='standard', created_at='2026-01-01'))
+        db.commit()
+        runtime.assign_task(db, 'job', 'task')
+        handle = runtime.claim_job(db, 'job', 'task', 'token', 'worker').handle
+        runtime.register_executor(db, handle, runtime.ExecutorIdentity('node', 'a'*64, 42, 100, 'boot'))
+        runtime.request_cancel(db, 'job')
+        db.execute(update(Job).values(cancel_force_at=runtime._now(-1)))
+        db.commit()
+    process, current, sent = _forking_executor(monkeypatch, 'before_freeze_exit')
+    cas, events = [], []
+    actual_cas = runtime.complete_cancel_escalation
+    def complete(*args):
+        cas.append(True)
+        return actual_cas(*args)
+    monkeypatch.setattr(runtime, 'complete_cancel_escalation', complete)
+    class Transport:
+        def stop_executor(self, identity, path, budget):
+            return process.stop_executor(dict(executor_pid=42, executor_pid_start_ticks=100,
+                                              executor_boot_id='boot'), path, .3)
+        def cleanup_containers(self, *args): pass
+    service = supervisor.RuntimeSupervisor(factory, tmp_path, transport=Transport(), emit=lambda *a: events.append(a))
+    service.cancel_once()
+    with factory() as db:
+        assert db.get(Job, 'job').status == 'canceling'
+        db.execute(update(Job).values(cancel_escalation_started_at=runtime._now(-16)))
+        db.commit()
+    service.cancel_once()
+    with factory() as db:
+        assert db.get(Job, 'job').status == 'canceling'
+    assert 303 in current and not cas and not events
+    engine.dispose()
+
+
 @pytest.mark.parametrize('stage', ['initial', 'post_term'])
 def test_executor_reuse_before_discovery_never_authorizes_replacement_child(tmp_path, monkeypatch, stage):
     from backend.app.pipeline import sensor_process as m
+    monkeypatch.setattr(signal, 'SIGSTOP', 19, raising=False)
     original = dict(identity(pid=42), ppid=1)
     replacement = dict(original, start_ticks=200)
     unrelated = dict(identity(pid=88, ticks=201), ppid=42)
@@ -33,7 +146,10 @@ def test_executor_reuse_before_discovery_never_authorizes_replacement_child(tmp_
     monkeypatch.setattr(m, 'read_process_identity', lambda pid: current.get(pid))
     def send(item, sig):
         sent.append((item['pid'], sig))
-        term_seen[0] = True
+        if sig == signal.SIGSTOP:
+            current[item['pid']]['state'] = 'T'
+        if sig == signal.SIGTERM:
+            term_seen[0] = True
     monkeypatch.setattr(m, '_signal_exact', send)
     monkeypatch.setattr(m.time, 'sleep', lambda seconds: None)
     result = m.stop_executor(dict(executor_pid=42, executor_pid_start_ticks=100,
@@ -72,6 +188,7 @@ def test_fork_at_kill_boundary_is_drained_before_success(tmp_path, monkeypatch, 
         control.mkdir()
         (control/'handler-test.json').write_text(json.dumps({**leader, 'group_nonce':'nonce'}))
         monkeypatch.setattr(m, 'read_identity', lambda pid: members.get(pid))
+        monkeypatch.setattr(m, 'read_process_identity', lambda pid: members.get(pid))
         monkeypatch.setattr(m, '_descendants', lambda expected: [])
         monkeypatch.setattr(m, '_signal_exact', send)
         assert m.stop_executor(dict(executor_pid=999, executor_pid_start_ticks=1,

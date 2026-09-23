@@ -310,6 +310,7 @@ def test_supervisor_finalizes_only_after_group_quiescence(owned, monkeypatch, qu
     monkeypatch.setattr(runner, 'group_members', lambda pgid: list(members.values()))
     monkeypatch.setattr(runner, 'process_group_nonce', lambda pid: 'nonce')
     monkeypatch.setattr(process, 'read_identity', members.get)
+    monkeypatch.setattr(process, 'read_process_identity', members.get)
     monkeypatch.setattr(process, '_descendants', lambda expected: [])
     def send(item, sig):
         if sig == signal.SIGSTOP and quiescent:
