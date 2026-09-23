@@ -1,5 +1,6 @@
 """Acceptance boundaries for immutable execution output and published artifacts."""
 import io
+import hashlib
 import json
 import os
 import subprocess
@@ -7,13 +8,14 @@ import tarfile
 import uuid
 import zipfile
 from types import SimpleNamespace
+from pathlib import Path
 
 import pytest
 
 from backend.app.pipeline.run_artifacts import (
     RunManifestEntry, build_accepted_manifest, cleanup_unaccepted_runs,
     create_run_output_dir, resolve_accepted_run_dirs, resolve_published_artifact_dir,
-    safe_artifact_path,
+    safe_artifact_path, iter_run_files,
 )
 
 
@@ -181,7 +183,7 @@ def test_zip_export_reads_only_accepted_execution_files(isolated_job):
 def test_extracted_download_respects_phase_and_accepted_manifest(isolated_job):
     from backend.app.models.file import File
     client, db, job, accepted, abandoned, stable = isolated_job
-    db.add(File(job_id=job.job_id, file_id="Ftest", sha256="a" * 64, size_bytes=14, pcap_label="after"))
+    db.add(File(job_id=job.job_id, file_id="Ftest", sha256=hashlib.sha256(b"accepted-after").hexdigest(), size_bytes=14, pcap_label="after"))
     phase = accept(job, stable.parent, "after")
     path = phase / "sensors/zeek/raw/extract_files/Ftest"
     path.parent.mkdir(parents=True)
@@ -481,3 +483,117 @@ def test_alerts_and_findings_keep_stable_arkime_state(isolated_job, monkeypatch)
         assert "abandoned" not in detail.text and "stable-decoy" not in detail.text
         pivot = client.get(f"/api/v1/jobs/{job.job_id}/{endpoint}/arkime-link", headers=AUTH)
         assert pivot.json()["import_status"] == "imported"
+
+
+@pytest.mark.parametrize("layout", [1, 2])
+def test_download_collision_within_base_run_uses_recorded_digest(isolated_job, layout):
+    from backend.app.models.file import File
+    client, db, job, accepted, abandoned, stable = isolated_job
+    if layout == 1:
+        job.artifact_layout_version = 1
+        job.accepted_run_manifest_json = None
+    root = stable if layout == 1 else accepted
+    for phase in ("before", "after"):
+        path = root / "sensors/zeek/raw" / phase / "extract_files/Fcollision"
+        path.parent.mkdir(parents=True)
+        path.write_bytes(phase.encode())
+    db.add(File(job_id=job.job_id, file_id="Fcollision", pcap_label="before",
+                sha256=hashlib.sha256(b"before").hexdigest(), size_bytes=6))
+    db.commit()
+    response = client.get(f"/api/v1/jobs/{job.job_id}/files/Fcollision/download", headers=AUTH)
+    assert response.status_code == 200
+    assert response.content == b"before"
+
+
+@pytest.mark.parametrize("case", ["unmatched", "invalid", "ambiguous"])
+def test_download_collision_fails_closed_when_identity_is_unresolved(isolated_job, case):
+    from backend.app.models.file import File
+    client, db, job, accepted, abandoned, stable = isolated_job
+    for capture in ("before-0", "before-1"):
+        path = accepted / "sensors/zeek/raw" / capture / "extract_files/Fcollision"
+        path.parent.mkdir(parents=True)
+        path.write_bytes(b"same bytes")
+    digest = {"unmatched": hashlib.sha256(b"different bytes").hexdigest(),
+              "invalid": "not-a-digest", "ambiguous": hashlib.sha256(b"same bytes").hexdigest()}[case]
+    db.add(File(job_id=job.job_id, file_id="Fcollision", pcap_label="before", sha256=digest, size_bytes=10))
+    db.commit()
+    assert client.get(f"/api/v1/jobs/{job.job_id}/files/Fcollision/download", headers=AUTH).status_code == 404
+
+
+def test_ambiguous_phase_run_does_not_fall_back_to_base(isolated_job):
+    from backend.app.models.file import File
+    client, db, job, accepted, abandoned, stable = isolated_job
+    phase = accept(job, stable.parent, "before")
+    for path in [accepted / "sensors/zeek/raw/extract_files/Fcollision",
+                 phase / "sensors/zeek/raw/before-0/extract_files/Fcollision",
+                 phase / "sensors/zeek/raw/before-1/extract_files/Fcollision"]:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(b"same bytes")
+    db.add(File(job_id=job.job_id, file_id="Fcollision", pcap_label="before",
+                sha256=hashlib.sha256(b"same bytes").hexdigest(), size_bytes=10))
+    db.commit()
+    assert client.get(f"/api/v1/jobs/{job.job_id}/files/Fcollision/download", headers=AUTH).status_code == 404
+
+
+def test_iterator_never_enters_rejected_directories(tmp_path, job, monkeypatch):
+    job.artifact_layout_version = 1
+    stable = tmp_path / job.job_id
+    allowed_files = ["sensors/zeek/z.json", "sensors/zeek/a.json", "artifacts/evidence.json", "telemetry_diagnostics.json"]
+    for relative in allowed_files:
+        path = stable / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("accepted")
+    rejected = [stable / name for name in (".runs", "published", "input", "api-artifacts", "quarantine")]
+    for directory in rejected:
+        (directory / "nested").mkdir(parents=True)
+        (directory / "nested/secret").write_text("rejected")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    (outside / "secret").write_text("rejected")
+    for link in (stable / "metrics", stable / "sensors/linked"):
+        link_directory(link, outside)
+        rejected.append(link)
+
+    entered = []
+    original_scandir = os.scandir
+    original_listdir = os.listdir
+
+    def record_descent(directory):
+        directory = Path(directory)
+        entered.append(directory)
+        assert not any(directory.is_relative_to(path) for path in rejected), f"Entered rejected directory: {directory}"
+
+    def guarded_scandir(directory):
+        record_descent(directory)
+        return original_scandir(directory)
+
+    def guarded_listdir(directory):
+        record_descent(directory)
+        return original_listdir(directory)
+
+    monkeypatch.setattr(os, "scandir", guarded_scandir)
+    monkeypatch.setattr(os, "listdir", guarded_listdir)
+    root, = resolve_accepted_run_dirs(job, tmp_path)
+    assert [path.relative_to(root).as_posix() for path in iter_run_files(root)] == sorted(allowed_files)
+    assert root / "sensors/zeek" in entered
+
+
+@pytest.mark.parametrize("case", ["duplicate_phase", "duplicate_token", "short_digest", "nonhex_digest", "unknown_key"])
+def test_strict_manifest_rejects_invalid_entries_without_cleanup(tmp_path, job, case):
+    accepted = accept(job, tmp_path)
+    abandoned = create_run_output_dir(tmp_path, job.job_id, token())
+    entries = [{"run_token": accepted.name, "phase_label": None}]
+    if case == "duplicate_phase":
+        entries.append({"run_token": abandoned.name, "phase_label": None})
+    elif case == "duplicate_token":
+        entries.append({"run_token": accepted.name, "phase_label": "after"})
+    elif case == "unknown_key":
+        entries[0]["directory"] = "../escape"
+    else:
+        entries[0]["bundle_sha256"] = "abc" if case == "short_digest" else "z" * 64
+    job.accepted_run_manifest_json = json.dumps(entries)
+    assert resolve_accepted_run_dirs(job, tmp_path) == []
+    with pytest.raises(ValueError):
+        build_accepted_manifest(entries, token(), "after")
+    assert cleanup_unaccepted_runs(job, tmp_path) == []
+    assert accepted.exists() and abandoned.exists()

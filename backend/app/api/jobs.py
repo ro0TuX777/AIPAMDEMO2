@@ -21,6 +21,7 @@ GET  /jobs/{id}/arkime/status  – Arkime import status
 POST /jobs/{id}/security_onion/import – push PCAPs to Security Onion
 """
 
+import hashlib
 import json
 import logging as _logging
 import uuid
@@ -795,16 +796,34 @@ async def download_extracted_file(
     if not file_row:
         raise HTTPException(status_code=404, detail="File not found in database")
 
+    digest = (file_row.sha256 or "").lower()
+    if len(digest) != 64 or any(char not in "0123456789abcdef" for char in digest):
+        raise HTTPException(status_code=404, detail="Extracted file identity is unavailable")
+
     # Search for the actual file on disk under the Zeek extraction directories
     disk_path = None
     # Literal filename matching avoids turning a DB/API identifier into a glob.
     for run_dir in reversed(resolve_accepted_run_dirs(job, settings.aipam_job_root, phase_label=file_row.pcap_label)):
+        candidates = []
         for candidate in iter_run_files(run_dir):
             relative = candidate.relative_to(run_dir).as_posix()
             if candidate.name == file_id and (relative.startswith("sensors/zeek/raw/") or relative.startswith("extracted_files/files/")):
-                disk_path = candidate
-                break
-        if disk_path:
+                candidates.append(candidate)
+        if candidates:
+            # Basenames may repeat across captures within one base run. Bind
+            # the download to the persisted file's bytes, not directory order.
+            matches = []
+            try:
+                for candidate in candidates:
+                    with candidate.open("rb") as stream:
+                        if hashlib.file_digest(stream, "sha256").hexdigest() == digest:
+                            matches.append(candidate)
+            except OSError as exc:
+                raise HTTPException(status_code=404, detail="Extracted file identity is unavailable") from exc
+            if len(matches) != 1:
+                # An unresolved newer phase must not silently select old base output.
+                raise HTTPException(status_code=404, detail="Extracted file identity is unresolved")
+            disk_path = matches[0]
             break
 
     if not disk_path or not disk_path.exists():

@@ -126,16 +126,28 @@ def resolve_published_artifact_dir(job, job_root: Path, artifact_id: str) -> Pat
 def iter_run_files(run_dir: Path, pattern: str = "*"):
     """Yield safe execution files only, never stable inputs or nested run/published trees."""
     allowed = {"sensors", "artifacts", "metrics", "logs", "extracted_files", "normalized", "report", "telemetry_diagnostics.json"}
-    for path in sorted(run_dir.rglob(pattern)):
-        relative = path.relative_to(run_dir)
-        if relative.parts[0] not in allowed:
-            continue
+
+    def walk(path: Path):
         try:
-            path = safe_artifact_path(run_dir, relative)
-            if path.is_file():
+            # Validate before listing a directory, including links/junctions
+            # nested under an allowed execution subtree.
+            path = safe_artifact_path(run_dir, path.relative_to(run_dir))
+            if path.is_dir():
+                children = sorted(path.iterdir())
+            elif path.is_file() and path.match(pattern):
                 yield path
+                return
+            else:
+                return
         except (OSError, ValueError):
-            continue
+            return
+        for child in children:
+            yield from walk(child)
+
+    # Do not recursively enumerate the job root: layout 1 also contains stable
+    # inputs, publications and abandoned .runs trees that readers may not enter.
+    for name in sorted(allowed):
+        yield from walk(run_dir / name)
 
 
 def run_archive_prefix(job, run_dir: Path) -> str:
