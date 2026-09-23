@@ -199,15 +199,15 @@ class TestGenerateTheories:
         assert len(benign_theories) == 1
         assert benign_theories[0].score == 0.7
 
-    def test_regeneration_replaces_existing(self, db_session, c2_job):
+    def test_regeneration_preserves_identity(self, db_session, c2_job):
         theories1 = generate_theories(db_session, c2_job.job_id)
         theories2 = generate_theories(db_session, c2_job.job_id)
-        # Old theories should be deleted, new ones created
+        # Regeneration updates the same semantic theories
         assert len(theories1) == len(theories2)
-        # Theory IDs should be different (new UUIDs)
+        # IDs are stable across regeneration
         ids1 = {t.theory_id for t in theories1}
         ids2 = {t.theory_id for t in theories2}
-        assert ids1 != ids2
+        assert ids1 == ids2
 
     def test_theories_ranked_by_score(self, db_session, c2_job):
         theories = generate_theories(db_session, c2_job.job_id)
@@ -391,3 +391,220 @@ class TestTheoryEvidenceBundle:
         scope_type, scope_id = parse_context_hint("theory:TH-abc12345")
         assert scope_type == "theory"
         assert scope_id == "TH-abc12345"
+
+
+# Task 6: relevance, bounded database work, and durable review identity.
+from sqlalchemy import event, select, func
+from backend.app.models.host import Host
+from backend.app.models.normalized_event import NormalizedEvent
+from backend.app.services import theory_engine as engine
+
+
+def _host(db, job, ip, phase=None):
+    db.add(Host(job_id=job, ip=ip, conn_count=100, pcap_label=phase))
+
+
+def _alert(db, job, ip, phase=None):
+    db.add(Alert(job_id=job, alert_id=_uid(), host_ip=ip, severity="high",
+                 signature="C2 beacon", ts=_now(), pcap_label=phase))
+
+
+def _finding(db, job, **kw):
+    db.add(Finding(job_id=job, finding_id=_uid(), sensor="test", severity="high",
+                   title="C2 beacon", **kw))
+
+
+def _telemetry(db, job, ip, status, phase=None):
+    db.add(NormalizedEvent(job_id=job, event_id=_uid(), event_type="c2",
+        timestamp=_now(), source_type="log", src_ip=ip, evidence_status=status,
+        pcap_label=phase))
+
+
+def test_connection_only_host_gets_no_host_theory(db_session, sample_job):
+    job = sample_job.job_id
+    _host(db_session, job, "10.0.0.1")
+    _host(db_session, job, "10.0.0.2")
+    _alert(db_session, job, "10.0.0.2")
+    db_session.commit()
+    result = generate_all_theories(db_session, job)
+    assert result["relevant_hosts"] == 1
+    assert result["discovered_hosts"] == 2
+    assert result["skipped_benign_hosts"] == 1
+    assert result["theory_scopes"] == 2
+    assert result["duration_ms"] >= 0
+    assert set(db_session.execute(select(Theory.scope_type, Theory.scope_id))) == {
+        ("job", job), ("host", "10.0.0.2")}
+
+
+def test_exact_structured_relevance_and_phase_filters(db_session, sample_job):
+    job = sample_job.job_id
+    for ip in ["10.0.0.1", "10.0.0.10", "10.0.0.3", "10.0.0.4", "10.0.0.5",
+               "10.0.0.6", "10.0.0.7", "10.0.0.8", "2001:db8::1", "10.0.0.9"]:
+        _host(db_session, job, ip, "before")
+    _alert(db_session, job, "10.0.0.10", "before")
+    _finding(db_session, job, src_ip="10.0.0.3", dest_ip="10.0.0.4", pcap_label="before")
+    _finding(db_session, job, evidence_json=json.dumps({"nested": ["10.0.0.5", "text 10.0.0.1"]}), pcap_label="before")
+    _finding(db_session, job, summary="10.0.0.1", evidence_json='bad json 10.0.0.1', pcap_label="before")
+    _telemetry(db_session, job, "10.0.0.6", "observed", "before")
+    _telemetry(db_session, job, "10.0.0.7", "corroborated", "before")
+    _telemetry(db_session, job, "10.0.0.8", "confirmed", "before")
+    db_session.add(Ioc(job_id=job, ioc_id=_uid(), ioc_type="ipv6",
+        value="2001:0db8:0:0:0:0:0:1", pcap_label="before"))
+    db_session.add(Ioc(job_id=job, ioc_id=_uid(), ioc_type="domain",
+        value="10.0.0.1", context="10.0.0.1", pcap_label="before"))
+    for phase in ["after", None]:
+        _alert(db_session, job, "10.0.0.9", phase)
+        _finding(db_session, job, src_ip="10.0.0.9", pcap_label=phase)
+        _telemetry(db_session, job, "10.0.0.9", "confirmed", phase)
+        db_session.add(Ioc(job_id=job, ioc_id=_uid(), ioc_type="ip", value="10.0.0.9", pcap_label=phase))
+    db_session.commit()
+    result = generate_all_theories(db_session, job, pcap_label="before")
+    assert result["relevant_hosts"] == 7
+    assert set(db_session.scalars(select(Theory.scope_id).where(Theory.scope_type == "host"))) == {
+        "10.0.0.10", "10.0.0.3", "10.0.0.4", "10.0.0.5", "10.0.0.7", "10.0.0.8", "2001:db8::1"}
+    assert not _gather_evidence(db_session, job, "10.0.0.1", "before")["findings"]
+    assert not _gather_evidence(db_session, job, "10.0.0.9", "before")["iocs"]
+    assert not _gather_evidence(db_session, job, "10.0.0.9", "before")["telemetry"]
+
+
+@pytest.mark.parametrize("count", [1, 200])
+def test_evidence_loading_query_count_is_constant(db_session, sample_job, count):
+    job = sample_job.job_id
+    for i in range(count):
+        ip = f"10.0.{i // 250}.{i % 250 + 1}"
+        _host(db_session, job, ip)
+        _alert(db_session, job, ip)
+    db_session.commit()
+    calls = {"selects": 0, "commits": 0, "flushes": 0}
+    def sql(conn, cursor, statement, *args):
+        if statement.lstrip().upper().startswith("SELECT"):
+            calls["selects"] += 1
+    def commit(session):
+        calls["commits"] += 1
+    def flush(*args):
+        calls["flushes"] += 1
+    event.listen(db_session.get_bind(), "before_cursor_execute", sql)
+    event.listen(db_session, "before_commit", commit)
+    event.listen(db_session, "after_flush", flush)
+    try:
+        result = generate_all_theories(db_session, job)
+    finally:
+        event.remove(db_session.get_bind(), "before_cursor_execute", sql)
+        event.remove(db_session, "before_commit", commit)
+        event.remove(db_session, "after_flush", flush)
+    assert calls["selects"] <= 8
+    assert calls["commits"] == 1
+    assert calls["flushes"] == (count + 100) // 100
+    assert result["relevant_hosts"] == count
+    assert result["theory_scopes"] == count + 1
+
+
+def test_candidate_reordering_keeps_theory_identity_and_review(db_session, c2_job, monkeypatch):
+    job = c2_job.job_id
+    rows = generate_theories(db_session, job)
+    row = next(t for t in rows if t.hypothesis_type == "c2")
+    row.theory_id = "TH-legacy-random"
+    row.analyst_status = "confirmed"
+    row.analyst_notes = "analyst-confirmed"
+    row.reviewed_at = "2026-09-22T10:00:00Z"
+    row.reviewer_id = "analyst-test"
+    db_session.commit()
+    monkeypatch.setattr(engine, "_score_benign", lambda evidence: (1.0, [], [], {}))
+    generate_theories(db_session, job)
+    row = db_session.scalar(select(Theory).where(Theory.hypothesis_type == "c2"))
+    assert row.theory_id == "TH-legacy-random"
+    assert row.theory_key == "c2"
+    assert row.rank > 1
+    assert (row.analyst_status, row.analyst_notes, row.reviewed_at, row.reviewer_id) == (
+        "confirmed", "analyst-confirmed", "2026-09-22T10:00:00Z", "analyst-test")
+
+
+def test_semantic_ids_are_full_deterministic_and_unique():
+    make_id = getattr(engine, "semantic_theory_id", None)
+    assert callable(make_id), "semantic_theory_id must replace eight random hex characters"
+    ids = {make_id(f"job-{i // 100}", None, "host", f"scope-{i}", "c2") for i in range(100_000)}
+    assert len(ids) == 100_000
+    assert all(len(value) == 39 and uuid.UUID(value[3:]).version == 5 for value in ids)
+    assert make_id("job", None, "host", "10.0.0.1", "c2") == make_id("job", "", "host", "10.0.0.1", "c2")
+    assert make_id("job", "before", "host", "10.0.0.1", "c2") != make_id("job", "after", "host", "10.0.0.1", "c2")
+    assert make_id("a|b", None, "host", "c", "d") != make_id("a", "b", "host", "c", "d")
+
+
+def test_regeneration_removes_stale_scopes_and_keys(db_session, sample_job):
+    job = sample_job.job_id
+    _host(db_session, job, "10.0.0.2")
+    _alert(db_session, job, "10.0.0.2")
+    db_session.commit()
+    generate_all_theories(db_session, job)
+    reviewed = db_session.scalar(select(Theory).where(
+        Theory.scope_type == "job", Theory.theory_key == "c2"))
+    reviewed_id = reviewed.theory_id
+    reviewed.analyst_status = "confirmed"
+    reviewed.analyst_notes = "keep"
+    db_session.commit()
+    db_session.query(Alert).filter(Alert.job_id == job).delete()
+    db_session.commit()
+    generate_all_theories(db_session, job)
+    assert not db_session.scalar(select(Theory).where(Theory.scope_type == "host"))
+    assert not db_session.scalar(select(Theory).where(Theory.theory_key == "c2"))
+    # Once evidence restores the branch, its deterministic identity returns.
+    _alert(db_session, job, "10.0.0.2")
+    db_session.commit()
+    generate_all_theories(db_session, job)
+    restored = db_session.scalar(select(Theory).where(
+        Theory.scope_type == "job", Theory.theory_key == "c2"))
+    assert restored.theory_id == reviewed_id
+
+
+def test_legacy_null_job_scope_keeps_review_on_regeneration(db_session, sample_job):
+    job = sample_job.job_id
+    legacy = Theory(job_id=job, theory_id="TH-legacy-null-scope", scope_type="job",
+        scope_id=None, phase_key="", scope_id_key="", theory_key="benign",
+        label="Old benign", hypothesis_type="benign", score=0.2,
+        confidence="low", rank=1, created_at=_now(),
+        analyst_status="confirmed", analyst_notes="keep review")
+    db_session.add(legacy)
+    db_session.commit()
+    generate_all_theories(db_session, job)
+    db_session.refresh(legacy)
+    assert legacy.theory_id == "TH-legacy-null-scope"
+    assert legacy.scope_id is None
+    assert (legacy.analyst_status, legacy.analyst_notes) == ("confirmed", "keep review")
+    assert db_session.scalar(select(func.count()).select_from(Theory).where(
+        Theory.job_id == job, Theory.theory_key == "benign")) == 1
+
+
+def test_random_prefix_collision_cannot_break_generation(db_session, c2_job, monkeypatch):
+    # The old random generator issued the same truncated prefix on retries.
+    monkeypatch.setattr(engine, "uuid4", lambda: uuid.UUID("12345678-1111-4111-8111-111111111111"), raising=False)
+    rows = generate_theories(db_session, c2_job.job_id)
+    assert len({row.theory_id for row in rows}) == len(rows)
+
+
+def test_flush_failure_rolls_back_all_scopes(db_engine, monkeypatch):
+    from sqlalchemy.orm import Session
+    from backend.app.models.job import Job
+    with Session(db_engine) as db:
+        db.add(Job(job_id="rollback", status="running", execution_profile="standard", created_at=_now()))
+        db.commit()
+        for i in range(110):
+            ip = f"10.0.0.{i + 1}"
+            _host(db, "rollback", ip)
+            _alert(db, "rollback", ip)
+        db.commit()
+        flush = db.flush
+        batches = []
+        def fail_second_flush(*args, **kwargs):
+            if db.new or db.dirty:
+                batches.append(len(db.new))
+                if len(batches) == 2:
+                    raise RuntimeError("injected flush failure")
+            return flush(*args, **kwargs)
+        monkeypatch.setattr(db, "flush", fail_second_flush)
+        with pytest.raises(RuntimeError, match="injected flush failure"):
+            generate_all_theories(db, "rollback")
+        monkeypatch.setattr(db, "flush", flush)
+        assert db.scalar(select(func.count()).select_from(Theory)) == 0
+        assert db.is_active
+    with Session(db_engine) as observer:
+        assert observer.scalar(select(func.count()).select_from(Theory)) == 0

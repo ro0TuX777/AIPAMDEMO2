@@ -1,6 +1,6 @@
 """Theory of the Case model — ranked hypotheses per job/host."""
 
-from sqlalchemy import Column, Float, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import Column, Float, ForeignKey, Index, Integer, String, Text, UniqueConstraint
 
 from backend.app.database_v2 import Base
 
@@ -16,6 +16,14 @@ class Theory(Base):
     scope_type = Column(String, nullable=False, default="job")
     # For host-scoped theories, the IP address; NULL for job-scoped
     scope_id = Column(String, nullable=True)
+
+    # Non-null semantic identity; defaults also support direct ORM inserts.
+    phase_key = Column(String, nullable=False,
+                       default=lambda ctx: ctx.get_current_parameters().get("pcap_label") or "")
+    scope_id_key = Column(String, nullable=False,
+                          default=lambda ctx: ctx.get_current_parameters().get("scope_id") or "")
+    theory_key = Column(String, nullable=False,
+                       default=lambda ctx: ctx.get_current_parameters()["hypothesis_type"])
 
     # Hypothesis details
     label = Column(Text, nullable=False)
@@ -46,6 +54,8 @@ class Theory(Base):
     reviewer_id = Column(String, nullable=True)  # analyst identifier who last changed status
 
     __table_args__ = (
+        UniqueConstraint("job_id", "phase_key", "scope_type", "scope_id_key", "theory_key",
+                         name="uq_theories_semantic"),
         Index("idx_theories_job", "job_id"),
         Index("idx_theories_scope", "job_id", "scope_type", "scope_id"),
         Index("idx_theories_rank", "job_id", "scope_type", "scope_id", "rank"),

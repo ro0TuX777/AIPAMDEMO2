@@ -12,11 +12,14 @@ from backend.app.pipeline.runtime_control import checkpoint
 import json
 import logging
 import re
+import ipaddress
+import time
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from typing import Any
-from uuid import uuid4
+from uuid import UUID, uuid5
 
-from sqlalchemy import or_, select
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from backend.app.models.alert import Alert
@@ -70,56 +73,99 @@ _HYPOTHESIS_PATTERNS: dict[str, list[str]] = {
 }
 
 _SEVERITY_WEIGHT = {"critical": 1.0, "high": 0.8, "medium": 0.5, "low": 0.2, "info": 0.05}
+AIPAM_THEORY_NAMESPACE = UUID("47b506e6-87d8-55c4-8ac2-226f111bb2a0")
+_IP_IOC_TYPES = {"ip", "ipv4", "ipv6", "ip-dst", "ip-src"}
+
+
+def semantic_theory_id(job_id: str, pcap_label: str | None,
+                       scope_type: str, scope_id: str, theory_key: str) -> str:
+    # Length-prefixed components avoid ambiguity when an input contains '|'.
+    components = (job_id, pcap_label or "", scope_type, scope_id, theory_key)
+    name = "".join(f"{len(value)}:{value}" for value in components)
+    return f"TH-{uuid5(AIPAM_THEORY_NAMESPACE, name)}"
+
+
+def _ip(value: Any) -> ipaddress.IPv4Address | ipaddress.IPv6Address | None:
+    try:
+        return ipaddress.ip_address(value)
+    except (ValueError, TypeError):
+        return None
+
+
+def _json_ips(raw: str | None) -> set:
+    if not raw:
+        return set()
+    try:
+        root = json.loads(raw)
+    except (ValueError, TypeError):
+        return set()
+    found: set = set()
+    def visit(value):
+        if isinstance(value, str):
+            address = _ip(value)
+            if address is not None:
+                found.add(address)
+        elif isinstance(value, list):
+            for child in value:
+                visit(child)
+        elif isinstance(value, dict):
+            for child in value.values():
+                visit(child)
+    visit(root)
+    return found
+
+
+@dataclass
+class EvidenceIndex:
+    findings: list[Finding]
+    alerts: list[Alert]
+    iocs: list[Ioc]
+    telemetry: list[NormalizedEvent]
+    by_host: dict[Any, dict[str, list]] = field(default_factory=dict)
+
+    def for_host(self, host_ip: str | None) -> dict[str, list]:
+        if host_ip is None:
+            return {name: getattr(self, name) for name in ("findings", "alerts", "iocs", "telemetry")}
+        return self.by_host.get(_ip(host_ip), {name: [] for name in ("findings", "alerts", "iocs", "telemetry")})
+
+
+def _load_evidence(db: Session, job_id: str, pcap_label: str | None) -> EvidenceIndex:
+    families = (("findings", Finding), ("alerts", Alert), ("iocs", Ioc),
+                ("telemetry", NormalizedEvent))
+    loaded = {}
+    for name, model in families:
+        query = select(model).where(model.job_id == job_id)
+        if pcap_label is not None:
+            query = query.where(model.pcap_label == pcap_label)
+        loaded[name] = list(db.scalars(query))
+    index = EvidenceIndex(**loaded)
+    for family in ("findings", "alerts", "iocs", "telemetry"):
+        for row in getattr(index, family):
+            if family == "findings":
+                addresses = {_ip(row.src_ip), _ip(row.dest_ip)} | _json_ips(row.evidence_json)
+            elif family == "alerts":
+                addresses = {_ip(row.src_ip), _ip(row.dest_ip), _ip(row.host_ip)}
+            elif family == "iocs":
+                addresses = {_ip(row.value)} if row.ioc_type.lower() in _IP_IOC_TYPES else set()
+            else:
+                if row.evidence_status not in ("corroborated", "confirmed"):
+                    continue
+                addresses = {_ip(row.src_ip), _ip(row.dest_ip), _ip(row.hostname)}
+            for address in addresses - {None}:
+                bucket = index.by_host.setdefault(address, {name: [] for name in ("findings", "alerts", "iocs", "telemetry")})
+                bucket[family].append(row)
+    return index
+
+
+def select_relevant_hosts(hosts: list[str], evidence: EvidenceIndex) -> list[str]:
+    return [host for host in hosts if _ip(host) in evidence.by_host]
 
 
 # ── Evidence gathering ────────────────────────────────────────────────
 
 def _gather_evidence(db: Session, job_id: str, host_ip: str | None = None, pcap_label: str | None = None) -> dict[str, Any]:
-    """Collect alerts, findings, and IOCs for a job or specific host."""
-    # Findings
-    fq = select(Finding).where(Finding.job_id == job_id)
-    if pcap_label:
-        fq = fq.where(Finding.pcap_label == pcap_label)
-    if host_ip:
-        fq = fq.where(or_(
-            Finding.title.contains(host_ip),
-            Finding.summary.contains(host_ip),
-            Finding.evidence_json.contains(host_ip),
-        ))
-    findings = db.execute(fq).scalars().all()
-
-    # Alerts
-    aq = select(Alert).where(Alert.job_id == job_id)
-    if pcap_label:
-        aq = aq.where(Alert.pcap_label == pcap_label)
-    if host_ip:
-        aq = aq.where(or_(
-            Alert.src_ip == host_ip,
-            Alert.dest_ip == host_ip,
-            Alert.host_ip == host_ip,
-        ))
-    alerts = db.execute(aq).scalars().all()
-
-    # IOCs
-    iq = select(Ioc).where(Ioc.job_id == job_id)
-    if host_ip:
-        iq = iq.where(or_(
-            Ioc.value == host_ip,
-            Ioc.context.contains(host_ip) if host_ip else True,
-        ))
-    iocs = db.execute(iq).scalars().all()
-
-    # NormalizedEvents (telemetry)
-    teq = select(NormalizedEvent).where(NormalizedEvent.job_id == job_id)
-    if host_ip:
-        teq = teq.where(or_(
-            NormalizedEvent.src_ip == host_ip,
-            NormalizedEvent.dest_ip == host_ip,
-            NormalizedEvent.hostname == host_ip,
-        ))
-    telemetry = db.execute(teq).scalars().all()
-
-    return {"findings": findings, "alerts": alerts, "iocs": iocs, "telemetry": telemetry}
+    """Collect phase-consistent evidence with exact host associations."""
+    return _load_evidence(db, job_id, pcap_label).for_host(host_ip)
 
 
 # ── Hypothesis scoring ────────────────────────────────────────────────
@@ -282,21 +328,30 @@ def generate_theories(
 
     No LLM calls are made here — explanation is added separately.
     """
+    try:
+        evidence = _load_evidence(db, job_id, pcap_label)
+        existing = list(db.scalars(select(Theory).where(
+            Theory.job_id == job_id, Theory.phase_key == (pcap_label or ""))))
+        by_key = {(row.scope_type, row.scope_id_key, row.theory_key): row for row in existing}
+        rows = _build_scope(db, job_id, host_ip, pcap_label,
+                            evidence.for_host(host_ip), by_key)
+        active = {row.theory_key for row in rows}
+        scope_type = "host" if host_ip else "job"
+        scope_id = host_ip or job_id
+        for row in existing:
+            if row.scope_type == scope_type and row.scope_id_key in ({scope_id, ""} if host_ip is None else {scope_id}) and row.theory_key not in active:
+                db.delete(row)
+        db.commit()
+        return rows
+    except BaseException:
+        db.rollback()
+        raise
+
+
+def _build_scope(db: Session, job_id: str, host_ip: str | None, pcap_label: str | None,
+                 evidence: dict[str, Any], existing: dict[tuple[str, str, str], Theory]) -> list[Theory]:
     scope_type = "host" if host_ip else "job"
     scope_id = host_ip or job_id
-
-    # Delete any existing theories for this scope + label (re-generation)
-    del_q = db.query(Theory).filter(
-        Theory.job_id == job_id,
-        Theory.scope_type == scope_type,
-        Theory.scope_id == scope_id,
-    )
-    if pcap_label:
-        del_q = del_q.filter(Theory.pcap_label == pcap_label)
-    del_q.delete()
-    db.flush()
-
-    evidence = _gather_evidence(db, job_id, host_ip, pcap_label=pcap_label)
 
     # Score all hypothesis types
     scored: list[tuple[str, float, list[str], list[str], dict[str, Any]]] = []
@@ -328,32 +383,29 @@ def generate_theories(
     for rank, (hyp_type, score, supporting, contradicting, breakdown) in enumerate(scored, 1):
         checkpoint()
         label = _HYPOTHESIS_LABELS.get(hyp_type, hyp_type.replace("_", " ").title())
-        theory = Theory(
-            job_id=job_id,
-            theory_id=f"TH-{uuid4().hex[:8]}",
-            scope_type=scope_type,
-            scope_id=scope_id,
-            label=label,
-            hypothesis_type=hyp_type,
-            score=score,
-            confidence=_confidence_label(score),
-            rank=rank,
-            supporting_evidence_json=json.dumps(supporting) if supporting else None,
-            contradicting_evidence_json=json.dumps(contradicting) if contradicting else None,
-            score_breakdown_json=json.dumps(breakdown),
-            pcap_label=pcap_label,
-            created_at=now,
-        )
-        db.add(theory)
+        key = (scope_type, scope_id, hyp_type)
+        theory = existing.get(key)
+        if theory is None and host_ip is None:
+            # Old job-scope rows can have NULL scope_id. Their normalized key
+            # is empty; keep that semantic tuple and analyst-owned identity.
+            theory = existing.get(("job", "", hyp_type))
+        if theory is None:
+            theory = Theory(job_id=job_id,
+                theory_id=semantic_theory_id(job_id, pcap_label, scope_type, scope_id, hyp_type),
+                scope_type=scope_type, scope_id=scope_id,
+                phase_key=pcap_label or "", scope_id_key=scope_id, theory_key=hyp_type,
+                created_at=now)
+            db.add(theory)
+        theory.label = label
+        theory.hypothesis_type = hyp_type
+        theory.score = score
+        theory.confidence = _confidence_label(score)
+        theory.rank = rank
+        theory.supporting_evidence_json = json.dumps(supporting) if supporting else None
+        theory.contradicting_evidence_json = json.dumps(contradicting) if contradicting else None
+        theory.score_breakdown_json = json.dumps(breakdown)
+        theory.pcap_label = pcap_label
         theories.append(theory)
-
-    db.commit()
-    logger.info(
-        "Generated %d theories for job=%s scope=%s:%s (top: %s @ %.2f)",
-        len(theories), job_id, scope_type, scope_id,
-        theories[0].hypothesis_type if theories else "none",
-        theories[0].score if theories else 0.0,
-    )
     return theories
 
 
@@ -362,26 +414,47 @@ def generate_all_theories(db: Session, job_id: str, pcap_label: str | None = Non
 
     Returns counts: {"job": N, "hosts": M, "total": N+M}
     """
-    # Job-level theories
-    job_theories = generate_theories(db, job_id, pcap_label=pcap_label)
-
-    # Per-host theories
-    host_q = select(Host.ip).where(Host.job_id == job_id)
-    if pcap_label:
-        host_q = host_q.where(Host.pcap_label == pcap_label)
-    hosts = db.execute(host_q).scalars().all()
-
-    host_theory_count = 0
-    for ip in hosts:
+    start = time.monotonic()
+    try:
         checkpoint()
-        host_theories = generate_theories(db, job_id, host_ip=ip, pcap_label=pcap_label)
-        host_theory_count += len(host_theories)
-
-    return {
-        "job": len(job_theories),
-        "hosts": host_theory_count,
-        "total": len(job_theories) + host_theory_count,
-    }
+        host_q = select(Host.ip).where(Host.job_id == job_id)
+        if pcap_label is not None:
+            host_q = host_q.where(Host.pcap_label == pcap_label)
+        hosts = list(dict.fromkeys(db.scalars(host_q)))
+        evidence = _load_evidence(db, job_id, pcap_label)
+        relevant = select_relevant_hosts(hosts, evidence)
+        existing = list(db.scalars(select(Theory).where(
+            Theory.job_id == job_id, Theory.phase_key == (pcap_label or ""))))
+        by_key = {(row.scope_type, row.scope_id_key, row.theory_key): row for row in existing}
+        active: set[tuple[str, str, str]] = set()
+        job_count = host_count = 0
+        scopes = [None, *relevant]
+        for offset in range(0, len(scopes), 100):
+            checkpoint()
+            for host_ip in scopes[offset:offset + 100]:
+                checkpoint()
+                rows = _build_scope(db, job_id, host_ip, pcap_label,
+                                    evidence.for_host(host_ip), by_key)
+                active.update((row.scope_type, row.scope_id_key, row.theory_key) for row in rows)
+                if host_ip is None:
+                    job_count += len(rows)
+                else:
+                    host_count += len(rows)
+            db.flush()
+        # The generated set is authoritative for this phase, including hosts
+        # which lost relevance and candidate branches which no longer score.
+        for row in existing:
+            if (row.scope_type, row.scope_id_key, row.theory_key) not in active:
+                db.delete(row)
+        db.commit()
+        return {"job": job_count, "hosts": host_count, "total": job_count + host_count,
+                "discovered_hosts": len(hosts), "relevant_hosts": len(relevant),
+                "skipped_benign_hosts": len(hosts) - len(relevant),
+                "theory_scopes": len(scopes),
+                "duration_ms": round((time.monotonic() - start) * 1000)}
+    except BaseException:
+        db.rollback()
+        raise
 
 
 # ── Labels ────────────────────────────────────────────────────────────

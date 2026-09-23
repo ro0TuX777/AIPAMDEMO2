@@ -242,6 +242,7 @@ def _write_job_metrics(
     stages: list[SensorDef],
     sensor_results: list[SensorResult],
     corr_counts: dict[str, int] | None,
+    theory_counts: dict[str, int] | None = None,
 ) -> None:
     """Write job_metrics.json per §20 of the implementation plan."""
     try:
@@ -303,6 +304,8 @@ def _write_job_metrics(
             "sensor_runtimes": sensor_runtimes,
             "disk_used_bytes": disk_used_bytes,
         }
+        metrics_data.update({name: (theory_counts or {}).get(name, 0) for name in (
+            "discovered_hosts", "relevant_hosts", "skipped_benign_hosts", "theory_scopes", "duration_ms")})
 
         metrics_dir = job_dir / "metrics"
         metrics_dir.mkdir(parents=True, exist_ok=True)
@@ -967,6 +970,7 @@ def run_pipeline(
     step_num += 1
     _emit(job_id, "stage.status", stage="theories", status="running",
           step=step_num, total_steps=total_steps)
+    theory_counts = None
     try:
         from backend.app.services.theory_engine import generate_all_theories
 
@@ -1031,9 +1035,11 @@ def run_pipeline(
         "timeout": sum(1 for r in sensor_results if r.status == "timeout"),
         "skipped": sum(1 for r in sensor_results if r.status == "skipped"),
     }
+    metrics.update({name: (theory_counts or {}).get(name, 0) for name in (
+        "discovered_hosts", "relevant_hosts", "skipped_benign_hosts", "theory_scopes", "duration_ms")})
 
     # --- Write job_metrics.json (§20) ---
-    _write_job_metrics(run_output_dir, job, stages, sensor_results, corr_counts)
+    _write_job_metrics(run_output_dir, job, stages, sensor_results, corr_counts, theory_counts)
 
     # --- Clean up partial results (full results now available) ---
     try:
