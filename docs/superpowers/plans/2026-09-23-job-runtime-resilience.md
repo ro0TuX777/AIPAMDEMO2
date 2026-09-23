@@ -625,7 +625,7 @@ git commit -m "fix: synchronize chat with job lifecycle"
 - Consumes: `ExecutionControl` checkpoints from Task 4.
 - Produces: `EvidenceIndex`, `select_relevant_hosts`, `semantic_theory_id`, and metrics keys `discovered_hosts`, `relevant_hosts`, `skipped_benign_hosts`, `theory_scopes`, and `duration_ms`.
 
-- [ ] **Step 1: Write failing relevant-host and query-count tests**
+- [x] **Step 1: Write failing relevant-host and query-count tests**
 
 ```python
 def test_connection_only_host_gets_no_host_theory(db, seeded_job):
@@ -644,7 +644,7 @@ def test_evidence_loading_query_count_is_constant(db, seeded_job, query_counter)
 
 Build relevance from exact structured associations: `Finding.src_ip`/`dest_ip`; `Alert.src_ip`/`dest_ip`/`host_ip`; IOC `value` only when `ioc_type` is one of `ip`, `ipv4`, `ipv6`, `ip-dst`, or `ip-src` and `ipaddress.ip_address(value)` equals the host; and parsed JSON evidence values compared as complete strings. Never use SQL/text substring matching. Include corroborated/confirmed telemetry through its structured host fields. Assert observed-only telemetry and connection counts do not qualify. Add `10.0.0.1` versus `10.0.0.10`, compressed IPv6 equivalence, malformed JSON, null field, and cross-phase tests.
 
-- [ ] **Step 2: Write failing semantic-ID and review-preservation tests**
+- [x] **Step 2: Write failing semantic-ID and review-preservation tests**
 
 ```python
 def test_candidate_reordering_keeps_theory_identity_and_review(db, seeded_job):
@@ -667,13 +667,13 @@ def test_migration_preserves_reviewed_legacy_row(migrated_db):
 
 Generate at least 100,000 semantic IDs across jobs/scopes and assert uniqueness. Add a regression for the observed eight-hex collision path and a flush-failure rollback.
 
-- [ ] **Step 3: Run theory tests and confirm they fail**
+- [x] **Step 3: Run theory tests and confirm they fail**
 
 Run: `python -m pytest tests/unit/test_theory_engine.py -q`
 
 Expected: FAIL because every host is processed, evidence is queried per scope, IDs use eight random hex characters, and each scope commits.
 
-- [ ] **Step 4: Add `theory_key` migration and deterministic identity**
+- [x] **Step 4: Add `theory_key` migration and deterministic identity**
 
 Migration `9c7e5a3b2d10` revises `8b6f4d2a1c90` and adds non-null semantic key columns after backfill: `phase_key = COALESCE(pcap_label, '')`, `scope_id_key = COALESCE(scope_id, '')`, and `theory_key = hypothesis_type`. Consolidate duplicate semantic tuples deterministically, selecting a reviewed row before an unreviewed row and then the lowest integer primary key; preserve the selected row's existing `theory_id` and review metadata, and copy the most recent non-null review fields before deleting duplicates. Add a unique constraint over `(job_id, phase_key, scope_type, scope_id_key, theory_key)` so null labels cannot bypass uniqueness. Do not rewrite surviving legacy IDs. New rows use:
 
@@ -686,17 +686,17 @@ def semantic_theory_id(job_id: str, pcap_label: str | None,
 
 The semantic key is the stable generator branch key (`c2`, `benign`, and so on); score, rank, label copy, and candidate position are excluded. Add populated migration tests and the round trip `8b6f4d2a1c90 -> 9c7e5a3b2d10 -> 8b6f4d2a1c90 -> 9c7e5a3b2d10`, proving all pre-existing fields survive the supported downgrade/upgrade cycle.
 
-- [ ] **Step 5: Preload evidence and batch one transaction**
+- [x] **Step 5: Preload evidence and batch one transaction**
 
 Build `EvidenceIndex` with one set-based query per evidence family and phase-consistent filters. Upsert by the enforced semantic tuple, preserving the existing `theory_id`, `analyst_status`, `analyst_notes`, `reviewed_at`, and `reviewer_id`; assign `semantic_theory_id()` only when inserting a tuple that has never existed. Flush every 100 scopes, checkpoint between batches, and commit once. Remove per-host calls to `generate_theories()` that commit internally.
 
-- [ ] **Step 6: Run theory and pipeline regression tests**
+- [x] **Step 6: Run theory and pipeline regression tests**
 
 Run: `python -m pytest tests/unit/test_theory_engine.py tests/unit/test_theory_migration.py tests/unit/test_pipeline_outcomes.py tests/unit/test_phase2_pipeline.py -q`
 
 Expected: PASS; query/commit counts do not grow once per discovered host and stable review metadata survives regeneration.
 
-- [ ] **Step 7: Commit theory performance and identity**
+- [x] **Step 7: Commit theory performance and identity**
 
 ```powershell
 git add backend/alembic/versions/9c7e5a3b2d10_add_theory_semantic_key.py backend/app/models/theory.py backend/app/services/theory_engine.py backend/app/pipeline/orchestrator.py tests/unit/test_theory_engine.py tests/unit/test_theory_migration.py
