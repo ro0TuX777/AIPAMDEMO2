@@ -263,6 +263,7 @@ export function ChatPanel(props: ChatPanelInputProps) {
       await complete(originGeneration, requestId, {
       type: "meta", conversation_id: response.conversation_id, branch_id: response.branch_id,
       request_id: response.request_id, status: response.status ?? "completed", retrieval_status: response.retrieval_status,
+      receipt_id: response.receipt_id,
       citations: response.citations, model_id: response.model_id, generation: response.generation,
       confidence: response.confidence, evidence_refs: response.evidence_refs, suggested_followups: response.suggested_followups,
       }, response.response);
