@@ -107,11 +107,55 @@ def test_malformed_files_and_nested_files_are_ignored(tmp_path: Path):
     assert receipts.load_evidence_receipt(tmp_path, "mnemos-missing") is None
 
 
+def test_incomplete_receipt_with_matching_hash_is_not_listed_or_loaded(tmp_path: Path):
+    incomplete = make_receipt("mnemos-incomplete")
+    del incomplete["answer"]
+    core = {key: value for key, value in incomplete.items() if key != "content_hash"}
+    digest = hashlib.sha256(json.dumps(core, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
+    incomplete["content_hash"] = f"sha256:{digest}"
+    (tmp_path / "mnemos-incomplete.json").write_text(json.dumps(incomplete), encoding="utf-8")
+    assert receipts.load_evidence_receipt(tmp_path, "mnemos-incomplete") is None
+    assert receipts.list_evidence_receipts(tmp_path) == ([], None)
+
+
+def test_tampered_receipt_is_not_listed_or_loaded(tmp_path: Path):
+    altered = make_receipt("mnemos-tampered")
+    altered["answer"] = "Altered answer"
+    (tmp_path / "mnemos-tampered.json").write_text(json.dumps(altered), encoding="utf-8")
+    assert receipts.load_evidence_receipt(tmp_path, "mnemos-tampered") is None
+    assert receipts.list_evidence_receipts(tmp_path) == ([], None)
+
+
+@pytest.mark.parametrize("archived", [False, True])
+def test_receipt_id_collision_preserves_existing_bytes(tmp_path: Path, archived: bool):
+    original = make_receipt("mnemos-one")
+    path = receipts.write_evidence_receipt(tmp_path, original)
+    if archived:
+        archive = tmp_path / "archive"
+        archive.mkdir()
+        archived_path = archive / path.name
+        path.rename(archived_path)
+        path = archived_path
+    before = path.read_bytes()
+    with pytest.raises(FileExistsError):
+        receipts.write_evidence_receipt(tmp_path, make_receipt("mnemos-one", "2026-09-24T01:00:00Z"))
+    assert path.read_bytes() == before
+    assert sorted(p.name for p in tmp_path.glob("*.json")) == ([] if archived else ["mnemos-one.json"])
+
+
+def test_backdated_new_receipt_returns_its_archived_path(tmp_path: Path):
+    receipts.write_evidence_receipt(tmp_path, make_receipt("mnemos-new", "2026-09-24T01:00:00Z"), max_files=1)
+    path = receipts.write_evidence_receipt(tmp_path, make_receipt("mnemos-old", "2026-09-24T00:00:00Z"), max_files=1)
+    assert path == tmp_path / "archive" / "mnemos-old.json"
+    assert path.is_file()
+    assert receipts.load_evidence_receipt(tmp_path, "mnemos-old")["receipt_id"] == "mnemos-old"
+
+
 def test_failed_publish_removes_temporary_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
-    def fail_replace(source, destination):
+    def fail_link(source, destination):
         raise OSError("disk failure")
 
-    monkeypatch.setattr(receipts.os, "replace", fail_replace)
+    monkeypatch.setattr(receipts.os, "link", fail_link)
     with pytest.raises(OSError, match="disk failure"):
         receipts.write_evidence_receipt(tmp_path, make_receipt("mnemos-one"))
     assert list(tmp_path.iterdir()) == []
@@ -119,14 +163,14 @@ def test_failed_publish_removes_temporary_file(tmp_path: Path, monkeypatch: pyte
 
 def test_archive_failure_retains_active_receipts(tmp_path: Path, monkeypatch: pytest.MonkeyPatch):
     receipts.write_evidence_receipt(tmp_path, make_receipt("mnemos-one"), max_files=1)
-    original_replace = receipts.os.replace
+    original_link = receipts.os.link
 
     def fail_archive(source, destination):
         if Path(destination).parent.name == "archive":
             raise OSError("archive unavailable")
-        return original_replace(source, destination)
+        return original_link(source, destination)
 
-    monkeypatch.setattr(receipts.os, "replace", fail_archive)
+    monkeypatch.setattr(receipts.os, "link", fail_archive)
     receipts.write_evidence_receipt(tmp_path, make_receipt("mnemos-two", "2026-09-24T00:00:01Z"), max_files=1)
     assert (tmp_path / "mnemos-one.json").is_file()
     assert (tmp_path / "mnemos-two.json").is_file()

@@ -12,6 +12,12 @@ from pathlib import Path
 
 logger = logging.getLogger(__name__)
 _SAFE_ID = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]*\Z")
+_REQUIRED_FIELDS = frozenset({
+    "schema_version", "receipt_id", "created_at", "job_id", "conversation_id",
+    "assistant_message_id", "request_id", "query", "answer", "model_id",
+    "generation", "runtime", "retrieval_status", "citations", "evidence_refs",
+    "content_hash",
+})
 
 
 def _valid_id(receipt_id: object) -> bool:
@@ -55,9 +61,16 @@ def _read_receipt(path: Path) -> dict | None:
             receipt = json.load(handle)
     except (OSError, UnicodeError, json.JSONDecodeError):
         return None
-    if not isinstance(receipt, dict) or receipt.get("receipt_id") != path.stem:
+    if not isinstance(receipt, dict) or not _REQUIRED_FIELDS.issubset(receipt):
+        return None
+    if receipt.get("receipt_id") != path.stem or receipt["schema_version"] != 1:
         return None
     if not _valid_id(receipt["receipt_id"]) or not isinstance(receipt.get("created_at"), str):
+        return None
+    core = {key: value for key, value in receipt.items() if key != "content_hash"}
+    canonical = json.dumps(core, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    digest = "sha256:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    if receipt["content_hash"] != digest:
         return None
     return receipt
 
@@ -76,6 +89,9 @@ def write_evidence_receipt(receipt_dir: Path, receipt: dict, *, max_files: int =
     receipt_dir = Path(receipt_dir)
     receipt_dir.mkdir(parents=True, exist_ok=True)
     receipt_path = receipt_dir / f"{receipt_id}.json"
+    archive_path = receipt_dir / "archive" / receipt_path.name
+    if receipt_path.exists() or archive_path.exists():
+        raise FileExistsError(f"Evidence receipt already exists: {receipt_id}")
     temp_path = None
     try:
         with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=receipt_dir, delete=False) as handle:
@@ -83,7 +99,9 @@ def write_evidence_receipt(receipt_dir: Path, receipt: dict, *, max_files: int =
             json.dump(receipt, handle, ensure_ascii=False, indent=2)
             handle.flush()
             os.fsync(handle.fileno())
-        os.replace(temp_path, receipt_path)
+        if archive_path.exists():
+            raise FileExistsError(f"Evidence receipt already exists: {receipt_id}")
+        os.link(temp_path, receipt_path)
     finally:
         if temp_path is not None:
             temp_path.unlink(missing_ok=True)
@@ -96,7 +114,11 @@ def write_evidence_receipt(receipt_dir: Path, receipt: dict, *, max_files: int =
             archive = receipt_dir / "archive"
             archive.mkdir(exist_ok=True)
             for path, _ in oldest:
-                os.replace(path, archive / path.name)
+                destination = archive / path.name
+                os.link(path, destination)
+                path.unlink()
+                if path == receipt_path:
+                    receipt_path = destination
         except OSError:
             logger.exception("Could not archive evidence receipts in %s", receipt_dir)
     return receipt_path
