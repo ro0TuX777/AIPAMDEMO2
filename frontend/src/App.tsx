@@ -48,6 +48,7 @@ const TelemetryEventDetailPage = lazy(() => import("./pages/TelemetryEventDetail
 const TemporalCorrelationsPage = lazy(() => import("./pages/TemporalCorrelationsPage").then((m) => ({ default: m.TemporalCorrelationsPage })));
 const GlobalHostsPage = lazy(() => import("./pages/GlobalHostsPage").then((m) => ({ default: m.GlobalHostsPage })));
 const GlobalHostDetailPage = lazy(() => import("./pages/GlobalHostDetailPage").then((m) => ({ default: m.GlobalHostDetailPage })));
+const MnemosReceiptsPage = lazy(() => import("./pages/MnemosReceiptsPage").then((m) => ({ default: m.MnemosReceiptsPage })));
 
 /** Shown while a route's code chunk is fetched. Kept minimal so the swap to
  *  the real page is not visually jarring on a fast connection. */
@@ -88,6 +89,7 @@ const NAV_ITEMS = [
   { to: "/training", label: "Training", testId: "nav-training" },
   { to: "/rules", label: "Detection Rules", testId: "nav-rules" },
   { to: "/hosts", label: "Global Hosts", testId: "nav-global-hosts" },
+  { to: "/mnemos/receipts", label: "MNEMOS Receipts", testId: "nav-mnemos-receipts" },
 ] as const;
 
 /** Active-aware nav link. `variant` controls the active treatment only. */
@@ -277,6 +279,8 @@ export const App: React.FC = () => {
           {/* Global Hosts (cross-job forensics) */}
           <Route path="/hosts" element={<GlobalHostsPage />} />
           <Route path="/hosts/:ip" element={<GlobalHostDetailPage />} />
+          <Route path="/mnemos/receipts" element={<MnemosReceiptsPage />} />
+          <Route path="/mnemos/receipts/:receiptId" element={<MnemosReceiptsPage />} />
         </Routes>
         </Suspense>
         </RouteErrorBoundary>

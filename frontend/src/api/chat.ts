@@ -74,6 +74,16 @@ export function getMnemosEvidenceReceipt(receiptId: string): Promise<MnemosEvide
   return get<MnemosEvidenceReceipt>(`/mnemos/evidence-receipts/${encodeURIComponent(receiptId)}`);
 }
 
+export async function downloadMnemosEvidenceReceipt(receiptId: string): Promise<void> {
+  const receipt = await getMnemosEvidenceReceipt(receiptId);
+  const objectUrl = URL.createObjectURL(new Blob([JSON.stringify(receipt, null, 2)], { type: "application/json" }));
+  const anchor = document.createElement("a");
+  anchor.href = objectUrl;
+  anchor.download = `${receipt.receipt_id}.json`;
+  anchor.click();
+  URL.revokeObjectURL(objectUrl);
+}
+
 export class ChatStreamError extends Error {
   constructor(message: string, public readonly responseReceived: boolean, public readonly code?: string) {
     super(message);
