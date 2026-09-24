@@ -45,6 +45,59 @@ async function setup(page: Page, options: { missingDetail?: boolean; failList?: 
   return calls;
 }
 
+async function setupDelayedPagination(page: Page) {
+  let captureCursorRoute!: (route: Route) => void;
+  const cursorRoute = new Promise<Route>(resolve => { captureCursorRoute = resolve; });
+  let signalCursorStarted!: () => void;
+  const cursorStarted = new Promise<void>(resolve => { signalCursorStarted = resolve; });
+  await page.addInitScript(() => localStorage.setItem("aipam_token", "e2e-auth-token"));
+  await page.route("**/api/v1/**", async route => {
+    const url = new URL(route.request().url());
+    const path = url.pathname.replace("/api/v1", "");
+    if (path === "/settings/setup_status") return route.fulfill({ json: { model_configured: true } });
+    if (path === "/mnemos/evidence-receipts" && url.searchParams.get("cursor") === "next-page") {
+      signalCursorStarted();
+      captureCursorRoute(route);
+      return;
+    }
+    if (path === "/mnemos/evidence-receipts") {
+      return route.fulfill({ json: { items: [receipt("receipt-archived", { query: "Archived receipt preview" }), receipt("receipt-active", { job_id: "job-active", query: "Active receipt preview" })], page: { next_cursor: "next-page", has_more: true } } });
+    }
+    if (path.startsWith("/mnemos/evidence-receipts/")) {
+      return route.fulfill({ json: receipt(decodeURIComponent(path.split("/").at(-1)!)) });
+    }
+    return route.fulfill({ json: {} });
+  });
+  return { cursorRoute, cursorStarted };
+}
+
+for (const outcome of ["failure", "success"] as const) {
+  test(`late pagination ${outcome} cannot overwrite history after leaving and returning`, async ({ page }) => {
+    const pending = await setupDelayedPagination(page);
+    await page.goto("/mnemos/receipts");
+    await expect(page.getByText("Archived receipt preview")).toBeVisible();
+    await page.getByRole("button", { name: "Load more" }).click();
+    await pending.cursorStarted;
+    await page.getByRole("link", { name: "Archived receipt preview" }).click();
+    await expect(page.getByRole("heading", { name: "Evidence Receipt" })).toBeVisible();
+    await expect(page.getByText("The key finding is suspicious DNS activity.")).toBeVisible();
+    await page.getByRole("link", { name: "Back to receipt history" }).click();
+    await expect(page.getByRole("heading", { name: "MNEMOS Evidence Receipts" })).toBeVisible();
+    await expect(page.getByText("Archived receipt preview")).toBeVisible();
+
+    const lateRoute = await pending.cursorRoute;
+    if (outcome === "failure") {
+      await lateRoute.fulfill({ status: 503, json: { detail: "Delayed page failed" } });
+    } else {
+      await lateRoute.fulfill({ json: { items: [receipt("stale-page-item", { query: "Stale page item" })], page: { next_cursor: null, has_more: false } } });
+    }
+    await expect(page.getByRole("button", { name: "Load more" })).toBeVisible();
+    await expect(page.getByText("Could not load the next page of evidence receipts")).toHaveCount(0);
+    await expect(page.getByText("Stale page item")).toHaveCount(0);
+    await expect(page.getByText("Archived receipt preview")).toBeVisible();
+  });
+}
+
 test("global navigation opens paginated history with archived receipts", async ({ page }) => {
   const calls = await setup(page);
   await page.goto("/jobs");

@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   downloadMnemosEvidenceReceipt,
@@ -30,11 +30,14 @@ export const MnemosReceiptsPage: React.FC = () => {
   const [loadingMore, setLoadingMore] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [downloadError, setDownloadError] = useState<string | null>(null);
+  const viewGeneration = useRef(0);
 
   useEffect(() => {
+    const generation = ++viewGeneration.current;
     let active = true;
     setError(null);
     setLoading(true);
+    setLoadingMore(false);
     if (receiptId) {
       setSelected(null);
       getMnemosEvidenceReceipt(receiptId)
@@ -56,24 +59,29 @@ export const MnemosReceiptsPage: React.FC = () => {
         .catch(() => { if (active) setError("list-error"); })
         .finally(() => { if (active) setLoading(false); });
     }
-    return () => { active = false; };
+    return () => {
+      active = false;
+      if (viewGeneration.current === generation) viewGeneration.current += 1;
+    };
   }, [receiptId]);
 
   const loadMore = async () => {
     if (!nextCursor || loadingMore) return;
+    const generation = viewGeneration.current;
     setLoadingMore(true);
     setError(null);
     try {
       const result = await listMnemosEvidenceReceipts(50, nextCursor);
+      if (viewGeneration.current !== generation) return;
       setReceipts(current => {
         const known = new Set(current.map(receipt => receipt.receipt_id));
         return [...current, ...result.items.filter(receipt => !known.has(receipt.receipt_id))];
       });
       setNextCursor(result.page.next_cursor);
     } catch {
-      setError("page-error");
+      if (viewGeneration.current === generation) setError("page-error");
     } finally {
-      setLoadingMore(false);
+      if (viewGeneration.current === generation) setLoadingMore(false);
     }
   };
 
