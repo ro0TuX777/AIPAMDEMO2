@@ -29,6 +29,7 @@ from backend.app.api import (
     investigation,
     jobs,
     knowledge_base,
+    mnemos_receipts,
     proofs,
     rules,
     annotations,
@@ -134,6 +135,7 @@ def create_app() -> FastAPI:
     app.include_router(system.router, prefix="/api/v1")
     app.include_router(chat.router, prefix="/api/v1")
     app.include_router(knowledge_base.router, prefix="/api/v1")
+    app.include_router(mnemos_receipts.router, prefix="/api/v1")
     app.include_router(rules.router, prefix="/api/v1")
     app.include_router(theories.router, prefix="/api/v1")
     app.include_router(slices.router, prefix="/api/v1")
