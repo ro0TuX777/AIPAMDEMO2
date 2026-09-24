@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { api, isDemoMode } from "../api";
 import { ChatStreamError, normalizeChatMessages } from "../api/chat";
 import type { ChatStreamTerminalMetadata } from "../api/chat";
@@ -173,6 +174,7 @@ export function ChatPanel(props: ChatPanelInputProps) {
       model_id: terminal.model_id ?? null, generation: terminal.generation ?? null,
       confidence: terminal.confidence ?? null, evidence_refs: terminal.evidence_refs ?? [],
       suggested_followups: terminal.suggested_followups ?? [],
+      receipt_id: terminal.receipt_id ?? null,
     };
     let finishedAttempt = { ...owner.attempt, conversationId: terminal.conversation_id };
     try {
@@ -349,6 +351,7 @@ export function ChatPanel(props: ChatPanelInputProps) {
       {conversation.messages.map(message => <div key={message.id} className={`flex ${message.role === "user" ? "justify-end" : "justify-start"}`}><div className={`max-w-[80%] rounded-lg px-4 py-2 ${message.role === "user" ? "bg-blue-600 text-white" : "bg-slate-800 text-slate-100"}`}>
         <p className="whitespace-pre-wrap">{message.content}</p>
         {message.role === "user" && mode === "baseline" && controlled && message.saved !== false && <button type="button" onClick={() => onCopyToMnemos(message.id, message.content)} className="mt-2 text-xs underline underline-offset-2 hover:text-slate-200">Copy to MNEMOS</button>}
+        {message.role === "assistant" && mode === "mnemos" && message.metadata?.status === "completed" && typeof message.metadata.receipt_id === "string" && message.metadata.receipt_id.length > 0 && <Link className="mt-2 inline-block text-xs text-cyan-300 underline" to={`/mnemos/receipts/${encodeURIComponent(message.metadata.receipt_id)}`}>View evidence receipt</Link>}
         {message.citations.length > 0 && <div className="mt-3 pt-2 border-t border-slate-600"><details className="group"><summary className="flex cursor-pointer list-none items-center gap-2 text-xs text-slate-300 hover:text-slate-50"><span className="font-medium">Sources</span><span className="text-slate-500">({message.citations.length})</span></summary><div className="mt-2 max-h-48 space-y-2 overflow-y-auto pr-1">{message.citations.map((citation, index) => <div key={`${citation.type}-${citation.id ?? index}-${index}`} className="rounded-md border border-slate-700 bg-slate-900/60 px-2 py-2"><p className="text-[11px] uppercase tracking-wide text-slate-500">{citation.type.replace(/_/g, " ")}</p><p className="mt-1 whitespace-pre-wrap break-words text-xs text-slate-300">{citation.snippet}</p></div>)}</div></details></div>}
         {message.role === "assistant" && message.metadata?.suggested_followups instanceof Array && !isLoading && <div className="mt-3 pt-2 border-t border-slate-700"><p className="text-[10px] uppercase tracking-wider text-slate-500 mb-1.5">Follow-up questions</p><div className="flex flex-wrap gap-1.5">{message.metadata.suggested_followups.filter((item): item is string => typeof item === "string").map(question => <button key={question} onClick={() => void handleSend(question)} className="text-left text-xs px-2 py-1 rounded border border-slate-700 bg-slate-900/60 text-emerald-400/80">{question}</button>)}</div></div>}
       </div></div>)}

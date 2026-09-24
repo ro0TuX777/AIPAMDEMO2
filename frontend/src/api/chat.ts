@@ -30,6 +30,7 @@ export interface ChatStreamTerminalMetadata {
   branch_id?: string | null;
   request_id?: string | null;
   status: "pending" | "completed" | "error";
+  receipt_id?: string | null;
   retrieval_status?: MnemosRetrievalStatus | null;
   citations: ChatCitation[];
   model_id?: string | null;
@@ -37,6 +38,40 @@ export interface ChatStreamTerminalMetadata {
   confidence?: number | null;
   evidence_refs?: ChatEvidenceRef[];
   suggested_followups?: string[];
+}
+
+export interface MnemosEvidenceReceipt {
+  schema_version: number;
+  receipt_id: string;
+  created_at: string;
+  job_id: string;
+  conversation_id: string;
+  assistant_message_id: string;
+  request_id: string | null;
+  query: string;
+  answer: string;
+  model_id: string | null;
+  generation: Record<string, unknown> | null;
+  runtime: Record<string, unknown> | null;
+  retrieval_status: MnemosRetrievalStatus | null;
+  citations: ChatCitation[];
+  evidence_refs: ChatEvidenceRef[];
+  content_hash: string;
+}
+
+export interface MnemosEvidenceReceiptPage {
+  items: MnemosEvidenceReceipt[];
+  page: { next_cursor: string | null; has_more: boolean };
+}
+
+export function listMnemosEvidenceReceipts(limit = 50, cursor?: string): Promise<MnemosEvidenceReceiptPage> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (cursor) params.set("cursor", cursor);
+  return get<MnemosEvidenceReceiptPage>(`/mnemos/evidence-receipts?${params.toString()}`);
+}
+
+export function getMnemosEvidenceReceipt(receiptId: string): Promise<MnemosEvidenceReceipt> {
+  return get<MnemosEvidenceReceipt>(`/mnemos/evidence-receipts/${encodeURIComponent(receiptId)}`);
 }
 
 export class ChatStreamError extends Error {

@@ -1764,6 +1764,7 @@ export interface ChatResponse {
   branch_id?: string | null;
   request_id?: string | null;
   status?: "pending" | "completed" | "error";
+  receipt_id?: string | null;
   retry_after_seconds?: number | null;
 }
 export interface ChatMessage {
