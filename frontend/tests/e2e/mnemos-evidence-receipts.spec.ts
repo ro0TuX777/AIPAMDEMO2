@@ -12,7 +12,7 @@ const receipt = (receiptId: string, overrides: Record<string, unknown> = {}) => 
   answer: "The key finding is suspicious DNS activity.",
   model_id: "qwen-local",
   generation: { duration_ms: 900 },
-  runtime: { provider: "ollama" },
+  runtime: { provider: "ollama", timeout_seconds: 120, local_adapter_model_name: "qwen3:8b", local_adapter_quantization: "Q4_K_M" },
   retrieval_status: "matched",
   citations: [{ source: "alert-1", title: "DNS alert" }],
   evidence_refs: [{ kind: "alert", id: "alert-1" }],
@@ -73,6 +73,10 @@ test("receipt detail renders evidence sections and authenticated JSON download",
   await expect(page.getByText("The key finding is suspicious DNS activity.")).toBeVisible();
   await expect(page.getByText("sha256:abc123")).toBeVisible();
   await expect(page.getByText("DNS alert")).toBeVisible();
+  await expect(page.getByText("ollama", { exact: true })).toBeVisible();
+  await expect(page.getByText("120", { exact: true })).toBeVisible();
+  await expect(page.getByText("qwen3:8b", { exact: true })).toBeVisible();
+  await expect(page.getByText("Q4_K_M", { exact: true })).toBeVisible();
   await expect(page.getByRole("link", { name: "Back to receipt history" })).toHaveAttribute("href", "/mnemos/receipts");
 
   const downloadPromise = page.waitForEvent("download");

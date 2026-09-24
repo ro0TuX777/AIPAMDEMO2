@@ -12,6 +12,15 @@ function formatDate(value: string): string {
   return Number.isNaN(date.getTime()) ? value : date.toLocaleString();
 }
 
+function runtimeLabel(key: string): string {
+  return key.replaceAll("_", " ").replace(/\b\w/g, character => character.toUpperCase());
+}
+
+function runtimeValue(value: unknown): string {
+  if (value === null || value === undefined) return "—";
+  return typeof value === "object" ? JSON.stringify(value) : String(value);
+}
+
 export const MnemosReceiptsPage: React.FC = () => {
   const { receiptId } = useParams<{ receiptId?: string }>();
   const [receipts, setReceipts] = useState<MnemosEvidenceReceipt[]>([]);
@@ -89,12 +98,12 @@ export const MnemosReceiptsPage: React.FC = () => {
         <p><span className="text-slate-400">Model:</span> {selected.model_id || "Unknown"}</p>
         <p><span className="text-slate-400">Retrieval status:</span> {selected.retrieval_status || "Unknown"}</p>
         <p><span className="text-slate-400">Content hash:</span> <code className="break-all">{selected.content_hash}</code></p>
-        <p><span className="text-slate-400">Runtime:</span> {selected.runtime?.provider ? String(selected.runtime.provider) : "Unknown"}</p>
       </div>
       <section className="space-y-2"><h2 className="text-lg font-medium">Question</h2><p className="whitespace-pre-wrap rounded border border-slate-800 p-3">{selected.query}</p></section>
       <section className="space-y-2"><h2 className="text-lg font-medium">Answer</h2><p className="whitespace-pre-wrap rounded border border-slate-800 p-3">{selected.answer}</p></section>
       <section className="space-y-2"><h2 className="text-lg font-medium">Citations</h2>{selected.citations.length ? <ul className="list-disc space-y-1 pl-5">{selected.citations.map((citation, index) => <li key={`${citation.id ?? "citation"}-${index}`}>{citation.snippet || citation.id || JSON.stringify(citation)}</li>)}</ul> : <p className="text-slate-400">No citations recorded.</p>}</section>
       <section className="space-y-2"><h2 className="text-lg font-medium">Evidence references</h2>{selected.evidence_refs.length ? <pre className="overflow-auto rounded border border-slate-800 p-3 text-xs">{JSON.stringify(selected.evidence_refs, null, 2)}</pre> : <p className="text-slate-400">No evidence references recorded.</p>}</section>
+      <section className="space-y-2"><h2 className="text-lg font-medium">Runtime details</h2>{selected.runtime && Object.keys(selected.runtime).length > 0 ? <dl className="grid gap-2 rounded border border-slate-800 p-3 sm:grid-cols-2">{Object.entries(selected.runtime).map(([key, value]) => <div key={key}><dt className="text-sm text-slate-400">{runtimeLabel(key)}</dt><dd className="break-all">{runtimeValue(value)}</dd></div>)}</dl> : <p className="text-slate-400">No runtime details recorded.</p>}</section>
       <section className="space-y-2"><h2 className="text-lg font-medium">Generation details</h2><pre className="overflow-auto rounded border border-slate-800 p-3 text-xs">{JSON.stringify(selected.generation, null, 2)}</pre></section>
     </article>;
   }
