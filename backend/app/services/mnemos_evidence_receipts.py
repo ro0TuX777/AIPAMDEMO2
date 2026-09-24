@@ -68,8 +68,11 @@ def _read_receipt(path: Path) -> dict | None:
     if not _valid_id(receipt["receipt_id"]) or not isinstance(receipt.get("created_at"), str):
         return None
     core = {key: value for key, value in receipt.items() if key != "content_hash"}
-    canonical = json.dumps(core, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    digest = "sha256:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    try:
+        canonical = json.dumps(core, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+        digest = "sha256:" + hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+    except UnicodeError:
+        return None
     if receipt["content_hash"] != digest:
         return None
     return receipt

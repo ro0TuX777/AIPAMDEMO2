@@ -126,6 +126,18 @@ def test_tampered_receipt_is_not_listed_or_loaded(tmp_path: Path):
     assert receipts.list_evidence_receipts(tmp_path) == ([], None)
 
 
+def test_unpaired_unicode_surrogate_is_skipped_without_stopping_history(tmp_path: Path):
+    valid = make_receipt("mnemos-valid")
+    receipts.write_evidence_receipt(tmp_path, valid)
+    malformed = make_receipt("mnemos-malformed")
+    malformed["answer"] = "\ud800"
+    (tmp_path / "mnemos-malformed.json").write_text(json.dumps(malformed), encoding="utf-8")
+    assert receipts.load_evidence_receipt(tmp_path, "mnemos-malformed") is None
+    items, cursor = receipts.list_evidence_receipts(tmp_path)
+    assert [item["receipt_id"] for item in items] == ["mnemos-valid"]
+    assert cursor is None
+
+
 @pytest.mark.parametrize("archived", [False, True])
 def test_receipt_id_collision_preserves_existing_bytes(tmp_path: Path, archived: bool):
     original = make_receipt("mnemos-one")
