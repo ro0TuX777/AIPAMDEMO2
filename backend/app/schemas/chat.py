@@ -110,6 +110,7 @@ class ChatResponseBody(BaseModel):
     request_id: str | None = None
     status: Literal["pending", "completed", "error"] = "completed"
     retry_after_seconds: int | None = None
+    receipt_id: str | None = None
 
 
 class ChatMessageOut(BaseModel):

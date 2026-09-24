@@ -15,6 +15,7 @@ import logging
 import os
 import uuid
 from datetime import datetime, timedelta, timezone
+from pathlib import Path
 from typing import AsyncGenerator
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -70,6 +71,10 @@ from backend.app.services.chat_comparisons import (
 from backend.app.services.mnemos_chat_retrieval import (
     MnemosRetrievalResult,
     retrieve_historical_findings,
+)
+from backend.app.services.mnemos_evidence_receipts import (
+    build_evidence_receipt,
+    write_evidence_receipt,
 )
 
 from backend.app.api.deps import get_db, verify_token
@@ -1544,6 +1549,7 @@ def _response_for_existing_turn(
         branch_id=branch_id,
         request_id=user_message.request_id,
         status=metadata.get("status", "completed"),
+        receipt_id=metadata.get("receipt_id"),
     )
 
 
@@ -1797,6 +1803,8 @@ def _persist_assistant_turn(
     response_text: str,
     final_citations: list[ChatCitation],
     metadata: dict,
+    receipt_dir: Path | None = None,
+    receipt_max_files: int = 500,
 ) -> ChatMessage:
     # Completion and expired-lease recovery must select the same terminal row.
     db.rollback()
@@ -1828,8 +1836,37 @@ def _persist_assistant_turn(
         metadata_json=json.dumps(metadata),
         created_at=_now_iso(),
     )
-    db.add(assistant)
     conversation = db.get(ChatConversation, conversation_id)
+    if (
+        conversation is not None
+        and conversation.mode == "mnemos"
+        and metadata.get("status") == "completed"
+        and receipt_dir is not None
+    ):
+        receipt_id = f"mnemos-{assistant.id}"
+        try:
+            receipt = build_evidence_receipt(
+                receipt_id=receipt_id,
+                created_at=assistant.created_at,
+                job_id=conversation.job_id,
+                conversation_id=conversation.id,
+                assistant_message_id=assistant.id,
+                request_id=request_id,
+                query=origin.content,
+                answer=response_text,
+                model_id=metadata.get("model_id"),
+                generation=metadata.get("generation"),
+                runtime=metadata.get("runtime"),
+                retrieval_status=metadata.get("retrieval_status"),
+                citations=metadata.get("citations", []),
+                evidence_refs=metadata.get("evidence_refs", []),
+            )
+            write_evidence_receipt(receipt_dir, receipt, max_files=receipt_max_files)
+            metadata["receipt_id"] = receipt_id
+            assistant.metadata_json = json.dumps(metadata)
+        except Exception:
+            logger.exception("Could not write evidence receipt for MNEMOS turn %s", request_id)
+    db.add(assistant)
     if conversation is not None:
         conversation.updated_at = assistant.created_at
     db.commit()
@@ -1927,6 +1964,7 @@ def _chat_response(
     evidence_refs: list[EvidenceRefOut],
     suggested_followups: list[str],
     status: str,
+    receipt_id: str | None = None,
 ) -> ChatResponseBody:
     return ChatResponseBody(
         response=response_text,
@@ -1941,6 +1979,7 @@ def _chat_response(
         branch_id=branch_id,
         request_id=request_id,
         status=status,
+        receipt_id=receipt_id,
     )
 
 
@@ -1951,6 +1990,7 @@ def _persisted_turn_sse_events(persisted: ChatResponseBody) -> list[str]:
         "branch_id": persisted.branch_id,
         "request_id": persisted.request_id,
         "status": persisted.status,
+        "receipt_id": persisted.receipt_id,
         "retry_after_seconds": persisted.retry_after_seconds,
         "retrieval_status": persisted.retrieval_status,
         "citations": [citation.model_dump() for citation in persisted.citations],
@@ -2076,6 +2116,8 @@ async def chat_about_job(
             response_text=response_text,
             final_citations=final_citations,
             metadata=metadata,
+            receipt_dir=settings.mnemos_evidence_receipt_dir if body.mode == "mnemos" else None,
+            receipt_max_files=settings.mnemos_evidence_receipt_max_files,
         )
     except asyncio.CancelledError:
         _terminalize_failed_turn(db, user_message_id=user_message_id, request_id=request_id, prepared=prepared)
@@ -2288,6 +2330,8 @@ async def chat_about_job_stream(
                     response_text=response_text,
                     final_citations=final_citations,
                     metadata=metadata,
+                    receipt_dir=settings.mnemos_evidence_receipt_dir if body.mode == "mnemos" else None,
+                    receipt_max_files=settings.mnemos_evidence_receipt_max_files,
                 )
                 persisted = _response_for_existing_turn(background_db, user_message=background_db.get(ChatMessage, user_message_id), requested_content=body.message)
             # Persistence is authoritative. A stale worker may finish after

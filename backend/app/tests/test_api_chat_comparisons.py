@@ -74,6 +74,7 @@ def client(tmp_path, monkeypatch):
     app.dependency_overrides[get_settings] = lambda: Settings(
         aipam_api_token="test-token",
         aipam_job_root=tmp_path,
+        mnemos_evidence_receipt_dir=tmp_path / "evidence_receipts",
     )
 
     @app.exception_handler(HTTPException)
@@ -136,6 +137,7 @@ def client(tmp_path, monkeypatch):
     client = TestClient(app)
     client.session_factory = session_factory
     client.fake_llm = fake_llm
+    client.receipt_dir = tmp_path / "evidence_receipts"
     with client:
         yield client
     engine.dispose()
@@ -311,6 +313,7 @@ def test_late_generator_returns_saved_recovery_instead_of_local_result(client, m
             await started.wait()
             pending = await api.post("/jobs/job-1/chat", json=body)
             assert pending.json()["status"] == "pending"
+            assert pending.json().get("receipt_id") is None
             assert pending.json()["retry_after_seconds"] == 2
             with client.session_factory() as db:
                 user = db.scalar(select(ChatMessage).where(ChatMessage.request_id == body["request_id"]))
@@ -943,6 +946,115 @@ def test_stream_meta_matches_json_provenance_and_completion_is_persisted_first(
         )
         assert persisted is not None
         assert json.loads(persisted.metadata_json)["status"] == "completed"
+
+
+def test_completed_mnemos_json_turn_writes_and_replays_receipt(client, monkeypatch) -> None:
+    opened = _open_comparison(client)
+    monkeypatch.setattr(
+        chat, "retrieve_historical_findings",
+        lambda **_kwargs: MnemosRetrievalResult(status="no_matches", context="", citations=[]),
+    )
+    request_id = str(uuid.uuid4())
+    body = {
+        "message": "Summarize the evidence",
+        "mode": "mnemos",
+        "conversation_id": opened["conversation_id"],
+        "request_id": request_id,
+    }
+
+    response = client.post("/jobs/job-1/chat", json=body)
+
+    assert response.status_code == 200, response.text
+    payload = response.json()
+    receipt_id = payload["receipt_id"]
+    assert receipt_id.startswith("mnemos-")
+    receipt_files = list(client.receipt_dir.glob("*.json"))
+    assert len(receipt_files) == 1
+    receipt = json.loads(receipt_files[0].read_text(encoding="utf-8"))
+    assert receipt["receipt_id"] == receipt_id
+    assert receipt["query"] == body["message"]
+    assert receipt["answer"] == payload["response"]
+    assert receipt["conversation_id"] == opened["conversation_id"]
+
+    with client.session_factory() as session:
+        assistant = session.scalar(select(ChatMessage).where(
+            ChatMessage.conversation_id == opened["conversation_id"],
+            ChatMessage.role == "assistant",
+        ))
+        assert assistant is not None
+        assert json.loads(assistant.metadata_json)["receipt_id"] == receipt_id
+
+    replay = client.post("/jobs/job-1/chat", json=body)
+    assert replay.status_code == 200
+    assert replay.json()["receipt_id"] == receipt_id
+    assert len(list(client.receipt_dir.glob("*.json"))) == 1
+
+
+def test_completed_mnemos_stream_receipt_is_in_terminal_meta_and_replay(client, monkeypatch) -> None:
+    opened = _open_comparison(client)
+    monkeypatch.setattr(
+        chat, "retrieve_historical_findings",
+        lambda **_kwargs: MnemosRetrievalResult(status="no_matches", context="", citations=[]),
+    )
+    body = {
+        "message": "Stream a receipt",
+        "mode": "mnemos",
+        "conversation_id": opened["conversation_id"],
+        "request_id": str(uuid.uuid4()),
+    }
+
+    response = client.post("/jobs/job-1/chat/stream", json=body)
+    assert response.status_code == 200, response.text
+    terminal_meta = [
+        payload for payload in _sse_payloads(response)
+        if isinstance(payload, dict) and payload.get("type") == "meta"
+        and payload.get("status") == "completed"
+    ][0]
+    receipt_id = terminal_meta["receipt_id"]
+    assert receipt_id.startswith("mnemos-")
+    assert len(list(client.receipt_dir.glob("*.json"))) == 1
+
+    replay = client.post("/jobs/job-1/chat/stream", json=body)
+    replay_meta = [
+        payload for payload in _sse_payloads(replay)
+        if isinstance(payload, dict) and payload.get("type") == "meta"
+    ][0]
+    assert replay_meta["receipt_id"] == receipt_id
+    assert len(list(client.receipt_dir.glob("*.json"))) == 1
+
+
+def test_baseline_failed_and_receipt_write_failure_do_not_return_dead_links(client, monkeypatch) -> None:
+    baseline = client.post("/jobs/job-1/chat", json={
+        "message": "Baseline question", "request_id": str(uuid.uuid4()),
+    })
+    assert baseline.status_code == 200
+    assert baseline.json().get("receipt_id") is None
+
+    opened = _open_comparison(client)
+    monkeypatch.setattr(
+        chat, "retrieve_historical_findings",
+        lambda **_kwargs: MnemosRetrievalResult(status="no_matches", context="", citations=[]),
+    )
+    client.fake_llm.fail_completion = True
+    failed = client.post("/jobs/job-1/chat", json={
+        "message": "Failed question", "mode": "mnemos",
+        "conversation_id": opened["conversation_id"], "request_id": str(uuid.uuid4()),
+    })
+    assert failed.status_code == 200
+    assert failed.json()["status"] == "error"
+    assert failed.json().get("receipt_id") is None
+
+    def broken_writer(*_args, **_kwargs):
+        raise OSError("disk unavailable")
+
+    monkeypatch.setattr(chat, "write_evidence_receipt", broken_writer)
+    completed = client.post("/jobs/job-1/chat", json={
+        "message": "Still answer successfully", "mode": "mnemos",
+        "conversation_id": opened["conversation_id"], "request_id": str(uuid.uuid4()),
+    })
+    assert completed.status_code == 200
+    assert completed.json()["status"] == "completed"
+    assert completed.json().get("receipt_id") is None
 
 
 def test_failed_generation_is_persisted_but_excluded_from_next_prompt(
