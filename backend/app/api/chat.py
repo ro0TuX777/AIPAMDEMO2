@@ -1837,6 +1837,7 @@ def _persist_assistant_turn(
         created_at=_now_iso(),
     )
     conversation = db.get(ChatConversation, conversation_id)
+    published_receipt_path: Path | None = None
     if (
         conversation is not None
         and conversation.mode == "mnemos"
@@ -1861,7 +1862,9 @@ def _persist_assistant_turn(
                 citations=metadata.get("citations", []),
                 evidence_refs=metadata.get("evidence_refs", []),
             )
-            write_evidence_receipt(receipt_dir, receipt, max_files=receipt_max_files)
+            published_receipt_path = write_evidence_receipt(
+                receipt_dir, receipt, max_files=receipt_max_files
+            )
             metadata["receipt_id"] = receipt_id
             assistant.metadata_json = json.dumps(metadata)
         except Exception:
@@ -1869,7 +1872,31 @@ def _persist_assistant_turn(
     db.add(assistant)
     if conversation is not None:
         conversation.updated_at = assistant.created_at
-    db.commit()
+    try:
+        db.commit()
+    except Exception:
+        # The filesystem publication precedes the database commit. Reconcile
+        # only when a rollback and read prove the assistant row is absent;
+        # if commit state is uncertain, preserve the receipt rather than
+        # deleting evidence that may belong to a committed answer.
+        assistant_committed = True
+        try:
+            db.rollback()
+            assistant_committed = db.get(ChatMessage, assistant.id) is not None
+        except Exception:
+            logger.exception(
+                "Could not determine whether MNEMOS assistant turn %s committed; preserving receipt",
+                assistant.id,
+            )
+        if not assistant_committed and published_receipt_path is not None:
+            try:
+                published_receipt_path.unlink(missing_ok=True)
+            except OSError:
+                logger.exception(
+                    "Could not remove uncommitted MNEMOS receipt %s",
+                    published_receipt_path,
+                )
+        raise
     db.refresh(assistant)
     return assistant
 

@@ -1102,6 +1102,91 @@ def test_baseline_failed_and_receipt_write_failure_do_not_return_dead_links(clie
     assert completed.json().get("receipt_id") is None
 
 
+def test_uncommitted_mnemos_receipt_is_removed_after_assistant_commit_failure(client, monkeypatch) -> None:
+    from backend.app.api import mnemos_receipts
+
+    opened = _open_comparison(client)
+    monkeypatch.setattr(
+        chat, "retrieve_historical_findings",
+        lambda **_kwargs: MnemosRetrievalResult(status="no_matches", context="", citations=[]),
+    )
+    client.app.include_router(mnemos_receipts.router, prefix="/api/v1")
+    body = {
+        "message": "Receipt must not outlive failed commit",
+        "mode": "mnemos",
+        "conversation_id": opened["conversation_id"],
+        "request_id": str(uuid.uuid4()),
+    }
+    session_cls = client.session_factory.class_
+    failed_once = False
+    published_receipt_id = None
+
+    def fail_completed_commit(session):
+        nonlocal failed_once, published_receipt_id
+        candidates = [
+            row for row in session.new
+            if isinstance(row, ChatMessage) and row.role == "assistant"
+            and json.loads(row.metadata_json).get("receipt_id")
+        ]
+        if candidates and not failed_once:
+            failed_once = True
+            published_receipt_id = json.loads(candidates[0].metadata_json)["receipt_id"]
+            raise RuntimeError("simulated commit failure after receipt publication")
+
+    event.listen(session_cls, "before_commit", fail_completed_commit)
+    try:
+        response = client.post("/jobs/job-1/chat", json=body)
+    finally:
+        event.remove(session_cls, "before_commit", fail_completed_commit)
+
+    assert failed_once
+    assert response.status_code == 200
+    assert response.json()["status"] == "error"
+    assert response.json().get("receipt_id") is None
+    assert list(client.receipt_dir.glob("*.json")) == []
+
+    headers = {"Authorization": "Bearer test-token"}
+    history = client.get("/api/v1/mnemos/evidence-receipts", headers=headers)
+    assert history.status_code == 200
+    assert history.json()["items"] == []
+    detail = client.get(
+        f"/api/v1/mnemos/evidence-receipts/{published_receipt_id}", headers=headers
+    )
+    assert detail.status_code == 404
+
+
+def test_committed_mnemos_receipt_survives_post_commit_refresh_failure(client, monkeypatch) -> None:
+    opened = _open_comparison(client)
+    monkeypatch.setattr(
+        chat, "retrieve_historical_findings",
+        lambda **_kwargs: MnemosRetrievalResult(status="no_matches", context="", citations=[]),
+    )
+    session_cls = client.session_factory.class_
+    original_refresh = session_cls.refresh
+    failed_once = False
+
+    def fail_assistant_refresh(session, instance, *args, **kwargs):
+        nonlocal failed_once
+        if isinstance(instance, ChatMessage) and instance.role == "assistant" and not failed_once:
+            failed_once = True
+            raise RuntimeError("simulated refresh failure after commit")
+        return original_refresh(session, instance, *args, **kwargs)
+
+    monkeypatch.setattr(session_cls, "refresh", fail_assistant_refresh)
+    response = client.post("/jobs/job-1/chat", json={
+        "message": "Committed receipt must survive refresh failure",
+        "mode": "mnemos",
+        "conversation_id": opened["conversation_id"],
+        "request_id": str(uuid.uuid4()),
+    })
+
+    assert failed_once
+    assert response.status_code == 200
+    assert response.json()["status"] == "completed"
+    receipt_id = response.json()["receipt_id"]
+    assert (client.receipt_dir / f"{receipt_id}.json").is_file()
+
+
 def test_failed_generation_is_persisted_but_excluded_from_next_prompt(
     client, monkeypatch
 ) -> None:
