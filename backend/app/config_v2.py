@@ -78,6 +78,8 @@ class Settings(BaseSettings):
     mnemos_enabled: bool = False
     mnemos_base_url: str = "http://mnemos-service:8700"
     mnemos_token: str | None = None
+    mnemos_evidence_receipt_dir: Path = Path("/opt/aipam/logs/evidence_receipts")
+    mnemos_evidence_receipt_max_files: int = 500
 
     # --- Local adapter runtime (optional) ---
     llm_local_adapter_path: str | None = None

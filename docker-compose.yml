@@ -74,6 +74,7 @@ services:
       MNEMOS_ENABLED: ${MNEMOS_ENABLED:-true}
       MNEMOS_BASE_URL: http://mnemos-service:8700
       MNEMOS_TOKEN: ${MNEMOS_TOKEN:-}
+      MNEMOS_EVIDENCE_RECEIPT_DIR: /opt/aipam/logs/evidence_receipts
     volumes:
       - aipam-data:/data
       - aipam-jobs:/jobs
