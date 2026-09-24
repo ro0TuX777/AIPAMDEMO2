@@ -18,6 +18,7 @@ from backend.app.api import chat
 from backend.app.api.deps import get_db, verify_token
 from backend.app.config_v2 import Settings, get_settings
 from backend.app.database_v2 import Base, _set_sqlite_pragmas
+from backend.app.main_v2 import create_app
 from backend.app.models.chat import (
     ChatComparisonBranch,
     ChatComparisonGroup,
@@ -988,6 +989,50 @@ def test_completed_mnemos_json_turn_writes_and_replays_receipt(client, monkeypat
     assert replay.status_code == 200
     assert replay.json()["receipt_id"] == receipt_id
     assert len(list(client.receipt_dir.glob("*.json"))) == 1
+
+
+def test_completed_mnemos_receipt_survives_fresh_app_construction(client, monkeypatch) -> None:
+    opened = _open_comparison(client)
+    monkeypatch.setattr(
+        chat, "retrieve_historical_findings",
+        lambda **_kwargs: MnemosRetrievalResult(status="no_matches", context="", citations=[]),
+    )
+    answer = client.post("/jobs/job-1/chat", json={
+        "message": "Persist across app restart",
+        "mode": "mnemos",
+        "conversation_id": opened["conversation_id"],
+        "request_id": str(uuid.uuid4()),
+    })
+    assert answer.status_code == 200, answer.text
+    receipt_id = answer.json()["receipt_id"]
+    original = json.loads((client.receipt_dir / f"{receipt_id}.json").read_text(encoding="utf-8"))
+
+    # A newly constructed app reads only the configured persistent directory.
+    fresh_app = create_app()
+    fresh_app.dependency_overrides[get_settings] = lambda: Settings(
+        _env_file=None,
+        aipam_api_token="test-token",
+        mnemos_evidence_receipt_dir=client.receipt_dir,
+    )
+
+    async def read_fresh_app(path: str):
+        async with AsyncClient(
+            transport=ASGITransport(app=fresh_app), base_url="http://testserver"
+        ) as fresh_client:
+            return await fresh_client.get(
+                path, headers={"Authorization": "Bearer test-token"}
+            )
+
+    history = asyncio.run(read_fresh_app("/api/v1/mnemos/evidence-receipts"))
+    detail = asyncio.run(read_fresh_app(f"/api/v1/mnemos/evidence-receipts/{receipt_id}"))
+    assert history.status_code == detail.status_code == 200
+    listed = next(item for item in history.json()["items"] if item["receipt_id"] == receipt_id)
+    persisted = detail.json()
+    assert listed["receipt_id"] == persisted["receipt_id"] == original["receipt_id"]
+    assert persisted["content_hash"] == original["content_hash"]
+    assert persisted == original
+    assert persisted["query"] == "Persist across app restart"
+    assert persisted["answer"] == answer.json()["response"]
 
 
 def test_completed_mnemos_stream_receipt_is_in_terminal_meta_and_replay(client, monkeypatch) -> None:
